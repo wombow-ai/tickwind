@@ -32,9 +32,11 @@ Status: ✅ done · 🟡 in progress · ⬜ todo
 - ✅ Live-verified Alpaca prices end-to-end (AAPL/NVDA, regular session, live SSE push)
 - ✅ Live-verified Finnhub news end-to-end (AAPL: 243 articles via /news)
 
-## Phase 3 — News + Social
-- ⬜ Per-stock unified news/announcement timeline
-- ⬜ Reddit + StockTwits ingestion; social tab
+## Phase 3 — News + Social  🟡
+- ✅ Per-stock unified timeline (News + Discussion + Filings sections)
+- ✅ StockTwits social ingestion + `GET /v1/stocks/{ticker}/social` + Discussion
+      feed (live-verified, no key required)
+- ⬜ Reddit ingestion (second social source via the same `Post` store)
 - ⬜ Clipper inbox (paste 小红书/抖音/X links); optional Whisper transcription
 
 ## Phase 4 — Multi-market + polish

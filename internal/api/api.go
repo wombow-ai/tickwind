@@ -31,6 +31,7 @@ func New(st store.Store, hub QuoteStream, log *slog.Logger) http.Handler {
 	mux.HandleFunc("GET /v1/stocks/{ticker}/filings", s.getFilings)
 	mux.HandleFunc("GET /v1/stocks/{ticker}/quote", s.getQuote)
 	mux.HandleFunc("GET /v1/stocks/{ticker}/news", s.getNews)
+	mux.HandleFunc("GET /v1/stocks/{ticker}/social", s.getSocial)
 	mux.HandleFunc("GET /v1/stream", s.getStream)
 	return s.middleware(mux)
 }
@@ -103,6 +104,20 @@ func (s *Server) getNews(w http.ResponseWriter, r *http.Request) {
 		"ticker": ticker,
 		"count":  len(items),
 		"news":   items,
+	})
+}
+
+func (s *Server) getSocial(w http.ResponseWriter, r *http.Request) {
+	ticker := r.PathValue("ticker")
+	posts, err := s.store.ListSocial(r.Context(), ticker, queryLimit(r, 30))
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, errBody(err.Error()))
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ticker": ticker,
+		"count":  len(posts),
+		"posts":  posts,
 	})
 }
 

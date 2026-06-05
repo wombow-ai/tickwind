@@ -17,6 +17,7 @@ import (
 	"github.com/wombow-ai/tickwind/internal/edgar"
 	"github.com/wombow-ai/tickwind/internal/finnhub"
 	"github.com/wombow-ai/tickwind/internal/ingest"
+	"github.com/wombow-ai/tickwind/internal/stocktwits"
 	"github.com/wombow-ai/tickwind/internal/store"
 	"github.com/wombow-ai/tickwind/internal/store/memory"
 	"github.com/wombow-ai/tickwind/internal/store/postgres"
@@ -49,7 +50,8 @@ func main() {
 	}
 
 	edgarClient := edgar.New(cfg.EDGARUserAgent)
-	scheduler := ingest.NewScheduler(st, edgarClient, newsClient, cfg.Watchlist, cfg.IngestEvery, log)
+	socialClient := stocktwits.New() // public API, no key required
+	scheduler := ingest.NewScheduler(st, edgarClient, newsClient, socialClient, cfg.Watchlist, cfg.IngestEvery, log)
 	go scheduler.Run(ctx)
 
 	// Price polling runs only when Alpaca credentials are present.

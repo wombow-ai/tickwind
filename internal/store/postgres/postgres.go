@@ -213,3 +213,58 @@ FROM news WHERE ticker = $1 ORDER BY published DESC`
 	}
 	return out, nil
 }
+
+// SaveSocial upserts social posts, deduplicating on (ticker, id).
+func (s *Store) SaveSocial(ctx context.Context, ticker string, posts []store.Post) error {
+	if len(posts) == 0 {
+		return nil
+	}
+	const query = `
+INSERT INTO social (ticker, id, source, author, body, url, created_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7)
+ON CONFLICT (ticker, id) DO UPDATE
+SET source = EXCLUDED.source, author = EXCLUDED.author, body = EXCLUDED.body, url = EXCLUDED.url, created_at = EXCLUDED.created_at`
+	batch := &pgx.Batch{}
+	for _, p := range posts {
+		batch.Queue(query, ticker, p.ID, p.Source, p.Author, p.Body, p.URL, p.CreatedAt)
+	}
+	br := s.pool.SendBatch(ctx, batch)
+	defer br.Close()
+	for range posts {
+		if _, err := br.Exec(); err != nil {
+			return fmt.Errorf("postgres: save social %s: %w", ticker, err)
+		}
+	}
+	return nil
+}
+
+// ListSocial returns social posts for ticker, newest first. limit <= 0 = no limit.
+func (s *Store) ListSocial(ctx context.Context, ticker string, limit int) ([]store.Post, error) {
+	query := `
+SELECT ticker, id, source, author, body, url, created_at
+FROM social WHERE ticker = $1 ORDER BY created_at DESC`
+	args := []any{ticker}
+	if limit > 0 {
+		query += ` LIMIT $2`
+		args = append(args, limit)
+	}
+
+	rows, err := s.pool.Query(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("postgres: list social %s: %w", ticker, err)
+	}
+	defer rows.Close()
+
+	var out []store.Post
+	for rows.Next() {
+		var p store.Post
+		if err := rows.Scan(&p.Ticker, &p.ID, &p.Source, &p.Author, &p.Body, &p.URL, &p.CreatedAt); err != nil {
+			return nil, fmt.Errorf("postgres: scan social %s: %w", ticker, err)
+		}
+		out = append(out, p)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("postgres: iterate social %s: %w", ticker, err)
+	}
+	return out, nil
+}

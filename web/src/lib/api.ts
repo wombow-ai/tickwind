@@ -64,6 +64,27 @@ export interface NewsResponse {
   news: NewsItem[];
 }
 
+/** A social-media post about a security (e.g. from StockTwits). */
+export interface Post {
+  ticker: string;
+  /** `<source>:<rawid>`, stable per post. */
+  id: string;
+  /** Source network, e.g. `stocktwits`. */
+  source: string;
+  author: string;
+  body: string;
+  url: string;
+  /** RFC 3339 timestamp of when the post was created. */
+  created_at: string;
+}
+
+/** Envelope returned by `GET /v1/stocks/{ticker}/social`. */
+export interface SocialResponse {
+  ticker: string;
+  count: number;
+  posts: Post[];
+}
+
 /**
  * Trading session a quote belongs to, in US market terms. Unknown values from
  * the backend are tolerated by widening to `string` at the type boundary.
@@ -203,6 +224,22 @@ export function getNews(
     `/v1/stocks/${encodeURIComponent(normalizeTicker(ticker))}` +
     `/news?limit=${encodeURIComponent(String(limit))}`;
   return getJson<NewsResponse>(path, signal);
+}
+
+/**
+ * Fetches recent social posts for a ticker, most recent first.
+ *
+ * @param limit Maximum number of posts to return (defaults to 30).
+ */
+export function getSocial(
+  ticker: string,
+  limit = 30,
+  signal?: AbortSignal,
+): Promise<SocialResponse> {
+  const path =
+    `/v1/stocks/${encodeURIComponent(normalizeTicker(ticker))}` +
+    `/social?limit=${encodeURIComponent(String(limit))}`;
+  return getJson<SocialResponse>(path, signal);
 }
 
 /** Fetches backend health. */

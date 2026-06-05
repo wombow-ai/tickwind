@@ -47,6 +47,17 @@ type News struct {
 	Published time.Time `json:"published"`
 }
 
+// Post is a social-media message about a security (e.g. from StockTwits).
+type Post struct {
+	Ticker    string    `json:"ticker"`
+	ID        string    `json:"id"` // "<source>:<rawid>", used for dedupe
+	Source    string    `json:"source"`
+	Author    string    `json:"author"`
+	Body      string    `json:"body"`
+	URL       string    `json:"url"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
 // Store is the persistence boundary. Every backend (memory, postgres)
 // implements this so the rest of the app never depends on a driver.
 type Store interface {
@@ -61,4 +72,7 @@ type Store interface {
 
 	SaveNews(ctx context.Context, ticker string, items []News) error
 	ListNews(ctx context.Context, ticker string, limit int) ([]News, error)
+
+	SaveSocial(ctx context.Context, ticker string, posts []Post) error
+	ListSocial(ctx context.Context, ticker string, limit int) ([]Post, error)
 }

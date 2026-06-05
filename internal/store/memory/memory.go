@@ -17,6 +17,7 @@ type Store struct {
 	filings map[string]map[string]store.Filing // ticker -> accessionNo -> Filing
 	quotes  map[string]store.Quote             // ticker -> latest quote
 	news    map[string]map[string]store.News   // ticker -> id -> News
+	social  map[string]map[string]store.Post   // ticker -> id -> Post
 }
 
 func New() *Store {
@@ -25,6 +26,7 @@ func New() *Store {
 		filings: make(map[string]map[string]store.Filing),
 		quotes:  make(map[string]store.Quote),
 		news:    make(map[string]map[string]store.News),
+		social:  make(map[string]map[string]store.Post),
 	}
 }
 
@@ -68,10 +70,7 @@ func (s *Store) ListFilings(_ context.Context, ticker string, limit int) ([]stor
 		out = append(out, f)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].FiledAt.After(out[j].FiledAt) })
-	if limit > 0 && len(out) > limit {
-		out = out[:limit]
-	}
-	return out, nil
+	return limited(out, limit), nil
 }
 
 func (s *Store) UpsertQuote(_ context.Context, q store.Quote) error {
@@ -112,8 +111,40 @@ func (s *Store) ListNews(_ context.Context, ticker string, limit int) ([]store.N
 		out = append(out, n)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Published.After(out[j].Published) })
-	if limit > 0 && len(out) > limit {
-		out = out[:limit]
+	return limited(out, limit), nil
+}
+
+func (s *Store) SaveSocial(_ context.Context, ticker string, posts []store.Post) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	k := key(ticker)
+	m := s.social[k]
+	if m == nil {
+		m = make(map[string]store.Post)
+		s.social[k] = m
 	}
-	return out, nil
+	for _, p := range posts {
+		m[p.ID] = p // dedupe by id
+	}
+	return nil
+}
+
+func (s *Store) ListSocial(_ context.Context, ticker string, limit int) ([]store.Post, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	m := s.social[key(ticker)]
+	out := make([]store.Post, 0, len(m))
+	for _, p := range m {
+		out = append(out, p)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].CreatedAt.After(out[j].CreatedAt) })
+	return limited(out, limit), nil
+}
+
+// limited returns the first limit elements (limit <= 0 means all).
+func limited[T any](s []T, limit int) []T {
+	if limit > 0 && len(s) > limit {
+		return s[:limit]
+	}
+	return s
 }

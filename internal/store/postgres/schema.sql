@@ -43,3 +43,17 @@ CREATE TABLE IF NOT EXISTS news (
 
 CREATE INDEX IF NOT EXISTS news_ticker_published_idx
     ON news (ticker, published DESC);
+
+CREATE TABLE IF NOT EXISTS social (
+    ticker     text NOT NULL,
+    id         text NOT NULL,
+    source     text,
+    author     text,
+    body       text,
+    url        text,
+    created_at timestamptz,
+    PRIMARY KEY (ticker, id)
+);
+
+CREATE INDEX IF NOT EXISTS social_ticker_created_at_idx
+    ON social (ticker, created_at DESC);

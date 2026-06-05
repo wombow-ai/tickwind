@@ -51,8 +51,10 @@ feature-flagged plugin, never on the critical path. Web only.
 - Phase 0 ✅ · Phase 1 ✅ · Phase 2 ✅ (prices REST + SSE live stream + frontend
   live price + Finnhub news; all auto-disable without keys). Alpaca prices
   LIVE-VERIFIED end-to-end with paper keys (local `.env`, gitignored). Finnhub
-  news also LIVE-VERIFIED (real AAPL headlines). Next: Phase 3 (social —
-  Reddit/StockTwits — + Clipper inbox).
+  news also LIVE-VERIFIED (real AAPL headlines). Phase 3: StockTwits social ✅
+  (live-verified, no key) via `internal/stocktwits` → `Post` store →
+  `/v1/stocks/{ticker}/social` + frontend `SocialFeed` (Discussion section).
+  Next: Reddit (2nd social source) + Clipper inbox.
 - Frontend live price: `web/src/lib/useQuotes.ts` (one shared EventSource for all
   cards) + `PriceTag`/`SessionBadge`; shows "—" gracefully when `/quote` 404s.
 - News: `internal/finnhub` → `News` store → `GET /v1/stocks/{ticker}/news`,
