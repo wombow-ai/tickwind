@@ -22,6 +22,7 @@ func New(st store.Store, log *slog.Logger) http.Handler {
 	mux.HandleFunc("GET /healthz", s.health)
 	mux.HandleFunc("GET /v1/stocks/{ticker}", s.getStock)
 	mux.HandleFunc("GET /v1/stocks/{ticker}/filings", s.getFilings)
+	mux.HandleFunc("GET /v1/stocks/{ticker}/quote", s.getQuote)
 	return s.middleware(mux)
 }
 
@@ -73,6 +74,19 @@ func (s *Server) getFilings(w http.ResponseWriter, r *http.Request) {
 		"count":   len(filings),
 		"filings": filings,
 	})
+}
+
+func (s *Server) getQuote(w http.ResponseWriter, r *http.Request) {
+	ticker := r.PathValue("ticker")
+	q, ok, err := s.store.GetQuote(r.Context(), ticker)
+	switch {
+	case err != nil:
+		writeJSON(w, http.StatusInternalServerError, errBody(err.Error()))
+	case !ok:
+		writeJSON(w, http.StatusNotFound, errBody("no quote yet: "+ticker))
+	default:
+		writeJSON(w, http.StatusOK, q)
+	}
 }
 
 func writeJSON(w http.ResponseWriter, code int, v any) {

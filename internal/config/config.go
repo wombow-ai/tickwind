@@ -14,6 +14,14 @@ type Config struct {
 	StoreBackend   string // memory | postgres
 	DatabaseURL    string // used when StoreBackend == "postgres"
 	IngestEvery    time.Duration
+
+	// Alpaca market data (US prices, all sessions incl. overnight). Empty keys
+	// disable price polling. Use an unfunded/paper account — data only.
+	AlpacaKeyID    string
+	AlpacaSecret   string
+	AlpacaDataURL  string // default https://data.alpaca.markets
+	AlpacaFeed     string // iex (free) | sip | overnight
+	PricePollEvery time.Duration
 }
 
 func Load() Config {
@@ -24,6 +32,11 @@ func Load() Config {
 		StoreBackend:   env("STORE_BACKEND", "memory"),
 		DatabaseURL:    env("DATABASE_URL", "postgres://tickwind:tickwind@localhost:5432/tickwind?sslmode=disable"),
 		IngestEvery:    envDur("INGEST_EVERY", 15*time.Minute),
+		AlpacaKeyID:    env("ALPACA_API_KEY", ""),
+		AlpacaSecret:   env("ALPACA_API_SECRET", ""),
+		AlpacaDataURL:  env("ALPACA_DATA_URL", ""),
+		AlpacaFeed:     env("ALPACA_FEED", "iex"),
+		PricePollEvery: envDur("PRICE_POLL_EVERY", 10*time.Second),
 	}
 }
 

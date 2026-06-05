@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/wombow-ai/tickwind/internal/alpaca"
 	"github.com/wombow-ai/tickwind/internal/api"
 	"github.com/wombow-ai/tickwind/internal/config"
 	"github.com/wombow-ai/tickwind/internal/edgar"
@@ -36,8 +37,17 @@ func main() {
 
 	edgarClient := edgar.New(cfg.EDGARUserAgent)
 	scheduler := ingest.NewScheduler(st, edgarClient, cfg.Watchlist, cfg.IngestEvery, log)
-
 	go scheduler.Run(ctx)
+
+	// Price polling runs only when Alpaca credentials are present.
+	if cfg.AlpacaKeyID != "" && cfg.AlpacaSecret != "" {
+		priceClient := alpaca.New(cfg.AlpacaKeyID, cfg.AlpacaSecret, cfg.AlpacaDataURL, cfg.AlpacaFeed)
+		poller := ingest.NewPricePoller(st, priceClient, cfg.Watchlist, cfg.PricePollEvery, log)
+		go poller.Run(ctx)
+		log.Info("price polling enabled", "every", cfg.PricePollEvery.String(), "feed", cfg.AlpacaFeed)
+	} else {
+		log.Warn("ALPACA_API_KEY/SECRET not set — price polling disabled")
+	}
 
 	srv := &http.Server{
 		Addr:              ":" + cfg.Port,

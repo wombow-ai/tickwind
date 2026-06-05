@@ -20,3 +20,12 @@ CREATE TABLE IF NOT EXISTS filings (
 
 CREATE INDEX IF NOT EXISTS filings_ticker_filed_at_idx
     ON filings (ticker, filed_at DESC);
+
+CREATE TABLE IF NOT EXISTS quotes (
+    ticker     text PRIMARY KEY,
+    price      double precision NOT NULL,
+    session    text,
+    source     text,
+    at         timestamptz,
+    updated_at timestamptz NOT NULL DEFAULT now()
+);

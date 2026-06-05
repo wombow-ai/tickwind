@@ -17,10 +17,15 @@ Status: ✅ done · 🟡 in progress · ⬜ todo
 - ⬜ Verify Postgres end-to-end on the VM (blocked on provisioning the Oracle VM)
 - ⬜ Tests: unit tests for edgar client + store impls (quality debt to pay down)
 
-## Phase 2 — Prices (headline feature)
-- ⬜ Alpaca client: US all-session incl. **overnight** (REST snapshot + WS stream)
-- ⬜ `Quote` type + store; WebSocket push to frontend; live price on per-stock page
+## Phase 2 — Prices (headline feature)  🟡
+- ✅ Alpaca REST client: latest trade incl. extended-hours/overnight (feed-aware;
+      ET session classifier pre/regular/post/overnight); price poller (auto-disabled
+      without keys)
+- ✅ `Quote` type + store (memory + postgres) + `GET /v1/stocks/{ticker}/quote`
+- ⬜ WebSocket: stream Alpaca trades → push live price to the frontend
+- ⬜ Frontend: show live price on watchlist + per-stock page
 - ⬜ Finnhub fallback + company news
+- ⬜ Live-verify with a real Alpaca paper key (blocked on key)
 
 ## Phase 3 — News + Social
 - ⬜ Per-stock unified news/announcement timeline

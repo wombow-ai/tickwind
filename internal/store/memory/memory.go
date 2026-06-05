@@ -15,12 +15,14 @@ type Store struct {
 	mu      sync.RWMutex
 	secs    map[string]store.Security
 	filings map[string]map[string]store.Filing // ticker -> accessionNo -> Filing
+	quotes  map[string]store.Quote             // ticker -> latest quote
 }
 
 func New() *Store {
 	return &Store{
 		secs:    make(map[string]store.Security),
 		filings: make(map[string]map[string]store.Filing),
+		quotes:  make(map[string]store.Quote),
 	}
 }
 
@@ -68,4 +70,18 @@ func (s *Store) ListFilings(_ context.Context, ticker string, limit int) ([]stor
 		out = out[:limit]
 	}
 	return out, nil
+}
+
+func (s *Store) UpsertQuote(_ context.Context, q store.Quote) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.quotes[key(q.Ticker)] = q
+	return nil
+}
+
+func (s *Store) GetQuote(_ context.Context, ticker string) (store.Quote, bool, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	q, ok := s.quotes[key(ticker)]
+	return q, ok, nil
 }

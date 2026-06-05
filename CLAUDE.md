@@ -48,12 +48,16 @@ feature-flagged plugin, never on the critical path. Web only.
 - Full stack (server): `docker compose up -d --build`.
 
 ## Current state (update each iteration)
-- Phase 0 ✅ + Phase 1 code ✅ (Postgres store + Next.js frontend, both verified
-  locally). Next: Phase 2 — Alpaca all-session prices + WebSocket push.
+- Phase 0 ✅ · Phase 1 code ✅ · Phase 2 price layer ✅ (REST). Next in Phase 2:
+  WebSocket live-price push + show price on the frontend + Finnhub news.
+- Prices: Alpaca REST `trades/latest` (feed-aware, all-session ET classifier) →
+  `Quote` in store → `GET /v1/stocks/{ticker}/quote`. Poller auto-disables when
+  `ALPACA_API_KEY/SECRET` are unset, so the app always runs. Needs a real Alpaca
+  paper key to live-verify.
 - Frontend lives in `web/` (Next 16, src-dir layout): `src/app` (pages),
   `src/components`, `src/lib`. Static export to `web/out`. Detail page is
   `/stock?ticker=XYZ` (query param, no dynamic route — keeps export simple).
-- Backend packages: `internal/{config,store,store/memory,store/postgres,edgar,ingest,api}`.
+- Backend packages: `internal/{config,store,store/memory,store/postgres,edgar,alpaca,ingest,api}`.
 
 ## Environment notes (gotchas for future sessions)
 - **Go proxy truncates large module zips** (e.g. `golang.org/x/text`) via

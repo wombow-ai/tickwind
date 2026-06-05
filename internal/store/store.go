@@ -26,6 +26,16 @@ type Filing struct {
 	URL         string    `json:"url"`
 }
 
+// Quote is the latest traded price for a security. It covers all trading
+// sessions — pre-market, regular, after-hours and overnight.
+type Quote struct {
+	Ticker  string    `json:"ticker"`
+	Price   float64   `json:"price"`
+	Session string    `json:"session"` // pre | regular | post | overnight | closed
+	Source  string    `json:"source"`
+	At      time.Time `json:"at"`
+}
+
 // Store is the persistence boundary. Every backend (memory, postgres)
 // implements this so the rest of the app never depends on a driver.
 type Store interface {
@@ -34,4 +44,7 @@ type Store interface {
 
 	SaveFilings(ctx context.Context, ticker string, filings []Filing) error
 	ListFilings(ctx context.Context, ticker string, limit int) ([]Filing, error)
+
+	UpsertQuote(ctx context.Context, q Quote) error
+	GetQuote(ctx context.Context, ticker string) (Quote, bool, error)
 }
