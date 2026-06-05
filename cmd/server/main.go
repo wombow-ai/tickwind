@@ -17,18 +17,25 @@ import (
 	"github.com/wombow-ai/tickwind/internal/ingest"
 	"github.com/wombow-ai/tickwind/internal/store"
 	"github.com/wombow-ai/tickwind/internal/store/memory"
+	"github.com/wombow-ai/tickwind/internal/store/postgres"
 )
 
 func main() {
 	log := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	cfg := config.Load()
 
-	st := newStore(cfg, log)
-	edgarClient := edgar.New(cfg.EDGARUserAgent)
-	scheduler := ingest.NewScheduler(st, edgarClient, cfg.Watchlist, cfg.IngestEvery, log)
-
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+
+	st, closeStore, err := newStore(ctx, cfg, log)
+	if err != nil {
+		log.Error("store init", "err", err)
+		os.Exit(1)
+	}
+	defer closeStore()
+
+	edgarClient := edgar.New(cfg.EDGARUserAgent)
+	scheduler := ingest.NewScheduler(st, edgarClient, cfg.Watchlist, cfg.IngestEvery, log)
 
 	go scheduler.Run(ctx)
 
@@ -53,13 +60,23 @@ func main() {
 	_ = srv.Shutdown(shutdownCtx)
 }
 
-func newStore(cfg config.Config, log *slog.Logger) store.Store {
+// newStore builds the configured store and a cleanup func. A "postgres" backend
+// that fails to initialize is fatal (returns an error) rather than silently
+// falling back, so a misconfigured deployment fails loudly instead of dropping
+// data into memory.
+func newStore(ctx context.Context, cfg config.Config, log *slog.Logger) (store.Store, func(), error) {
 	switch cfg.StoreBackend {
+	case "postgres":
+		pg, err := postgres.New(ctx, cfg.DatabaseURL)
+		if err != nil {
+			return nil, nil, err
+		}
+		log.Info("using postgres store")
+		return pg, pg.Close, nil
 	case "memory":
-		return memory.New()
+		return memory.New(), func() {}, nil
 	default:
-		// Postgres backend lands when we deploy to the server; fall back for now.
-		log.Warn("store backend not yet implemented, using memory", "backend", cfg.StoreBackend)
-		return memory.New()
+		log.Warn("unknown STORE_BACKEND, using memory", "backend", cfg.StoreBackend)
+		return memory.New(), func() {}, nil
 	}
 }

@@ -1,0 +1,135 @@
+/**
+ * Typed client for the Tickwind backend JSON API.
+ *
+ * All requests target {@link API_BASE}, which is read from
+ * `NEXT_PUBLIC_API_BASE` at build time and falls back to the local dev server.
+ * The app is statically exported, so every call here runs in the browser.
+ */
+
+/** Base URL of the Tickwind API (no trailing slash). */
+export const API_BASE: string = (
+  process.env.NEXT_PUBLIC_API_BASE ?? 'http://localhost:8080'
+).replace(/\/+$/, '');
+
+/** A tracked instrument, as returned by `GET /v1/stocks/{ticker}`. */
+export interface Security {
+  ticker: string;
+  /** SEC Central Index Key. Omitted by the API for non-US instruments. */
+  cik?: string;
+  name: string;
+  /** Listing market: `US`, `HK`, or `KR`. */
+  market: string;
+}
+
+/** A regulatory disclosure (e.g. 8-K, 10-Q, Form 4). */
+export interface Filing {
+  ticker: string;
+  /** SEC form type, e.g. `8-K`, `10-Q`, `4`. */
+  form: string;
+  title: string;
+  /** RFC 3339 timestamp of when the filing was filed. */
+  filed_at: string;
+  accession_no: string;
+  /** Canonical SEC URL for the filing. */
+  url: string;
+}
+
+/** Envelope returned by `GET /v1/stocks/{ticker}/filings`. */
+export interface FilingsResponse {
+  ticker: string;
+  count: number;
+  filings: Filing[];
+}
+
+/** Health payload returned by `GET /healthz`. */
+export interface Health {
+  status: string;
+  service: string;
+}
+
+/** Error envelope returned by the API on non-2xx responses. */
+interface ApiErrorBody {
+  error?: string;
+}
+
+/** Error thrown when an API request fails or returns a non-2xx status. */
+export class ApiError extends Error {
+  readonly status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+  }
+}
+
+/**
+ * Performs a typed GET against the API and parses the JSON body.
+ *
+ * @param path Absolute API path beginning with `/`.
+ * @param signal Optional abort signal to cancel the request.
+ * @throws {ApiError} If the network call fails or the status is not 2xx.
+ */
+async function getJson<T>(path: string, signal?: AbortSignal): Promise<T> {
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}${path}`, {
+      headers: {Accept: 'application/json'},
+      signal,
+    });
+  } catch {
+    throw new ApiError(`network error contacting ${API_BASE}${path}`, 0);
+  }
+
+  if (!res.ok) {
+    let detail = res.statusText;
+    try {
+      const body = (await res.json()) as ApiErrorBody;
+      if (body.error) {
+        detail = body.error;
+      }
+    } catch {
+      // Non-JSON error body; fall back to the status text.
+    }
+    throw new ApiError(detail, res.status);
+  }
+
+  return (await res.json()) as T;
+}
+
+/** Normalizes a user-supplied ticker into the API's canonical form. */
+function normalizeTicker(ticker: string): string {
+  return ticker.trim().toUpperCase();
+}
+
+/** Fetches a single security by ticker. */
+export function getStock(
+  ticker: string,
+  signal?: AbortSignal,
+): Promise<Security> {
+  return getJson<Security>(
+    `/v1/stocks/${encodeURIComponent(normalizeTicker(ticker))}`,
+    signal,
+  );
+}
+
+/**
+ * Fetches recent filings for a ticker, most recent first.
+ *
+ * @param limit Maximum number of filings to return (defaults to 25).
+ */
+export function getFilings(
+  ticker: string,
+  limit = 25,
+  signal?: AbortSignal,
+): Promise<FilingsResponse> {
+  const path =
+    `/v1/stocks/${encodeURIComponent(normalizeTicker(ticker))}` +
+    `/filings?limit=${encodeURIComponent(String(limit))}`;
+  return getJson<FilingsResponse>(path, signal);
+}
+
+/** Fetches backend health. */
+export function getHealth(signal?: AbortSignal): Promise<Health> {
+  return getJson<Health>('/healthz', signal);
+}

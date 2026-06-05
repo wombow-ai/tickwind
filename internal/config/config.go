@@ -12,6 +12,7 @@ type Config struct {
 	EDGARUserAgent string
 	Watchlist      []string
 	StoreBackend   string // memory | postgres
+	DatabaseURL    string // used when StoreBackend == "postgres"
 	IngestEvery    time.Duration
 }
 
@@ -21,6 +22,7 @@ func Load() Config {
 		EDGARUserAgent: env("EDGAR_USER_AGENT", "Tickwind/0.1 (contact@tickwind.com)"),
 		Watchlist:      splitCSV(env("WATCHLIST", "AAPL,NVDA,TSLA")),
 		StoreBackend:   env("STORE_BACKEND", "memory"),
+		DatabaseURL:    env("DATABASE_URL", "postgres://tickwind:tickwind@localhost:5432/tickwind?sslmode=disable"),
 		IngestEvery:    envDur("INGEST_EVERY", 15*time.Minute),
 	}
 }
