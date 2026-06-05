@@ -30,6 +30,7 @@ func New(st store.Store, hub QuoteStream, log *slog.Logger) http.Handler {
 	mux.HandleFunc("GET /v1/stocks/{ticker}", s.getStock)
 	mux.HandleFunc("GET /v1/stocks/{ticker}/filings", s.getFilings)
 	mux.HandleFunc("GET /v1/stocks/{ticker}/quote", s.getQuote)
+	mux.HandleFunc("GET /v1/stocks/{ticker}/news", s.getNews)
 	mux.HandleFunc("GET /v1/stream", s.getStream)
 	return s.middleware(mux)
 }
@@ -66,13 +67,7 @@ func (s *Server) getStock(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) getFilings(w http.ResponseWriter, r *http.Request) {
 	ticker := r.PathValue("ticker")
-	limit := 25
-	if q := r.URL.Query().Get("limit"); q != "" {
-		if n, err := strconv.Atoi(q); err == nil && n > 0 {
-			limit = n
-		}
-	}
-	filings, err := s.store.ListFilings(r.Context(), ticker, limit)
+	filings, err := s.store.ListFilings(r.Context(), ticker, queryLimit(r, 25))
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, errBody(err.Error()))
 		return
@@ -95,6 +90,20 @@ func (s *Server) getQuote(w http.ResponseWriter, r *http.Request) {
 	default:
 		writeJSON(w, http.StatusOK, q)
 	}
+}
+
+func (s *Server) getNews(w http.ResponseWriter, r *http.Request) {
+	ticker := r.PathValue("ticker")
+	items, err := s.store.ListNews(r.Context(), ticker, queryLimit(r, 25))
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, errBody(err.Error()))
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ticker": ticker,
+		"count":  len(items),
+		"news":   items,
+	})
 }
 
 // getStream serves live quote updates as Server-Sent Events.
@@ -138,6 +147,16 @@ func (s *Server) getStream(w http.ResponseWriter, r *http.Request) {
 			flusher.Flush()
 		}
 	}
+}
+
+// queryLimit reads a positive ?limit= value, falling back to def.
+func queryLimit(r *http.Request, def int) int {
+	if q := r.URL.Query().Get("limit"); q != "" {
+		if n, err := strconv.Atoi(q); err == nil && n > 0 {
+			return n
+		}
+	}
+	return def
 }
 
 func writeJSON(w http.ResponseWriter, code int, v any) {

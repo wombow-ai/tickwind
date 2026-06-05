@@ -26,8 +26,10 @@ Status: ✅ done · 🟡 in progress · ⬜ todo
       SSE chosen over WebSocket — one-way push, stdlib-only; poller broadcasts)
 - ✅ Frontend: live price on watchlist + per-stock page (single shared EventSource;
       session badge; graceful "—" when no quote)
-- ⬜ Finnhub fallback + company news
-- ⬜ Live-verify with a real Alpaca paper key (blocked on key)
+- ✅ Finnhub company news: client + `News` store (memory + postgres) +
+      `GET /v1/stocks/{ticker}/news` + scheduler ingest; frontend NewsTimeline
+      (per-stock News + Filings sections; auto-disabled without a token)
+- ⬜ Live-verify with real Alpaca + Finnhub keys (blocked on keys)
 
 ## Phase 3 — News + Social
 - ⬜ Per-stock unified news/announcement timeline

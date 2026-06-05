@@ -41,6 +41,29 @@ export interface FilingsResponse {
   filings: Filing[];
 }
 
+/** A company-news article (e.g. from Finnhub). */
+export interface NewsItem {
+  ticker: string;
+  /** Stable upstream identifier for the article. */
+  id: string;
+  headline: string;
+  /** Short blurb; may be empty when the source omits one. */
+  summary: string;
+  /** Publisher name, e.g. `Reuters`. */
+  source: string;
+  /** Canonical URL of the article. */
+  url: string;
+  /** RFC 3339 timestamp of when the article was published. */
+  published: string;
+}
+
+/** Envelope returned by `GET /v1/stocks/{ticker}/news`. */
+export interface NewsResponse {
+  ticker: string;
+  count: number;
+  news: NewsItem[];
+}
+
 /**
  * Trading session a quote belongs to, in US market terms. Unknown values from
  * the backend are tolerated by widening to `string` at the type boundary.
@@ -164,6 +187,22 @@ export function getFilings(
     `/v1/stocks/${encodeURIComponent(normalizeTicker(ticker))}` +
     `/filings?limit=${encodeURIComponent(String(limit))}`;
   return getJson<FilingsResponse>(path, signal);
+}
+
+/**
+ * Fetches recent company news for a ticker, most recent first.
+ *
+ * @param limit Maximum number of articles to return (defaults to 25).
+ */
+export function getNews(
+  ticker: string,
+  limit = 25,
+  signal?: AbortSignal,
+): Promise<NewsResponse> {
+  const path =
+    `/v1/stocks/${encodeURIComponent(normalizeTicker(ticker))}` +
+    `/news?limit=${encodeURIComponent(String(limit))}`;
+  return getJson<NewsResponse>(path, signal);
 }
 
 /** Fetches backend health. */

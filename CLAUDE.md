@@ -48,10 +48,14 @@ feature-flagged plugin, never on the critical path. Web only.
 - Full stack (server): `docker compose up -d --build`.
 
 ## Current state (update each iteration)
-- Phase 0 ✅ · Phase 1 ✅ · Phase 2: REST prices ✅ + SSE live stream ✅ + frontend
-  live price ✅ (EventSource). Next in Phase 2: Finnhub news, then live-verify w/ key.
+- Phase 0 ✅ · Phase 1 ✅ · Phase 2 ✅ (prices REST + SSE live stream + frontend
+  live price + Finnhub news; all auto-disable without keys). Next: Phase 3 (social
+  — Reddit/StockTwits — + Clipper inbox), then live-verify w/ keys.
 - Frontend live price: `web/src/lib/useQuotes.ts` (one shared EventSource for all
   cards) + `PriceTag`/`SessionBadge`; shows "—" gracefully when `/quote` 404s.
+- News: `internal/finnhub` → `News` store → `GET /v1/stocks/{ticker}/news`,
+  ingested on the scheduler (needs `FINNHUB_TOKEN`); frontend `NewsTimeline`.
+- API `?limit=` parsing is shared via `queryLimit` in `internal/api`.
 - Prices: Alpaca REST `trades/latest` (feed-aware, all-session ET classifier) →
   `Quote` in store → `GET /v1/stocks/{ticker}/quote`. Poller auto-disables when
   `ALPACA_API_KEY/SECRET` are unset, so the app always runs. Needs a real Alpaca

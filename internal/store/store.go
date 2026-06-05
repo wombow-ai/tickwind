@@ -36,6 +36,17 @@ type Quote struct {
 	At      time.Time `json:"at"`
 }
 
+// News is a company-news article for a security.
+type News struct {
+	Ticker    string    `json:"ticker"`
+	ID        string    `json:"id"` // source-assigned id, used for dedupe
+	Headline  string    `json:"headline"`
+	Summary   string    `json:"summary"`
+	Source    string    `json:"source"`
+	URL       string    `json:"url"`
+	Published time.Time `json:"published"`
+}
+
 // Store is the persistence boundary. Every backend (memory, postgres)
 // implements this so the rest of the app never depends on a driver.
 type Store interface {
@@ -47,4 +58,7 @@ type Store interface {
 
 	UpsertQuote(ctx context.Context, q Quote) error
 	GetQuote(ctx context.Context, ticker string) (Quote, bool, error)
+
+	SaveNews(ctx context.Context, ticker string, items []News) error
+	ListNews(ctx context.Context, ticker string, limit int) ([]News, error)
 }

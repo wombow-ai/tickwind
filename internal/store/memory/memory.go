@@ -16,6 +16,7 @@ type Store struct {
 	secs    map[string]store.Security
 	filings map[string]map[string]store.Filing // ticker -> accessionNo -> Filing
 	quotes  map[string]store.Quote             // ticker -> latest quote
+	news    map[string]map[string]store.News   // ticker -> id -> News
 }
 
 func New() *Store {
@@ -23,6 +24,7 @@ func New() *Store {
 		secs:    make(map[string]store.Security),
 		filings: make(map[string]map[string]store.Filing),
 		quotes:  make(map[string]store.Quote),
+		news:    make(map[string]map[string]store.News),
 	}
 }
 
@@ -84,4 +86,34 @@ func (s *Store) GetQuote(_ context.Context, ticker string) (store.Quote, bool, e
 	defer s.mu.RUnlock()
 	q, ok := s.quotes[key(ticker)]
 	return q, ok, nil
+}
+
+func (s *Store) SaveNews(_ context.Context, ticker string, items []store.News) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	k := key(ticker)
+	m := s.news[k]
+	if m == nil {
+		m = make(map[string]store.News)
+		s.news[k] = m
+	}
+	for _, n := range items {
+		m[n.ID] = n // dedupe by id
+	}
+	return nil
+}
+
+func (s *Store) ListNews(_ context.Context, ticker string, limit int) ([]store.News, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	m := s.news[key(ticker)]
+	out := make([]store.News, 0, len(m))
+	for _, n := range m {
+		out = append(out, n)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Published.After(out[j].Published) })
+	if limit > 0 && len(out) > limit {
+		out = out[:limit]
+	}
+	return out, nil
 }

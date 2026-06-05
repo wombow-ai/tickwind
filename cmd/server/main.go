@@ -15,6 +15,7 @@ import (
 	"github.com/wombow-ai/tickwind/internal/api"
 	"github.com/wombow-ai/tickwind/internal/config"
 	"github.com/wombow-ai/tickwind/internal/edgar"
+	"github.com/wombow-ai/tickwind/internal/finnhub"
 	"github.com/wombow-ai/tickwind/internal/ingest"
 	"github.com/wombow-ai/tickwind/internal/store"
 	"github.com/wombow-ai/tickwind/internal/store/memory"
@@ -38,8 +39,17 @@ func main() {
 
 	hub := stream.NewHub()
 
+	// News ingestion runs only when a Finnhub token is configured.
+	var newsClient *finnhub.Client
+	if cfg.FinnhubToken != "" {
+		newsClient = finnhub.New(cfg.FinnhubToken)
+		log.Info("finnhub news enabled")
+	} else {
+		log.Warn("FINNHUB_TOKEN not set — news ingestion disabled")
+	}
+
 	edgarClient := edgar.New(cfg.EDGARUserAgent)
-	scheduler := ingest.NewScheduler(st, edgarClient, cfg.Watchlist, cfg.IngestEvery, log)
+	scheduler := ingest.NewScheduler(st, edgarClient, newsClient, cfg.Watchlist, cfg.IngestEvery, log)
 	go scheduler.Run(ctx)
 
 	// Price polling runs only when Alpaca credentials are present.

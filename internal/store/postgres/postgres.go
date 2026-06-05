@@ -158,3 +158,58 @@ func (s *Store) GetQuote(ctx context.Context, ticker string) (store.Quote, bool,
 	}
 	return q, true, nil
 }
+
+// SaveNews upserts news items, deduplicating on (ticker, id).
+func (s *Store) SaveNews(ctx context.Context, ticker string, items []store.News) error {
+	if len(items) == 0 {
+		return nil
+	}
+	const query = `
+INSERT INTO news (ticker, id, headline, summary, source, url, published)
+VALUES ($1, $2, $3, $4, $5, $6, $7)
+ON CONFLICT (ticker, id) DO UPDATE
+SET headline = EXCLUDED.headline, summary = EXCLUDED.summary, source = EXCLUDED.source, url = EXCLUDED.url, published = EXCLUDED.published`
+	batch := &pgx.Batch{}
+	for _, n := range items {
+		batch.Queue(query, ticker, n.ID, n.Headline, n.Summary, n.Source, n.URL, n.Published)
+	}
+	br := s.pool.SendBatch(ctx, batch)
+	defer br.Close()
+	for range items {
+		if _, err := br.Exec(); err != nil {
+			return fmt.Errorf("postgres: save news %s: %w", ticker, err)
+		}
+	}
+	return nil
+}
+
+// ListNews returns news for ticker, newest first. A limit <= 0 means no limit.
+func (s *Store) ListNews(ctx context.Context, ticker string, limit int) ([]store.News, error) {
+	query := `
+SELECT ticker, id, headline, summary, source, url, published
+FROM news WHERE ticker = $1 ORDER BY published DESC`
+	args := []any{ticker}
+	if limit > 0 {
+		query += ` LIMIT $2`
+		args = append(args, limit)
+	}
+
+	rows, err := s.pool.Query(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("postgres: list news %s: %w", ticker, err)
+	}
+	defer rows.Close()
+
+	var out []store.News
+	for rows.Next() {
+		var n store.News
+		if err := rows.Scan(&n.Ticker, &n.ID, &n.Headline, &n.Summary, &n.Source, &n.URL, &n.Published); err != nil {
+			return nil, fmt.Errorf("postgres: scan news %s: %w", ticker, err)
+		}
+		out = append(out, n)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("postgres: iterate news %s: %w", ticker, err)
+	}
+	return out, nil
+}

@@ -29,3 +29,17 @@ CREATE TABLE IF NOT EXISTS quotes (
     at         timestamptz,
     updated_at timestamptz NOT NULL DEFAULT now()
 );
+
+CREATE TABLE IF NOT EXISTS news (
+    ticker    text NOT NULL,
+    id        text NOT NULL,
+    headline  text,
+    summary   text,
+    source    text,
+    url       text,
+    published timestamptz,
+    PRIMARY KEY (ticker, id)
+);
+
+CREATE INDEX IF NOT EXISTS news_ticker_published_idx
+    ON news (ticker, published DESC);

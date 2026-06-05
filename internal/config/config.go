@@ -22,6 +22,9 @@ type Config struct {
 	AlpacaDataURL  string // default https://data.alpaca.markets
 	AlpacaFeed     string // iex (free) | sip | overnight
 	PricePollEvery time.Duration
+
+	// Finnhub company news. Empty token disables news ingestion.
+	FinnhubToken string
 }
 
 func Load() Config {
@@ -37,6 +40,7 @@ func Load() Config {
 		AlpacaDataURL:  env("ALPACA_DATA_URL", ""),
 		AlpacaFeed:     env("ALPACA_FEED", "iex"),
 		PricePollEvery: envDur("PRICE_POLL_EVERY", 10*time.Second),
+		FinnhubToken:   env("FINNHUB_TOKEN", ""),
 	}
 }
 
