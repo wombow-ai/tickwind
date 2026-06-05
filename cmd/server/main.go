@@ -17,6 +17,7 @@ import (
 	"github.com/wombow-ai/tickwind/internal/edgar"
 	"github.com/wombow-ai/tickwind/internal/finnhub"
 	"github.com/wombow-ai/tickwind/internal/ingest"
+	"github.com/wombow-ai/tickwind/internal/reddit"
 	"github.com/wombow-ai/tickwind/internal/stocktwits"
 	"github.com/wombow-ai/tickwind/internal/store"
 	"github.com/wombow-ai/tickwind/internal/store/memory"
@@ -49,9 +50,11 @@ func main() {
 		log.Warn("FINNHUB_TOKEN not set — news ingestion disabled")
 	}
 
+	// Social sources are all public (no key required).
+	social := []ingest.SocialSource{stocktwits.New(), reddit.New()}
+
 	edgarClient := edgar.New(cfg.EDGARUserAgent)
-	socialClient := stocktwits.New() // public API, no key required
-	scheduler := ingest.NewScheduler(st, edgarClient, newsClient, socialClient, cfg.Watchlist, cfg.IngestEvery, log)
+	scheduler := ingest.NewScheduler(st, edgarClient, newsClient, social, cfg.Watchlist, cfg.IngestEvery, log)
 	go scheduler.Run(ctx)
 
 	// Price polling runs only when Alpaca credentials are present.

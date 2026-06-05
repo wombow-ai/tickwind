@@ -1,6 +1,6 @@
 // Package ingest periodically pulls data from sources into the store.
-// Filings (EDGAR), news (Finnhub) and social (StockTwits) refresh on the
-// scheduler; prices have their own faster poller (price.go).
+// Filings (EDGAR), news (Finnhub) and social (StockTwits, Reddit, …) refresh on
+// the scheduler; prices have their own faster poller (price.go).
 package ingest
 
 import (
@@ -10,24 +10,30 @@ import (
 
 	"github.com/wombow-ai/tickwind/internal/edgar"
 	"github.com/wombow-ai/tickwind/internal/finnhub"
-	"github.com/wombow-ai/tickwind/internal/stocktwits"
 	"github.com/wombow-ai/tickwind/internal/store"
 )
 
-type Scheduler struct {
-	store      store.Store
-	edgar      *edgar.Client
-	finnhub    *finnhub.Client    // optional; nil disables news ingestion
-	stocktwits *stocktwits.Client // optional; nil disables social ingestion
-	watchlist  []string
-	every      time.Duration
-	log        *slog.Logger
+// SocialSource is one provider of social posts for a ticker (e.g. StockTwits,
+// Reddit). New sources implement this and are passed to NewScheduler.
+type SocialSource interface {
+	Name() string
+	Posts(ctx context.Context, ticker string, limit int) ([]store.Post, error)
 }
 
-// NewScheduler builds the filings+news+social scheduler. fh and st may be nil
-// to disable news / social respectively.
-func NewScheduler(st store.Store, ec *edgar.Client, fh *finnhub.Client, stw *stocktwits.Client, watchlist []string, every time.Duration, log *slog.Logger) *Scheduler {
-	return &Scheduler{store: st, edgar: ec, finnhub: fh, stocktwits: stw, watchlist: watchlist, every: every, log: log}
+type Scheduler struct {
+	store     store.Store
+	edgar     *edgar.Client
+	finnhub   *finnhub.Client // optional; nil disables news ingestion
+	social    []SocialSource
+	watchlist []string
+	every     time.Duration
+	log       *slog.Logger
+}
+
+// NewScheduler builds the filings+news+social scheduler. fh may be nil to
+// disable news; social may be empty to disable social ingestion.
+func NewScheduler(st store.Store, ec *edgar.Client, fh *finnhub.Client, social []SocialSource, watchlist []string, every time.Duration, log *slog.Logger) *Scheduler {
+	return &Scheduler{store: st, edgar: ec, finnhub: fh, social: social, watchlist: watchlist, every: every, log: log}
 }
 
 // Run blocks until ctx is cancelled, refreshing every `every`.
@@ -87,17 +93,16 @@ func (s *Scheduler) ingestNews(ctx context.Context, ticker string) {
 }
 
 func (s *Scheduler) ingestSocial(ctx context.Context, ticker string) {
-	if s.stocktwits == nil {
-		return
+	for _, src := range s.social {
+		posts, err := src.Posts(ctx, ticker, 30)
+		if err != nil {
+			s.log.Warn("social fetch failed", "source", src.Name(), "ticker", ticker, "err", err)
+			continue
+		}
+		if err := s.store.SaveSocial(ctx, ticker, posts); err != nil {
+			s.log.Warn("save social failed", "source", src.Name(), "ticker", ticker, "err", err)
+			continue
+		}
+		s.log.Info("ingested social", "source", src.Name(), "ticker", ticker, "count", len(posts))
 	}
-	posts, err := s.stocktwits.SymbolStream(ctx, ticker, 30)
-	if err != nil {
-		s.log.Warn("stocktwits fetch failed", "ticker", ticker, "err", err)
-		return
-	}
-	if err := s.store.SaveSocial(ctx, ticker, posts); err != nil {
-		s.log.Warn("save social failed", "ticker", ticker, "err", err)
-		return
-	}
-	s.log.Info("ingested social", "ticker", ticker, "count", len(posts))
 }

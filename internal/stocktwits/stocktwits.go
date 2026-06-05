@@ -25,6 +25,9 @@ func New() *Client {
 	return &Client{http: &http.Client{Timeout: 15 * time.Second}}
 }
 
+// Name identifies the source.
+func (c *Client) Name() string { return "stocktwits" }
+
 type streamResp struct {
 	Messages []struct {
 		ID        int64     `json:"id"`
@@ -36,9 +39,9 @@ type streamResp struct {
 	} `json:"messages"`
 }
 
-// SymbolStream returns up to `limit` recent StockTwits messages for ticker
+// Posts returns up to `limit` recent StockTwits messages for ticker
 // (limit <= 0 returns all returned by the API).
-func (c *Client) SymbolStream(ctx context.Context, ticker string, limit int) ([]store.Post, error) {
+func (c *Client) Posts(ctx context.Context, ticker string, limit int) ([]store.Post, error) {
 	url := fmt.Sprintf("%s/streams/symbol/%s.json", baseURL, ticker)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {

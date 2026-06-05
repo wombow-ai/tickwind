@@ -36,7 +36,9 @@ Status: ✅ done · 🟡 in progress · ⬜ todo
 - ✅ Per-stock unified timeline (News + Discussion + Filings sections)
 - ✅ StockTwits social ingestion + `GET /v1/stocks/{ticker}/social` + Discussion
       feed (live-verified, no key required)
-- ⬜ Reddit ingestion (second social source via the same `Post` store)
+- ✅ Multi-source `SocialSource` interface (StockTwits + Reddit plug in uniformly)
+- 🟡 Reddit ingestion: client done, but public `.json` returns 403 from datacenter
+      IPs → needs OAuth (REDDIT_CLIENT_ID/SECRET) to be reliable (handled gracefully)
 - ⬜ Clipper inbox (paste 小红书/抖音/X links); optional Whisper transcription
 
 ## Phase 4 — Multi-market + polish

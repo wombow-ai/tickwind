@@ -54,7 +54,9 @@ feature-flagged plugin, never on the critical path. Web only.
   news also LIVE-VERIFIED (real AAPL headlines). Phase 3: StockTwits social ✅
   (live-verified, no key) via `internal/stocktwits` → `Post` store →
   `/v1/stocks/{ticker}/social` + frontend `SocialFeed` (Discussion section).
-  Next: Reddit (2nd social source) + Clipper inbox.
+  Social is now multi-source via `ingest.SocialSource` (Name + Posts); StockTwits
+  live, Reddit client done but its public `.json` 403s from datacenter IPs (needs
+  OAuth via REDDIT_CLIENT_ID/SECRET — graceful fallback). Next: Clipper inbox.
 - Frontend live price: `web/src/lib/useQuotes.ts` (one shared EventSource for all
   cards) + `PriceTag`/`SessionBadge`; shows "—" gracefully when `/quote` 404s.
 - News: `internal/finnhub` → `News` store → `GET /v1/stocks/{ticker}/news`,

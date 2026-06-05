@@ -62,7 +62,12 @@ function SocialRow({post}: {post: Post}) {
 
 /** A small pill naming the social source. */
 function SourceBadge({source}: {source: string}) {
-  const label = source === 'stocktwits' ? 'StockTwits' : source;
+  const label =
+    source === 'stocktwits'
+      ? 'StockTwits'
+      : source === 'reddit'
+        ? 'Reddit'
+        : source;
   return (
     <span className="rounded bg-white/5 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-zinc-400">
       {label}
