@@ -19,6 +19,7 @@ import (
 	"github.com/wombow-ai/tickwind/internal/store"
 	"github.com/wombow-ai/tickwind/internal/store/memory"
 	"github.com/wombow-ai/tickwind/internal/store/postgres"
+	"github.com/wombow-ai/tickwind/internal/stream"
 )
 
 func main() {
@@ -35,6 +36,8 @@ func main() {
 	}
 	defer closeStore()
 
+	hub := stream.NewHub()
+
 	edgarClient := edgar.New(cfg.EDGARUserAgent)
 	scheduler := ingest.NewScheduler(st, edgarClient, cfg.Watchlist, cfg.IngestEvery, log)
 	go scheduler.Run(ctx)
@@ -42,7 +45,7 @@ func main() {
 	// Price polling runs only when Alpaca credentials are present.
 	if cfg.AlpacaKeyID != "" && cfg.AlpacaSecret != "" {
 		priceClient := alpaca.New(cfg.AlpacaKeyID, cfg.AlpacaSecret, cfg.AlpacaDataURL, cfg.AlpacaFeed)
-		poller := ingest.NewPricePoller(st, priceClient, cfg.Watchlist, cfg.PricePollEvery, log)
+		poller := ingest.NewPricePoller(st, priceClient, cfg.Watchlist, cfg.PricePollEvery, hub.Publish, log)
 		go poller.Run(ctx)
 		log.Info("price polling enabled", "every", cfg.PricePollEvery.String(), "feed", cfg.AlpacaFeed)
 	} else {
@@ -51,7 +54,7 @@ func main() {
 
 	srv := &http.Server{
 		Addr:              ":" + cfg.Port,
-		Handler:           api.New(st, log),
+		Handler:           api.New(st, hub, log),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 

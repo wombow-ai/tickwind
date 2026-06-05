@@ -22,8 +22,9 @@ Status: ✅ done · 🟡 in progress · ⬜ todo
       ET session classifier pre/regular/post/overnight); price poller (auto-disabled
       without keys)
 - ✅ `Quote` type + store (memory + postgres) + `GET /v1/stocks/{ticker}/quote`
-- ⬜ WebSocket: stream Alpaca trades → push live price to the frontend
-- ⬜ Frontend: show live price on watchlist + per-stock page
+- ✅ Live-price stream `GET /v1/stream` (Server-Sent Events via in-process Hub;
+      SSE chosen over WebSocket — one-way push, stdlib-only; poller broadcasts)
+- 🟡 Frontend: live price on watchlist + per-stock page (EventSource) — in progress
 - ⬜ Finnhub fallback + company news
 - ⬜ Live-verify with a real Alpaca paper key (blocked on key)
 

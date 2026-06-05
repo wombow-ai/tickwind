@@ -3,6 +3,7 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -11,18 +12,25 @@ import (
 	"github.com/wombow-ai/tickwind/internal/store"
 )
 
+// QuoteStream is the subset of the live hub the API needs to stream prices.
+type QuoteStream interface {
+	Subscribe() (<-chan store.Quote, func())
+}
+
 type Server struct {
 	store store.Store
+	hub   QuoteStream
 	log   *slog.Logger
 }
 
-func New(st store.Store, log *slog.Logger) http.Handler {
-	s := &Server{store: st, log: log}
+func New(st store.Store, hub QuoteStream, log *slog.Logger) http.Handler {
+	s := &Server{store: st, hub: hub, log: log}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", s.health)
 	mux.HandleFunc("GET /v1/stocks/{ticker}", s.getStock)
 	mux.HandleFunc("GET /v1/stocks/{ticker}/filings", s.getFilings)
 	mux.HandleFunc("GET /v1/stocks/{ticker}/quote", s.getQuote)
+	mux.HandleFunc("GET /v1/stream", s.getStream)
 	return s.middleware(mux)
 }
 
@@ -86,6 +94,49 @@ func (s *Server) getQuote(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusNotFound, errBody("no quote yet: "+ticker))
 	default:
 		writeJSON(w, http.StatusOK, q)
+	}
+}
+
+// getStream serves live quote updates as Server-Sent Events.
+func (s *Server) getStream(w http.ResponseWriter, r *http.Request) {
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "streaming unsupported", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+
+	// Flush headers immediately so the client (and any proxy) sees the stream
+	// open right away, rather than waiting for the first event.
+	fmt.Fprint(w, ": connected\n\n")
+	flusher.Flush()
+
+	ch, unsubscribe := s.hub.Subscribe()
+	defer unsubscribe()
+
+	keepalive := time.NewTicker(15 * time.Second)
+	defer keepalive.Stop()
+
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		case q, ok := <-ch:
+			if !ok {
+				return
+			}
+			b, err := json.Marshal(q)
+			if err != nil {
+				continue
+			}
+			fmt.Fprintf(w, "event: quote\ndata: %s\n\n", b)
+			flusher.Flush()
+		case <-keepalive.C:
+			fmt.Fprint(w, ": keepalive\n\n")
+			flusher.Flush()
+		}
 	}
 }
 

@@ -10,18 +10,20 @@ import (
 )
 
 // PricePoller periodically fetches the latest all-session price for each
-// watchlist ticker and writes it to the store. It runs only when Alpaca
-// credentials are configured.
+// watchlist ticker, writes it to the store, and publishes it to subscribers. It
+// runs only when Alpaca credentials are configured.
 type PricePoller struct {
 	store     store.Store
 	client    *alpaca.Client
 	watchlist []string
 	every     time.Duration
+	publish   func(store.Quote) // optional; broadcasts to live subscribers
 	log       *slog.Logger
 }
 
-func NewPricePoller(st store.Store, client *alpaca.Client, watchlist []string, every time.Duration, log *slog.Logger) *PricePoller {
-	return &PricePoller{store: st, client: client, watchlist: watchlist, every: every, log: log}
+// NewPricePoller builds a poller. publish may be nil to disable broadcasting.
+func NewPricePoller(st store.Store, client *alpaca.Client, watchlist []string, every time.Duration, publish func(store.Quote), log *slog.Logger) *PricePoller {
+	return &PricePoller{store: st, client: client, watchlist: watchlist, every: every, publish: publish, log: log}
 }
 
 // Run blocks until ctx is cancelled, polling every p.every.
@@ -49,6 +51,9 @@ func (p *PricePoller) poll(ctx context.Context) {
 		if err := p.store.UpsertQuote(ctx, q); err != nil {
 			p.log.Warn("price upsert failed", "ticker", ticker, "err", err)
 			continue
+		}
+		if p.publish != nil {
+			p.publish(q)
 		}
 		p.log.Debug("price", "ticker", ticker, "price", q.Price, "session", q.Session)
 	}

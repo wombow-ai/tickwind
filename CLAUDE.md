@@ -48,12 +48,15 @@ feature-flagged plugin, never on the critical path. Web only.
 - Full stack (server): `docker compose up -d --build`.
 
 ## Current state (update each iteration)
-- Phase 0 ✅ · Phase 1 code ✅ · Phase 2 price layer ✅ (REST). Next in Phase 2:
-  WebSocket live-price push + show price on the frontend + Finnhub news.
+- Phase 0 ✅ · Phase 1 ✅ · Phase 2: REST prices ✅ + SSE live stream ✅; frontend
+  live-price display in progress (subagent). Next in Phase 2: Finnhub news.
 - Prices: Alpaca REST `trades/latest` (feed-aware, all-session ET classifier) →
   `Quote` in store → `GET /v1/stocks/{ticker}/quote`. Poller auto-disables when
   `ALPACA_API_KEY/SECRET` are unset, so the app always runs. Needs a real Alpaca
   paper key to live-verify.
+- Live push: `GET /v1/stream` = Server-Sent Events via `internal/stream.Hub`
+  (chose SSE over WebSocket — one-way, stdlib-only). Poller publishes each quote;
+  handler sends an initial `: connected` so headers flush immediately.
 - Frontend lives in `web/` (Next 16, src-dir layout): `src/app` (pages),
   `src/components`, `src/lib`. Static export to `web/out`. Detail page is
   `/stock?ticker=XYZ` (query param, no dynamic route — keeps export simple).
