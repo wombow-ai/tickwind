@@ -1,0 +1,37 @@
+# Full stack for the server (Hetzner / Oracle). Local dev can skip this and
+# just `make run` (memory store). Postgres image bundles TimescaleDB + pgvector.
+services:
+  api:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      STORE_BACKEND: postgres
+      DATABASE_URL: postgres://tickwind:tickwind@postgres:5432/tickwind?sslmode=disable
+      REDIS_URL: redis://redis:6379
+    ports:
+      - "8080:8080"
+    depends_on:
+      - postgres
+      - redis
+
+  postgres:
+    image: timescale/timescaledb-ha:pg17   # includes timescaledb + pgvector
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: tickwind
+      POSTGRES_PASSWORD: tickwind
+      POSTGRES_DB: tickwind
+    volumes:
+      - pgdata:/home/postgres/pgdata/data
+    ports:
+      - "5432:5432"
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+
+volumes:
+  pgdata:

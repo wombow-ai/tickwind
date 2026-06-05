@@ -1,0 +1,29 @@
+# binaries
+/bin/
+/out/
+tickwind
+*.exe
+
+# env / secrets
+.env
+.env.local
+*.local
+
+# os
+.DS_Store
+Thumbs.db
+
+# go
+/vendor/
+
+# node / next
+/web/node_modules/
+/web/.next/
+/web/out/
+/web/.turbo/
+
+# data / db
+/data/
+*.db
+*.sqlite
+*.sqlite3
