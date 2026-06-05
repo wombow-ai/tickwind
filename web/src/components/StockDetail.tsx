@@ -1,6 +1,6 @@
 'use client';
 
-import type {ReactNode} from 'react';
+import {useState, type ReactNode} from 'react';
 import Link from 'next/link';
 import {useSearchParams} from 'next/navigation';
 import {
@@ -19,6 +19,7 @@ import {StockHeader} from '@/components/StockHeader';
 import {FilingsTimeline} from '@/components/FilingsTimeline';
 import {NewsTimeline} from '@/components/NewsTimeline';
 import {SocialFeed} from '@/components/SocialFeed';
+import {ClipInput} from '@/components/ClipInput';
 import {EmptyState, ErrorState, LoadingState} from '@/components/states';
 
 /** Combined payload for the detail page. */
@@ -40,9 +41,9 @@ const SOCIAL_LIMIT = 30;
 
 /**
  * Detail view for a single stock. Reads `ticker` from the URL query, fetches
- * the security and its news, discussion and filings, and renders a header plus
- * the three timelines. Must be rendered inside a `<Suspense>` boundary because
- * it calls {@link useSearchParams} (required for static export).
+ * the security and its news, discussion, saved links and filings, and renders a
+ * header plus those sections. Must be rendered inside a `<Suspense>` boundary
+ * because it calls {@link useSearchParams} (required for static export).
  */
 export function StockDetail() {
   const params = useSearchParams();
@@ -58,7 +59,9 @@ export function StockDetail() {
     );
   }
 
-  return <StockDetailBody ticker={ticker} />;
+  // Key by ticker so per-ticker local state (e.g. newly clipped links) resets
+  // cleanly when navigating between stocks.
+  return <StockDetailBody key={ticker} ticker={ticker} />;
 }
 
 /** Fetches and renders detail content for a known ticker. */
@@ -66,7 +69,7 @@ function StockDetailBody({ticker}: {ticker: string}) {
   const state = useAsync<StockDetailData>(
     async signal => {
       // Fetch the security first; if it 404s the catch surfaces a clear error
-      // rather than confusing empty lists. The timelines are independent, so
+      // rather than confusing empty lists. The sections are independent, so
       // fetch them together once the ticker is known to exist.
       const security = await getStock(ticker, signal);
       const [newsRes, socialRes, filingsRes] = await Promise.all([
@@ -86,6 +89,9 @@ function StockDetailBody({ticker}: {ticker: string}) {
   const quotes = useQuotes([ticker]);
   const quote = quotes.get(ticker);
 
+  // Links clipped this session, shown immediately without a refetch.
+  const [addedClips, setAddedClips] = useState<Post[]>([]);
+
   switch (state.status) {
     case 'loading':
       return <LoadingState label={`Loading ${ticker}…`} />;
@@ -97,7 +103,11 @@ function StockDetailBody({ticker}: {ticker: string}) {
           action={<BackLink />}
         />
       );
-    case 'success':
+    case 'success': {
+      const fetchedClips = state.data.social.filter(p => p.source === 'clip');
+      const discussion = state.data.social.filter(p => p.source !== 'clip');
+      const clips = [...addedClips, ...fetchedClips];
+
       return (
         <div className="space-y-8">
           <StockHeader security={state.data.security} quote={quote} />
@@ -113,15 +123,32 @@ function StockDetailBody({ticker}: {ticker: string}) {
             )}
           </Section>
 
-          <Section title="Discussion" count={state.data.social.length}>
-            {state.data.social.length === 0 ? (
+          <Section title="Discussion" count={discussion.length}>
+            {discussion.length === 0 ? (
               <EmptyState
                 title="No discussion yet"
                 message="The backend hasn't ingested any social posts for this ticker."
               />
             ) : (
-              <SocialFeed posts={state.data.social} />
+              <SocialFeed posts={discussion} />
             )}
+          </Section>
+
+          <Section title="Saved links" count={clips.length}>
+            <div className="space-y-4">
+              <ClipInput
+                ticker={ticker}
+                onClipped={post => setAddedClips(prev => [post, ...prev])}
+              />
+              {clips.length === 0 ? (
+                <EmptyState
+                  title="No saved links"
+                  message="Paste a link above to save it to this stock."
+                />
+              ) : (
+                <SocialFeed posts={clips} />
+              )}
+            </div>
           </Section>
 
           <Section title="Filings" count={state.data.filings.length}>
@@ -136,6 +163,7 @@ function StockDetailBody({ticker}: {ticker: string}) {
           </Section>
         </div>
       );
+    }
   }
 }
 

@@ -56,7 +56,10 @@ feature-flagged plugin, never on the critical path. Web only.
   `/v1/stocks/{ticker}/social` + frontend `SocialFeed` (Discussion section).
   Social is now multi-source via `ingest.SocialSource` (Name + Posts); StockTwits
   live, Reddit client done but its public `.json` 403s from datacenter IPs (needs
-  OAuth via REDDIT_CLIENT_ID/SECRET — graceful fallback). Next: Clipper inbox.
+  OAuth via REDDIT_CLIENT_ID/SECRET — graceful fallback). Clipper inbox ✅
+  (`POST /v1/stocks/{ticker}/clip` → title fetch → `clip` Post; frontend paste box
+  + Saved-links section). Phase 3 done. Next: Phase 4 (HK/KR markets, optional LLM
+  plugin, single-user auth + persisted watchlist + polish).
 - Frontend live price: `web/src/lib/useQuotes.ts` (one shared EventSource for all
   cards) + `PriceTag`/`SessionBadge`; shows "—" gracefully when `/quote` 404s.
 - News: `internal/finnhub` → `News` store → `GET /v1/stocks/{ticker}/news`,

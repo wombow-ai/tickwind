@@ -32,14 +32,16 @@ Status: ✅ done · 🟡 in progress · ⬜ todo
 - ✅ Live-verified Alpaca prices end-to-end (AAPL/NVDA, regular session, live SSE push)
 - ✅ Live-verified Finnhub news end-to-end (AAPL: 243 articles via /news)
 
-## Phase 3 — News + Social  🟡
-- ✅ Per-stock unified timeline (News + Discussion + Filings sections)
+## Phase 3 — News + Social  ✅
+- ✅ Per-stock unified timeline (News + Discussion + Saved links + Filings)
 - ✅ StockTwits social ingestion + `GET /v1/stocks/{ticker}/social` + Discussion
       feed (live-verified, no key required)
 - ✅ Multi-source `SocialSource` interface (StockTwits + Reddit plug in uniformly)
 - 🟡 Reddit ingestion: client done, but public `.json` returns 403 from datacenter
       IPs → needs OAuth (REDDIT_CLIENT_ID/SECRET) to be reliable (handled gracefully)
-- ⬜ Clipper inbox (paste 小红书/抖音/X links); optional Whisper transcription
+- ✅ Clipper inbox: `POST /v1/stocks/{ticker}/clip` fetches the page title and
+      saves it as a `clip` post; frontend paste box + "Saved links" section
+      (video/Whisper transcription deferred to Phase 4)
 
 ## Phase 4 — Multi-market + polish
 - ⬜ HK (HKEXnews) + KR (DART) filings; later Futu/KIS realtime (isolated, data-only)

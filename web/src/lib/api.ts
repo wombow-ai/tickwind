@@ -165,6 +165,44 @@ async function getJson<T>(path: string, signal?: AbortSignal): Promise<T> {
   return (await res.json()) as T;
 }
 
+/**
+ * Performs a typed POST with a JSON body and parses the JSON response.
+ *
+ * @throws {ApiError} If the network call fails or the status is not 2xx.
+ */
+async function postJson<T>(
+  path: string,
+  body: unknown,
+  signal?: AbortSignal,
+): Promise<T> {
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}${path}`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json', Accept: 'application/json'},
+      body: JSON.stringify(body),
+      signal,
+    });
+  } catch {
+    throw new ApiError(`network error contacting ${API_BASE}${path}`, 0);
+  }
+
+  if (!res.ok) {
+    let detail = res.statusText;
+    try {
+      const data = (await res.json()) as ApiErrorBody;
+      if (data.error) {
+        detail = data.error;
+      }
+    } catch {
+      // Non-JSON error body; fall back to the status text.
+    }
+    throw new ApiError(detail, res.status);
+  }
+
+  return (await res.json()) as T;
+}
+
 /** Normalizes a user-supplied ticker into the API's canonical form. */
 function normalizeTicker(ticker: string): string {
   return ticker.trim().toUpperCase();
@@ -240,6 +278,22 @@ export function getSocial(
     `/v1/stocks/${encodeURIComponent(normalizeTicker(ticker))}` +
     `/social?limit=${encodeURIComponent(String(limit))}`;
   return getJson<SocialResponse>(path, signal);
+}
+
+/**
+ * Saves a pasted link to a ticker's feed (the "clipper"). The backend fetches
+ * the page title and stores it as a `clip` post; the created post is returned.
+ */
+export function clipLink(
+  ticker: string,
+  url: string,
+  signal?: AbortSignal,
+): Promise<Post> {
+  return postJson<Post>(
+    `/v1/stocks/${encodeURIComponent(normalizeTicker(ticker))}/clip`,
+    {url},
+    signal,
+  );
 }
 
 /** Fetches backend health. */

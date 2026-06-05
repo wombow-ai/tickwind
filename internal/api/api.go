@@ -4,11 +4,15 @@ package api
 import (
 	"encoding/json"
 	"fmt"
+	"hash/fnv"
+	"io"
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
+	"github.com/wombow-ai/tickwind/internal/clip"
 	"github.com/wombow-ai/tickwind/internal/store"
 )
 
@@ -20,11 +24,12 @@ type QuoteStream interface {
 type Server struct {
 	store store.Store
 	hub   QuoteStream
+	clip  *clip.Fetcher
 	log   *slog.Logger
 }
 
 func New(st store.Store, hub QuoteStream, log *slog.Logger) http.Handler {
-	s := &Server{store: st, hub: hub, log: log}
+	s := &Server{store: st, hub: hub, clip: clip.NewFetcher(), log: log}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", s.health)
 	mux.HandleFunc("GET /v1/stocks/{ticker}", s.getStock)
@@ -32,6 +37,7 @@ func New(st store.Store, hub QuoteStream, log *slog.Logger) http.Handler {
 	mux.HandleFunc("GET /v1/stocks/{ticker}/quote", s.getQuote)
 	mux.HandleFunc("GET /v1/stocks/{ticker}/news", s.getNews)
 	mux.HandleFunc("GET /v1/stocks/{ticker}/social", s.getSocial)
+	mux.HandleFunc("POST /v1/stocks/{ticker}/clip", s.postClip)
 	mux.HandleFunc("GET /v1/stream", s.getStream)
 	return s.middleware(mux)
 }
@@ -40,6 +46,8 @@ func (s *Server) middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
 			return
@@ -119,6 +127,48 @@ func (s *Server) getSocial(w http.ResponseWriter, r *http.Request) {
 		"count":  len(posts),
 		"posts":  posts,
 	})
+}
+
+// postClip saves a pasted link to the ticker's feed as a clip Post. It fetches
+// the page title (best-effort) and stores it under source "clip".
+func (s *Server) postClip(w http.ResponseWriter, r *http.Request) {
+	ticker := r.PathValue("ticker")
+
+	var req struct {
+		URL string `json:"url"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 8<<10)).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, errBody("invalid request body"))
+		return
+	}
+	link := strings.TrimSpace(req.URL)
+	if link == "" {
+		writeJSON(w, http.StatusBadRequest, errBody("a url is required"))
+		return
+	}
+
+	title, err := s.clip.Title(r.Context(), link)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, errBody(err.Error()))
+		return
+	}
+
+	h := fnv.New64a()
+	_, _ = h.Write([]byte(link))
+	post := store.Post{
+		Ticker:    ticker,
+		ID:        fmt.Sprintf("clip:%x", h.Sum64()),
+		Source:    "clip",
+		Author:    "you",
+		Body:      title,
+		URL:       link,
+		CreatedAt: time.Now().UTC(),
+	}
+	if err := s.store.SaveSocial(r.Context(), ticker, []store.Post{post}); err != nil {
+		writeJSON(w, http.StatusInternalServerError, errBody(err.Error()))
+		return
+	}
+	writeJSON(w, http.StatusCreated, post)
 }
 
 // getStream serves live quote updates as Server-Sent Events.
