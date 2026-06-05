@@ -17,7 +17,7 @@ Status: ✅ done · 🟡 in progress · ⬜ todo
 - ⬜ Verify Postgres end-to-end on the VM (blocked on provisioning the Oracle VM)
 - ⬜ Tests: unit tests for edgar client + store impls (quality debt to pay down)
 
-## Phase 2 — Prices (headline feature)  🟡
+## Phase 2 — Prices + News  ✅
 - ✅ Alpaca REST client: latest trade incl. extended-hours/overnight (feed-aware;
       ET session classifier pre/regular/post/overnight); price poller (auto-disabled
       without keys)
@@ -30,7 +30,7 @@ Status: ✅ done · 🟡 in progress · ⬜ todo
       `GET /v1/stocks/{ticker}/news` + scheduler ingest; frontend NewsTimeline
       (per-stock News + Filings sections; auto-disabled without a token)
 - ✅ Live-verified Alpaca prices end-to-end (AAPL/NVDA, regular session, live SSE push)
-- ⬜ Live-verify Finnhub news (needs FINNHUB_TOKEN)
+- ✅ Live-verified Finnhub news end-to-end (AAPL: 243 articles via /news)
 
 ## Phase 3 — News + Social
 - ⬜ Per-stock unified news/announcement timeline
