@@ -58,8 +58,10 @@ feature-flagged plugin, never on the critical path. Web only.
   live, Reddit client done but its public `.json` 403s from datacenter IPs (needs
   OAuth via REDDIT_CLIENT_ID/SECRET — graceful fallback). Clipper inbox ✅
   (`POST /v1/stocks/{ticker}/clip` → title fetch → `clip` Post; frontend paste box
-  + Saved-links section). Phase 3 done. Next: Phase 4 (HK/KR markets, optional LLM
-  plugin, single-user auth + persisted watchlist + polish).
+  + Saved-links section). Phase 3 done. Phase 4 started: persisted editable
+  watchlist ✅ (`/v1/watchlist` CRUD; scheduler + poller read it live, seeded from
+  WATCHLIST; frontend add/remove board). Next in Phase 4: HK/KR FilingSource (needs
+  DART key + HKEXnews scraping — deferred), optional LLM plugin, auth + polish.
 - Frontend live price: `web/src/lib/useQuotes.ts` (one shared EventSource for all
   cards) + `PriceTag`/`SessionBadge`; shows "—" gracefully when `/quote` 404s.
 - News: `internal/finnhub` → `News` store → `GET /v1/stocks/{ticker}/news`,

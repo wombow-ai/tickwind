@@ -1,6 +1,8 @@
 // Package ingest periodically pulls data from sources into the store.
 // Filings (EDGAR), news (Finnhub) and social (StockTwits, Reddit, …) refresh on
-// the scheduler; prices have their own faster poller (price.go).
+// the scheduler; prices have their own faster poller (price.go). The set of
+// tickers is read from the store each cycle, so watchlist edits take effect
+// without a restart.
 package ingest
 
 import (
@@ -21,19 +23,18 @@ type SocialSource interface {
 }
 
 type Scheduler struct {
-	store     store.Store
-	edgar     *edgar.Client
-	finnhub   *finnhub.Client // optional; nil disables news ingestion
-	social    []SocialSource
-	watchlist []string
-	every     time.Duration
-	log       *slog.Logger
+	store   store.Store
+	edgar   *edgar.Client
+	finnhub *finnhub.Client // optional; nil disables news ingestion
+	social  []SocialSource
+	every   time.Duration
+	log     *slog.Logger
 }
 
 // NewScheduler builds the filings+news+social scheduler. fh may be nil to
 // disable news; social may be empty to disable social ingestion.
-func NewScheduler(st store.Store, ec *edgar.Client, fh *finnhub.Client, social []SocialSource, watchlist []string, every time.Duration, log *slog.Logger) *Scheduler {
-	return &Scheduler{store: st, edgar: ec, finnhub: fh, social: social, watchlist: watchlist, every: every, log: log}
+func NewScheduler(st store.Store, ec *edgar.Client, fh *finnhub.Client, social []SocialSource, every time.Duration, log *slog.Logger) *Scheduler {
+	return &Scheduler{store: st, edgar: ec, finnhub: fh, social: social, every: every, log: log}
 }
 
 // Run blocks until ctx is cancelled, refreshing every `every`.
@@ -52,7 +53,12 @@ func (s *Scheduler) Run(ctx context.Context) {
 }
 
 func (s *Scheduler) runOnce(ctx context.Context) {
-	for _, ticker := range s.watchlist {
+	tickers, err := s.store.Watchlist(ctx)
+	if err != nil {
+		s.log.Warn("watchlist read failed", "err", err)
+		return
+	}
+	for _, ticker := range tickers {
 		s.ingestFilings(ctx, ticker)
 		s.ingestNews(ctx, ticker)
 		s.ingestSocial(ctx, ticker)

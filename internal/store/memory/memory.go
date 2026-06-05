@@ -12,12 +12,13 @@ import (
 )
 
 type Store struct {
-	mu      sync.RWMutex
-	secs    map[string]store.Security
-	filings map[string]map[string]store.Filing // ticker -> accessionNo -> Filing
-	quotes  map[string]store.Quote             // ticker -> latest quote
-	news    map[string]map[string]store.News   // ticker -> id -> News
-	social  map[string]map[string]store.Post   // ticker -> id -> Post
+	mu        sync.RWMutex
+	secs      map[string]store.Security
+	filings   map[string]map[string]store.Filing // ticker -> accessionNo -> Filing
+	quotes    map[string]store.Quote             // ticker -> latest quote
+	news      map[string]map[string]store.News   // ticker -> id -> News
+	social    map[string]map[string]store.Post   // ticker -> id -> Post
+	watchlist []string                           // tracked tickers, insertion order
 }
 
 func New() *Store {
@@ -30,7 +31,7 @@ func New() *Store {
 	}
 }
 
-func key(ticker string) string { return strings.ToUpper(ticker) }
+func key(ticker string) string { return strings.ToUpper(strings.TrimSpace(ticker)) }
 
 func (s *Store) UpsertSecurity(_ context.Context, sec store.Security) error {
 	s.mu.Lock()
@@ -139,6 +140,42 @@ func (s *Store) ListSocial(_ context.Context, ticker string, limit int) ([]store
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].CreatedAt.After(out[j].CreatedAt) })
 	return limited(out, limit), nil
+}
+
+func (s *Store) Watchlist(_ context.Context) ([]string, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return append([]string(nil), s.watchlist...), nil
+}
+
+func (s *Store) AddToWatchlist(_ context.Context, ticker string) error {
+	t := key(ticker)
+	if t == "" {
+		return nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, x := range s.watchlist {
+		if x == t {
+			return nil
+		}
+	}
+	s.watchlist = append(s.watchlist, t)
+	return nil
+}
+
+func (s *Store) RemoveFromWatchlist(_ context.Context, ticker string) error {
+	t := key(ticker)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	next := make([]string, 0, len(s.watchlist))
+	for _, x := range s.watchlist {
+		if x != t {
+			next = append(next, x)
+		}
+	}
+	s.watchlist = next
+	return nil
 }
 
 // limited returns the first limit elements (limit <= 0 means all).

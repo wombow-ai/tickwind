@@ -39,6 +39,12 @@ func main() {
 	}
 	defer closeStore()
 
+	// Seed the watchlist from WATCHLIST on first run; thereafter it's edited via
+	// the API and persisted in the store.
+	if err := seedWatchlist(ctx, st, cfg.Watchlist, log); err != nil {
+		log.Warn("watchlist seed failed", "err", err)
+	}
+
 	hub := stream.NewHub()
 
 	// News ingestion runs only when a Finnhub token is configured.
@@ -54,13 +60,13 @@ func main() {
 	social := []ingest.SocialSource{stocktwits.New(), reddit.New()}
 
 	edgarClient := edgar.New(cfg.EDGARUserAgent)
-	scheduler := ingest.NewScheduler(st, edgarClient, newsClient, social, cfg.Watchlist, cfg.IngestEvery, log)
+	scheduler := ingest.NewScheduler(st, edgarClient, newsClient, social, cfg.IngestEvery, log)
 	go scheduler.Run(ctx)
 
 	// Price polling runs only when Alpaca credentials are present.
 	if cfg.AlpacaKeyID != "" && cfg.AlpacaSecret != "" {
 		priceClient := alpaca.New(cfg.AlpacaKeyID, cfg.AlpacaSecret, cfg.AlpacaDataURL, cfg.AlpacaFeed)
-		poller := ingest.NewPricePoller(st, priceClient, cfg.Watchlist, cfg.PricePollEvery, hub.Publish, log)
+		poller := ingest.NewPricePoller(st, priceClient, cfg.PricePollEvery, hub.Publish, log)
 		go poller.Run(ctx)
 		log.Info("price polling enabled", "every", cfg.PricePollEvery.String(), "feed", cfg.AlpacaFeed)
 	} else {
@@ -74,7 +80,7 @@ func main() {
 	}
 
 	go func() {
-		log.Info("tickwind listening", "addr", srv.Addr, "store", cfg.StoreBackend, "watchlist", cfg.Watchlist)
+		log.Info("tickwind listening", "addr", srv.Addr, "store", cfg.StoreBackend)
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Error("server error", "err", err)
 			stop()
@@ -86,6 +92,24 @@ func main() {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	_ = srv.Shutdown(shutdownCtx)
+}
+
+// seedWatchlist populates the watchlist with defaults only when it is empty.
+func seedWatchlist(ctx context.Context, st store.Store, defaults []string, log *slog.Logger) error {
+	existing, err := st.Watchlist(ctx)
+	if err != nil {
+		return err
+	}
+	if len(existing) > 0 {
+		return nil
+	}
+	for _, t := range defaults {
+		if err := st.AddToWatchlist(ctx, t); err != nil {
+			return err
+		}
+	}
+	log.Info("seeded watchlist", "tickers", defaults)
+	return nil
 }
 
 // newStore builds the configured store and a cleanup func. A "postgres" backend

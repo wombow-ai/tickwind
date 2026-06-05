@@ -75,4 +75,9 @@ type Store interface {
 
 	SaveSocial(ctx context.Context, ticker string, posts []Post) error
 	ListSocial(ctx context.Context, ticker string, limit int) ([]Post, error)
+
+	// Watchlist is the user's tracked tickers, in insertion order.
+	Watchlist(ctx context.Context) ([]string, error)
+	AddToWatchlist(ctx context.Context, ticker string) error
+	RemoveFromWatchlist(ctx context.Context, ticker string) error
 }

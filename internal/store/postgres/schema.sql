@@ -57,3 +57,8 @@ CREATE TABLE IF NOT EXISTS social (
 
 CREATE INDEX IF NOT EXISTS social_ticker_created_at_idx
     ON social (ticker, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS watchlist (
+    ticker   text PRIMARY KEY,
+    added_at timestamptz NOT NULL DEFAULT now()
+);

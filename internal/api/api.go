@@ -32,6 +32,9 @@ func New(st store.Store, hub QuoteStream, log *slog.Logger) http.Handler {
 	s := &Server{store: st, hub: hub, clip: clip.NewFetcher(), log: log}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", s.health)
+	mux.HandleFunc("GET /v1/watchlist", s.getWatchlist)
+	mux.HandleFunc("POST /v1/watchlist", s.postWatchlist)
+	mux.HandleFunc("DELETE /v1/watchlist/{ticker}", s.deleteWatchlist)
 	mux.HandleFunc("GET /v1/stocks/{ticker}", s.getStock)
 	mux.HandleFunc("GET /v1/stocks/{ticker}/filings", s.getFilings)
 	mux.HandleFunc("GET /v1/stocks/{ticker}/quote", s.getQuote)
@@ -46,7 +49,7 @@ func (s *Server) middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
@@ -59,6 +62,52 @@ func (s *Server) middleware(next http.Handler) http.Handler {
 
 func (s *Server) health(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "service": "tickwind"})
+}
+
+func (s *Server) getWatchlist(w http.ResponseWriter, r *http.Request) {
+	s.writeWatchlist(w, r, http.StatusOK)
+}
+
+func (s *Server) postWatchlist(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Ticker string `json:"ticker"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<10)).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, errBody("invalid request body"))
+		return
+	}
+	ticker := strings.ToUpper(strings.TrimSpace(req.Ticker))
+	if ticker == "" {
+		writeJSON(w, http.StatusBadRequest, errBody("a ticker is required"))
+		return
+	}
+	if err := s.store.AddToWatchlist(r.Context(), ticker); err != nil {
+		writeJSON(w, http.StatusInternalServerError, errBody(err.Error()))
+		return
+	}
+	s.writeWatchlist(w, r, http.StatusCreated)
+}
+
+func (s *Server) deleteWatchlist(w http.ResponseWriter, r *http.Request) {
+	ticker := strings.ToUpper(strings.TrimSpace(r.PathValue("ticker")))
+	if err := s.store.RemoveFromWatchlist(r.Context(), ticker); err != nil {
+		writeJSON(w, http.StatusInternalServerError, errBody(err.Error()))
+		return
+	}
+	s.writeWatchlist(w, r, http.StatusOK)
+}
+
+// writeWatchlist responds with the current watchlist at the given status.
+func (s *Server) writeWatchlist(w http.ResponseWriter, r *http.Request, code int) {
+	tickers, err := s.store.Watchlist(r.Context())
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, errBody(err.Error()))
+		return
+	}
+	if tickers == nil {
+		tickers = []string{}
+	}
+	writeJSON(w, code, map[string]any{"tickers": tickers})
 }
 
 func (s *Server) getStock(w http.ResponseWriter, r *http.Request) {

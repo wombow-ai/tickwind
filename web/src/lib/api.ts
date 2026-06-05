@@ -203,6 +203,39 @@ async function postJson<T>(
   return (await res.json()) as T;
 }
 
+/**
+ * Performs a typed DELETE and parses the JSON response.
+ *
+ * @throws {ApiError} If the network call fails or the status is not 2xx.
+ */
+async function deleteJson<T>(path: string, signal?: AbortSignal): Promise<T> {
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}${path}`, {
+      method: 'DELETE',
+      headers: {Accept: 'application/json'},
+      signal,
+    });
+  } catch {
+    throw new ApiError(`network error contacting ${API_BASE}${path}`, 0);
+  }
+
+  if (!res.ok) {
+    let detail = res.statusText;
+    try {
+      const data = (await res.json()) as ApiErrorBody;
+      if (data.error) {
+        detail = data.error;
+      }
+    } catch {
+      // Non-JSON error body; fall back to the status text.
+    }
+    throw new ApiError(detail, res.status);
+  }
+
+  return (await res.json()) as T;
+}
+
 /** Normalizes a user-supplied ticker into the API's canonical form. */
 function normalizeTicker(ticker: string): string {
   return ticker.trim().toUpperCase();
@@ -299,4 +332,33 @@ export function clipLink(
 /** Fetches backend health. */
 export function getHealth(signal?: AbortSignal): Promise<Health> {
   return getJson<Health>('/healthz', signal);
+}
+
+/** Envelope returned by the watchlist endpoints. */
+export interface WatchlistResponse {
+  tickers: string[];
+}
+
+/** Fetches the tracked watchlist. */
+export function getWatchlist(signal?: AbortSignal): Promise<WatchlistResponse> {
+  return getJson<WatchlistResponse>('/v1/watchlist', signal);
+}
+
+/** Adds a ticker to the watchlist; returns the updated list. */
+export function addToWatchlist(
+  ticker: string,
+  signal?: AbortSignal,
+): Promise<WatchlistResponse> {
+  return postJson<WatchlistResponse>('/v1/watchlist', {ticker}, signal);
+}
+
+/** Removes a ticker from the watchlist; returns the updated list. */
+export function removeFromWatchlist(
+  ticker: string,
+  signal?: AbortSignal,
+): Promise<WatchlistResponse> {
+  return deleteJson<WatchlistResponse>(
+    `/v1/watchlist/${encodeURIComponent(normalizeTicker(ticker))}`,
+    signal,
+  );
 }

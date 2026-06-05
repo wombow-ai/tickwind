@@ -268,3 +268,42 @@ FROM social WHERE ticker = $1 ORDER BY created_at DESC`
 	}
 	return out, nil
 }
+
+// Watchlist returns the tracked tickers in insertion order.
+func (s *Store) Watchlist(ctx context.Context) ([]string, error) {
+	rows, err := s.pool.Query(ctx, `SELECT ticker FROM watchlist ORDER BY added_at`)
+	if err != nil {
+		return nil, fmt.Errorf("postgres: watchlist: %w", err)
+	}
+	defer rows.Close()
+
+	var out []string
+	for rows.Next() {
+		var t string
+		if err := rows.Scan(&t); err != nil {
+			return nil, fmt.Errorf("postgres: scan watchlist: %w", err)
+		}
+		out = append(out, t)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("postgres: iterate watchlist: %w", err)
+	}
+	return out, nil
+}
+
+// AddToWatchlist adds ticker if not already present.
+func (s *Store) AddToWatchlist(ctx context.Context, ticker string) error {
+	const query = `INSERT INTO watchlist (ticker) VALUES ($1) ON CONFLICT (ticker) DO NOTHING`
+	if _, err := s.pool.Exec(ctx, query, ticker); err != nil {
+		return fmt.Errorf("postgres: add watchlist %s: %w", ticker, err)
+	}
+	return nil
+}
+
+// RemoveFromWatchlist removes ticker if present.
+func (s *Store) RemoveFromWatchlist(ctx context.Context, ticker string) error {
+	if _, err := s.pool.Exec(ctx, `DELETE FROM watchlist WHERE ticker = $1`, ticker); err != nil {
+		return fmt.Errorf("postgres: remove watchlist %s: %w", ticker, err)
+	}
+	return nil
+}

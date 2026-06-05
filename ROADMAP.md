@@ -43,10 +43,15 @@ Status: ✅ done · 🟡 in progress · ⬜ todo
       saves it as a `clip` post; frontend paste box + "Saved links" section
       (video/Whisper transcription deferred to Phase 4)
 
-## Phase 4 — Multi-market + polish
-- ⬜ HK (HKEXnews) + KR (DART) filings; later Futu/KIS realtime (isolated, data-only)
-- ⬜ Optional LLM enrichment plugin (translate / summarize / relevance) — feature-flagged
-- ⬜ Single-user auth, persisted watchlist, UI polish
+## Phase 4 — Multi-market + polish  🟡
+- ✅ Persisted, editable watchlist: store CRUD + `GET/POST/DELETE /v1/watchlist`;
+      scheduler + price poller read it live each cycle (seeded from `WATCHLIST`);
+      frontend add/remove board on the home page
+- ⬜ HK (HKEXnews) + KR (DART) filings — HKEXnews needs stock-id scraping; DART
+      needs a free API key. Deferred (hard to verify from here / needs key); the
+      watchlist already accepts any ticker, so this is purely a new FilingSource
+- ⬜ Optional LLM enrichment plugin (translate / summarize / relevance) — flagged
+- ⬜ Single-user auth + UI polish; later Futu/KIS realtime (isolated, data-only)
 
 ---
 _Working agreement: each `/loop` iteration picks the next unchecked item(s),
