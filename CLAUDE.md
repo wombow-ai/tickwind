@@ -79,6 +79,12 @@ feature-flagged plugin, never on the critical path. Web only.
   `/stock?ticker=XYZ` (query param, no dynamic route — keeps export simple).
 - Backend packages: `internal/{config,store,store/memory,store/postgres,edgar,alpaca,ingest,api}`.
 
+## Tests
+- `make test` = `go test ./cmd/... ./internal/...` (scoped to skip `web/node_modules`).
+- Covered: memory store, clip title extraction, alpaca session classifier, API
+  httptest flows. Network-dependent clients (edgar/finnhub/stocktwits/reddit) are
+  exercised live during dev runs; add httptest-mocked unit tests when convenient.
+
 ## Environment notes (gotchas for future sessions)
 - **Go proxy truncates large module zips** (e.g. `golang.org/x/text`) via
   goproxy.io/goproxy.cn in this network → use `GOPROXY=direct GOSUMDB=off` to

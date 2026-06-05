@@ -7,7 +7,7 @@ build:      ## build the server binary
 	go build -o bin/tickwind ./cmd/server
 
 vet:
-	go vet ./...
+	go vet ./cmd/... ./internal/...
 
 fmt:
 	gofmt -w .
@@ -16,7 +16,7 @@ tidy:
 	go mod tidy
 
 test:
-	go test ./...
+	go test ./cmd/... ./internal/...
 
 up:         ## start full stack on a server (api + postgres + redis)
 	docker compose up -d --build

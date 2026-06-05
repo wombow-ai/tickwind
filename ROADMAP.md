@@ -15,7 +15,9 @@ Status: ✅ done · 🟡 in progress · ⬜ todo
       filings timeline; static export → `web/out` (Cloudflare Pages); build green
 - ✅ Wired Postgres into the server (`STORE_BACKEND=postgres`, fatal on init error)
 - ⬜ Verify Postgres end-to-end on the VM (blocked on provisioning the Oracle VM)
-- ⬜ Tests: unit tests for edgar client + store impls (quality debt to pay down)
+- ✅ Tests: table-driven unit tests — memory store (CRUD/order/dedupe/copy), clip
+      (og:title/title/entities/scheme), alpaca (session classifier), API (httptest:
+      health, watchlist CRUD, 400/404, clip→social). `make test` green
 
 ## Phase 2 — Prices + News  ✅
 - ✅ Alpaca REST client: latest trade incl. extended-hours/overnight (feed-aware;
