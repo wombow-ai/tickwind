@@ -27,3 +27,15 @@ export function toDateTimeAttr(iso: string): string | undefined {
   }
   return date.toISOString().slice(0, 10);
 }
+
+/**
+ * Formats a price as a fixed two-decimal string with thousands separators
+ * (e.g. `1,234.50`). Currency symbols are intentionally omitted; markets carry
+ * different currencies and the UI labels them elsewhere.
+ */
+export function formatPrice(price: number): string {
+  return price.toLocaleString('en-US', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+}

@@ -41,6 +41,30 @@ export interface FilingsResponse {
   filings: Filing[];
 }
 
+/**
+ * Trading session a quote belongs to, in US market terms. Unknown values from
+ * the backend are tolerated by widening to `string` at the type boundary.
+ */
+export type Session =
+  | 'pre'
+  | 'regular'
+  | 'post'
+  | 'overnight'
+  | 'closed'
+  | (string & {});
+
+/** A latest price, as returned by `GET /v1/stocks/{ticker}/quote`. */
+export interface Quote {
+  ticker: string;
+  price: number;
+  /** Trading session the price was observed in. */
+  session: Session;
+  /** Upstream data provider, e.g. `alpaca`. */
+  source: string;
+  /** RFC 3339 timestamp of when the price was observed. */
+  at: string;
+}
+
 /** Health payload returned by `GET /healthz`. */
 export interface Health {
   status: string;
@@ -109,6 +133,19 @@ export function getStock(
 ): Promise<Security> {
   return getJson<Security>(
     `/v1/stocks/${encodeURIComponent(normalizeTicker(ticker))}`,
+    signal,
+  );
+}
+
+/**
+ * Fetches the latest price for a ticker.
+ *
+ * @throws {ApiError} With status 404 when no quote is available yet (e.g. no
+ *   upstream price key is configured); callers should render this gracefully.
+ */
+export function getQuote(ticker: string, signal?: AbortSignal): Promise<Quote> {
+  return getJson<Quote>(
+    `/v1/stocks/${encodeURIComponent(normalizeTicker(ticker))}/quote`,
     signal,
   );
 }

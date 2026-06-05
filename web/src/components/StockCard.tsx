@@ -1,16 +1,20 @@
 import Link from 'next/link';
-import type {Security} from '@/lib/api';
+import type {Quote, Security} from '@/lib/api';
 import {MarketBadge} from '@/components/MarketBadge';
+import {PriceTag} from '@/components/PriceTag';
 
 interface StockCardProps {
   security: Security;
+  /** Latest live price, or `undefined` until one arrives. */
+  quote?: Quote;
 }
 
 /**
  * A watchlist tile linking to the stock detail page. Built from a resolved
- * {@link Security}; the parent decides how to handle load/error per ticker.
+ * {@link Security} plus an optional live {@link Quote}; the parent decides how
+ * to handle load/error per ticker and supplies prices as they stream in.
  */
-export function StockCard({security}: StockCardProps) {
+export function StockCard({security, quote}: StockCardProps) {
   return (
     <Link
       href={{pathname: '/stock', query: {ticker: security.ticker}}}
@@ -22,6 +26,7 @@ export function StockCard({security}: StockCardProps) {
         </span>
         <MarketBadge market={security.market} />
       </div>
+      <PriceTag quote={quote} />
       <p className="line-clamp-2 text-sm text-zinc-400 group-hover:text-zinc-300">
         {security.name}
       </p>

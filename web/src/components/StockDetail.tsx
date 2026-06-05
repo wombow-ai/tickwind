@@ -4,6 +4,7 @@ import Link from 'next/link';
 import {useSearchParams} from 'next/navigation';
 import {getFilings, getStock, type Filing, type Security} from '@/lib/api';
 import {useAsync} from '@/lib/useAsync';
+import {useQuotes} from '@/lib/useQuotes';
 import {StockHeader} from '@/components/StockHeader';
 import {FilingsTimeline} from '@/components/FilingsTimeline';
 import {EmptyState, ErrorState, LoadingState} from '@/components/states';
@@ -52,6 +53,8 @@ function StockDetailBody({ticker}: {ticker: string}) {
     },
     ticker,
   );
+  const quotes = useQuotes([ticker]);
+  const quote = quotes.get(ticker);
 
   switch (state.status) {
     case 'loading':
@@ -67,7 +70,7 @@ function StockDetailBody({ticker}: {ticker: string}) {
     case 'success':
       return (
         <div className="space-y-8">
-          <StockHeader security={state.data.security} />
+          <StockHeader security={state.data.security} quote={quote} />
           <section className="space-y-4">
             <div className="flex items-baseline justify-between">
               <h2 className="text-lg font-semibold text-zinc-100">Filings</h2>
