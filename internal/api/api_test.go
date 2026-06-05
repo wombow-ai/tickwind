@@ -9,12 +9,13 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/wombow-ai/tickwind/internal/enrich"
 	"github.com/wombow-ai/tickwind/internal/store/memory"
 	"github.com/wombow-ai/tickwind/internal/stream"
 )
 
 func newTestServer() *httptest.Server {
-	h := New(memory.New(), stream.NewHub(), slog.New(slog.NewTextHandler(io.Discard, nil)))
+	h := New(memory.New(), stream.NewHub(), enrich.Noop{}, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	return httptest.NewServer(h)
 }
 
@@ -157,4 +158,17 @@ func getTickers(t *testing.T, base string) []string {
 		t.Fatal(err)
 	}
 	return body.Tickers
+}
+
+func TestSummaryDisabledReturns503(t *testing.T) {
+	srv := newTestServer() // uses enrich.Noop (disabled)
+	defer srv.Close()
+	resp, err := http.Get(srv.URL + "/v1/stocks/AAPL/summary")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d; want 503 when LLM disabled", resp.StatusCode)
+	}
 }

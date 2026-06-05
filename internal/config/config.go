@@ -25,6 +25,11 @@ type Config struct {
 
 	// Finnhub company news. Empty token disables news ingestion.
 	FinnhubToken string
+
+	// Optional LLM enrichment (OpenAI-compatible). Empty key disables it.
+	LLMAPIKey  string
+	LLMBaseURL string // default https://api.openai.com/v1
+	LLMModel   string // default gpt-4o-mini
 }
 
 func Load() Config {
@@ -41,6 +46,9 @@ func Load() Config {
 		AlpacaFeed:     env("ALPACA_FEED", "iex"),
 		PricePollEvery: envDur("PRICE_POLL_EVERY", 10*time.Second),
 		FinnhubToken:   env("FINNHUB_TOKEN", ""),
+		LLMAPIKey:      env("LLM_API_KEY", ""),
+		LLMBaseURL:     env("LLM_BASE_URL", ""),
+		LLMModel:       env("LLM_MODEL", ""),
 	}
 }
 

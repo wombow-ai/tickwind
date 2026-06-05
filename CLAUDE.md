@@ -79,6 +79,13 @@ feature-flagged plugin, never on the critical path. Web only.
   `/stock?ticker=XYZ` (query param, no dynamic route — keeps export simple).
 - Backend packages: `internal/{config,store,store/memory,store/postgres,edgar,alpaca,ingest,api}`.
 
+## LLM enrichment (optional)
+- `internal/enrich`: `Enricher` interface + `Noop` (disabled) + OpenAI-compatible
+  HTTP impl (stdlib). `enrich.New(Config)` returns Noop when `LLM_API_KEY` is empty.
+- `GET /v1/stocks/{ticker}/summary` summarizes recent news+social; returns 503 when
+  disabled. Set `LLM_API_KEY` (+ optional `LLM_BASE_URL`, `LLM_MODEL`) to enable.
+- Stays off the critical path (per the engineering-first requirement).
+
 ## Tests
 - `make test` = `go test ./cmd/... ./internal/...` (scoped to skip `web/node_modules`).
 - Covered: memory store, clip title extraction, alpaca session classifier, API

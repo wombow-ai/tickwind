@@ -15,6 +15,7 @@ import (
 	"github.com/wombow-ai/tickwind/internal/api"
 	"github.com/wombow-ai/tickwind/internal/config"
 	"github.com/wombow-ai/tickwind/internal/edgar"
+	"github.com/wombow-ai/tickwind/internal/enrich"
 	"github.com/wombow-ai/tickwind/internal/finnhub"
 	"github.com/wombow-ai/tickwind/internal/ingest"
 	"github.com/wombow-ai/tickwind/internal/reddit"
@@ -47,6 +48,14 @@ func main() {
 
 	hub := stream.NewHub()
 
+	// Optional LLM enrichment (disabled without LLM_API_KEY).
+	enricher := enrich.New(enrich.Config{APIKey: cfg.LLMAPIKey, BaseURL: cfg.LLMBaseURL, Model: cfg.LLMModel})
+	if enricher.Enabled() {
+		log.Info("llm enrichment enabled")
+	} else {
+		log.Warn("LLM_API_KEY not set — enrichment (summaries) disabled")
+	}
+
 	// News ingestion runs only when a Finnhub token is configured.
 	var newsClient *finnhub.Client
 	if cfg.FinnhubToken != "" {
@@ -75,7 +84,7 @@ func main() {
 
 	srv := &http.Server{
 		Addr:              ":" + cfg.Port,
-		Handler:           api.New(st, hub, log),
+		Handler:           api.New(st, hub, enricher, log),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 

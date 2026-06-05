@@ -52,7 +52,9 @@ Status: ✅ done · 🟡 in progress · ⬜ todo
 - ⬜ HK (HKEXnews) + KR (DART) filings — HKEXnews needs stock-id scraping; DART
       needs a free API key. Deferred (hard to verify from here / needs key); the
       watchlist already accepts any ticker, so this is purely a new FilingSource
-- ⬜ Optional LLM enrichment plugin (translate / summarize / relevance) — flagged
+- ✅ Optional LLM enrichment plugin: `internal/enrich` (OpenAI-compatible, stdlib;
+      Noop when disabled) + `GET /v1/stocks/{ticker}/summary` (503 when off). Off
+      without `LLM_API_KEY`. (Frontend "Summarize" button = future polish.)
 - ⬜ Single-user auth + UI polish; later Futu/KIS realtime (isolated, data-only)
 
 ---

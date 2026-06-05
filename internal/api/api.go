@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/wombow-ai/tickwind/internal/clip"
+	"github.com/wombow-ai/tickwind/internal/enrich"
 	"github.com/wombow-ai/tickwind/internal/store"
 )
 
@@ -22,14 +23,15 @@ type QuoteStream interface {
 }
 
 type Server struct {
-	store store.Store
-	hub   QuoteStream
-	clip  *clip.Fetcher
-	log   *slog.Logger
+	store  store.Store
+	hub    QuoteStream
+	clip   *clip.Fetcher
+	enrich enrich.Enricher
+	log    *slog.Logger
 }
 
-func New(st store.Store, hub QuoteStream, log *slog.Logger) http.Handler {
-	s := &Server{store: st, hub: hub, clip: clip.NewFetcher(), log: log}
+func New(st store.Store, hub QuoteStream, enricher enrich.Enricher, log *slog.Logger) http.Handler {
+	s := &Server{store: st, hub: hub, clip: clip.NewFetcher(), enrich: enricher, log: log}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", s.health)
 	mux.HandleFunc("GET /v1/watchlist", s.getWatchlist)
@@ -41,6 +43,7 @@ func New(st store.Store, hub QuoteStream, log *slog.Logger) http.Handler {
 	mux.HandleFunc("GET /v1/stocks/{ticker}/news", s.getNews)
 	mux.HandleFunc("GET /v1/stocks/{ticker}/social", s.getSocial)
 	mux.HandleFunc("POST /v1/stocks/{ticker}/clip", s.postClip)
+	mux.HandleFunc("GET /v1/stocks/{ticker}/summary", s.getSummary)
 	mux.HandleFunc("GET /v1/stream", s.getStream)
 	return s.middleware(mux)
 }
@@ -218,6 +221,43 @@ func (s *Server) postClip(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusCreated, post)
+}
+
+// getSummary returns an LLM summary of the ticker's recent news + social posts.
+// It is an optional feature: when no LLM is configured it responds 503.
+func (s *Server) getSummary(w http.ResponseWriter, r *http.Request) {
+	if !s.enrich.Enabled() {
+		writeJSON(w, http.StatusServiceUnavailable, errBody("llm enrichment is not enabled"))
+		return
+	}
+	ticker := r.PathValue("ticker")
+	news, _ := s.store.ListNews(r.Context(), ticker, 10)
+	posts, _ := s.store.ListSocial(r.Context(), ticker, 10)
+	input := summaryInput(ticker, news, posts)
+	if strings.TrimSpace(input) == "" {
+		writeJSON(w, http.StatusOK, map[string]any{"ticker": ticker, "summary": ""})
+		return
+	}
+	summary, err := s.enrich.Summarize(r.Context(), input)
+	if err != nil {
+		writeJSON(w, http.StatusBadGateway, errBody(err.Error()))
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ticker": ticker, "summary": summary})
+}
+
+// summaryInput builds the prompt context from recent news and posts.
+func summaryInput(ticker string, news []store.News, posts []store.Post) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "Ticker: %s\n\nRecent news headlines:\n", ticker)
+	for _, n := range news {
+		fmt.Fprintf(&b, "- %s\n", n.Headline)
+	}
+	b.WriteString("\nRecent social posts:\n")
+	for _, p := range posts {
+		fmt.Fprintf(&b, "- %s\n", p.Body)
+	}
+	return b.String()
 }
 
 // getStream serves live quote updates as Server-Sent Events.
