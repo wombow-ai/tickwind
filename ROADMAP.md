@@ -29,7 +29,8 @@ Status: ✅ done · 🟡 in progress · ⬜ todo
 - ✅ Finnhub company news: client + `News` store (memory + postgres) +
       `GET /v1/stocks/{ticker}/news` + scheduler ingest; frontend NewsTimeline
       (per-stock News + Filings sections; auto-disabled without a token)
-- ⬜ Live-verify with real Alpaca + Finnhub keys (blocked on keys)
+- ✅ Live-verified Alpaca prices end-to-end (AAPL/NVDA, regular session, live SSE push)
+- ⬜ Live-verify Finnhub news (needs FINNHUB_TOKEN)
 
 ## Phase 3 — News + Social
 - ⬜ Per-stock unified news/announcement timeline
