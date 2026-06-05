@@ -48,10 +48,15 @@ on the server via `docker-compose.yml`.
 | KR filings    | DART (OpenDART)                         | later  |
 | Social        | Reddit, StockTwits, Xueqiu (best-effort)| later  |
 
-## Deploy (server)
+## Deploy (free, domain-only)
+
+Frontend on **Cloudflare Pages** (`tickwind.com`), backend on an **Oracle
+Always-Free VM** reached via **Cloudflare Tunnel** (`api.tickwind.com`) — no open
+ports, no public IP, free TLS, **$0/month**. Full walkthrough in [DEPLOY.md](./DEPLOY.md).
 
 ```bash
-cp .env.example .env      # fill in
+# on the VM:
+cp .env.example .env      # set EDGAR_USER_AGENT, POSTGRES_PASSWORD, TUNNEL_TOKEN
 docker compose up -d --build
 ```
 
