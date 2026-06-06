@@ -124,6 +124,35 @@ export interface SignalsResponse {
 }
 
 /**
+ * One row of the trending leaderboard — the most-discussed US stocks
+ * market-wide, ranked by a "heat" score (discussion volume × momentum).
+ */
+export interface HotStock {
+  ticker: string;
+  /** Company / instrument name. */
+  name: string;
+  /** Heat rank, 1 = hottest. */
+  rank: number;
+  /** Discussion volume — mentions in the last 24h. */
+  mentions: number;
+  /** Mentions in the same window 24h earlier. */
+  mentions_prev: number;
+  /** Mention growth vs 24h ago as a fraction (0.2 = +20%). */
+  change: number;
+  /** Total upvotes on those mentions. */
+  upvotes: number;
+  /** Composite heat score (volume × momentum). */
+  heat: number;
+  updated_at: string;
+}
+
+/** Envelope returned by `GET /v1/hot`. */
+export interface HotResponse {
+  count: number;
+  stocks: HotStock[];
+}
+
+/**
  * Trading session a quote belongs to, in US market terms. Unknown values from
  * the backend are tolerated by widening to `string` at the type boundary.
  */
@@ -459,6 +488,19 @@ export function getSignals(
   const path =
     `/v1/stocks/${encodeURIComponent(normalizeTicker(ticker))}/signals`;
   return getJson<SignalsResponse>(path, signal);
+}
+
+/**
+ * Fetches the market-wide trending leaderboard (most-discussed stocks),
+ * hottest first.
+ *
+ * @param limit Maximum number of stocks to return (defaults to 40).
+ */
+export function getHot(limit = 40, signal?: AbortSignal): Promise<HotResponse> {
+  return getJson<HotResponse>(
+    `/v1/hot?limit=${encodeURIComponent(String(limit))}`,
+    signal,
+  );
 }
 
 /** A link a user saved to a ticker (private, per-user). */

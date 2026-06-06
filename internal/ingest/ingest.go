@@ -8,6 +8,7 @@ package ingest
 import (
 	"context"
 	"log/slog"
+	"sort"
 	"time"
 
 	"github.com/wombow-ai/tickwind/internal/edgar"
@@ -34,21 +35,30 @@ type SignalSource interface {
 	Signals(ctx context.Context, tickers []string) ([]store.Signal, error)
 }
 
+// HotSource produces a market-wide ranked leaderboard of the most-discussed
+// stocks (e.g. ApeWisdom), independent of the watched-ticker set. nil disables
+// the trending "hot list".
+type HotSource interface {
+	Name() string
+	Leaderboard(ctx context.Context, limit int) ([]store.HotStock, error)
+}
+
 type Scheduler struct {
 	store   store.Store
 	edgar   *edgar.Client
 	finnhub *finnhub.Client // optional; nil disables news ingestion
 	social  []SocialSource
 	signals []SignalSource
+	hot     HotSource // optional; nil disables the trending hot list
 	tickers TickerSource
 	every   time.Duration
 	log     *slog.Logger
 }
 
-// NewScheduler builds the filings+news+social+signals scheduler. fh may be nil
-// to disable news; social/signals may be empty to disable those sources.
-func NewScheduler(st store.Store, ec *edgar.Client, fh *finnhub.Client, social []SocialSource, signals []SignalSource, tickers TickerSource, every time.Duration, log *slog.Logger) *Scheduler {
-	return &Scheduler{store: st, edgar: ec, finnhub: fh, social: social, signals: signals, tickers: tickers, every: every, log: log}
+// NewScheduler builds the filings+news+social+signals+hotlist scheduler. fh and
+// hot may be nil to disable news / the hot list; social/signals may be empty.
+func NewScheduler(st store.Store, ec *edgar.Client, fh *finnhub.Client, social []SocialSource, signals []SignalSource, hot HotSource, tickers TickerSource, every time.Duration, log *slog.Logger) *Scheduler {
+	return &Scheduler{store: st, edgar: ec, finnhub: fh, social: social, signals: signals, hot: hot, tickers: tickers, every: every, log: log}
 }
 
 // Run blocks until ctx is cancelled, refreshing every `every`.
@@ -82,6 +92,8 @@ func (s *Scheduler) runOnce(ctx context.Context) {
 	// Signal sources are bulk (one call covers many tickers), so run them once
 	// per cycle after the per-ticker passes.
 	s.ingestSignals(ctx, tickers)
+	// The trending leaderboard is market-wide (not tied to the watchlist).
+	s.ingestHotList(ctx)
 }
 
 func (s *Scheduler) ingestFilings(ctx context.Context, ticker string) {
@@ -142,4 +154,70 @@ func (s *Scheduler) ingestSignals(ctx context.Context, tickers []string) {
 		}
 		s.log.Info("ingested signals", "source", src.Name(), "count", len(sigs))
 	}
+}
+
+// hotListSize caps how many stocks the trending leaderboard holds.
+const hotListSize = 40
+
+func (s *Scheduler) ingestHotList(ctx context.Context) {
+	if s.hot == nil {
+		return
+	}
+	stocks, err := s.hot.Leaderboard(ctx, hotListSize)
+	if err != nil {
+		s.log.Warn("hotlist fetch failed", "source", s.hot.Name(), "err", err)
+		return
+	}
+	rankHotList(stocks)
+	if err := s.store.SaveHotList(ctx, stocks); err != nil {
+		s.log.Warn("save hotlist failed", "err", err)
+		return
+	}
+	s.log.Info("ingested hotlist", "source", s.hot.Name(), "count", len(stocks))
+}
+
+// rankHotList fills each stock's Change + Heat from its mention counts, sorts the
+// slice hottest-first, and assigns Rank (1..N).
+//
+// Heat blends discussion VOLUME with MOMENTUM — a stock is "hot" when it is both
+// heavily mentioned and gaining attention (the distinction trackers like
+// StockTwits draw between "most active" and "trending"). See heatScore.
+func rankHotList(stocks []store.HotStock) {
+	now := time.Now().UTC()
+	for i := range stocks {
+		m, prev := stocks[i].Mentions, stocks[i].MentionsPrev
+		if prev > 0 {
+			stocks[i].Change = float64(m-prev) / float64(prev)
+		}
+		stocks[i].Heat = heatScore(m, prev)
+		stocks[i].UpdatedAt = now
+	}
+	sort.SliceStable(stocks, func(i, j int) bool {
+		if stocks[i].Heat != stocks[j].Heat {
+			return stocks[i].Heat > stocks[j].Heat
+		}
+		return stocks[i].Mentions > stocks[j].Mentions
+	})
+	for i := range stocks {
+		stocks[i].Rank = i + 1
+	}
+}
+
+// heatScore = mentions × (1 + rise), where rise is the 24h mention growth
+// clamped to [0, 2]. So a flat or cooling name scores at its raw volume (never
+// penalised below it — it is still being discussed), while an accelerating one
+// is boosted up to 3× (a stock tripling its mentions tops a steadier name with
+// the same volume). This rewards stocks that are both loud and getting louder.
+func heatScore(mentions, mentionsPrev int) float64 {
+	rise := 0.0
+	if mentionsPrev > 0 {
+		rise = float64(mentions-mentionsPrev) / float64(mentionsPrev)
+	}
+	if rise < 0 {
+		rise = 0
+	}
+	if rise > 2 {
+		rise = 2
+	}
+	return float64(mentions) * (1 + rise)
 }

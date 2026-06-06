@@ -80,6 +80,22 @@ CREATE TABLE IF NOT EXISTS signals (
     PRIMARY KEY (ticker, source)
 );
 
+-- Global trending leaderboard snapshot (most-discussed stocks). Replaced
+-- wholesale on each refresh, so no historical rows accumulate.
+CREATE TABLE IF NOT EXISTS hotlist (
+    ticker         text PRIMARY KEY,
+    name           text NOT NULL DEFAULT '',
+    rank           integer NOT NULL DEFAULT 0,
+    mentions       integer NOT NULL DEFAULT 0,
+    mentions_prev  integer NOT NULL DEFAULT 0,
+    mention_change double precision NOT NULL DEFAULT 0,
+    upvotes        integer NOT NULL DEFAULT 0,
+    heat           double precision NOT NULL DEFAULT 0,
+    updated_at     timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS hotlist_rank_idx ON hotlist (rank);
+
 -- Migrate the legacy single-tenant watchlist (ticker PK, no user) to per-user.
 -- Runs at most once: the condition is false after user_id exists.
 DO $$

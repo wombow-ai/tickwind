@@ -10,6 +10,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"html"
 	"net/http"
 	"strconv"
 	"strings"
@@ -51,6 +52,7 @@ type pageResp struct {
 	Results []struct {
 		Rank           int    `json:"rank"`
 		Ticker         string `json:"ticker"`
+		Name           string `json:"name"`
 		Mentions       int    `json:"mentions"`
 		Upvotes        int    `json:"upvotes"`
 		Rank24hAgo     int    `json:"rank_24h_ago"`
@@ -106,6 +108,47 @@ func (c *Client) Signals(ctx context.Context, tickers []string) ([]store.Signal,
 			})
 		}
 		if len(found) == len(want) || page >= resp.Pages {
+			break
+		}
+	}
+	return out, nil
+}
+
+// Leaderboard returns the top-`limit` most-mentioned stocks from ApeWisdom's
+// all-stocks board (ranked by 24h mention volume), unfiltered by any watchlist.
+// The returned HotStocks carry the raw inputs (Ticker, Name, Mentions,
+// MentionsPrev, Upvotes); Change, Heat and Rank are left for the caller's heat
+// scoring. limit <= 0 defaults to one page (top 100).
+func (c *Client) Leaderboard(ctx context.Context, limit int) ([]store.HotStock, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	out := make([]store.HotStock, 0, limit)
+	for page := 1; page <= maxPages && len(out) < limit; page++ {
+		resp, err := c.fetchPage(ctx, page)
+		if err != nil {
+			if page == 1 {
+				return nil, err
+			}
+			break // keep what earlier pages gave us
+		}
+		for _, r := range resp.Results {
+			tk := strings.ToUpper(strings.TrimSpace(r.Ticker))
+			if tk == "" {
+				continue
+			}
+			out = append(out, store.HotStock{
+				Ticker:       tk,
+				Name:         html.UnescapeString(r.Name), // ApeWisdom HTML-encodes names (S&amp;P → S&P)
+				Mentions:     r.Mentions,
+				MentionsPrev: r.Mentions24hAgo,
+				Upvotes:      r.Upvotes,
+			})
+			if len(out) >= limit {
+				break
+			}
+		}
+		if page >= resp.Pages {
 			break
 		}
 	}

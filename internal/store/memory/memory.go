@@ -19,6 +19,7 @@ type Store struct {
 	news      map[string]map[string]store.News   // ticker -> id -> News
 	social    map[string]map[string]store.Post   // ticker -> id -> Post
 	signals   map[string]map[string]store.Signal // ticker -> source -> Signal
+	hot       []store.HotStock                   // global trending leaderboard snapshot
 	watchlist map[string][]string                // userID -> ordered tickers
 	clips     map[string]map[string]store.Clip   // userID -> clipID -> Clip
 }
@@ -175,6 +176,21 @@ func (s *Store) ListSignals(_ context.Context, ticker string) ([]store.Signal, e
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Source < out[j].Source })
 	return out, nil
+}
+
+func (s *Store) SaveHotList(_ context.Context, stocks []store.HotStock) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.hot = append([]store.HotStock(nil), stocks...) // replace the snapshot (copy)
+	return nil
+}
+
+func (s *Store) HotList(_ context.Context, limit int) ([]store.HotStock, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := append([]store.HotStock(nil), s.hot...)
+	sort.Slice(out, func(i, j int) bool { return out[i].Rank < out[j].Rank })
+	return limited(out, limit), nil
 }
 
 func (s *Store) Watchlist(_ context.Context, userID string) ([]string, error) {

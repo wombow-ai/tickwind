@@ -86,7 +86,14 @@ feature-flagged plugin, never on the critical path. Web only.
   self-budgets with a daily cap + ≥90-min refresh + cache, and a rate-limit reply
   marks the day spent; off without `ALPHAVANTAGE_API_KEY`). Served at
   `GET /v1/stocks/{ticker}/signals`; frontend `PulseBar` shows a buzz chip + a
-  sentiment chip on the detail page (hidden when empty). Clipper inbox ✅
+  sentiment chip on the detail page (hidden when empty). **Trending hot list**: a
+  market-wide `store.HotStock` leaderboard (one snapshot, replaced wholesale each
+  cycle) built from ApeWisdom's top-40 via `ingest.HotSource` (the same apewisdom
+  client doubles as SignalSource + HotSource). Heat = mentions × (1 +
+  clamp(24h-growth, 0, 2)) — volume × momentum, computed/ranked in
+  `ingest.rankHotList`+`heatScore` (unit-tested); served at `GET /v1/hot`, shown
+  at `/hot` (`HotList`, TopNav "Hot") with mentions + Δ% (no opaque score). The
+  hotlist pg table is replaced in a tx (clear+insert). Clipper inbox ✅
   (`POST /v1/stocks/{ticker}/clip` → title fetch → `clip` Post; frontend paste box
   + Saved-links section). Phase 3 done. Phase 4 started: persisted editable
   watchlist ✅ (`/v1/watchlist` CRUD; scheduler + poller read it live, seeded from

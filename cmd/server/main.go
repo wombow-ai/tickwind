@@ -117,12 +117,14 @@ func main() {
 
 	edgarClient := edgar.New(cfg.EDGARUserAgent)
 	// Bulk numeric signals (buzz/sentiment): one call per source per cycle.
-	// ApeWisdom is keyless; Alpha Vantage self-disables without a key.
+	// ApeWisdom is keyless; Alpha Vantage self-disables without a key. The same
+	// ApeWisdom client also drives the market-wide trending hot list.
+	apewisdomClient := apewisdom.New()
 	signals := []ingest.SignalSource{
-		apewisdom.New(),
+		apewisdomClient,
 		alphavantage.New(cfg.AlphaVantageKey),
 	}
-	scheduler := ingest.NewScheduler(st, edgarClient, newsClient, social, signals, ingestTickers, cfg.IngestEvery, log)
+	scheduler := ingest.NewScheduler(st, edgarClient, newsClient, social, signals, apewisdomClient, ingestTickers, cfg.IngestEvery, log)
 	go scheduler.Run(ctx)
 
 	// bars feeds the sparkline endpoint; nil (disabled) without Alpaca creds.

@@ -71,6 +71,15 @@ Status: ✅ done · 🟡 in progress · ⬜ todo
         weighted per-ticker sentiment score + label + article count. Free tier is
         25/day, so the client self-budgets (daily cap + ≥90-min refresh + cache;
         rate-limit reply marks the day spent). Key verified live; off without one
+- ✅ **Trending hot list** (`/hot`) — a market-wide leaderboard of the
+      most-discussed US stocks. `store.HotStock` snapshot (replaced wholesale each
+      cycle) + `ingest.HotSource` (ApeWisdom top-40, run once/cycle) +
+      `GET /v1/hot` + a frontend `HotList` page (TopNav "Hot"). **Heat score** =
+      mentions × (1 + clamp(24h mention growth, 0, 2)) — blends discussion VOLUME
+      with MOMENTUM (loud AND getting louder; cooling names keep their raw volume,
+      never penalised), shown transparently as mentions + Δ%. Verified live
+      (QQQ/SPY top by volume×momentum; explosive low-volume risers boosted but
+      capped). `rankHotList`/`heatScore` unit-tested
 - 📋 **Opinion-source research (2026-06, 4 parallel agents)** — prioritized for
       future ingestion (engineering-first, redistribution-safe, $0-ish):
       **do-now:** fix Reddit OAuth (script app → `oauth.reddit.com` + proper UA),
