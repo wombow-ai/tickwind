@@ -24,8 +24,10 @@ import (
 // defaultBaseURL is the Alpha Vantage API host.
 const defaultBaseURL = "https://www.alphavantage.co"
 
-// maxTickers caps how many tickers go into one NEWS_SENTIMENT request.
-const maxTickers = 50
+// maxTickers caps how many requested tickers we aggregate sentiment for in one
+// pass. This is an in-memory bound only: there is no API-side ticker filter
+// (see fetch), so it just protects against an unbounded watchlist.
+const maxTickers = 250
 
 // Client fetches and aggregates per-ticker news sentiment from Alpha Vantage.
 // It is safe for concurrent use.
@@ -105,7 +107,7 @@ func (c *Client) Signals(ctx context.Context, tickers []string) ([]store.Signal,
 
 	// Spend one request (count it regardless of outcome so failures can't bust
 	// the budget by retrying every cycle).
-	body, err := c.fetch(ctx, tickers)
+	body, err := c.fetch(ctx)
 	c.callsToday++
 	c.lastFetch = now
 	if err != nil {
@@ -122,13 +124,15 @@ func (c *Client) Signals(ctx context.Context, tickers []string) ([]store.Signal,
 	return c.cache, nil
 }
 
-// fetch performs one NEWS_SENTIMENT request for the given tickers.
-func (c *Client) fetch(ctx context.Context, tickers []string) (*feedResp, error) {
+// fetch performs one NEWS_SENTIMENT request for the latest market-wide news.
+// It deliberately does NOT set the `tickers` filter: Alpha Vantage treats a
+// multi-ticker filter as an AND (only articles mentioning *all* of them), which
+// returns an empty feed for any real watchlist. Instead we pull the latest
+// articles and extract per-ticker sentiment from each article's
+// ticker_sentiment list (see aggregate).
+func (c *Client) fetch(ctx context.Context) (*feedResp, error) {
 	params := url.Values{}
 	params.Set("function", "NEWS_SENTIMENT")
-	if list := dedupeUpper(tickers, maxTickers); len(list) > 0 {
-		params.Set("tickers", strings.Join(list, ","))
-	}
 	params.Set("limit", "1000")
 	params.Set("sort", "LATEST")
 	params.Set("apikey", c.apiKey)

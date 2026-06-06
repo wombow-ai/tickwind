@@ -34,6 +34,9 @@ func TestSignalsAggregates(t *testing.T) {
 		if got := r.URL.Query().Get("apikey"); got != "testkey" {
 			t.Errorf("apikey = %q", got)
 		}
+		if r.URL.Query().Has("tickers") {
+			t.Error("must not send a tickers filter — Alpha Vantage AND-joins them and returns an empty feed")
+		}
 		if got := r.Header.Get("User-Agent"); got != "Tickwind/0.1 (+https://tickwind.com)" {
 			t.Errorf("User-Agent = %q", got)
 		}
