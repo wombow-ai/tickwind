@@ -269,41 +269,94 @@ FROM social WHERE ticker = $1 ORDER BY created_at DESC`
 	return out, nil
 }
 
-// Watchlist returns the tracked tickers in insertion order.
-func (s *Store) Watchlist(ctx context.Context) ([]string, error) {
-	rows, err := s.pool.Query(ctx, `SELECT ticker FROM watchlist ORDER BY added_at`)
+// Watchlist returns one user's tracked tickers, in insertion order.
+func (s *Store) Watchlist(ctx context.Context, userID string) ([]string, error) {
+	rows, err := s.pool.Query(ctx, `SELECT ticker FROM watchlist WHERE user_id = $1 ORDER BY added_at`, userID)
 	if err != nil {
 		return nil, fmt.Errorf("postgres: watchlist: %w", err)
 	}
 	defer rows.Close()
+	return scanTickers(rows)
+}
 
+// AllWatchlistTickers returns the de-duplicated union across all users.
+func (s *Store) AllWatchlistTickers(ctx context.Context) ([]string, error) {
+	rows, err := s.pool.Query(ctx, `SELECT DISTINCT ticker FROM watchlist`)
+	if err != nil {
+		return nil, fmt.Errorf("postgres: all watchlist tickers: %w", err)
+	}
+	defer rows.Close()
+	return scanTickers(rows)
+}
+
+func scanTickers(rows pgx.Rows) ([]string, error) {
 	var out []string
 	for rows.Next() {
 		var t string
 		if err := rows.Scan(&t); err != nil {
-			return nil, fmt.Errorf("postgres: scan watchlist: %w", err)
+			return nil, fmt.Errorf("postgres: scan ticker: %w", err)
 		}
 		out = append(out, t)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("postgres: iterate watchlist: %w", err)
+		return nil, fmt.Errorf("postgres: iterate tickers: %w", err)
 	}
 	return out, nil
 }
 
-// AddToWatchlist adds ticker if not already present.
-func (s *Store) AddToWatchlist(ctx context.Context, ticker string) error {
-	const query = `INSERT INTO watchlist (ticker) VALUES ($1) ON CONFLICT (ticker) DO NOTHING`
-	if _, err := s.pool.Exec(ctx, query, ticker); err != nil {
+// AddToWatchlist adds a ticker to a user's watchlist if not present.
+func (s *Store) AddToWatchlist(ctx context.Context, userID, ticker string) error {
+	const query = `INSERT INTO watchlist (user_id, ticker) VALUES ($1, $2) ON CONFLICT (user_id, ticker) DO NOTHING`
+	if _, err := s.pool.Exec(ctx, query, userID, ticker); err != nil {
 		return fmt.Errorf("postgres: add watchlist %s: %w", ticker, err)
 	}
 	return nil
 }
 
-// RemoveFromWatchlist removes ticker if present.
-func (s *Store) RemoveFromWatchlist(ctx context.Context, ticker string) error {
-	if _, err := s.pool.Exec(ctx, `DELETE FROM watchlist WHERE ticker = $1`, ticker); err != nil {
+// RemoveFromWatchlist removes a ticker from a user's watchlist.
+func (s *Store) RemoveFromWatchlist(ctx context.Context, userID, ticker string) error {
+	if _, err := s.pool.Exec(ctx, `DELETE FROM watchlist WHERE user_id = $1 AND ticker = $2`, userID, ticker); err != nil {
 		return fmt.Errorf("postgres: remove watchlist %s: %w", ticker, err)
 	}
 	return nil
+}
+
+// SaveClip upserts a user's saved link (deduped by id).
+func (s *Store) SaveClip(ctx context.Context, c store.Clip) error {
+	const query = `
+INSERT INTO clips (id, user_id, ticker, title, url, created_at)
+VALUES ($1, $2, $3, $4, $5, $6)
+ON CONFLICT (id) DO UPDATE SET title = EXCLUDED.title, url = EXCLUDED.url`
+	if _, err := s.pool.Exec(ctx, query, c.ID, c.UserID, c.Ticker, c.Title, c.URL, c.CreatedAt); err != nil {
+		return fmt.Errorf("postgres: save clip: %w", err)
+	}
+	return nil
+}
+
+// ListClips returns a user's saved links for a ticker, newest first.
+func (s *Store) ListClips(ctx context.Context, userID, ticker string, limit int) ([]store.Clip, error) {
+	query := `SELECT id, user_id, ticker, title, url, created_at FROM clips WHERE user_id = $1 AND ticker = $2 ORDER BY created_at DESC`
+	args := []any{userID, ticker}
+	if limit > 0 {
+		query += ` LIMIT $3`
+		args = append(args, limit)
+	}
+	rows, err := s.pool.Query(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("postgres: list clips %s: %w", ticker, err)
+	}
+	defer rows.Close()
+
+	var out []store.Clip
+	for rows.Next() {
+		var c store.Clip
+		if err := rows.Scan(&c.ID, &c.UserID, &c.Ticker, &c.Title, &c.URL, &c.CreatedAt); err != nil {
+			return nil, fmt.Errorf("postgres: scan clip %s: %w", ticker, err)
+		}
+		out = append(out, c)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("postgres: iterate clips %s: %w", ticker, err)
+	}
+	return out, nil
 }

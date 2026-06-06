@@ -18,16 +18,19 @@ type Store struct {
 	quotes    map[string]store.Quote             // ticker -> latest quote
 	news      map[string]map[string]store.News   // ticker -> id -> News
 	social    map[string]map[string]store.Post   // ticker -> id -> Post
-	watchlist []string                           // tracked tickers, insertion order
+	watchlist map[string][]string                // userID -> ordered tickers
+	clips     map[string]map[string]store.Clip   // userID -> clipID -> Clip
 }
 
 func New() *Store {
 	return &Store{
-		secs:    make(map[string]store.Security),
-		filings: make(map[string]map[string]store.Filing),
-		quotes:  make(map[string]store.Quote),
-		news:    make(map[string]map[string]store.News),
-		social:  make(map[string]map[string]store.Post),
+		secs:      make(map[string]store.Security),
+		filings:   make(map[string]map[string]store.Filing),
+		quotes:    make(map[string]store.Quote),
+		news:      make(map[string]map[string]store.News),
+		social:    make(map[string]map[string]store.Post),
+		watchlist: make(map[string][]string),
+		clips:     make(map[string]map[string]store.Clip),
 	}
 }
 
@@ -142,40 +145,83 @@ func (s *Store) ListSocial(_ context.Context, ticker string, limit int) ([]store
 	return limited(out, limit), nil
 }
 
-func (s *Store) Watchlist(_ context.Context) ([]string, error) {
+func (s *Store) Watchlist(_ context.Context, userID string) ([]string, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return append([]string(nil), s.watchlist...), nil
+	return append([]string(nil), s.watchlist[userID]...), nil
 }
 
-func (s *Store) AddToWatchlist(_ context.Context, ticker string) error {
+func (s *Store) AllWatchlistTickers(_ context.Context) ([]string, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	seen := make(map[string]struct{})
+	var out []string
+	for _, tickers := range s.watchlist {
+		for _, t := range tickers {
+			if _, ok := seen[t]; !ok {
+				seen[t] = struct{}{}
+				out = append(out, t)
+			}
+		}
+	}
+	return out, nil
+}
+
+func (s *Store) AddToWatchlist(_ context.Context, userID, ticker string) error {
 	t := key(ticker)
-	if t == "" {
+	if t == "" || userID == "" {
 		return nil
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	for _, x := range s.watchlist {
+	for _, x := range s.watchlist[userID] {
 		if x == t {
 			return nil
 		}
 	}
-	s.watchlist = append(s.watchlist, t)
+	s.watchlist[userID] = append(s.watchlist[userID], t)
 	return nil
 }
 
-func (s *Store) RemoveFromWatchlist(_ context.Context, ticker string) error {
+func (s *Store) RemoveFromWatchlist(_ context.Context, userID, ticker string) error {
 	t := key(ticker)
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	next := make([]string, 0, len(s.watchlist))
-	for _, x := range s.watchlist {
+	cur := s.watchlist[userID]
+	next := make([]string, 0, len(cur))
+	for _, x := range cur {
 		if x != t {
 			next = append(next, x)
 		}
 	}
-	s.watchlist = next
+	s.watchlist[userID] = next
 	return nil
+}
+
+func (s *Store) SaveClip(_ context.Context, c store.Clip) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	m := s.clips[c.UserID]
+	if m == nil {
+		m = make(map[string]store.Clip)
+		s.clips[c.UserID] = m
+	}
+	m[c.ID] = c
+	return nil
+}
+
+func (s *Store) ListClips(_ context.Context, userID, ticker string, limit int) ([]store.Clip, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	k := key(ticker)
+	out := make([]store.Clip, 0)
+	for _, c := range s.clips[userID] {
+		if key(c.Ticker) == k {
+			out = append(out, c)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].CreatedAt.After(out[j].CreatedAt) })
+	return limited(out, limit), nil
 }
 
 // limited returns the first limit elements (limit <= 0 means all).

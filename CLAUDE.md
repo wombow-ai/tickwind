@@ -86,6 +86,20 @@ feature-flagged plugin, never on the critical path. Web only.
   disabled. Set `LLM_API_KEY` (+ optional `LLM_BASE_URL`, `LLM_MODEL`) to enable.
 - Stays off the critical path (per the engineering-first requirement).
 
+## Multi-tenant + auth (商用)
+- `internal/auth`: stdlib HS256 verify of Supabase JWTs (hardcoded HS256 to block
+  alg confusion). `Middleware` attaches the user when a valid bearer token is
+  present (does NOT reject anon — handlers gate via `requireUser`).
+- Data split: **shared/global** (securities, filings, quotes, news, social =
+  public market data) vs **per-user** (watchlist + private clips, keyed by the
+  JWT `sub` UUID). Public stock-data endpoints stay open (SEO); watchlist/clip
+  endpoints 401 without a token.
+- Ingestion: `ingestTickers` = default `WATCHLIST` ∪ `store.AllWatchlistTickers()`
+  (deduped, capped at maxIngestTickers).
+- DB: Supabase Postgres via the session-pooler connection string (IPv4). Schema
+  has a guarded DO-block that migrates the legacy single-tenant `watchlist` once.
+- Config: `SUPABASE_JWT_SECRET` (HS256) + `DATABASE_URL` (Supabase pooler).
+
 ## Tests
 - `make test` = `go test ./cmd/... ./internal/...` (scoped to skip `web/node_modules`).
 - Covered: memory store, clip title extraction, alpaca session classifier, API

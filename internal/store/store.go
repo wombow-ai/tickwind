@@ -58,6 +58,16 @@ type Post struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
+// Clip is a link a user saved to a ticker (private, per-user).
+type Clip struct {
+	ID        string    `json:"id"`
+	UserID    string    `json:"user_id"`
+	Ticker    string    `json:"ticker"`
+	Title     string    `json:"title"`
+	URL       string    `json:"url"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
 // Store is the persistence boundary. Every backend (memory, postgres)
 // implements this so the rest of the app never depends on a driver.
 type Store interface {
@@ -76,8 +86,15 @@ type Store interface {
 	SaveSocial(ctx context.Context, ticker string, posts []Post) error
 	ListSocial(ctx context.Context, ticker string, limit int) ([]Post, error)
 
-	// Watchlist is the user's tracked tickers, in insertion order.
-	Watchlist(ctx context.Context) ([]string, error)
-	AddToWatchlist(ctx context.Context, ticker string) error
-	RemoveFromWatchlist(ctx context.Context, ticker string) error
+	// Watchlist is one user's tracked tickers, in insertion order.
+	Watchlist(ctx context.Context, userID string) ([]string, error)
+	AddToWatchlist(ctx context.Context, userID, ticker string) error
+	RemoveFromWatchlist(ctx context.Context, userID, ticker string) error
+	// AllWatchlistTickers is the de-duplicated union across all users (drives
+	// ingestion — we fetch market data for every ticker anyone tracks).
+	AllWatchlistTickers(ctx context.Context) ([]string, error)
+
+	// Clips are a user's private saved links.
+	SaveClip(ctx context.Context, c Clip) error
+	ListClips(ctx context.Context, userID, ticker string, limit int) ([]Clip, error)
 }

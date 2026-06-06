@@ -55,7 +55,14 @@ Status: ✅ done · 🟡 in progress · ⬜ todo
 - ✅ Optional LLM enrichment plugin: `internal/enrich` (OpenAI-compatible, stdlib;
       Noop when disabled) + `GET /v1/stocks/{ticker}/summary` (503 when off). Off
       without `LLM_API_KEY`. (Frontend "Summarize" button = future polish.)
-- ⬜ Single-user auth + UI polish; later Futu/KIS realtime (isolated, data-only)
+- ✅ Multi-tenant + Supabase auth (商用 pivot): Supabase JWT (HS256, stdlib
+      verify, no dep); per-user watchlist + private clips; public market-data
+      endpoints stay open (SEO); ingest = default ∪ all users' watchlists (capped);
+      Supabase Postgres (session pooler). Verified e2e against real Supabase.
+- ⬜ Frontend rebuild: Next.js (SSR) + Supabase Auth — public SEO pages (landing,
+      /stock/[ticker], announcements) + private app; deploy on Vercel; modern
+      (non-terminal) redesign
+- ⬜ HK (HKEXnews) + KR (DART) filings (needs DART key); later Futu/KIS realtime
 
 ---
 _Working agreement: each `/loop` iteration picks the next unchecked item(s),

@@ -30,25 +30,32 @@ type Config struct {
 	LLMAPIKey  string
 	LLMBaseURL string // default https://api.openai.com/v1
 	LLMModel   string // default gpt-4o-mini
+
+	// Supabase JWT secret (HS256) — verifies user tokens. Empty disables auth
+	// (all private endpoints 401). Watchlist below is the default ticker set
+	// always ingested (so public stock pages have data), unioned with every
+	// user's watchlist.
+	SupabaseJWTSecret string
 }
 
 func Load() Config {
 	return Config{
-		Port:           env("PORT", "8080"),
-		EDGARUserAgent: env("EDGAR_USER_AGENT", "Tickwind/0.1 (contact@tickwind.com)"),
-		Watchlist:      splitCSV(env("WATCHLIST", "AAPL,NVDA,TSLA")),
-		StoreBackend:   env("STORE_BACKEND", "memory"),
-		DatabaseURL:    env("DATABASE_URL", "postgres://tickwind:tickwind@localhost:5432/tickwind?sslmode=disable"),
-		IngestEvery:    envDur("INGEST_EVERY", 15*time.Minute),
-		AlpacaKeyID:    env("ALPACA_API_KEY", ""),
-		AlpacaSecret:   env("ALPACA_API_SECRET", ""),
-		AlpacaDataURL:  env("ALPACA_DATA_URL", ""),
-		AlpacaFeed:     env("ALPACA_FEED", "iex"),
-		PricePollEvery: envDur("PRICE_POLL_EVERY", 10*time.Second),
-		FinnhubToken:   env("FINNHUB_TOKEN", ""),
-		LLMAPIKey:      env("LLM_API_KEY", ""),
-		LLMBaseURL:     env("LLM_BASE_URL", ""),
-		LLMModel:       env("LLM_MODEL", ""),
+		Port:              env("PORT", "8080"),
+		EDGARUserAgent:    env("EDGAR_USER_AGENT", "Tickwind/0.1 (contact@tickwind.com)"),
+		Watchlist:         splitCSV(env("WATCHLIST", "AAPL,NVDA,TSLA")),
+		StoreBackend:      env("STORE_BACKEND", "memory"),
+		DatabaseURL:       env("DATABASE_URL", "postgres://tickwind:tickwind@localhost:5432/tickwind?sslmode=disable"),
+		IngestEvery:       envDur("INGEST_EVERY", 15*time.Minute),
+		AlpacaKeyID:       env("ALPACA_API_KEY", ""),
+		AlpacaSecret:      env("ALPACA_API_SECRET", ""),
+		AlpacaDataURL:     env("ALPACA_DATA_URL", ""),
+		AlpacaFeed:        env("ALPACA_FEED", "iex"),
+		PricePollEvery:    envDur("PRICE_POLL_EVERY", 10*time.Second),
+		FinnhubToken:      env("FINNHUB_TOKEN", ""),
+		LLMAPIKey:         env("LLM_API_KEY", ""),
+		LLMBaseURL:        env("LLM_BASE_URL", ""),
+		LLMModel:          env("LLM_MODEL", ""),
+		SupabaseJWTSecret: env("SUPABASE_JWT_SECRET", ""),
 	}
 }
 

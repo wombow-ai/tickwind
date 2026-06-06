@@ -58,7 +58,33 @@ CREATE TABLE IF NOT EXISTS social (
 CREATE INDEX IF NOT EXISTS social_ticker_created_at_idx
     ON social (ticker, created_at DESC);
 
+-- Migrate the legacy single-tenant watchlist (ticker PK, no user) to per-user.
+-- Runs at most once: the condition is false after user_id exists.
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.columns
+               WHERE table_name = 'watchlist' AND column_name = 'ticker')
+       AND NOT EXISTS (SELECT 1 FROM information_schema.columns
+                       WHERE table_name = 'watchlist' AND column_name = 'user_id') THEN
+        DROP TABLE watchlist;
+    END IF;
+END $$;
+
 CREATE TABLE IF NOT EXISTS watchlist (
-    ticker   text PRIMARY KEY,
-    added_at timestamptz NOT NULL DEFAULT now()
+    user_id  uuid NOT NULL,
+    ticker   text NOT NULL,
+    added_at timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (user_id, ticker)
 );
+
+CREATE TABLE IF NOT EXISTS clips (
+    id         text PRIMARY KEY,
+    user_id    uuid NOT NULL,
+    ticker     text NOT NULL,
+    title      text,
+    url        text,
+    created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS clips_user_ticker_created_idx
+    ON clips (user_id, ticker, created_at DESC);

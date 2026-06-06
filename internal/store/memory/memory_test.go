@@ -11,33 +11,72 @@ import (
 func TestWatchlist(t *testing.T) {
 	s := New()
 	ctx := context.Background()
+	const u = "user-1"
 
-	if wl, err := s.Watchlist(ctx); err != nil || len(wl) != 0 {
+	if wl, err := s.Watchlist(ctx, u); err != nil || len(wl) != 0 {
 		t.Fatalf("new watchlist = %v, %v; want empty", wl, err)
 	}
 
 	// Adds normalize case, ignore blanks, and dedupe; order is preserved.
 	for _, tk := range []string{"aapl", "NVDA", "AAPL", "   ", "tsla"} {
-		if err := s.AddToWatchlist(ctx, tk); err != nil {
+		if err := s.AddToWatchlist(ctx, u, tk); err != nil {
 			t.Fatalf("add %q: %v", tk, err)
 		}
 	}
-	if got, _ := s.Watchlist(ctx); !equal(got, []string{"AAPL", "NVDA", "TSLA"}) {
+	if got, _ := s.Watchlist(ctx, u); !equal(got, []string{"AAPL", "NVDA", "TSLA"}) {
 		t.Fatalf("watchlist = %v", got)
 	}
 
-	if err := s.RemoveFromWatchlist(ctx, "nvda"); err != nil {
+	if err := s.RemoveFromWatchlist(ctx, u, "nvda"); err != nil {
 		t.Fatalf("remove: %v", err)
 	}
-	if got, _ := s.Watchlist(ctx); !equal(got, []string{"AAPL", "TSLA"}) {
+	if got, _ := s.Watchlist(ctx, u); !equal(got, []string{"AAPL", "TSLA"}) {
 		t.Fatalf("after remove = %v", got)
 	}
 
 	// The returned slice must be a copy, not the store's backing array.
-	got, _ := s.Watchlist(ctx)
+	got, _ := s.Watchlist(ctx, u)
 	got[0] = "MUTATED"
-	if again, _ := s.Watchlist(ctx); again[0] != "AAPL" {
+	if again, _ := s.Watchlist(ctx, u); again[0] != "AAPL" {
 		t.Fatalf("watchlist not copied: %v", again)
+	}
+}
+
+func TestWatchlistPerUserAndUnion(t *testing.T) {
+	s := New()
+	ctx := context.Background()
+	_ = s.AddToWatchlist(ctx, "u1", "AAPL")
+	_ = s.AddToWatchlist(ctx, "u1", "NVDA")
+	_ = s.AddToWatchlist(ctx, "u2", "NVDA")
+	_ = s.AddToWatchlist(ctx, "u2", "TSLA")
+
+	if got, _ := s.Watchlist(ctx, "u1"); !equal(got, []string{"AAPL", "NVDA"}) {
+		t.Fatalf("u1 = %v", got)
+	}
+	if got, _ := s.Watchlist(ctx, "u2"); !equal(got, []string{"NVDA", "TSLA"}) {
+		t.Fatalf("u2 = %v", got)
+	}
+	// Union is deduped (AAPL, NVDA, TSLA).
+	if all, _ := s.AllWatchlistTickers(ctx); len(all) != 3 {
+		t.Fatalf("union = %v; want 3 distinct", all)
+	}
+}
+
+func TestClipsPerUser(t *testing.T) {
+	s := New()
+	ctx := context.Background()
+	_ = s.SaveClip(ctx, store.Clip{ID: "c1", UserID: "u1", Ticker: "AAPL", Title: "a", URL: "x"})
+	_ = s.SaveClip(ctx, store.Clip{ID: "c2", UserID: "u1", Ticker: "NVDA", Title: "b", URL: "y"})
+	_ = s.SaveClip(ctx, store.Clip{ID: "c3", UserID: "u2", Ticker: "AAPL", Title: "c", URL: "z"})
+
+	if got, _ := s.ListClips(ctx, "u1", "AAPL", 0); len(got) != 1 || got[0].ID != "c1" {
+		t.Fatalf("u1 AAPL clips = %v", got)
+	}
+	if got, _ := s.ListClips(ctx, "u2", "AAPL", 0); len(got) != 1 || got[0].ID != "c3" {
+		t.Fatalf("u2 AAPL clips = %v", got)
+	}
+	if got, _ := s.ListClips(ctx, "u1", "NVDA", 0); len(got) != 1 {
+		t.Fatalf("u1 NVDA clips = %v", got)
 	}
 }
 

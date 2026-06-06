@@ -1,8 +1,8 @@
 // Package ingest periodically pulls data from sources into the store.
 // Filings (EDGAR), news (Finnhub) and social (StockTwits, Reddit, …) refresh on
 // the scheduler; prices have their own faster poller (price.go). The set of
-// tickers is read from the store each cycle, so watchlist edits take effect
-// without a restart.
+// tickers comes from a TickerSource (default set ∪ all users' watchlists), read
+// each cycle so watchlist edits take effect without a restart.
 package ingest
 
 import (
@@ -14,6 +14,9 @@ import (
 	"github.com/wombow-ai/tickwind/internal/finnhub"
 	"github.com/wombow-ai/tickwind/internal/store"
 )
+
+// TickerSource returns the tickers to ingest this cycle.
+type TickerSource func(context.Context) []string
 
 // SocialSource is one provider of social posts for a ticker (e.g. StockTwits,
 // Reddit). New sources implement this and are passed to NewScheduler.
@@ -27,14 +30,15 @@ type Scheduler struct {
 	edgar   *edgar.Client
 	finnhub *finnhub.Client // optional; nil disables news ingestion
 	social  []SocialSource
+	tickers TickerSource
 	every   time.Duration
 	log     *slog.Logger
 }
 
 // NewScheduler builds the filings+news+social scheduler. fh may be nil to
 // disable news; social may be empty to disable social ingestion.
-func NewScheduler(st store.Store, ec *edgar.Client, fh *finnhub.Client, social []SocialSource, every time.Duration, log *slog.Logger) *Scheduler {
-	return &Scheduler{store: st, edgar: ec, finnhub: fh, social: social, every: every, log: log}
+func NewScheduler(st store.Store, ec *edgar.Client, fh *finnhub.Client, social []SocialSource, tickers TickerSource, every time.Duration, log *slog.Logger) *Scheduler {
+	return &Scheduler{store: st, edgar: ec, finnhub: fh, social: social, tickers: tickers, every: every, log: log}
 }
 
 // Run blocks until ctx is cancelled, refreshing every `every`.
@@ -53,12 +57,7 @@ func (s *Scheduler) Run(ctx context.Context) {
 }
 
 func (s *Scheduler) runOnce(ctx context.Context) {
-	tickers, err := s.store.Watchlist(ctx)
-	if err != nil {
-		s.log.Warn("watchlist read failed", "err", err)
-		return
-	}
-	for _, ticker := range tickers {
+	for _, ticker := range s.tickers(ctx) {
 		s.ingestFilings(ctx, ticker)
 		s.ingestNews(ctx, ticker)
 		s.ingestSocial(ctx, ticker)

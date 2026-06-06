@@ -9,21 +9,21 @@ import (
 	"github.com/wombow-ai/tickwind/internal/store"
 )
 
-// PricePoller periodically fetches the latest all-session price for each
-// watchlist ticker, writes it to the store, and publishes it to subscribers.
-// The ticker set is read from the store each tick. It runs only when Alpaca
-// credentials are configured.
+// PricePoller periodically fetches the latest all-session price for each ticker
+// (from the TickerSource), writes it to the store, and publishes it to
+// subscribers. It runs only when Alpaca credentials are configured.
 type PricePoller struct {
 	store   store.Store
 	client  *alpaca.Client
+	tickers TickerSource
 	every   time.Duration
 	publish func(store.Quote) // optional; broadcasts to live subscribers
 	log     *slog.Logger
 }
 
 // NewPricePoller builds a poller. publish may be nil to disable broadcasting.
-func NewPricePoller(st store.Store, client *alpaca.Client, every time.Duration, publish func(store.Quote), log *slog.Logger) *PricePoller {
-	return &PricePoller{store: st, client: client, every: every, publish: publish, log: log}
+func NewPricePoller(st store.Store, client *alpaca.Client, tickers TickerSource, every time.Duration, publish func(store.Quote), log *slog.Logger) *PricePoller {
+	return &PricePoller{store: st, client: client, tickers: tickers, every: every, publish: publish, log: log}
 }
 
 // Run blocks until ctx is cancelled, polling every p.every.
@@ -42,12 +42,7 @@ func (p *PricePoller) Run(ctx context.Context) {
 }
 
 func (p *PricePoller) poll(ctx context.Context) {
-	tickers, err := p.store.Watchlist(ctx)
-	if err != nil {
-		p.log.Warn("watchlist read failed", "err", err)
-		return
-	}
-	for _, ticker := range tickers {
+	for _, ticker := range p.tickers(ctx) {
 		q, err := p.client.LatestQuote(ctx, ticker)
 		if err != nil {
 			p.log.Warn("price poll failed", "ticker", ticker, "err", err)

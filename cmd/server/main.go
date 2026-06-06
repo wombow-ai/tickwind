@@ -8,11 +8,13 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
 	"github.com/wombow-ai/tickwind/internal/alpaca"
 	"github.com/wombow-ai/tickwind/internal/api"
+	"github.com/wombow-ai/tickwind/internal/auth"
 	"github.com/wombow-ai/tickwind/internal/config"
 	"github.com/wombow-ai/tickwind/internal/edgar"
 	"github.com/wombow-ai/tickwind/internal/enrich"
@@ -25,6 +27,10 @@ import (
 	"github.com/wombow-ai/tickwind/internal/store/postgres"
 	"github.com/wombow-ai/tickwind/internal/stream"
 )
+
+// maxIngestTickers caps how many distinct tickers we ingest, to control cost as
+// the user base (and thus the union of watchlists) grows.
+const maxIngestTickers = 200
 
 func main() {
 	log := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
@@ -40,20 +46,19 @@ func main() {
 	}
 	defer closeStore()
 
-	// Seed the watchlist from WATCHLIST on first run; thereafter it's edited via
-	// the API and persisted in the store.
-	if err := seedWatchlist(ctx, st, cfg.Watchlist, log); err != nil {
-		log.Warn("watchlist seed failed", "err", err)
-	}
-
 	hub := stream.NewHub()
+
+	verifier := auth.NewVerifier(cfg.SupabaseJWTSecret)
+	if verifier.Enabled() {
+		log.Info("auth enabled (supabase jwt)")
+	} else {
+		log.Warn("SUPABASE_JWT_SECRET not set — per-user endpoints will return 401")
+	}
 
 	// Optional LLM enrichment (disabled without LLM_API_KEY).
 	enricher := enrich.New(enrich.Config{APIKey: cfg.LLMAPIKey, BaseURL: cfg.LLMBaseURL, Model: cfg.LLMModel})
 	if enricher.Enabled() {
 		log.Info("llm enrichment enabled")
-	} else {
-		log.Warn("LLM_API_KEY not set — enrichment (summaries) disabled")
 	}
 
 	// News ingestion runs only when a Finnhub token is configured.
@@ -65,17 +70,43 @@ func main() {
 		log.Warn("FINNHUB_TOKEN not set — news ingestion disabled")
 	}
 
-	// Social sources are all public (no key required).
 	social := []ingest.SocialSource{stocktwits.New(), reddit.New()}
 
+	// Tickers to ingest = the default set (always available for public pages)
+	// ∪ every user's watchlist, deduped and capped.
+	ingestTickers := func(ctx context.Context) []string {
+		seen := make(map[string]struct{})
+		var out []string
+		add := func(t string) {
+			t = strings.ToUpper(strings.TrimSpace(t))
+			if t == "" || len(out) >= maxIngestTickers {
+				return
+			}
+			if _, ok := seen[t]; !ok {
+				seen[t] = struct{}{}
+				out = append(out, t)
+			}
+		}
+		for _, t := range cfg.Watchlist {
+			add(t)
+		}
+		if all, err := st.AllWatchlistTickers(ctx); err != nil {
+			log.Warn("all-watchlist read failed", "err", err)
+		} else {
+			for _, t := range all {
+				add(t)
+			}
+		}
+		return out
+	}
+
 	edgarClient := edgar.New(cfg.EDGARUserAgent)
-	scheduler := ingest.NewScheduler(st, edgarClient, newsClient, social, cfg.IngestEvery, log)
+	scheduler := ingest.NewScheduler(st, edgarClient, newsClient, social, ingestTickers, cfg.IngestEvery, log)
 	go scheduler.Run(ctx)
 
-	// Price polling runs only when Alpaca credentials are present.
 	if cfg.AlpacaKeyID != "" && cfg.AlpacaSecret != "" {
 		priceClient := alpaca.New(cfg.AlpacaKeyID, cfg.AlpacaSecret, cfg.AlpacaDataURL, cfg.AlpacaFeed)
-		poller := ingest.NewPricePoller(st, priceClient, cfg.PricePollEvery, hub.Publish, log)
+		poller := ingest.NewPricePoller(st, priceClient, ingestTickers, cfg.PricePollEvery, hub.Publish, log)
 		go poller.Run(ctx)
 		log.Info("price polling enabled", "every", cfg.PricePollEvery.String(), "feed", cfg.AlpacaFeed)
 	} else {
@@ -84,7 +115,7 @@ func main() {
 
 	srv := &http.Server{
 		Addr:              ":" + cfg.Port,
-		Handler:           api.New(st, hub, enricher, log),
+		Handler:           api.New(st, hub, enricher, verifier, log),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
@@ -101,24 +132,6 @@ func main() {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	_ = srv.Shutdown(shutdownCtx)
-}
-
-// seedWatchlist populates the watchlist with defaults only when it is empty.
-func seedWatchlist(ctx context.Context, st store.Store, defaults []string, log *slog.Logger) error {
-	existing, err := st.Watchlist(ctx)
-	if err != nil {
-		return err
-	}
-	if len(existing) > 0 {
-		return nil
-	}
-	for _, t := range defaults {
-		if err := st.AddToWatchlist(ctx, t); err != nil {
-			return err
-		}
-	}
-	log.Info("seeded watchlist", "tickers", defaults)
-	return nil
 }
 
 // newStore builds the configured store and a cleanup func. A "postgres" backend

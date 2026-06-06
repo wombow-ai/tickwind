@@ -1,6 +1,9 @@
 package api
 
 import (
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"io"
 	"log/slog"
@@ -8,21 +11,60 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/wombow-ai/tickwind/internal/auth"
 	"github.com/wombow-ai/tickwind/internal/enrich"
 	"github.com/wombow-ai/tickwind/internal/store/memory"
 	"github.com/wombow-ai/tickwind/internal/stream"
 )
 
+const testSecret = "api-test-secret"
+
 func newTestServer() *httptest.Server {
-	h := New(memory.New(), stream.NewHub(), enrich.Noop{}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	h := New(
+		memory.New(), stream.NewHub(), enrich.Noop{},
+		auth.NewVerifier(testSecret),
+		slog.New(slog.NewTextHandler(io.Discard, nil)),
+	)
 	return httptest.NewServer(h)
+}
+
+// token mints a valid HS256 JWT for the test secret.
+func token(sub string) string {
+	enc := base64.RawURLEncoding
+	hdr, _ := json.Marshal(map[string]string{"alg": "HS256", "typ": "JWT"})
+	pl, _ := json.Marshal(map[string]any{"sub": sub, "exp": time.Now().Add(time.Hour).Unix()})
+	signing := enc.EncodeToString(hdr) + "." + enc.EncodeToString(pl)
+	mac := hmac.New(sha256.New, []byte(testSecret))
+	mac.Write([]byte(signing))
+	return signing + "." + enc.EncodeToString(mac.Sum(nil))
+}
+
+func authed(t *testing.T, method, url, body string) *http.Response {
+	t.Helper()
+	var r *http.Request
+	var err error
+	if body != "" {
+		r, err = http.NewRequest(method, url, strings.NewReader(body))
+		r.Header.Set("Content-Type", "application/json")
+	} else {
+		r, err = http.NewRequest(method, url, nil)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.Header.Set("Authorization", "Bearer "+token("user-1"))
+	resp, err := http.DefaultClient.Do(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return resp
 }
 
 func TestHealthz(t *testing.T) {
 	srv := newTestServer()
 	defer srv.Close()
-
 	resp, err := http.Get(srv.URL + "/healthz")
 	if err != nil {
 		t.Fatal(err)
@@ -31,12 +73,18 @@ func TestHealthz(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status = %d", resp.StatusCode)
 	}
-	var body map[string]string
-	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+}
+
+func TestWatchlistRequiresAuth(t *testing.T) {
+	srv := newTestServer()
+	defer srv.Close()
+	resp, err := http.Get(srv.URL + "/v1/watchlist") // no token
+	if err != nil {
 		t.Fatal(err)
 	}
-	if body["status"] != "ok" {
-		t.Fatalf("body = %v", body)
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("status = %d; want 401 without a token", resp.StatusCode)
 	}
 }
 
@@ -44,35 +92,25 @@ func TestWatchlistCRUD(t *testing.T) {
 	srv := newTestServer()
 	defer srv.Close()
 
-	if got := getTickers(t, srv.URL); len(got) != 0 {
-		t.Fatalf("initial watchlist = %v; want empty", got)
+	if got := tickers(t, srv.URL); len(got) != 0 {
+		t.Fatalf("initial = %v; want empty", got)
 	}
 
-	resp, err := http.Post(
-		srv.URL+"/v1/watchlist", "application/json",
-		strings.NewReader(`{"ticker":"aapl"}`),
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
+	resp := authed(t, http.MethodPost, srv.URL+"/v1/watchlist", `{"ticker":"aapl"}`)
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusCreated {
 		t.Fatalf("POST status = %d", resp.StatusCode)
 	}
-	if got := getTickers(t, srv.URL); len(got) != 1 || got[0] != "AAPL" {
+	if got := tickers(t, srv.URL); len(got) != 1 || got[0] != "AAPL" {
 		t.Fatalf("after add = %v", got)
 	}
 
-	req, _ := http.NewRequest(http.MethodDelete, srv.URL+"/v1/watchlist/AAPL", nil)
-	dresp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatal(err)
+	resp = authed(t, http.MethodDelete, srv.URL+"/v1/watchlist/AAPL", "")
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("DELETE status = %d", resp.StatusCode)
 	}
-	dresp.Body.Close()
-	if dresp.StatusCode != http.StatusOK {
-		t.Fatalf("DELETE status = %d", dresp.StatusCode)
-	}
-	if got := getTickers(t, srv.URL); len(got) != 0 {
+	if got := tickers(t, srv.URL); len(got) != 0 {
 		t.Fatalf("after delete = %v", got)
 	}
 }
@@ -80,23 +118,17 @@ func TestWatchlistCRUD(t *testing.T) {
 func TestWatchlistRejectsEmpty(t *testing.T) {
 	srv := newTestServer()
 	defer srv.Close()
-	resp, err := http.Post(
-		srv.URL+"/v1/watchlist", "application/json",
-		strings.NewReader(`{"ticker":""}`),
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
+	resp := authed(t, http.MethodPost, srv.URL+"/v1/watchlist", `{"ticker":""}`)
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("status = %d; want 400", resp.StatusCode)
 	}
 }
 
-func TestStockNotFound(t *testing.T) {
+func TestStockNotFoundIsPublic(t *testing.T) {
 	srv := newTestServer()
 	defer srv.Close()
-	resp, err := http.Get(srv.URL + "/v1/stocks/ZZZZ")
+	resp, err := http.Get(srv.URL + "/v1/stocks/ZZZZ") // public, no token
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -106,62 +138,36 @@ func TestStockNotFound(t *testing.T) {
 	}
 }
 
-func TestClipSavesToSocial(t *testing.T) {
+func TestClipSavesToUsersClips(t *testing.T) {
 	srv := newTestServer()
 	defer srv.Close()
 
-	// A local page the clip fetcher can read a title from.
 	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = io.WriteString(w, "<title>Clipped Page</title>")
 	}))
 	defer target.Close()
 
-	resp, err := http.Post(
-		srv.URL+"/v1/stocks/AAPL/clip", "application/json",
-		strings.NewReader(`{"url":"`+target.URL+`"}`),
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
+	resp := authed(t, http.MethodPost, srv.URL+"/v1/stocks/AAPL/clip", `{"url":"`+target.URL+`"}`)
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusCreated {
 		t.Fatalf("clip status = %d", resp.StatusCode)
 	}
 
-	sresp, err := http.Get(srv.URL + "/v1/stocks/AAPL/social")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer sresp.Body.Close()
+	cresp := authed(t, http.MethodGet, srv.URL+"/v1/stocks/AAPL/clips", "")
+	defer cresp.Body.Close()
 	var body struct {
 		Count int `json:"count"`
 	}
-	if err := json.NewDecoder(sresp.Body).Decode(&body); err != nil {
+	if err := json.NewDecoder(cresp.Body).Decode(&body); err != nil {
 		t.Fatal(err)
 	}
 	if body.Count != 1 {
-		t.Fatalf("social count = %d; want 1 (the clip)", body.Count)
+		t.Fatalf("clips count = %d; want 1", body.Count)
 	}
-}
-
-func getTickers(t *testing.T, base string) []string {
-	t.Helper()
-	resp, err := http.Get(base + "/v1/watchlist")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer resp.Body.Close()
-	var body struct {
-		Tickers []string `json:"tickers"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
-		t.Fatal(err)
-	}
-	return body.Tickers
 }
 
 func TestSummaryDisabledReturns503(t *testing.T) {
-	srv := newTestServer() // uses enrich.Noop (disabled)
+	srv := newTestServer()
 	defer srv.Close()
 	resp, err := http.Get(srv.URL + "/v1/stocks/AAPL/summary")
 	if err != nil {
@@ -171,4 +177,17 @@ func TestSummaryDisabledReturns503(t *testing.T) {
 	if resp.StatusCode != http.StatusServiceUnavailable {
 		t.Fatalf("status = %d; want 503 when LLM disabled", resp.StatusCode)
 	}
+}
+
+func tickers(t *testing.T, base string) []string {
+	t.Helper()
+	resp := authed(t, http.MethodGet, base+"/v1/watchlist", "")
+	defer resp.Body.Close()
+	var body struct {
+		Tickers []string `json:"tickers"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatal(err)
+	}
+	return body.Tickers
 }

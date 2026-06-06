@@ -1,4 +1,8 @@
 // Package api exposes the HTTP/JSON surface (stdlib net/http only).
+//
+// Public endpoints (market data) are open so the public stock pages can be
+// crawled/shared; per-user endpoints (watchlist, clips) require a valid
+// Supabase JWT and are scoped to the caller's user id.
 package api
 
 import (
@@ -12,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/wombow-ai/tickwind/internal/auth"
 	"github.com/wombow-ai/tickwind/internal/clip"
 	"github.com/wombow-ai/tickwind/internal/enrich"
 	"github.com/wombow-ai/tickwind/internal/store"
@@ -27,25 +32,34 @@ type Server struct {
 	hub    QuoteStream
 	clip   *clip.Fetcher
 	enrich enrich.Enricher
+	auth   *auth.Verifier
 	log    *slog.Logger
 }
 
-func New(st store.Store, hub QuoteStream, enricher enrich.Enricher, log *slog.Logger) http.Handler {
-	s := &Server{store: st, hub: hub, clip: clip.NewFetcher(), enrich: enricher, log: log}
+func New(st store.Store, hub QuoteStream, enricher enrich.Enricher, verifier *auth.Verifier, log *slog.Logger) http.Handler {
+	s := &Server{store: st, hub: hub, clip: clip.NewFetcher(), enrich: enricher, auth: verifier, log: log}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", s.health)
+
+	// Per-user (auth required)
 	mux.HandleFunc("GET /v1/watchlist", s.getWatchlist)
 	mux.HandleFunc("POST /v1/watchlist", s.postWatchlist)
 	mux.HandleFunc("DELETE /v1/watchlist/{ticker}", s.deleteWatchlist)
+	mux.HandleFunc("POST /v1/stocks/{ticker}/clip", s.postClip)
+	mux.HandleFunc("GET /v1/stocks/{ticker}/clips", s.getClips)
+
+	// Public (market data — open for SEO / shareable stock pages)
 	mux.HandleFunc("GET /v1/stocks/{ticker}", s.getStock)
 	mux.HandleFunc("GET /v1/stocks/{ticker}/filings", s.getFilings)
 	mux.HandleFunc("GET /v1/stocks/{ticker}/quote", s.getQuote)
 	mux.HandleFunc("GET /v1/stocks/{ticker}/news", s.getNews)
 	mux.HandleFunc("GET /v1/stocks/{ticker}/social", s.getSocial)
-	mux.HandleFunc("POST /v1/stocks/{ticker}/clip", s.postClip)
 	mux.HandleFunc("GET /v1/stocks/{ticker}/summary", s.getSummary)
 	mux.HandleFunc("GET /v1/stream", s.getStream)
-	return s.middleware(mux)
+
+	// auth.Middleware attaches the user when a valid bearer token is present;
+	// the outer middleware adds CORS + logging.
+	return s.middleware(verifier.Middleware(mux))
 }
 
 func (s *Server) middleware(next http.Handler) http.Handler {
@@ -53,7 +67,7 @@ func (s *Server) middleware(next http.Handler) http.Handler {
 		start := time.Now()
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
 			return
@@ -63,15 +77,35 @@ func (s *Server) middleware(next http.Handler) http.Handler {
 	})
 }
 
+// requireUser returns the authenticated user, or writes 401 and returns false.
+func (s *Server) requireUser(w http.ResponseWriter, r *http.Request) (auth.User, bool) {
+	u, ok := auth.UserFrom(r.Context())
+	if !ok {
+		writeJSON(w, http.StatusUnauthorized, errBody("login required"))
+		return auth.User{}, false
+	}
+	return u, true
+}
+
 func (s *Server) health(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "service": "tickwind"})
 }
 
+// ── Per-user: watchlist ──────────────────────────────────────────────────
+
 func (s *Server) getWatchlist(w http.ResponseWriter, r *http.Request) {
-	s.writeWatchlist(w, r, http.StatusOK)
+	u, ok := s.requireUser(w, r)
+	if !ok {
+		return
+	}
+	s.writeWatchlist(w, r, u.ID, http.StatusOK)
 }
 
 func (s *Server) postWatchlist(w http.ResponseWriter, r *http.Request) {
+	u, ok := s.requireUser(w, r)
+	if !ok {
+		return
+	}
 	var req struct {
 		Ticker string `json:"ticker"`
 	}
@@ -84,25 +118,28 @@ func (s *Server) postWatchlist(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, errBody("a ticker is required"))
 		return
 	}
-	if err := s.store.AddToWatchlist(r.Context(), ticker); err != nil {
+	if err := s.store.AddToWatchlist(r.Context(), u.ID, ticker); err != nil {
 		writeJSON(w, http.StatusInternalServerError, errBody(err.Error()))
 		return
 	}
-	s.writeWatchlist(w, r, http.StatusCreated)
+	s.writeWatchlist(w, r, u.ID, http.StatusCreated)
 }
 
 func (s *Server) deleteWatchlist(w http.ResponseWriter, r *http.Request) {
+	u, ok := s.requireUser(w, r)
+	if !ok {
+		return
+	}
 	ticker := strings.ToUpper(strings.TrimSpace(r.PathValue("ticker")))
-	if err := s.store.RemoveFromWatchlist(r.Context(), ticker); err != nil {
+	if err := s.store.RemoveFromWatchlist(r.Context(), u.ID, ticker); err != nil {
 		writeJSON(w, http.StatusInternalServerError, errBody(err.Error()))
 		return
 	}
-	s.writeWatchlist(w, r, http.StatusOK)
+	s.writeWatchlist(w, r, u.ID, http.StatusOK)
 }
 
-// writeWatchlist responds with the current watchlist at the given status.
-func (s *Server) writeWatchlist(w http.ResponseWriter, r *http.Request, code int) {
-	tickers, err := s.store.Watchlist(r.Context())
+func (s *Server) writeWatchlist(w http.ResponseWriter, r *http.Request, userID string, code int) {
+	tickers, err := s.store.Watchlist(r.Context(), userID)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, errBody(err.Error()))
 		return
@@ -112,6 +149,72 @@ func (s *Server) writeWatchlist(w http.ResponseWriter, r *http.Request, code int
 	}
 	writeJSON(w, code, map[string]any{"tickers": tickers})
 }
+
+// ── Per-user: clips (saved links) ────────────────────────────────────────
+
+func (s *Server) postClip(w http.ResponseWriter, r *http.Request) {
+	u, ok := s.requireUser(w, r)
+	if !ok {
+		return
+	}
+	ticker := strings.ToUpper(strings.TrimSpace(r.PathValue("ticker")))
+
+	var req struct {
+		URL string `json:"url"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 8<<10)).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, errBody("invalid request body"))
+		return
+	}
+	link := strings.TrimSpace(req.URL)
+	if link == "" {
+		writeJSON(w, http.StatusBadRequest, errBody("a url is required"))
+		return
+	}
+
+	title, err := s.clip.Title(r.Context(), link)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, errBody(err.Error()))
+		return
+	}
+
+	// Dedupe per (user, url); distinct across users.
+	h := fnv.New64a()
+	_, _ = h.Write([]byte(u.ID + "\x00" + link))
+	c := store.Clip{
+		ID:        fmt.Sprintf("clip:%x", h.Sum64()),
+		UserID:    u.ID,
+		Ticker:    ticker,
+		Title:     title,
+		URL:       link,
+		CreatedAt: time.Now().UTC(),
+	}
+	if err := s.store.SaveClip(r.Context(), c); err != nil {
+		writeJSON(w, http.StatusInternalServerError, errBody(err.Error()))
+		return
+	}
+	writeJSON(w, http.StatusCreated, c)
+}
+
+func (s *Server) getClips(w http.ResponseWriter, r *http.Request) {
+	u, ok := s.requireUser(w, r)
+	if !ok {
+		return
+	}
+	ticker := r.PathValue("ticker")
+	clips, err := s.store.ListClips(r.Context(), u.ID, ticker, queryLimit(r, 50))
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, errBody(err.Error()))
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ticker": ticker,
+		"count":  len(clips),
+		"clips":  clips,
+	})
+}
+
+// ── Public: market data ──────────────────────────────────────────────────
 
 func (s *Server) getStock(w http.ResponseWriter, r *http.Request) {
 	ticker := r.PathValue("ticker")
@@ -181,48 +284,6 @@ func (s *Server) getSocial(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// postClip saves a pasted link to the ticker's feed as a clip Post. It fetches
-// the page title (best-effort) and stores it under source "clip".
-func (s *Server) postClip(w http.ResponseWriter, r *http.Request) {
-	ticker := r.PathValue("ticker")
-
-	var req struct {
-		URL string `json:"url"`
-	}
-	if err := json.NewDecoder(io.LimitReader(r.Body, 8<<10)).Decode(&req); err != nil {
-		writeJSON(w, http.StatusBadRequest, errBody("invalid request body"))
-		return
-	}
-	link := strings.TrimSpace(req.URL)
-	if link == "" {
-		writeJSON(w, http.StatusBadRequest, errBody("a url is required"))
-		return
-	}
-
-	title, err := s.clip.Title(r.Context(), link)
-	if err != nil {
-		writeJSON(w, http.StatusBadRequest, errBody(err.Error()))
-		return
-	}
-
-	h := fnv.New64a()
-	_, _ = h.Write([]byte(link))
-	post := store.Post{
-		Ticker:    ticker,
-		ID:        fmt.Sprintf("clip:%x", h.Sum64()),
-		Source:    "clip",
-		Author:    "you",
-		Body:      title,
-		URL:       link,
-		CreatedAt: time.Now().UTC(),
-	}
-	if err := s.store.SaveSocial(r.Context(), ticker, []store.Post{post}); err != nil {
-		writeJSON(w, http.StatusInternalServerError, errBody(err.Error()))
-		return
-	}
-	writeJSON(w, http.StatusCreated, post)
-}
-
 // getSummary returns an LLM summary of the ticker's recent news + social posts.
 // It is an optional feature: when no LLM is configured it responds 503.
 func (s *Server) getSummary(w http.ResponseWriter, r *http.Request) {
@@ -246,7 +307,6 @@ func (s *Server) getSummary(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"ticker": ticker, "summary": summary})
 }
 
-// summaryInput builds the prompt context from recent news and posts.
 func summaryInput(ticker string, news []store.News, posts []store.Post) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "Ticker: %s\n\nRecent news headlines:\n", ticker)
@@ -270,15 +330,11 @@ func (s *Server) getStream(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
-
-	// Flush headers immediately so the client (and any proxy) sees the stream
-	// open right away, rather than waiting for the first event.
 	fmt.Fprint(w, ": connected\n\n")
 	flusher.Flush()
 
 	ch, unsubscribe := s.hub.Subscribe()
 	defer unsubscribe()
-
 	keepalive := time.NewTicker(15 * time.Second)
 	defer keepalive.Stop()
 
@@ -303,7 +359,6 @@ func (s *Server) getStream(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// queryLimit reads a positive ?limit= value, falling back to def.
 func queryLimit(r *http.Request, def int) int {
 	if q := r.URL.Query().Get("limit"); q != "" {
 		if n, err := strconv.Atoi(q); err == nil && n > 0 {
