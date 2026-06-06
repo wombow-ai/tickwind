@@ -537,6 +537,50 @@ export function getTopics(signal?: AbortSignal): Promise<TopicsResponse> {
   return getJson<TopicsResponse>('/v1/topics', signal);
 }
 
+/** One insider's open-market buy, for the Opportunity card's evidence. */
+export interface OpportunityBuyer {
+  name: string;
+  title: string;
+  date: string;
+  value: number;
+}
+
+/** One row of the Opportunity board (small-cap with insider buying). */
+export interface OpportunityStock {
+  ticker: string;
+  cik: number;
+  company: string;
+  price: number;
+  market_cap: number;
+  rank: number;
+  buyers: number; // distinct insiders who bought
+  buy_value: number; // total $ of those buys
+  buy_count: number;
+  last_buy_date: string;
+  explainer: string; // "3 insiders bought $1.2M on the open market in the last 30 days"
+  top_buyers: OpportunityBuyer[];
+  filing_url: string; // link to the SEC filing — the trust anchor
+  updated_at: string;
+}
+
+/** Envelope returned by `GET /v1/opportunities`. */
+export interface OpportunitiesResponse {
+  count: number;
+  stocks: OpportunityStock[];
+}
+
+/**
+ * Fetches the Opportunity board — small-cap US stocks with recent open-market
+ * insider buying (SEC Form 4), ranked by conviction.
+ */
+export function getOpportunities(
+  limit = 0,
+  signal?: AbortSignal,
+): Promise<OpportunitiesResponse> {
+  const q = limit > 0 ? `?limit=${encodeURIComponent(String(limit))}` : '';
+  return getJson<OpportunitiesResponse>(`/v1/opportunities${q}`, signal);
+}
+
 /** A link a user saved to a ticker (private, per-user). */
 export interface Clip {
   id: string;

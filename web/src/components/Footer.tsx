@@ -11,6 +11,7 @@ const COLUMNS: Array<[string, Array<[string, string]>]> = [
     [
       ['Markets', '/'],
       ['Hot stocks', '/hot'],
+      ['Opportunities', '/opportunities'],
       ['News', '/news'],
       ['Discussion', '/discussion'],
       ['Watchlist', '/watchlist'],
