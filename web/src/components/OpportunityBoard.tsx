@@ -46,7 +46,7 @@ export function OpportunityBoard() {
   }, [load]);
 
   return (
-    <div className="mx-auto max-w-3xl">
+    <div className="w-full">
       <header className="mb-4">
         <h1
           className={cx(

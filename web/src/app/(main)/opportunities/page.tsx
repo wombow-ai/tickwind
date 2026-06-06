@@ -11,11 +11,13 @@ export const metadata: Metadata = {
 /** Public Opportunity board (small-cap insider-buy signals) + the Guru-watch rail. */
 export default function OpportunitiesPage() {
   return (
-    <>
-      <OpportunityBoard />
-      <div className="mt-12">
+    <div className="grid gap-8 lg:grid-cols-3">
+      <div className="lg:col-span-2">
+        <OpportunityBoard />
+      </div>
+      <div className="lg:col-span-1">
         <GuruRail />
       </div>
-    </>
+    </div>
   );
 }

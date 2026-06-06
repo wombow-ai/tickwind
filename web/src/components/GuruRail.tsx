@@ -48,7 +48,7 @@ export function GuruRail() {
   }, [load]);
 
   return (
-    <div className="mx-auto max-w-3xl">
+    <div className="w-full">
       <header className="mb-4">
         <h2
           className={cx(
