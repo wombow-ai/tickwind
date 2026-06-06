@@ -119,12 +119,16 @@ feature-flagged plugin, never on the critical path. Web only.
   `USER_DATABASE_URL` at the local pg and `MARKET_DATABASE_URL` at `.env`.
 
 ## Frontend — "Aurora" data-first app (`web/`)
-- **Data-first, no marketing page** (explicit user direction): `/` IS the board.
-  Layout (per owner): a compact **horizontal stock strip** (watchlist when signed
-  in, else `POPULAR_TICKERS`) over a two-column **News** + **Discussion** feed
-  aggregated across those tickers (each item tagged with its ticker). Backed by
-  batched endpoints `GET /v1/news`, `/v1/social`, `/v1/bars` (`?tickers=…`, deduped
-  by id, capped). Synthesized from the user's design (`.design-ref.tsx`).
+- **Data-first, no marketing page** (explicit user direction). Layout (per owner):
+  a compact **horizontal stock strip** over a two-column **News** + **Discussion**
+  feed aggregated across those tickers (each item tagged with its ticker). One
+  `Board` component, `variant` prop: **`/` = Markets** (`POPULAR_TICKERS`, public)
+  and **`/watchlist` = the signed-in user's tickers** (separate pages so logged-in
+  users switch via the TopNav Markets/Watchlist links). Backed by batched
+  `GET /v1/news`, `/v1/social`, `/v1/bars` (`?tickers=…`, **deduped by id** — a
+  post/article can be tagged to several tickers, capped). All list endpoints return
+  `[]` not `null`, and feed setters coerce `?? []` (a null list once crashed the
+  Saved-links tab via `null.length`). Synthesized from the user's design.
 - **Design system** in `web/src/components/ui/` + `web/src/lib/ui.ts` (tokens):
   light-first Aurora (teal `#2DD4BF`/sky `#0EA5E9`) with a dark variant. Signature
   `SessionBadge` (pre=amber, regular=emerald+livedot, post=violet, overnight=blue,

@@ -86,6 +86,31 @@ export function TopNav() {
           </div>
         </form>
 
+        <nav className="hidden items-center gap-1 md:flex">
+          <Link
+            href="/"
+            aria-current={pathname === '/' ? 'page' : undefined}
+            className={cx(
+              'rounded-full px-3 py-1.5 text-[13px] font-medium hover:opacity-80',
+              pathname === '/' ? t.accentText : t.sub,
+            )}
+          >
+            Markets
+          </Link>
+          {user && (
+            <Link
+              href="/watchlist"
+              aria-current={pathname === '/watchlist' ? 'page' : undefined}
+              className={cx(
+                'rounded-full px-3 py-1.5 text-[13px] font-medium hover:opacity-80',
+                pathname === '/watchlist' ? t.accentText : t.sub,
+              )}
+            >
+              Watchlist
+            </Link>
+          )}
+        </nav>
+
         <div className="ml-auto flex items-center gap-1.5 sm:gap-2">
           <button
             onClick={() => setSearchOpen(o => !o)}
@@ -238,7 +263,7 @@ function AccountMenu({
               </p>
             </div>
             <Link
-              href="/"
+              href="/watchlist"
               onClick={() => setOpen(false)}
               className={cx(
                 'flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-[13px]',

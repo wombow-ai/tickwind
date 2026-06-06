@@ -101,31 +101,32 @@ export function StockView({ticker}: {ticker: string}) {
   useEffect(() => {
     const c = new AbortController();
     getBars(norm, c.signal).then(
-      r => setBars(r.closes),
+      r => setBars(r.closes ?? []),
       () => setBars([]),
     );
     return () => c.abort();
   }, [norm]);
 
-  // Public feeds.
+  // Public feeds. Null lists (Go marshals an empty slice as null) are coerced to
+  // [] so the feed never renders against `null.length`.
   const loadNews = useCallback(() => {
     setNews(f => ({...f, status: 'loading'}));
     getNews(norm, 15).then(
-      r => setNews({status: 'ready', items: r.news}),
+      r => setNews({status: 'ready', items: r.news ?? []}),
       () => setNews({status: 'error', items: []}),
     );
   }, [norm]);
   const loadSocial = useCallback(() => {
     setSocial(f => ({...f, status: 'loading'}));
     getSocial(norm, 20).then(
-      r => setSocial({status: 'ready', items: r.posts}),
+      r => setSocial({status: 'ready', items: r.posts ?? []}),
       () => setSocial({status: 'error', items: []}),
     );
   }, [norm]);
   const loadFilings = useCallback(() => {
     setFilings(f => ({...f, status: 'loading'}));
     getFilings(norm, 15).then(
-      r => setFilings({status: 'ready', items: r.filings}),
+      r => setFilings({status: 'ready', items: r.filings ?? []}),
       () => setFilings({status: 'error', items: []}),
     );
   }, [norm]);
@@ -142,7 +143,7 @@ export function StockView({ticker}: {ticker: string}) {
     try {
       const token = await getToken();
       const r = await getClips(token, norm);
-      setClips({status: 'ready', items: r.clips});
+      setClips({status: 'ready', items: r.clips ?? []});
     } catch {
       setClips({status: 'error', items: []});
     }

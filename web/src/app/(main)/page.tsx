@@ -1,6 +1,6 @@
 import {Board} from '@/components/Board';
 
-/** Data-first home: the watchlist board (popular stocks when signed out). */
+/** Data-first home: the markets overview (popular stocks + news + discussion). */
 export default function HomePage() {
-  return <Board />;
+  return <Board variant="markets" />;
 }

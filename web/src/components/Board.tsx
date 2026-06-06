@@ -45,16 +45,17 @@ function placeholder(ticker: string): Security {
 }
 
 /**
- * Data-first home: a compact strip of tracked stocks, then aggregated News and
- * Discussion feeds across those stocks. Uses the user's watchlist when signed
- * in, else a popular set.
+ * Data-first board: a compact strip of stocks over aggregated News and
+ * Discussion feeds. `markets` shows a popular set (the public home `/`);
+ * `watchlist` shows the signed-in user's own tickers (`/watchlist`).
  */
-export function Board() {
+export function Board({variant = 'markets'}: {variant?: 'markets' | 'watchlist'}) {
   const {user, loading: authLoading, getToken} = useAuth();
   const {toast} = useToast();
   const dark = useDark();
   const t = tok(dark);
   const isAuthed = !!user;
+  const watchlistMode = variant === 'watchlist';
 
   const [tickers, setTickers] = useState<string[]>([...POPULAR_TICKERS]);
   const [securities, setSecurities] = useState<Record<string, Security>>({});
@@ -68,11 +69,16 @@ export function Board() {
   const quotes = useQuotes(tickers);
   const tickerKey = tickers.join(',');
 
-  // Load the list: the user's watchlist when signed in, else popular tickers.
+  // Markets → a popular set; Watchlist → the signed-in user's own tickers.
   useEffect(() => {
+    if (!watchlistMode) {
+      setTickers([...POPULAR_TICKERS]);
+      setListLoading(false);
+      return;
+    }
     if (authLoading) return;
     if (!isAuthed) {
-      setTickers([...POPULAR_TICKERS]);
+      setTickers([]);
       setListLoading(false);
       return;
     }
@@ -82,7 +88,7 @@ export function Board() {
       try {
         const token = await getToken();
         const res = await getWatchlist(token);
-        if (active) setTickers(res.tickers);
+        if (active) setTickers(res.tickers ?? []);
       } catch {
         if (active) setTickers([]);
       } finally {
@@ -92,7 +98,7 @@ export function Board() {
     return () => {
       active = false;
     };
-  }, [authLoading, isAuthed, getToken]);
+  }, [watchlistMode, authLoading, isAuthed, getToken]);
 
   // Resolve security metadata for any unresolved tickers.
   useEffect(() => {
@@ -134,7 +140,7 @@ export function Board() {
     }
     setNews(f => ({...f, status: 'loading'}));
     getNewsBatch(tickers).then(
-      r => setNews({status: 'ready', items: r.news}),
+      r => setNews({status: 'ready', items: r.news ?? []}),
       () => setNews({status: 'error', items: []}),
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -146,7 +152,7 @@ export function Board() {
     }
     setSocial(f => ({...f, status: 'loading'}));
     getSocialBatch(tickers).then(
-      r => setSocial({status: 'ready', items: r.posts}),
+      r => setSocial({status: 'ready', items: r.posts ?? []}),
       () => setSocial({status: 'error', items: []}),
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -199,21 +205,25 @@ export function Board() {
     () => tickers.map(tk => securities[tk] ?? placeholder(tk)),
     [tickers, securities],
   );
-  const showEmptyWatchlist = isAuthed && !listLoading && tickers.length === 0;
+  const showEmptyWatchlist =
+    watchlistMode && isAuthed && !listLoading && tickers.length === 0;
+  const needLogin = watchlistMode && !authLoading && !isAuthed;
 
   return (
     <div>
       <header className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h1 className={cx('text-[26px] font-bold tracking-tight', t.text)}>
-            {isAuthed ? 'Your watchlist' : 'Markets today'}
+            {watchlistMode ? 'Your watchlist' : 'Markets today'}
           </h1>
           <p className={cx('mt-1 text-[13.5px]', t.sub)}>
-            Live prices, then the news and chatter for the stocks you follow.
+            {watchlistMode
+              ? 'Your stocks — prices, news and chatter in one place.'
+              : 'Live prices, then the news and chatter across the market.'}
           </p>
         </div>
 
-        {isAuthed ? (
+        {watchlistMode && isAuthed ? (
           <form
             onSubmit={e => {
               e.preventDefault();
@@ -249,7 +259,7 @@ export function Board() {
               <Plus size={16} />
             </button>
           </form>
-        ) : (
+        ) : !watchlistMode && !isAuthed ? (
           <Link
             href="/login"
             className={cx(
@@ -259,13 +269,51 @@ export function Board() {
               t.text,
             )}
           >
-            <Lock size={14} className={t.sub} /> Log in to customize
+            <Lock size={14} className={t.sub} /> Log in
           </Link>
-        )}
+        ) : null}
       </header>
 
+      {needLogin && (
+        <div
+          className={cx(
+            'flex flex-col items-center rounded-3xl border p-12 text-center',
+            t.card,
+            t.border,
+            t.soft,
+          )}
+        >
+          <div
+            className="mb-4 flex items-center justify-center rounded-2xl"
+            style={{
+              width: 64,
+              height: 64,
+              background: dark ? 'rgba(20,184,166,.12)' : 'rgba(13,148,136,.08)',
+            }}
+          >
+            <Lock className={dark ? 'text-teal-300' : 'text-teal-600'} size={26} />
+          </div>
+          <h3 className={cx('text-[16px] font-semibold', t.text)}>
+            Log in to see your watchlist
+          </h3>
+          <p className={cx('mt-1.5 max-w-sm text-[13.5px]', t.sub)}>
+            Track your own stocks and clip links from anywhere — free.
+          </p>
+          <Link
+            href="/login"
+            className={cx(
+              'mt-4 rounded-full px-4 py-2 text-[13px] font-semibold',
+              btnPrimary(dark),
+            )}
+          >
+            Log in
+          </Link>
+        </div>
+      )}
+
       {/* Stock strip */}
-      {showEmptyWatchlist ? (
+      {!needLogin &&
+        (showEmptyWatchlist ? (
         <div
           className={cx(
             'mb-8 flex flex-col items-center rounded-3xl border p-10 text-center',
@@ -319,7 +367,11 @@ export function Board() {
                   security={sec as Security}
                   quote={quotes.get(sec.ticker)}
                   closes={barsMap[sec.ticker]}
-                  onRemove={isAuthed ? () => remove(sec.ticker) : undefined}
+                  onRemove={
+                    watchlistMode && isAuthed
+                      ? () => remove(sec.ticker)
+                      : undefined
+                  }
                 />
               </div>
             ) : (
@@ -335,10 +387,11 @@ export function Board() {
             ),
           )}
         </div>
-      )}
+        ))}
 
       {/* News + Discussion */}
-      <div className="grid gap-6 md:grid-cols-2">
+      {!needLogin && (
+        <div className="grid gap-6 md:grid-cols-2">
         <FeedColumn
           title="News"
           icon={Newspaper}
@@ -378,8 +431,9 @@ export function Board() {
           )}
         />
       </div>
+      )}
 
-      {!isAuthed && (
+      {!watchlistMode && !isAuthed && (
         <p className={cx('mt-8 text-center text-[12px]', t.faint)}>
           Showing popular US stocks.{' '}
           <Link href="/signup" className={cx('font-semibold', t.accentText)}>

@@ -137,14 +137,18 @@ func (c *Client) RecentFilings(ctx context.Context, ticker string, limit int) (s
 	out := make([]store.Filing, 0, limit)
 	for i := 0; i < len(r.AccessionNumber) && len(out) < limit; i++ {
 		filedAt, _ := time.Parse("2006-01-02", at(r.FilingDate, i))
-		title := at(r.Form, i)
-		if d := at(r.PrimaryDocDescription, i); d != "" {
+		form := at(r.Form, i)
+		// Use a human-readable name for the form type, unless the document has
+		// its own *meaningful* description (the feed often just repeats the form,
+		// e.g. "FORM 4" or "10-Q", which is no better than our mapping).
+		title := formTitle(form)
+		if d := at(r.PrimaryDocDescription, i); usefulDesc(d, form) {
 			title = d
 		}
 		accNoDashes := strings.ReplaceAll(r.AccessionNumber[i], "-", "")
 		out = append(out, store.Filing{
 			Ticker:      sec.Ticker,
-			Form:        at(r.Form, i),
+			Form:        form,
 			Title:       title,
 			FiledAt:     filedAt,
 			AccessionNo: r.AccessionNumber[i],
@@ -160,4 +164,67 @@ func at(s []string, i int) string {
 		return s[i]
 	}
 	return ""
+}
+
+// formDescriptions maps common SEC form types to a human-readable name.
+var formDescriptions = map[string]string{
+	"10-K":    "Annual report (10-K)",
+	"10-Q":    "Quarterly report (10-Q)",
+	"8-K":     "Current report (8-K)",
+	"4":       "Insider transaction (Form 4)",
+	"3":       "Initial insider holdings (Form 3)",
+	"5":       "Annual insider holdings (Form 5)",
+	"144":     "Notice of proposed sale (Form 144)",
+	"SD":      "Specialized disclosure (Form SD)",
+	"6-K":     "Foreign issuer report (6-K)",
+	"20-F":    "Foreign annual report (20-F)",
+	"S-1":     "Registration statement (S-1)",
+	"S-3":     "Shelf registration (S-3)",
+	"S-8":     "Employee plan registration (S-8)",
+	"11-K":    "Employee benefit plan report (11-K)",
+	"FWP":     "Free writing prospectus",
+	"25-NSE":  "Notification of delisting",
+	"CERT":    "Exchange certification",
+	"EFFECT":  "Notice of effectiveness",
+	"DEF 14A": "Proxy statement (DEF 14A)",
+}
+
+// usefulDesc reports whether a primary-document description adds anything over
+// the form type (i.e. it isn't empty, the bare form, or "FORM <x>").
+func usefulDesc(desc, form string) bool {
+	u := strings.ToUpper(strings.TrimSpace(desc))
+	f := strings.ToUpper(strings.TrimSpace(form))
+	return u != "" && u != f && u != "FORM "+f && u != "FORM"+f
+}
+
+// formTitle returns a friendly name for an SEC form type, falling back to the
+// raw form. Amendment suffixes ("/A") are noted.
+func formTitle(form string) string {
+	f := strings.TrimSpace(form)
+	if f == "" {
+		return "Filing"
+	}
+	amended := strings.HasSuffix(f, "/A")
+	base := strings.TrimSuffix(f, "/A")
+	desc, ok := formDescriptions[base]
+	if !ok {
+		switch {
+		case strings.HasPrefix(base, "SC 13D"):
+			desc = "Beneficial ownership (13D)"
+		case strings.HasPrefix(base, "SC 13G"):
+			desc = "Beneficial ownership (13G)"
+		case strings.HasPrefix(base, "424B"):
+			desc = "Prospectus"
+		case strings.HasPrefix(base, "13F"):
+			desc = "Institutional holdings (13F)"
+		case strings.HasPrefix(base, "DEF 14"), strings.HasPrefix(base, "DEFA"):
+			desc = "Proxy statement"
+		default:
+			desc = base + " filing"
+		}
+	}
+	if amended {
+		desc += " (amended)"
+	}
+	return desc
 }

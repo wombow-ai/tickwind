@@ -222,6 +222,9 @@ func (s *Server) getClips(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, errBody(err.Error()))
 		return
 	}
+	if clips == nil {
+		clips = []store.Clip{} // marshal as [] not null
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"ticker": ticker,
 		"count":  len(clips),

@@ -9,17 +9,17 @@ const COLUMNS: Array<[string, Array<[string, string]>]> = [
   [
     'Product',
     [
-      ['Live prices', '/'],
-      ['Filings & news', '/'],
-      ['Watchlist', '/'],
-      ['Saved links', '/'],
+      ['Markets', '/'],
+      ['Your watchlist', '/watchlist'],
+      ["What's new", '/announcements'],
     ],
   ],
   [
-    'Company',
+    'Account',
     [
-      ["What's new", '/announcements'],
       ['Settings', '/settings'],
+      ['Log in', '/login'],
+      ['Sign up', '/signup'],
     ],
   ],
 ];
