@@ -1,14 +1,19 @@
 'use client';
 
-import {Lock, Plus, Search, Wind} from 'lucide-react';
+import {Lock, MessageSquare, Newspaper, Plus, Search, Wind} from 'lucide-react';
+import type {LucideIcon} from 'lucide-react';
 import Link from 'next/link';
-import {useEffect, useMemo, useState} from 'react';
+import {useCallback, useEffect, useMemo, useState} from 'react';
 import {
   addToWatchlist,
   getBarsBatch,
+  getNewsBatch,
+  getSocialBatch,
   getStock,
   getWatchlist,
   removeFromWatchlist,
+  type NewsItem,
+  type Post,
   type Security,
 } from '@/lib/api';
 import {useAuth} from '@/lib/auth';
@@ -17,7 +22,15 @@ import {useDark} from '@/lib/theme';
 import {btnPrimary, cx, tok} from '@/lib/ui';
 import {useQuotes} from '@/lib/useQuotes';
 import {StockCard} from '@/components/StockCard';
+import {TimelineItem} from '@/components/TimelineItem';
+import {EmptyState, ErrorState, FeedSkeleton} from '@/components/ui/states';
 import {useToast} from '@/components/ui/Toast';
+
+type Status = 'loading' | 'ready' | 'error';
+interface Feed<T> {
+  status: Status;
+  items: T[];
+}
 
 /** Guesses a listing market from a ticker suffix. */
 function guessMarket(ticker: string): string {
@@ -31,7 +44,11 @@ function placeholder(ticker: string): Security {
   return {ticker, name: ticker, market: guessMarket(ticker)};
 }
 
-/** The data-first home board: a watchlist (auth) or popular stocks (anon). */
+/**
+ * Data-first home: a compact strip of tracked stocks, then aggregated News and
+ * Discussion feeds across those stocks. Uses the user's watchlist when signed
+ * in, else a popular set.
+ */
 export function Board() {
   const {user, loading: authLoading, getToken} = useAuth();
   const {toast} = useToast();
@@ -44,6 +61,9 @@ export function Board() {
   const [barsMap, setBarsMap] = useState<Record<string, number[]>>({});
   const [listLoading, setListLoading] = useState(false);
   const [adding, setAdding] = useState('');
+
+  const [news, setNews] = useState<Feed<NewsItem>>({status: 'loading', items: []});
+  const [social, setSocial] = useState<Feed<Post>>({status: 'loading', items: []});
 
   const quotes = useQuotes(tickers);
   const tickerKey = tickers.join(',');
@@ -91,7 +111,7 @@ export function Board() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tickerKey]);
 
-  // Batched trend sparklines for the whole board (one request).
+  // Batched trend sparklines for the strip (one request).
   useEffect(() => {
     if (tickers.length === 0) {
       setBarsMap({});
@@ -105,6 +125,37 @@ export function Board() {
     return () => controller.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tickerKey]);
+
+  // Aggregated News + Discussion feeds across the tracked tickers.
+  const loadNews = useCallback(() => {
+    if (tickers.length === 0) {
+      setNews({status: 'ready', items: []});
+      return;
+    }
+    setNews(f => ({...f, status: 'loading'}));
+    getNewsBatch(tickers).then(
+      r => setNews({status: 'ready', items: r.news}),
+      () => setNews({status: 'error', items: []}),
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tickerKey]);
+  const loadSocial = useCallback(() => {
+    if (tickers.length === 0) {
+      setSocial({status: 'ready', items: []});
+      return;
+    }
+    setSocial(f => ({...f, status: 'loading'}));
+    getSocialBatch(tickers).then(
+      r => setSocial({status: 'ready', items: r.posts}),
+      () => setSocial({status: 'error', items: []}),
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tickerKey]);
+
+  useEffect(() => {
+    loadNews();
+    loadSocial();
+  }, [loadNews, loadSocial]);
 
   async function add(raw: string) {
     const ticker = raw.trim().toUpperCase();
@@ -137,9 +188,7 @@ export function Board() {
       const token = await getToken();
       const res = await removeFromWatchlist(token, ticker);
       setTickers(res.tickers);
-      toast(`Removed ${ticker}`, {
-        action: {label: 'Undo', fn: () => add(ticker)},
-      });
+      toast(`Removed ${ticker}`, {action: {label: 'Undo', fn: () => add(ticker)}});
     } catch {
       setTickers(prev);
       toast(`Couldn't remove ${ticker}`);
@@ -150,18 +199,17 @@ export function Board() {
     () => tickers.map(tk => securities[tk] ?? placeholder(tk)),
     [tickers, securities],
   );
+  const showEmptyWatchlist = isAuthed && !listLoading && tickers.length === 0;
 
   return (
     <div>
-      <header className="mb-7 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+      <header className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h1 className={cx('text-[26px] font-bold tracking-tight', t.text)}>
-            {isAuthed ? 'Your watchlist' : 'Popular stocks'}
+            {isAuthed ? 'Your watchlist' : 'Markets today'}
           </h1>
           <p className={cx('mt-1 text-[13.5px]', t.sub)}>
-            {isAuthed
-              ? `${tickers.length} ${tickers.length === 1 ? 'stock' : 'stocks'} · live across every session`
-              : 'Live prices across every session — log in to build your own.'}
+            Live prices, then the news and chatter for the stocks you follow.
           </p>
         </div>
 
@@ -216,42 +264,33 @@ export function Board() {
         )}
       </header>
 
-      {listLoading && tickers.length === 0 ? (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {[0, 1, 2, 3, 4, 5].map(i => (
-            <div
-              key={i}
-              className={cx('h-[132px] rounded-2xl border', t.card, t.border, t.skel)}
-            />
-          ))}
-        </div>
-      ) : isAuthed && tickers.length === 0 ? (
+      {/* Stock strip */}
+      {showEmptyWatchlist ? (
         <div
           className={cx(
-            'flex flex-col items-center rounded-3xl border p-12 text-center',
+            'mb-8 flex flex-col items-center rounded-3xl border p-10 text-center',
             t.card,
             t.border,
             t.soft,
           )}
         >
           <div
-            className="mb-5 flex items-center justify-center rounded-2xl"
+            className="mb-4 flex items-center justify-center rounded-2xl"
             style={{
-              width: 72,
-              height: 72,
+              width: 64,
+              height: 64,
               background: dark ? 'rgba(20,184,166,.12)' : 'rgba(13,148,136,.08)',
             }}
           >
-            <Wind className={dark ? 'text-teal-300' : 'text-teal-600'} size={30} />
+            <Wind className={dark ? 'text-teal-300' : 'text-teal-600'} size={28} />
           </div>
-          <h3 className={cx('text-[17px] font-semibold', t.text)}>
+          <h3 className={cx('text-[16px] font-semibold', t.text)}>
             Your board is calm and empty
           </h3>
           <p className={cx('mt-1.5 max-w-sm text-[13.5px]', t.sub)}>
-            Add your first ticker and watch the price, news and filings flow in —
-            across every session.
+            Add a ticker to follow its price, news and chatter.
           </p>
-          <div className="mt-5 flex flex-wrap items-center justify-center gap-2">
+          <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
             {SUGGESTED_TICKERS.map(s => (
               <button
                 key={s}
@@ -269,28 +308,125 @@ export function Board() {
           </div>
         </div>
       ) : (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {cards.map(sec => (
-            <StockCard
-              key={sec.ticker}
-              security={sec}
-              quote={quotes.get(sec.ticker)}
-              closes={barsMap[sec.ticker]}
-              onRemove={isAuthed ? () => remove(sec.ticker) : undefined}
-            />
-          ))}
+        <div className="mb-8 flex gap-4 overflow-x-auto pb-2">
+          {(listLoading && tickers.length === 0
+            ? [...Array(4)].map((_, i) => ({ticker: `skeleton-${i}`}))
+            : cards
+          ).map((sec, i) =>
+            'name' in sec ? (
+              <div key={sec.ticker} className="w-[270px] shrink-0">
+                <StockCard
+                  security={sec as Security}
+                  quote={quotes.get(sec.ticker)}
+                  closes={barsMap[sec.ticker]}
+                  onRemove={isAuthed ? () => remove(sec.ticker) : undefined}
+                />
+              </div>
+            ) : (
+              <div
+                key={i}
+                className={cx(
+                  'h-[150px] w-[270px] shrink-0 rounded-2xl border',
+                  t.card,
+                  t.border,
+                  t.skel,
+                )}
+              />
+            ),
+          )}
         </div>
       )}
 
+      {/* News + Discussion */}
+      <div className="grid gap-6 md:grid-cols-2">
+        <FeedColumn
+          title="News"
+          icon={Newspaper}
+          feed={news}
+          onRetry={loadNews}
+          empty={{
+            label: 'No news yet',
+            sub: 'Headlines about the stocks you follow will land here.',
+            icon: Newspaper,
+          }}
+          render={(n, last) => (
+            <TimelineItem
+              key={`${n.ticker}:${n.id}`}
+              entry={{kind: 'news', item: n}}
+              showTicker
+              last={last}
+            />
+          )}
+        />
+        <FeedColumn
+          title="Discussion"
+          icon={MessageSquare}
+          feed={social}
+          onRetry={loadSocial}
+          empty={{
+            label: 'No chatter yet',
+            sub: 'Posts from StockTwits and Reddit will show up here.',
+            icon: MessageSquare,
+          }}
+          render={(p, last) => (
+            <TimelineItem
+              key={`${p.ticker}:${p.id}`}
+              entry={{kind: 'disc', item: p}}
+              showTicker
+              last={last}
+            />
+          )}
+        />
+      </div>
+
       {!isAuthed && (
-        <p className={cx('mt-6 text-center text-[12px]', t.faint)}>
+        <p className={cx('mt-8 text-center text-[12px]', t.faint)}>
           Showing popular US stocks.{' '}
           <Link href="/signup" className={cx('font-semibold', t.accentText)}>
             Create a free account
           </Link>{' '}
-          to track your own.
+          to follow your own.
         </p>
       )}
     </div>
+  );
+}
+
+/** One titled feed column with loading / error / empty / list states. */
+function FeedColumn<T>({
+  title,
+  icon: Icon,
+  feed,
+  onRetry,
+  empty,
+  render,
+}: {
+  title: string;
+  icon: LucideIcon;
+  feed: Feed<T>;
+  onRetry: () => void;
+  empty: {label: string; sub: string; icon: LucideIcon};
+  render: (item: T, last: boolean) => React.ReactNode;
+}) {
+  const dark = useDark();
+  const t = tok(dark);
+  return (
+    <section>
+      <h2 className={cx('mb-3 flex items-center gap-2 text-[15px] font-bold', t.text)}>
+        <Icon size={16} className={dark ? 'text-teal-300' : 'text-teal-600'} />
+        {title}
+      </h2>
+      {feed.status === 'loading' ? (
+        <FeedSkeleton />
+      ) : feed.status === 'error' ? (
+        <ErrorState onRetry={onRetry} />
+      ) : feed.items.length === 0 ? (
+        <EmptyState label={empty.label} sub={empty.sub} icon={empty.icon} />
+      ) : (
+        <div className="tw-fade">
+          {feed.items.map((item, i) => render(item, i === feed.items.length - 1))}
+        </div>
+      )}
+    </section>
   );
 }

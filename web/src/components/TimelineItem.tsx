@@ -7,6 +7,7 @@ import {
   MessageSquare,
   Newspaper,
 } from 'lucide-react';
+import Link from 'next/link';
 import type {Clip, Filing, NewsItem, Post} from '@/lib/api';
 import {useDark} from '@/lib/theme';
 import {cx, timeAgo, tok} from '@/lib/ui';
@@ -43,9 +44,12 @@ const ICONS = {
 export function TimelineItem({
   entry,
   last,
+  showTicker,
 }: {
   entry: FeedEntry;
   last?: boolean;
+  /** Show a ticker tag (for cross-stock aggregated feeds like the home page). */
+  showTicker?: boolean;
 }) {
   const dark = useDark();
   const t = tok(dark);
@@ -140,6 +144,18 @@ export function TimelineItem({
             <span className={cx('text-[12px] font-semibold', t.sub)}>
               {entry.item.source}
             </span>
+          )}
+          {showTicker && (
+            <Link
+              href={`/stock/${encodeURIComponent(entry.item.ticker)}`}
+              className={cx(
+                'rounded-md px-1.5 py-0.5 text-[10.5px] font-bold tracking-wide',
+                t.chip,
+                t.accentText,
+              )}
+            >
+              {entry.item.ticker}
+            </Link>
           )}
           <span className={cx('ml-auto text-[11px] tabular-nums', t.faint)}>
             {when}

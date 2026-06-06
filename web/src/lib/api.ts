@@ -324,6 +324,44 @@ export function getBarsBatch(
   );
 }
 
+/** Envelope returned by `GET /v1/news?tickers=...` (merged home feed). */
+export interface NewsFeedResponse {
+  count: number;
+  news: NewsItem[];
+}
+
+/** Envelope returned by `GET /v1/social?tickers=...` (merged home feed). */
+export interface SocialFeedResponse {
+  count: number;
+  posts: Post[];
+}
+
+/** Fetches recent news merged across several tickers, newest first. */
+export function getNewsBatch(
+  tickers: readonly string[],
+  perTicker = 6,
+  signal?: AbortSignal,
+): Promise<NewsFeedResponse> {
+  const q = tickers.map(normalizeTicker).join(',');
+  return getJson<NewsFeedResponse>(
+    `/v1/news?tickers=${encodeURIComponent(q)}&limit=${encodeURIComponent(String(perTicker))}`,
+    signal,
+  );
+}
+
+/** Fetches recent social posts merged across several tickers, newest first. */
+export function getSocialBatch(
+  tickers: readonly string[],
+  perTicker = 6,
+  signal?: AbortSignal,
+): Promise<SocialFeedResponse> {
+  const q = tickers.map(normalizeTicker).join(',');
+  return getJson<SocialFeedResponse>(
+    `/v1/social?tickers=${encodeURIComponent(q)}&limit=${encodeURIComponent(String(perTicker))}`,
+    signal,
+  );
+}
+
 /**
  * Fetches recent filings for a ticker, most recent first.
  *

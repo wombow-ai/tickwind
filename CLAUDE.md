@@ -120,9 +120,11 @@ feature-flagged plugin, never on the critical path. Web only.
 
 ## Frontend — "Aurora" data-first app (`web/`)
 - **Data-first, no marketing page** (explicit user direction): `/` IS the board.
-  Anonymous → popular US tickers (`POPULAR_TICKERS`) with live prices; signed-in →
-  the user's watchlist (`/v1/watchlist`) with add/remove. Synthesized from the
-  user's own design (`tickwind-app-claude.tsx`, kept as `.design-ref.tsx`).
+  Layout (per owner): a compact **horizontal stock strip** (watchlist when signed
+  in, else `POPULAR_TICKERS`) over a two-column **News** + **Discussion** feed
+  aggregated across those tickers (each item tagged with its ticker). Backed by
+  batched endpoints `GET /v1/news`, `/v1/social`, `/v1/bars` (`?tickers=…`, deduped
+  by id, capped). Synthesized from the user's design (`.design-ref.tsx`).
 - **Design system** in `web/src/components/ui/` + `web/src/lib/ui.ts` (tokens):
   light-first Aurora (teal `#2DD4BF`/sky `#0EA5E9`) with a dark variant. Signature
   `SessionBadge` (pre=amber, regular=emerald+livedot, post=violet, overnight=blue,

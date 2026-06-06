@@ -13,6 +13,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -67,6 +68,8 @@ func New(st store.Store, hub QuoteStream, enricher enrich.Enricher, verifier *au
 	mux.HandleFunc("GET /v1/stocks/{ticker}/social", s.getSocial)
 	mux.HandleFunc("GET /v1/stocks/{ticker}/summary", s.getSummary)
 	mux.HandleFunc("GET /v1/bars", s.getBarsBatch)
+	mux.HandleFunc("GET /v1/news", s.getNewsBatch)
+	mux.HandleFunc("GET /v1/social", s.getSocialBatch)
 	mux.HandleFunc("GET /v1/stream", s.getStream)
 
 	// auth.Middleware attaches the user when a valid bearer token is present;
@@ -284,35 +287,43 @@ func (s *Server) getBars(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"ticker": ticker, "closes": closes})
 }
 
-// maxBarsBatch caps how many tickers one /v1/bars request resolves.
+// maxBarsBatch caps how many tickers one batched request (bars/news/social)
+// will resolve.
 const maxBarsBatch = 30
 
+// queryTickers reads the comma-separated `tickers` query param, uppercased,
+// deduped, and capped at max.
+func queryTickers(r *http.Request, max int) []string {
+	raw := strings.TrimSpace(r.URL.Query().Get("tickers"))
+	if raw == "" {
+		return nil
+	}
+	seen := make(map[string]struct{})
+	var out []string
+	for _, t := range strings.Split(raw, ",") {
+		t = strings.ToUpper(strings.TrimSpace(t))
+		if t == "" {
+			continue
+		}
+		if _, ok := seen[t]; ok {
+			continue
+		}
+		seen[t] = struct{}{}
+		out = append(out, t)
+		if len(out) >= max {
+			break
+		}
+	}
+	return out
+}
+
 // getBarsBatch returns daily-close series for multiple tickers in one request
-// (board sparklines). Tickers come from the comma-separated `tickers` query
-// param, deduped and capped; series are fetched concurrently via the cache.
-// Missing/empty series are omitted, so the response is always 200 with a
-// (possibly partial) map.
+// (board sparklines), fetched concurrently via the cache. Missing/empty series
+// are omitted, so the response is always 200 with a (possibly partial) map.
 func (s *Server) getBarsBatch(w http.ResponseWriter, r *http.Request) {
 	result := map[string][]float64{}
-	raw := strings.TrimSpace(r.URL.Query().Get("tickers"))
-	if s.bars != nil && raw != "" {
-		seen := make(map[string]struct{})
-		var list []string
-		for _, t := range strings.Split(raw, ",") {
-			t = strings.ToUpper(strings.TrimSpace(t))
-			if t == "" {
-				continue
-			}
-			if _, ok := seen[t]; ok {
-				continue
-			}
-			seen[t] = struct{}{}
-			list = append(list, t)
-			if len(list) >= maxBarsBatch {
-				break
-			}
-		}
-
+	list := queryTickers(r, maxBarsBatch)
+	if s.bars != nil && len(list) > 0 {
 		var mu sync.Mutex
 		var wg sync.WaitGroup
 		for _, ticker := range list {
@@ -332,6 +343,61 @@ func (s *Server) getBarsBatch(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"bars": result})
 }
+
+// getNewsBatch returns recent news merged across several tickers (the home
+// feed), newest first. Each item keeps its `ticker` so the UI can tag it.
+func (s *Server) getNewsBatch(w http.ResponseWriter, r *http.Request) {
+	perTicker := queryLimit(r, 6)
+	seen := make(map[string]struct{}) // an article may be tagged to several tickers
+	var all []store.News
+	for _, t := range queryTickers(r, maxBarsBatch) {
+		items, err := s.store.ListNews(r.Context(), t, perTicker)
+		if err != nil {
+			continue
+		}
+		for _, n := range items {
+			if _, ok := seen[n.ID]; ok {
+				continue
+			}
+			seen[n.ID] = struct{}{}
+			all = append(all, n)
+		}
+	}
+	sort.Slice(all, func(i, j int) bool { return all[i].Published.After(all[j].Published) })
+	if len(all) > maxFeed {
+		all = all[:maxFeed]
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"count": len(all), "news": all})
+}
+
+// getSocialBatch returns recent social posts merged across several tickers (the
+// home "discussion" feed), newest first. Each post keeps its `ticker`.
+func (s *Server) getSocialBatch(w http.ResponseWriter, r *http.Request) {
+	perTicker := queryLimit(r, 6)
+	seen := make(map[string]struct{}) // one post may mention several tickers
+	var all []store.Post
+	for _, t := range queryTickers(r, maxBarsBatch) {
+		posts, err := s.store.ListSocial(r.Context(), t, perTicker)
+		if err != nil {
+			continue
+		}
+		for _, p := range posts {
+			if _, ok := seen[p.ID]; ok {
+				continue
+			}
+			seen[p.ID] = struct{}{}
+			all = append(all, p)
+		}
+	}
+	sort.Slice(all, func(i, j int) bool { return all[i].CreatedAt.After(all[j].CreatedAt) })
+	if len(all) > maxFeed {
+		all = all[:maxFeed]
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"count": len(all), "posts": all})
+}
+
+// maxFeed caps how many merged items a home feed returns.
+const maxFeed = 40
 
 func (s *Server) getNews(w http.ResponseWriter, r *http.Request) {
 	ticker := r.PathValue("ticker")
