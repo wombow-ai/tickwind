@@ -288,6 +288,24 @@ export function getQuote(ticker: string, signal?: AbortSignal): Promise<Quote> {
   );
 }
 
+/** Envelope returned by `GET /v1/stocks/{ticker}/bars`. */
+export interface BarsResponse {
+  ticker: string;
+  /** Recent daily closing prices, oldest first. Empty when unavailable. */
+  closes: number[];
+}
+
+/** Fetches recent daily closes for a ticker's trend sparkline. */
+export function getBars(
+  ticker: string,
+  signal?: AbortSignal,
+): Promise<BarsResponse> {
+  return getJson<BarsResponse>(
+    `/v1/stocks/${encodeURIComponent(normalizeTicker(ticker))}/bars`,
+    signal,
+  );
+}
+
 /**
  * Fetches recent filings for a ticker, most recent first.
  *

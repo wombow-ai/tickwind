@@ -125,8 +125,10 @@ feature-flagged plugin, never on the critical path. Web only.
   `/settings`, `/announcements`; `(auth)` = centered: `/login`, `/signup`; `/designs/*`
   kept as references (self-contained). `/stock/[ticker]` is SSR with SEO metadata.
 - **ChangeLine renders** the day's change (signed %/▲▼) on the board tile + detail
-  header whenever `quote.prev_close` is present (real Alpaca data). **Sparkline still
-  hidden** — no fake data; light it up once a backend intraday-bars endpoint exists.
+  header whenever `quote.prev_close` is present (real Alpaca data). **Sparkline
+  renders** on the detail header from `GET /v1/stocks/{ticker}/bars` (Alpaca daily
+  closes via `ingest.BarCache`, cached 1h; `api.BarSource` iface, nil-safe → empty
+  series when Alpaca is off). Still no fake data: empty series → nothing rendered.
 - Verify: `cd web && npm run lint && npm run build` (both green; 9 lint *warnings*
   are the experimental React-Compiler rules on intentional client-fetch/mount
   patterns, downgraded to warn in `eslint.config.mjs`).

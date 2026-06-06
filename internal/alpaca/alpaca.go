@@ -101,6 +101,51 @@ func (c *Client) LatestQuote(ctx context.Context, ticker string) (store.Quote, e
 	}, nil
 }
 
+type barsResp struct {
+	Bars []bar `json:"bars"`
+}
+
+// DailyBars returns up to limit recent daily closing prices, oldest first, for
+// drawing a trend sparkline. Returns a nil slice (not an error) when there is
+// no data. Split-adjusted for visual continuity.
+func (c *Client) DailyBars(ctx context.Context, ticker string, limit int) ([]float64, error) {
+	if limit <= 0 {
+		limit = 30
+	}
+	// Look back generously (weekends/holidays) and take the most recent `limit`.
+	start := time.Now().In(c.loc).AddDate(0, 0, -(limit*2 + 20)).Format("2006-01-02")
+	url := fmt.Sprintf(
+		"%s/v2/stocks/%s/bars?timeframe=1Day&start=%s&limit=%d&sort=desc&adjustment=split&feed=%s",
+		c.dataURL, ticker, start, limit, c.feed,
+	)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("APCA-API-KEY-ID", c.keyID)
+	req.Header.Set("APCA-API-SECRET-KEY", c.secret)
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("alpaca: get bars %s: %w", ticker, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("alpaca: bars %s: %s", ticker, resp.Status)
+	}
+
+	var body barsResp
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		return nil, fmt.Errorf("alpaca: decode bars %s: %w", ticker, err)
+	}
+	// Response is newest-first (sort=desc); reverse to oldest-first.
+	closes := make([]float64, 0, len(body.Bars))
+	for i := len(body.Bars) - 1; i >= 0; i-- {
+		closes = append(closes, body.Bars[i].Close)
+	}
+	return closes, nil
+}
+
 // sessionAt classifies a US-equity trading session for a timestamp, evaluated
 // in America/New_York. Holidays are not accounted for (best-effort, for display
 // only): pre 04:00–09:30, regular 09:30–16:00, post 16:00–20:00, otherwise

@@ -6,6 +6,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"hash/fnv"
@@ -27,17 +28,25 @@ type QuoteStream interface {
 	Subscribe() (<-chan store.Quote, func())
 }
 
+// BarSource provides recent daily closing prices for a ticker's sparkline. It
+// may return a nil slice when no data is available; nil itself disables the
+// bars endpoint (returns an empty series).
+type BarSource interface {
+	DailyBars(ctx context.Context, ticker string) ([]float64, error)
+}
+
 type Server struct {
 	store  store.Store
 	hub    QuoteStream
 	clip   *clip.Fetcher
 	enrich enrich.Enricher
 	auth   *auth.Verifier
+	bars   BarSource
 	log    *slog.Logger
 }
 
-func New(st store.Store, hub QuoteStream, enricher enrich.Enricher, verifier *auth.Verifier, log *slog.Logger) http.Handler {
-	s := &Server{store: st, hub: hub, clip: clip.NewFetcher(), enrich: enricher, auth: verifier, log: log}
+func New(st store.Store, hub QuoteStream, enricher enrich.Enricher, verifier *auth.Verifier, bars BarSource, log *slog.Logger) http.Handler {
+	s := &Server{store: st, hub: hub, clip: clip.NewFetcher(), enrich: enricher, auth: verifier, bars: bars, log: log}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", s.health)
 
@@ -52,6 +61,7 @@ func New(st store.Store, hub QuoteStream, enricher enrich.Enricher, verifier *au
 	mux.HandleFunc("GET /v1/stocks/{ticker}", s.getStock)
 	mux.HandleFunc("GET /v1/stocks/{ticker}/filings", s.getFilings)
 	mux.HandleFunc("GET /v1/stocks/{ticker}/quote", s.getQuote)
+	mux.HandleFunc("GET /v1/stocks/{ticker}/bars", s.getBars)
 	mux.HandleFunc("GET /v1/stocks/{ticker}/news", s.getNews)
 	mux.HandleFunc("GET /v1/stocks/{ticker}/social", s.getSocial)
 	mux.HandleFunc("GET /v1/stocks/{ticker}/summary", s.getSummary)
@@ -254,6 +264,22 @@ func (s *Server) getQuote(w http.ResponseWriter, r *http.Request) {
 	default:
 		writeJSON(w, http.StatusOK, q)
 	}
+}
+
+// getBars returns recent daily closing prices for a sparkline. It degrades
+// gracefully to an empty series (HTTP 200) when bars are unavailable, so the
+// frontend simply renders nothing rather than erroring.
+func (s *Server) getBars(w http.ResponseWriter, r *http.Request) {
+	ticker := strings.ToUpper(strings.TrimSpace(r.PathValue("ticker")))
+	closes := []float64{}
+	if s.bars != nil {
+		if got, err := s.bars.DailyBars(r.Context(), ticker); err != nil {
+			s.log.Debug("bars fetch failed", "ticker", ticker, "err", err)
+		} else if got != nil {
+			closes = got
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ticker": ticker, "closes": closes})
 }
 
 func (s *Server) getNews(w http.ResponseWriter, r *http.Request) {

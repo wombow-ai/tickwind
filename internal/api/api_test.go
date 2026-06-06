@@ -25,6 +25,7 @@ func newTestServer() *httptest.Server {
 	h := New(
 		memory.New(), stream.NewHub(), enrich.Noop{},
 		auth.NewVerifier(testSecret),
+		nil, // no bar source in tests
 		slog.New(slog.NewTextHandler(io.Discard, nil)),
 	)
 	return httptest.NewServer(h)

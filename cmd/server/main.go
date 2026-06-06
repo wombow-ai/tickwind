@@ -104,10 +104,13 @@ func main() {
 	scheduler := ingest.NewScheduler(st, edgarClient, newsClient, social, ingestTickers, cfg.IngestEvery, log)
 	go scheduler.Run(ctx)
 
+	// bars feeds the sparkline endpoint; nil (disabled) without Alpaca creds.
+	var bars api.BarSource
 	if cfg.AlpacaKeyID != "" && cfg.AlpacaSecret != "" {
 		priceClient := alpaca.New(cfg.AlpacaKeyID, cfg.AlpacaSecret, cfg.AlpacaDataURL, cfg.AlpacaFeed)
 		poller := ingest.NewPricePoller(st, priceClient, ingestTickers, cfg.PricePollEvery, hub.Publish, log)
 		go poller.Run(ctx)
+		bars = ingest.NewBarCache(priceClient, 30, time.Hour)
 		log.Info("price polling enabled", "every", cfg.PricePollEvery.String(), "feed", cfg.AlpacaFeed)
 	} else {
 		log.Warn("ALPACA_API_KEY/SECRET not set — price polling disabled")
@@ -115,7 +118,7 @@ func main() {
 
 	srv := &http.Server{
 		Addr:              ":" + cfg.Port,
-		Handler:           api.New(st, hub, enricher, verifier, log),
+		Handler:           api.New(st, hub, enricher, verifier, bars, log),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 

@@ -15,6 +15,7 @@ import {useCallback, useEffect, useState} from 'react';
 import {
   addToWatchlist,
   clipLink,
+  getBars,
   getClips,
   getFilings,
   getNews,
@@ -36,6 +37,7 @@ import {
   MarketBadge,
   PriceTag,
   SessionBadge,
+  Sparkline,
 } from '@/components/ui/atoms';
 import {EmptyState, ErrorState, FeedSkeleton} from '@/components/ui/states';
 import {useToast} from '@/components/ui/Toast';
@@ -73,6 +75,7 @@ export function StockView({ticker}: {ticker: string}) {
   });
   const quotes = useQuotes([norm]);
   const quote = quotes.get(norm);
+  const [bars, setBars] = useState<number[]>([]);
 
   const [news, setNews] = useState<Feed<NewsItem>>({status: 'loading', items: []});
   const [social, setSocial] = useState<Feed<Post>>({status: 'loading', items: []});
@@ -91,6 +94,16 @@ export function StockView({ticker}: {ticker: string}) {
   useEffect(() => {
     const c = new AbortController();
     getStock(norm, c.signal).then(setSecurity, () => {});
+    return () => c.abort();
+  }, [norm]);
+
+  // Trend sparkline (recent daily closes); empty when unavailable.
+  useEffect(() => {
+    const c = new AbortController();
+    getBars(norm, c.signal).then(
+      r => setBars(r.closes),
+      () => setBars([]),
+    );
     return () => c.abort();
   }, [norm]);
 
@@ -256,6 +269,16 @@ export function StockView({ticker}: {ticker: string}) {
                 <span className={cx('text-[11px]', t.faint)}>Waiting for a price…</span>
               )}
             </div>
+            {bars.length >= 2 && (
+              <div className="mt-4">
+                <Sparkline
+                  values={bars}
+                  up={bars[bars.length - 1] >= bars[0]}
+                  w={320}
+                  h={56}
+                />
+              </div>
+            )}
           </div>
 
           <div className="shrink-0">

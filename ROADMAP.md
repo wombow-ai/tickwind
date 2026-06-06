@@ -75,7 +75,10 @@ Status: ✅ done · 🟡 in progress · ⬜ todo
   - ✅ Backend `prev_close` via Alpaca **snapshot** endpoint (honest prior close) →
         `ChangeLine` (signed %/▲▼) now renders on the board + detail header.
         Verified e2e locally (AAPL 307.23 / prev 311.21 = −1.28%; light + dark)
-  - ⬜ Intraday bars endpoint → light up the `Sparkline` (still hidden — no fake data)
+  - ✅ Bars endpoint `GET /v1/stocks/{ticker}/bars` (Alpaca daily bars, 30 closes,
+        server-cached 1h) → **`Sparkline` renders** on the detail header (real trend,
+        green up / rose down). Verified e2e (AAPL up, NVDA down; light + dark)
+  - ⬜ (optional) sparkline on board tiles too (needs a batched/cached bars call)
   - ✅ Default `WATCHLIST` bumped to `POPULAR_TICKERS` (config + `.env.example`) so
         every public tile is live after redeploy
   - ⬜ Redeploy VPS backend multi-tenant + Supabase (`DATABASE_URL` pooler +
