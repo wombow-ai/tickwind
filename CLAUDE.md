@@ -99,6 +99,38 @@ feature-flagged plugin, never on the critical path. Web only.
   watchlist ✅ (`/v1/watchlist` CRUD; scheduler + poller read it live, seeded from
   WATCHLIST; frontend add/remove board). Next in Phase 4: HK/KR FilingSource (needs
   DART key + HKEXnews scraping — deferred), optional LLM plugin, auth + polish.
+- **热点话题条 (Hot Topics)** ✅: `internal/topics` — a curated keyword dictionary
+  over ingested news, ranked by recency×momentum (generic-bucket demotion); atomic
+  `topics.Cache` → `GET /v1/topics`, with a `?topic=` filter on `/v1/news`
+  (`topics.Match`). Frontend `TopicsStrip` on the home hub.
+- **机会榜 (Opportunity board)** ✅ LIVE: small-cap US stocks with **insider open-
+  market buying** (SEC Form 4, code P). `internal/sec` (throttled EDGAR client:
+  daily Form-4 index, `FetchForm4`, `ParseForm4` keeps only code P, dei
+  shares-outstanding frames; dei `val` decoded as float64) → `store.InsiderBuy`
+  (`SaveInsiderBuys`/`RecentInsiderBuys`, Market DB) → `internal/opportunity` (pure
+  `Recompute`: gate market cap $300M–$2.5B = dei shares × Alpaca price, MinBuyValue
+  $25k, rank by distinct buyers then $value; `ValidTicker`; atomic `Cache`), driven
+  by `internal/ingest/opportunity.go` (`OpportunityIngestor`, own goroutine: sweeps
+  the daily Form-4 index skipping seen accessions, backfills
+  `OPPORTUNITY_BACKFILL_DAYS`, 2h ticker; needs Alpaca for prices). Market caps via
+  `alpaca.Snapshots` (bulk ≤100/req, resilient — skips bad batches). Served
+  `GET /v1/opportunities`; frontend `OpportunityBoard` at `/opportunities` (TopNav
+  "Opportunities") — evidence-first cards ("3 insiders bought $1.2M", top buyers,
+  "View SEC filing"), muted (no green-hero), on-card disclaimers. **Known**: SEC
+  re-sweeps ~26min on each redeploy (in-memory seen-set; persisted-seen deferred).
+- **大V / Guru-watch rail** ✅ LIVE: newsletter-cadence opinions from curated finance
+  KOLs, anchored to tickers. `internal/substack` (public-RSS client + curated
+  `Feeds` incl. **Serenity** `aleabitoreddit.substack.com/feed`; extracts cashtag
+  tickers minus a stoplist; teaser only, never the full/paywalled body) →
+  `internal/guru` (`Rank`: keep stock-anchored posts, dedupe by URL, newest-first,
+  cap; atomic `Cache`), driven by `internal/ingest/guru.go` (`GuruIngestor`, own
+  goroutine, 2h, key-free). Served `GET /v1/gurus`; frontend `GuruRail` under the
+  board on `/opportunities` (author badge, $-chips deep-linking to the stock,
+  "Source" link, "third-party opinions — not advice"). X/Twitter live tweets are
+  NOT used (API blocked, $5k/mo) — newsletters are the proxy.
+- **Home hub** = info-source entry (`HomeHub`): a live Markets strip + `TopicsStrip`,
+  then **Boards & signals** (Hot stocks · Opportunity · Guru-watch) over **Feeds**
+  (News · Discussion) — each module previews real items and links to its full page.
 - Frontend live price: `web/src/lib/useQuotes.ts` (one shared EventSource for all
   cards) + `PriceTag`/`SessionBadge`; shows "—" gracefully when `/quote` 404s.
 - News: `internal/finnhub` → `News` store → `GET /v1/stocks/{ticker}/news`,

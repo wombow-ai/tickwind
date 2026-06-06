@@ -80,6 +80,23 @@ Status: ✅ done · 🟡 in progress · ⬜ todo
       never penalised), shown transparently as mentions + Δ%. Verified live
       (QQQ/SPY top by volume×momentum; explosive low-volume risers boosted but
       capped). `rankHotList`/`heatScore` unit-tested
+- ✅ **Surging board** (`/hot?board=surging`) — same `store.HotStock` family, a
+      second `Board`; surge = mention-share shrinkage × clamped 24h growth with a
+      min-mention floor; `/hot` is tabbed (Hot / Surging).
+- ✅ **热点话题条 (Hot Topics)** — `internal/topics` curated keyword dictionary over
+      ingested news (recency×momentum, generic demotion); `GET /v1/topics` + a
+      `?topic=` news filter; frontend `TopicsStrip` on the home hub.
+- ✅ **机会榜 (Opportunity board)** (`/opportunities`) — small-cap US stocks with SEC
+      Form-4 insider open-market buying. `internal/sec` (Form-4 index/fetch/parse,
+      code P only + dei shares) → `store.InsiderBuy` → `internal/opportunity` (pure
+      ranker: market-cap $300M–$2.5B gate, rank by #buyers then $value) +
+      `OpportunityIngestor`; market cap = dei shares × `alpaca.Snapshots`.
+      `GET /v1/opportunities` + evidence-first `OpportunityBoard`. **LIVE** on the VPS.
+- ✅ **大V / Guru-watch rail** — `internal/substack` (public-RSS KOL feeds incl.
+      **Serenity**; cashtag extraction) → `internal/guru` (rank/dedupe/cap) +
+      `GuruIngestor`; `GET /v1/gurus` + `GuruRail` under the Opportunity board + a
+      home-hub module. X live tweets avoided ($5k/mo) — newsletters as the proxy.
+      **LIVE**.
 - 📋 **Opinion-source research (2026-06, 4 parallel agents)** — prioritized for
       future ingestion (engineering-first, redistribution-safe, $0-ish):
       **do-now:** fix Reddit OAuth (script app → `oauth.reddit.com` + proper UA),
