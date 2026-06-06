@@ -28,7 +28,14 @@ The slim stack (api + postgres + cloudflared) fits in ~1 GB. Good options:
 ```bash
 git clone https://github.com/wombow-ai/tickwind.git && cd tickwind
 cp .env.example .env
-# edit .env: EDGAR_USER_AGENT (your email), POSTGRES_PASSWORD, TUNNEL_TOKEN (next step)
+# edit .env:
+#   EDGAR_USER_AGENT (your email), POSTGRES_PASSWORD, TUNNEL_TOKEN (next step)
+#   ALPACA_API_KEY/SECRET (paper), FINNHUB_TOKEN          → prices + news
+#   SUPABASE_JWT_SECRET = your Supabase "Legacy JWT Secret" → enables login
+# Storage: per-user data (watchlist/clips) stays on the local Postgres below.
+# To keep the collected corpus (filings/news/quotes/social) on a durable,
+# backed-up DB, also set:
+#   MARKET_DATABASE_URL = <Supabase session-pooler URL>   (optional but recommended)
 ```
 
 ## 3. Cloudflare Tunnel → api.tickwind.com
@@ -46,6 +53,14 @@ docker compose up -d --build
 docker compose logs -f api      # should show "ingested filings ..."
 ```
 Verify: `https://api.tickwind.com/healthz` → `{"status":"ok"}`
+
+### Updating the backend (redeploy)
+```bash
+git pull && docker compose up -d --build && docker compose logs -f api
+```
+Schema migrations are idempotent and run on startup (e.g. `prev_close`, the
+per-user watchlist + clips tables). Local user data persists in the `pgdata`
+volume; the durable corpus lives in `MARKET_DATABASE_URL` if you set it.
 
 ## 5. Frontend → Vercel (tickwind.com)
 The frontend is a **server-rendered** Next.js app (in `web/`), so it runs on

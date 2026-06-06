@@ -144,6 +144,25 @@ func main() {
 func newStore(ctx context.Context, cfg config.Config, log *slog.Logger) (store.Store, func(), error) {
 	switch cfg.StoreBackend {
 	case "postgres":
+		// Split storage when both URLs are set: collected/market data goes to the
+		// durable MarketDatabaseURL, per-user data to the local UserDatabaseURL.
+		if cfg.MarketDatabaseURL != "" && cfg.UserDatabaseURL != "" {
+			market, err := postgres.New(ctx, cfg.MarketDatabaseURL)
+			if err != nil {
+				return nil, nil, err
+			}
+			user, err := postgres.New(ctx, cfg.UserDatabaseURL)
+			if err != nil {
+				market.Close()
+				return nil, nil, err
+			}
+			log.Info("using split postgres store (market=durable, user=local)")
+			cleanup := func() {
+				user.Close()
+				market.Close()
+			}
+			return store.Split{Market: market, User: user}, cleanup, nil
+		}
 		pg, err := postgres.New(ctx, cfg.DatabaseURL)
 		if err != nil {
 			return nil, nil, err

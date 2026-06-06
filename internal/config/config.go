@@ -12,8 +12,15 @@ type Config struct {
 	EDGARUserAgent string
 	Watchlist      []string
 	StoreBackend   string // memory | postgres
-	DatabaseURL    string // used when StoreBackend == "postgres"
-	IngestEvery    time.Duration
+	DatabaseURL    string // single-store fallback (StoreBackend == "postgres")
+	// Split storage (optional): when both are set, collected/market data
+	// (securities, filings, quotes, news, social) goes to the durable
+	// MarketDatabaseURL (e.g. managed/backed-up Postgres) and per-user data
+	// (watchlist, clips) goes to the local UserDatabaseURL (cheap/ephemeral —
+	// losing it just means users re-add their tickers). Empty → use DatabaseURL.
+	MarketDatabaseURL string
+	UserDatabaseURL   string
+	IngestEvery       time.Duration
 
 	// Alpaca market data (US prices, all sessions incl. overnight). Empty keys
 	// disable price polling. Use an unfunded/paper account — data only.
@@ -45,6 +52,8 @@ func Load() Config {
 		Watchlist:         splitCSV(env("WATCHLIST", "AAPL,NVDA,TSLA,MSFT,AMZN,GOOGL,META,AMD,NFLX,AVGO")),
 		StoreBackend:      env("STORE_BACKEND", "memory"),
 		DatabaseURL:       env("DATABASE_URL", "postgres://tickwind:tickwind@localhost:5432/tickwind?sslmode=disable"),
+		MarketDatabaseURL: env("MARKET_DATABASE_URL", ""),
+		UserDatabaseURL:   env("USER_DATABASE_URL", ""),
 		IngestEvery:       envDur("INGEST_EVERY", 15*time.Minute),
 		AlpacaKeyID:       env("ALPACA_API_KEY", ""),
 		AlpacaSecret:      env("ALPACA_API_SECRET", ""),

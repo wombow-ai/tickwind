@@ -89,8 +89,13 @@ Status: ✅ done · 🟡 in progress · ⬜ todo
         `StockCard` shows a compact trend (hidden when empty). Verified light + dark
   - ✅ Default `WATCHLIST` bumped to `POPULAR_TICKERS` (config + `.env.example`) so
         every public tile is live after redeploy
-  - ⬜ Redeploy VPS backend multi-tenant + Supabase (`DATABASE_URL` pooler +
-        `SUPABASE_JWT_SECRET`, `WATCHLIST` set)
+  - ✅ Split storage (`store.Split`): durable Market DB (collected corpus —
+        securities/filings/quotes/news/social) + local User DB (watchlist/clips,
+        OK to lose). Routes transparently; `MARKET_DATABASE_URL`+`USER_DATABASE_URL`
+        (or single `DATABASE_URL`). compose wired; tested (`split_test.go`)
+  - ⬜ Redeploy VPS backend (user): `git pull` + add `SUPABASE_JWT_SECRET`
+        (+ optional `MARKET_DATABASE_URL`=Supabase for the durable corpus) +
+        `docker compose up -d --build`
   - ✅ Mobile/responsive polish: TopNav fits one line at 375px (search collapses to
         an icon → dropdown row; theme + search are 36px tap targets; Log in/Sign up
         nowrap). Board + detail reflow cleanly. Verified at 375px in light + dark

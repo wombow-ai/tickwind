@@ -18,6 +18,13 @@ services:
     env_file: .env
     environment:
       STORE_BACKEND: postgres
+      # Per-user data (watchlist, clips) → the local Postgres below.
+      USER_DATABASE_URL: postgres://tickwind:${POSTGRES_PASSWORD:-tickwind}@postgres:5432/tickwind?sslmode=disable
+      # Collected/scraped corpus (securities, filings, quotes, news, social) →
+      # a durable, backed-up DB (set MARKET_DATABASE_URL in .env, e.g. Supabase).
+      # When MARKET_DATABASE_URL is empty the app falls back to DATABASE_URL
+      # (the local Postgres) for everything.
+      MARKET_DATABASE_URL: ${MARKET_DATABASE_URL:-}
       DATABASE_URL: postgres://tickwind:${POSTGRES_PASSWORD:-tickwind}@postgres:5432/tickwind?sslmode=disable
     depends_on:
       postgres:

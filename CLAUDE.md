@@ -99,9 +99,18 @@ feature-flagged plugin, never on the critical path. Web only.
   endpoints 401 without a token.
 - Ingestion: `ingestTickers` = default `WATCHLIST` ∪ `store.AllWatchlistTickers()`
   (deduped, capped at maxIngestTickers).
-- DB: Supabase Postgres via the session-pooler connection string (IPv4). Schema
-  has a guarded DO-block that migrates the legacy single-tenant `watchlist` once.
-- Config: `SUPABASE_JWT_SECRET` (HS256) + `DATABASE_URL` (Supabase pooler).
+- **Split storage** (owner's call): the collected/scraped corpus (securities,
+  filings, quotes, news, social) is expensive to re-collect → keep it on a
+  **durable** DB (`MARKET_DATABASE_URL`, e.g. Supabase). Per-user data (watchlist,
+  clips) is cheap to rebuild → keep it **local** (`USER_DATABASE_URL`, the VPS
+  Postgres; OK to lose). `store.Split{Market,User}` routes each method to the right
+  backend and satisfies `store.Store`, so api/ingest are unaware. main.go builds
+  the Split only when BOTH urls are set; else single `DATABASE_URL` (back-compat).
+  Both DBs run the same idempotent schema (unused tables stay empty). Tested in
+  `internal/store/split_test.go` (routing via two memory stores).
+- Config: `SUPABASE_JWT_SECRET` (HS256, auth) + `MARKET_DATABASE_URL` +
+  `USER_DATABASE_URL` (or single `DATABASE_URL`). docker-compose points
+  `USER_DATABASE_URL` at the local pg and `MARKET_DATABASE_URL` at `.env`.
 
 ## Frontend — "Aurora" data-first app (`web/`)
 - **Data-first, no marketing page** (explicit user direction): `/` IS the board.
