@@ -25,20 +25,30 @@ type SocialSource interface {
 	Posts(ctx context.Context, ticker string, limit int) ([]store.Post, error)
 }
 
+// SignalSource produces per-ticker numeric signals (buzz / sentiment) in bulk:
+// one call may cover many tickers at once, unlike the per-ticker SocialSource.
+// Providers like ApeWisdom (mention momentum) and Alpha Vantage (news
+// sentiment) implement this; it returns only the tickers it has data for.
+type SignalSource interface {
+	Name() string
+	Signals(ctx context.Context, tickers []string) ([]store.Signal, error)
+}
+
 type Scheduler struct {
 	store   store.Store
 	edgar   *edgar.Client
 	finnhub *finnhub.Client // optional; nil disables news ingestion
 	social  []SocialSource
+	signals []SignalSource
 	tickers TickerSource
 	every   time.Duration
 	log     *slog.Logger
 }
 
-// NewScheduler builds the filings+news+social scheduler. fh may be nil to
-// disable news; social may be empty to disable social ingestion.
-func NewScheduler(st store.Store, ec *edgar.Client, fh *finnhub.Client, social []SocialSource, tickers TickerSource, every time.Duration, log *slog.Logger) *Scheduler {
-	return &Scheduler{store: st, edgar: ec, finnhub: fh, social: social, tickers: tickers, every: every, log: log}
+// NewScheduler builds the filings+news+social+signals scheduler. fh may be nil
+// to disable news; social/signals may be empty to disable those sources.
+func NewScheduler(st store.Store, ec *edgar.Client, fh *finnhub.Client, social []SocialSource, signals []SignalSource, tickers TickerSource, every time.Duration, log *slog.Logger) *Scheduler {
+	return &Scheduler{store: st, edgar: ec, finnhub: fh, social: social, signals: signals, tickers: tickers, every: every, log: log}
 }
 
 // Run blocks until ctx is cancelled, refreshing every `every`.
@@ -57,7 +67,8 @@ func (s *Scheduler) Run(ctx context.Context) {
 }
 
 func (s *Scheduler) runOnce(ctx context.Context) {
-	for _, ticker := range s.tickers(ctx) {
+	tickers := s.tickers(ctx)
+	for _, ticker := range tickers {
 		s.ingestFilings(ctx, ticker)
 		s.ingestNews(ctx, ticker)
 		s.ingestSocial(ctx, ticker)
@@ -68,6 +79,9 @@ func (s *Scheduler) runOnce(ctx context.Context) {
 		case <-time.After(250 * time.Millisecond):
 		}
 	}
+	// Signal sources are bulk (one call covers many tickers), so run them once
+	// per cycle after the per-ticker passes.
+	s.ingestSignals(ctx, tickers)
 }
 
 func (s *Scheduler) ingestFilings(ctx context.Context, ticker string) {
@@ -109,5 +123,23 @@ func (s *Scheduler) ingestSocial(ctx context.Context, ticker string) {
 			continue
 		}
 		s.log.Info("ingested social", "source", src.Name(), "ticker", ticker, "count", len(posts))
+	}
+}
+
+func (s *Scheduler) ingestSignals(ctx context.Context, tickers []string) {
+	if len(tickers) == 0 {
+		return
+	}
+	for _, src := range s.signals {
+		sigs, err := src.Signals(ctx, tickers)
+		if err != nil {
+			s.log.Warn("signals fetch failed", "source", src.Name(), "err", err)
+			continue
+		}
+		if err := s.store.SaveSignals(ctx, sigs); err != nil {
+			s.log.Warn("save signals failed", "source", src.Name(), "err", err)
+			continue
+		}
+		s.log.Info("ingested signals", "source", src.Name(), "count", len(sigs))
 	}
 }

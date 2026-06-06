@@ -70,9 +70,19 @@ feature-flagged plugin, never on the critical path. Web only.
   (雪球)** unofficial JSON, keyless (mints its own cookie via `/hq`), but datacenter
   IPs get soft-blocked (HTTP 200 empty body → 0 posts, no error — helps from
   residential/China egress). Each disabled/blocked source degrades to 0 posts, so
-  the feed is robust. (Next: numeric **ApeWisdom** + **Alpha Vantage
-  NEWS_SENTIMENT** "buzz/sentiment" signals — a new per-ticker data shape.)
-  Clipper inbox ✅
+  the feed is robust. **Numeric signals** (a different shape from posts): a
+  per-ticker `store.Signal` "pulse" (one row per (ticker, source); buzz facet =
+  mentions/rank/upvotes/24h-deltas, sentiment facet = score/label/sample) via
+  `ingest.SignalSource` (BULK — one call covers many tickers, run once per cycle
+  after the per-ticker passes; `SaveSignals`/`ListSignals` upsert by (ticker,
+  source), routed to the Market DB). Sources: **ApeWisdom** (`internal/apewisdom`,
+  keyless — Reddit/WSB mention momentum; scans ≤3 leaderboard pages, stops when
+  all wanted found) + **Alpha Vantage** (`internal/alphavantage`, NEWS_SENTIMENT,
+  relevance-weighted per-ticker sentiment; free tier 25/day → the client
+  self-budgets with a daily cap + ≥90-min refresh + cache, and a rate-limit reply
+  marks the day spent; off without `ALPHAVANTAGE_API_KEY`). Served at
+  `GET /v1/stocks/{ticker}/signals`; frontend `PulseBar` shows a buzz chip + a
+  sentiment chip on the detail page (hidden when empty). Clipper inbox ✅
   (`POST /v1/stocks/{ticker}/clip` → title fetch → `clip` Post; frontend paste box
   + Saved-links section). Phase 3 done. Phase 4 started: persisted editable
   watchlist ✅ (`/v1/watchlist` CRUD; scheduler + poller read it live, seeded from

@@ -86,6 +86,44 @@ export interface SocialResponse {
 }
 
 /**
+ * A per-ticker numeric "pulse": mention-momentum (`buzz`, e.g. ApeWisdom) or
+ * news sentiment (`sentiment`, e.g. Alpha Vantage). Each source fills only the
+ * fields for its facet; the rest are absent.
+ */
+export interface Signal {
+  ticker: string;
+  /** Provider, e.g. `apewisdom` | `alphavantage`. */
+  source: string;
+  /** Which facet this signal carries: `buzz` | `sentiment`. */
+  kind: string;
+  /** Buzz: current mention count. */
+  mentions?: number;
+  /** Buzz: mentions 24h earlier (for momentum). */
+  mentions_prev?: number;
+  /** Buzz: popularity rank (1 = most mentioned). */
+  rank?: number;
+  /** Buzz: rank 24h earlier. */
+  rank_prev?: number;
+  /** Buzz: total upvotes. */
+  upvotes?: number;
+  /** Sentiment: average score in [-1, 1]. */
+  score?: number;
+  /** Sentiment: human label, e.g. `Somewhat-Bullish`. */
+  label?: string;
+  /** Sentiment: number of articles aggregated. */
+  sample_size?: number;
+  /** RFC 3339 timestamp of the last update. */
+  updated_at: string;
+}
+
+/** Envelope returned by `GET /v1/stocks/{ticker}/signals`. */
+export interface SignalsResponse {
+  ticker: string;
+  count: number;
+  signals: Signal[];
+}
+
+/**
  * Trading session a quote belongs to, in US market terms. Unknown values from
  * the backend are tolerated by widening to `string` at the type boundary.
  */
@@ -408,6 +446,19 @@ export function getSocial(
     `/v1/stocks/${encodeURIComponent(normalizeTicker(ticker))}` +
     `/social?limit=${encodeURIComponent(String(limit))}`;
   return getJson<SocialResponse>(path, signal);
+}
+
+/**
+ * Fetches the per-ticker numeric pulse (buzz / sentiment) from every signal
+ * source. Returns one entry per source; the list may be empty.
+ */
+export function getSignals(
+  ticker: string,
+  signal?: AbortSignal,
+): Promise<SignalsResponse> {
+  const path =
+    `/v1/stocks/${encodeURIComponent(normalizeTicker(ticker))}/signals`;
+  return getJson<SignalsResponse>(path, signal);
 }
 
 /** A link a user saved to a ticker (private, per-user). */

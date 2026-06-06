@@ -18,6 +18,7 @@ type Store struct {
 	quotes    map[string]store.Quote             // ticker -> latest quote
 	news      map[string]map[string]store.News   // ticker -> id -> News
 	social    map[string]map[string]store.Post   // ticker -> id -> Post
+	signals   map[string]map[string]store.Signal // ticker -> source -> Signal
 	watchlist map[string][]string                // userID -> ordered tickers
 	clips     map[string]map[string]store.Clip   // userID -> clipID -> Clip
 }
@@ -29,6 +30,7 @@ func New() *Store {
 		quotes:    make(map[string]store.Quote),
 		news:      make(map[string]map[string]store.News),
 		social:    make(map[string]map[string]store.Post),
+		signals:   make(map[string]map[string]store.Signal),
 		watchlist: make(map[string][]string),
 		clips:     make(map[string]map[string]store.Clip),
 	}
@@ -143,6 +145,36 @@ func (s *Store) ListSocial(_ context.Context, ticker string, limit int) ([]store
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].CreatedAt.After(out[j].CreatedAt) })
 	return limited(out, limit), nil
+}
+
+func (s *Store) SaveSignals(_ context.Context, signals []store.Signal) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, sig := range signals {
+		k := key(sig.Ticker)
+		if k == "" || sig.Source == "" {
+			continue
+		}
+		m := s.signals[k]
+		if m == nil {
+			m = make(map[string]store.Signal)
+			s.signals[k] = m
+		}
+		m[sig.Source] = sig // one row per (ticker, source)
+	}
+	return nil
+}
+
+func (s *Store) ListSignals(_ context.Context, ticker string) ([]store.Signal, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	m := s.signals[key(ticker)]
+	out := make([]store.Signal, 0, len(m))
+	for _, sig := range m {
+		out = append(out, sig)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Source < out[j].Source })
+	return out, nil
 }
 
 func (s *Store) Watchlist(_ context.Context, userID string) ([]string, error) {

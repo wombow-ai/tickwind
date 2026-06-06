@@ -62,6 +62,14 @@ func (s Split) ListSocial(ctx context.Context, ticker string, limit int) ([]Post
 	return s.Market.ListSocial(ctx, ticker, limit)
 }
 
+func (s Split) SaveSignals(ctx context.Context, signals []Signal) error {
+	return s.Market.SaveSignals(ctx, signals)
+}
+
+func (s Split) ListSignals(ctx context.Context, ticker string) ([]Signal, error) {
+	return s.Market.ListSignals(ctx, ticker)
+}
+
 // ── User: per-user state (local/ephemeral) ───────────────────────────────
 
 func (s Split) Watchlist(ctx context.Context, userID string) ([]string, error) {

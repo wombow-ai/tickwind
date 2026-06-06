@@ -61,6 +61,31 @@ type Post struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
+// Signal is a per-ticker numeric "pulse" aggregated from a non-post source:
+// mention-momentum (e.g. ApeWisdom) or news sentiment (e.g. Alpha Vantage).
+// Unlike News/Post it is not a feed of items but a single rolled-up snapshot,
+// stored one row per (ticker, source). Each source fills only the facet it
+// provides (Kind says which), so zero-valued fields just mean "not applicable".
+type Signal struct {
+	Ticker string `json:"ticker"`
+	Source string `json:"source"` // e.g. "apewisdom" | "alphavantage"
+	Kind   string `json:"kind"`   // "buzz" | "sentiment"
+
+	// Buzz facet — mention momentum (e.g. Reddit/WSB via ApeWisdom).
+	Mentions     int `json:"mentions,omitempty"`
+	MentionsPrev int `json:"mentions_prev,omitempty"` // same window, 24h earlier
+	Rank         int `json:"rank,omitempty"`          // 1 = most mentioned (0 = N/A)
+	RankPrev     int `json:"rank_prev,omitempty"`
+	Upvotes      int `json:"upvotes,omitempty"`
+
+	// Sentiment facet — news sentiment, normalized to [-1, 1].
+	Score      float64 `json:"score,omitempty"`
+	Label      string  `json:"label,omitempty"`       // e.g. "Somewhat-Bullish"
+	SampleSize int     `json:"sample_size,omitempty"` // articles aggregated
+
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
 // Clip is a link a user saved to a ticker (private, per-user).
 type Clip struct {
 	ID        string    `json:"id"`
@@ -88,6 +113,12 @@ type Store interface {
 
 	SaveSocial(ctx context.Context, ticker string, posts []Post) error
 	ListSocial(ctx context.Context, ticker string, limit int) ([]Post, error)
+
+	// Signals are per-ticker numeric buzz/sentiment, one row per (ticker,
+	// source). SaveSignals upserts a bulk batch (each may be a different ticker);
+	// ListSignals returns every source's latest signal for one ticker.
+	SaveSignals(ctx context.Context, signals []Signal) error
+	ListSignals(ctx context.Context, ticker string) ([]Signal, error)
 
 	// Watchlist is one user's tracked tickers, in insertion order.
 	Watchlist(ctx context.Context, userID string) ([]string, error)

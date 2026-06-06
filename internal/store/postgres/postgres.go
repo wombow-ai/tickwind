@@ -269,6 +269,59 @@ FROM social WHERE ticker = $1 ORDER BY created_at DESC`
 	return out, nil
 }
 
+// SaveSignals upserts per-ticker signals, deduplicating on (ticker, source).
+func (s *Store) SaveSignals(ctx context.Context, signals []store.Signal) error {
+	if len(signals) == 0 {
+		return nil
+	}
+	const query = `
+INSERT INTO signals (ticker, source, kind, mentions, mentions_prev, rank, rank_prev, upvotes, score, label, sample_size, updated_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, now())
+ON CONFLICT (ticker, source) DO UPDATE
+SET kind = EXCLUDED.kind, mentions = EXCLUDED.mentions, mentions_prev = EXCLUDED.mentions_prev,
+    rank = EXCLUDED.rank, rank_prev = EXCLUDED.rank_prev, upvotes = EXCLUDED.upvotes,
+    score = EXCLUDED.score, label = EXCLUDED.label, sample_size = EXCLUDED.sample_size, updated_at = now()`
+	batch := &pgx.Batch{}
+	for _, sig := range signals {
+		batch.Queue(query, sig.Ticker, sig.Source, sig.Kind, sig.Mentions, sig.MentionsPrev,
+			sig.Rank, sig.RankPrev, sig.Upvotes, sig.Score, sig.Label, sig.SampleSize)
+	}
+	br := s.pool.SendBatch(ctx, batch)
+	defer br.Close()
+	for range signals {
+		if _, err := br.Exec(); err != nil {
+			return fmt.Errorf("postgres: save signals: %w", err)
+		}
+	}
+	return nil
+}
+
+// ListSignals returns every source's latest signal for ticker, ordered by source.
+func (s *Store) ListSignals(ctx context.Context, ticker string) ([]store.Signal, error) {
+	const query = `
+SELECT ticker, source, kind, mentions, mentions_prev, rank, rank_prev, upvotes, score, label, sample_size, updated_at
+FROM signals WHERE ticker = $1 ORDER BY source`
+	rows, err := s.pool.Query(ctx, query, ticker)
+	if err != nil {
+		return nil, fmt.Errorf("postgres: list signals %s: %w", ticker, err)
+	}
+	defer rows.Close()
+
+	var out []store.Signal
+	for rows.Next() {
+		var sig store.Signal
+		if err := rows.Scan(&sig.Ticker, &sig.Source, &sig.Kind, &sig.Mentions, &sig.MentionsPrev,
+			&sig.Rank, &sig.RankPrev, &sig.Upvotes, &sig.Score, &sig.Label, &sig.SampleSize, &sig.UpdatedAt); err != nil {
+			return nil, fmt.Errorf("postgres: scan signal %s: %w", ticker, err)
+		}
+		out = append(out, sig)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("postgres: iterate signals %s: %w", ticker, err)
+	}
+	return out, nil
+}
+
 // Watchlist returns one user's tracked tickers, in insertion order.
 func (s *Store) Watchlist(ctx context.Context, userID string) ([]string, error) {
 	rows, err := s.pool.Query(ctx, `SELECT ticker FROM watchlist WHERE user_id = $1 ORDER BY added_at`, userID)

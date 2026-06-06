@@ -66,6 +66,7 @@ func New(st store.Store, hub QuoteStream, enricher enrich.Enricher, verifier *au
 	mux.HandleFunc("GET /v1/stocks/{ticker}/bars", s.getBars)
 	mux.HandleFunc("GET /v1/stocks/{ticker}/news", s.getNews)
 	mux.HandleFunc("GET /v1/stocks/{ticker}/social", s.getSocial)
+	mux.HandleFunc("GET /v1/stocks/{ticker}/signals", s.getSignals)
 	mux.HandleFunc("GET /v1/stocks/{ticker}/summary", s.getSummary)
 	mux.HandleFunc("GET /v1/bars", s.getBarsBatch)
 	mux.HandleFunc("GET /v1/news", s.getNewsBatch)
@@ -427,6 +428,25 @@ func (s *Server) getSocial(w http.ResponseWriter, r *http.Request) {
 		"ticker": ticker,
 		"count":  len(posts),
 		"posts":  posts,
+	})
+}
+
+// getSignals returns the per-ticker numeric pulse (buzz / sentiment) from every
+// signal source. Always 200 with a (possibly empty) list — never null.
+func (s *Server) getSignals(w http.ResponseWriter, r *http.Request) {
+	ticker := r.PathValue("ticker")
+	sigs, err := s.store.ListSignals(r.Context(), ticker)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, errBody(err.Error()))
+		return
+	}
+	if sigs == nil {
+		sigs = []store.Signal{} // marshal as [] not null
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ticker":  ticker,
+		"count":   len(sigs),
+		"signals": sigs,
 	})
 }
 

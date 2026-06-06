@@ -42,6 +42,10 @@ type Config struct {
 	BlueskyHandle      string
 	BlueskyAppPassword string
 
+	// Alpha Vantage NEWS_SENTIMENT (per-ticker news sentiment). Free tier is
+	// 25 requests/day, so the client self-budgets + caches. Empty disables it.
+	AlphaVantageKey string
+
 	// Optional LLM enrichment (OpenAI-compatible). Empty key disables it.
 	LLMAPIKey  string
 	LLMBaseURL string // default https://api.openai.com/v1
@@ -79,6 +83,7 @@ func Load() Config {
 		RedditPassword:     env("REDDIT_PASSWORD", ""),
 		BlueskyHandle:      env("BLUESKY_HANDLE", ""),
 		BlueskyAppPassword: env("BLUESKY_APP_PASSWORD", ""),
+		AlphaVantageKey:    env("ALPHAVANTAGE_API_KEY", ""),
 		LLMAPIKey:          env("LLM_API_KEY", ""),
 		LLMBaseURL:         env("LLM_BASE_URL", ""),
 		LLMModel:           env("LLM_MODEL", ""),

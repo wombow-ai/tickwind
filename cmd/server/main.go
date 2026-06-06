@@ -13,6 +13,8 @@ import (
 	"time"
 
 	"github.com/wombow-ai/tickwind/internal/alpaca"
+	"github.com/wombow-ai/tickwind/internal/alphavantage"
+	"github.com/wombow-ai/tickwind/internal/apewisdom"
 	"github.com/wombow-ai/tickwind/internal/api"
 	"github.com/wombow-ai/tickwind/internal/auth"
 	"github.com/wombow-ai/tickwind/internal/bluesky"
@@ -114,7 +116,13 @@ func main() {
 	}
 
 	edgarClient := edgar.New(cfg.EDGARUserAgent)
-	scheduler := ingest.NewScheduler(st, edgarClient, newsClient, social, ingestTickers, cfg.IngestEvery, log)
+	// Bulk numeric signals (buzz/sentiment): one call per source per cycle.
+	// ApeWisdom is keyless; Alpha Vantage self-disables without a key.
+	signals := []ingest.SignalSource{
+		apewisdom.New(),
+		alphavantage.New(cfg.AlphaVantageKey),
+	}
+	scheduler := ingest.NewScheduler(st, edgarClient, newsClient, social, signals, ingestTickers, cfg.IngestEvery, log)
 	go scheduler.Run(ctx)
 
 	// bars feeds the sparkline endpoint; nil (disabled) without Alpaca creds.

@@ -55,10 +55,18 @@ Status: ✅ done · 🟡 in progress · ⬜ todo
         US-ticker fit of the China sources; datacenter IPs get soft-blocked
         (HTTP 200 empty → 0 posts, no error), so it mainly helps from residential/
         China egress
-- ⬜ **Numeric buzz/sentiment sources** (different data shape — a per-ticker signal,
-      not posts; needs a small new store + UI): **ApeWisdom** (free Reddit/WSB
-      mention-momentum, keyless) + **Alpha Vantage NEWS_SENTIMENT** (free 25/day,
-      per-ticker score — batch+cache). Designed next as a "buzz" model
+- ✅ **Numeric buzz/sentiment signals** — a new per-ticker `store.Signal` data
+      shape (one row per (ticker, source), a rolled-up snapshot not a feed) +
+      `ingest.SignalSource` (bulk: one call covers many tickers, run once/cycle)
+      + `GET /v1/stocks/{ticker}/signals` + a frontend **PulseBar** (Reddit-buzz
+      chip + news-sentiment chip on the detail page, hidden when empty):
+  - ✅ **ApeWisdom** (`internal/apewisdom`, keyless) — Reddit/WSB mention
+        momentum (mentions, rank, upvotes, 24h deltas). Scans up to 3 leaderboard
+        pages, stops once all wanted tickers found. Live shape verified
+  - ✅ **Alpha Vantage NEWS_SENTIMENT** (`internal/alphavantage`) — relevance-
+        weighted per-ticker sentiment score + label + article count. Free tier is
+        25/day, so the client self-budgets (daily cap + ≥90-min refresh + cache;
+        rate-limit reply marks the day spent). Key verified live; off without one
 - 📋 **Opinion-source research (2026-06, 4 parallel agents)** — prioritized for
       future ingestion (engineering-first, redistribution-safe, $0-ish):
       **do-now:** fix Reddit OAuth (script app → `oauth.reddit.com` + proper UA),

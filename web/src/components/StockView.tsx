@@ -19,6 +19,7 @@ import {
   getClips,
   getFilings,
   getNews,
+  getSignals,
   getSocial,
   getStock,
   getWatchlist,
@@ -27,6 +28,7 @@ import {
   type NewsItem,
   type Post,
   type Security,
+  type Signal,
 } from '@/lib/api';
 import {useAuth} from '@/lib/auth';
 import {useDark} from '@/lib/theme';
@@ -42,6 +44,7 @@ import {
 import {EmptyState, ErrorState, FeedSkeleton} from '@/components/ui/states';
 import {useToast} from '@/components/ui/Toast';
 import {TimelineItem} from '@/components/TimelineItem';
+import {PulseBar} from '@/components/PulseBar';
 
 type Status = 'loading' | 'ready' | 'error';
 interface Feed<T> {
@@ -76,6 +79,7 @@ export function StockView({ticker}: {ticker: string}) {
   const quotes = useQuotes([norm]);
   const quote = quotes.get(norm);
   const [bars, setBars] = useState<number[]>([]);
+  const [signals, setSignals] = useState<Signal[]>([]);
 
   const [news, setNews] = useState<Feed<NewsItem>>({status: 'loading', items: []});
   const [social, setSocial] = useState<Feed<Post>>({status: 'loading', items: []});
@@ -103,6 +107,16 @@ export function StockView({ticker}: {ticker: string}) {
     getBars(norm, c.signal).then(
       r => setBars(r.closes ?? []),
       () => setBars([]),
+    );
+    return () => c.abort();
+  }, [norm]);
+
+  // Buzz / sentiment pulse (optional; empty when no signal source has data).
+  useEffect(() => {
+    const c = new AbortController();
+    getSignals(norm, c.signal).then(
+      r => setSignals(r.signals ?? []),
+      () => setSignals([]),
     );
     return () => c.abort();
   }, [norm]);
@@ -315,6 +329,9 @@ export function StockView({ticker}: {ticker: string}) {
           </div>
         </div>
       </div>
+
+      {/* pulse: Reddit buzz + news sentiment (renders nothing when empty) */}
+      <PulseBar signals={signals} />
 
       {/* login gate */}
       {!isAuthed && (

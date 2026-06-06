@@ -62,6 +62,24 @@ CREATE TABLE IF NOT EXISTS social (
 CREATE INDEX IF NOT EXISTS social_ticker_created_at_idx
     ON social (ticker, created_at DESC);
 
+-- Per-ticker numeric pulse (mention-momentum / news sentiment). One row per
+-- (ticker, source); a rolled-up snapshot rather than a feed of items.
+CREATE TABLE IF NOT EXISTS signals (
+    ticker        text NOT NULL,
+    source        text NOT NULL,
+    kind          text NOT NULL DEFAULT '',
+    mentions      integer NOT NULL DEFAULT 0,
+    mentions_prev integer NOT NULL DEFAULT 0,
+    rank          integer NOT NULL DEFAULT 0,
+    rank_prev     integer NOT NULL DEFAULT 0,
+    upvotes       integer NOT NULL DEFAULT 0,
+    score         double precision NOT NULL DEFAULT 0,
+    label         text NOT NULL DEFAULT '',
+    sample_size   integer NOT NULL DEFAULT 0,
+    updated_at    timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (ticker, source)
+);
+
 -- Migrate the legacy single-tenant watchlist (ticker PK, no user) to per-user.
 -- Runs at most once: the condition is false after user_id exists.
 DO $$
