@@ -25,6 +25,7 @@ import {useDark} from '@/lib/theme';
 import {cx, timeAgo, tok} from '@/lib/ui';
 import {useQuotes} from '@/lib/useQuotes';
 import {StockCard} from '@/components/StockCard';
+import {TopicsStrip} from '@/components/TopicsStrip';
 
 type Tokens = ReturnType<typeof tok>;
 
@@ -92,6 +93,8 @@ export function HomeHub() {
           in one place.
         </p>
       </header>
+
+      <TopicsStrip />
 
       {/* Markets strip (hero) */}
       <div className="mb-8 flex gap-4 overflow-x-auto pb-2">

@@ -411,12 +411,13 @@ export function getNewsBatch(
   tickers: readonly string[],
   perTicker = 6,
   signal?: AbortSignal,
+  topic?: string,
 ): Promise<NewsFeedResponse> {
   const q = tickers.map(normalizeTicker).join(',');
-  return getJson<NewsFeedResponse>(
-    `/v1/news?tickers=${encodeURIComponent(q)}&limit=${encodeURIComponent(String(perTicker))}`,
-    signal,
-  );
+  let path =
+    `/v1/news?tickers=${encodeURIComponent(q)}&limit=${encodeURIComponent(String(perTicker))}`;
+  if (topic) path += `&topic=${encodeURIComponent(topic)}`;
+  return getJson<NewsFeedResponse>(path, signal);
 }
 
 /** Fetches recent social posts merged across several tickers, newest first. */
@@ -508,6 +509,32 @@ export function getHot(
     `/v1/hot?board=${encodeURIComponent(board)}&limit=${encodeURIComponent(String(limit))}`,
     signal,
   );
+}
+
+/** A trending news theme (one chip in the Hot Topics strip). */
+export interface HotTopic {
+  /** Stable id used for filtering (e.g. `ai_capex`). */
+  key: string;
+  /** Display label (e.g. `AI capex`). */
+  label: string;
+  /** Matching articles in the last 24h. */
+  count: number;
+  /** >1 = heating up vs the prior 24h. */
+  momentum: number;
+  /** Tickers most associated with the theme. */
+  related_tickers: string[];
+}
+
+/** Envelope returned by `GET /v1/topics`. */
+export interface TopicsResponse {
+  generated_at: string;
+  window: string;
+  topics: HotTopic[];
+}
+
+/** Fetches the trending-topics snapshot for the Hot Topics strip. */
+export function getTopics(signal?: AbortSignal): Promise<TopicsResponse> {
+  return getJson<TopicsResponse>('/v1/topics', signal);
 }
 
 /** A link a user saved to a ticker (private, per-user). */

@@ -1,6 +1,7 @@
 'use client';
 
 import {MessageSquare, Newspaper} from 'lucide-react';
+import Link from 'next/link';
 import {useCallback, useEffect, useState} from 'react';
 import {
   getNewsBatch,
@@ -21,10 +22,19 @@ type Status = 'loading' | 'ready' | 'error';
  * most-watched US stocks. These are the "see all" destinations the home-hub
  * module cards link to. Public + SEO-friendly (popular-ticker universe).
  */
-export function FeedPage({kind}: {kind: 'news' | 'discussion'}) {
+export function FeedPage({
+  kind,
+  topic,
+  topicLabel,
+}: {
+  kind: 'news' | 'discussion';
+  topic?: string;
+  topicLabel?: string;
+}) {
   const dark = useDark();
   const t = tok(dark);
   const isNews = kind === 'news';
+  const filtered = isNews && !!topic;
   const [status, setStatus] = useState<Status>('loading');
   const [news, setNews] = useState<NewsItem[]>([]);
   const [posts, setPosts] = useState<Post[]>([]);
@@ -32,7 +42,7 @@ export function FeedPage({kind}: {kind: 'news' | 'discussion'}) {
   const load = useCallback(() => {
     setStatus('loading');
     if (isNews) {
-      getNewsBatch([...POPULAR_TICKERS]).then(
+      getNewsBatch([...POPULAR_TICKERS], topic ? 12 : 6, undefined, topic).then(
         r => {
           setNews(r.news ?? []);
           setStatus('ready');
@@ -48,20 +58,28 @@ export function FeedPage({kind}: {kind: 'news' | 'discussion'}) {
         () => setStatus('error'),
       );
     }
-  }, [isNews]);
+  }, [isNews, topic]);
 
   useEffect(() => {
     load();
   }, [load]);
 
   const Icon = isNews ? Newspaper : MessageSquare;
-  const title = isNews ? 'Market news' : 'Discussion';
-  const sub = isNews
-    ? 'The latest headlines across the most-watched US stocks.'
-    : 'What people are saying about the most-watched US stocks — StockTwits, Bluesky and more.';
-  const empty = isNews
-    ? {label: 'No news yet', sub: 'Headlines will appear here as they break.'}
-    : {label: 'No chatter yet', sub: 'Posts will show up here as they come in.'};
+  const title = filtered
+    ? topicLabel || 'Filtered news'
+    : isNews
+      ? 'Market news'
+      : 'Discussion';
+  const sub = filtered
+    ? `Latest headlines about “${topicLabel || topic}”.`
+    : isNews
+      ? 'The latest headlines across the most-watched US stocks.'
+      : 'What people are saying about the most-watched US stocks — StockTwits, Bluesky and more.';
+  const empty = filtered
+    ? {label: 'No recent news for this topic', sub: 'Try another topic or see all news.'}
+    : isNews
+      ? {label: 'No news yet', sub: 'Headlines will appear here as they break.'}
+      : {label: 'No chatter yet', sub: 'Posts will show up here as they come in.'};
   const count = isNews ? news.length : posts.length;
 
   return (
@@ -77,6 +95,14 @@ export function FeedPage({kind}: {kind: 'news' | 'discussion'}) {
           {title}
         </h1>
         <p className={cx('mt-1 text-[13.5px]', t.sub)}>{sub}</p>
+        {filtered && (
+          <Link
+            href="/news"
+            className={cx('mt-2 inline-block text-[12.5px] font-semibold', t.accentText)}
+          >
+            ← All news
+          </Link>
+        )}
       </header>
 
       {status === 'loading' ? (

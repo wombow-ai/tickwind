@@ -7,7 +7,12 @@ export const metadata: Metadata = {
     'The latest news headlines across the most-watched US stocks, in one feed.',
 };
 
-/** Public aggregated market-news feed. */
-export default function NewsPage() {
-  return <FeedPage kind="news" />;
+/** Public aggregated market-news feed, optionally filtered to a hot topic. */
+export default async function NewsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{topic?: string; label?: string}>;
+}) {
+  const sp = await searchParams;
+  return <FeedPage kind="news" topic={sp.topic} topicLabel={sp.label} />;
 }
