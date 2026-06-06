@@ -39,9 +39,26 @@ Status: ✅ done · 🟡 in progress · ⬜ todo
 - ✅ Per-stock unified timeline (News + Discussion + Saved links + Filings)
 - ✅ StockTwits social ingestion + `GET /v1/stocks/{ticker}/social` + Discussion
       feed (live-verified, no key required)
-- ✅ Multi-source `SocialSource` interface (StockTwits + Reddit plug in uniformly)
-- 🟡 Reddit ingestion: client done, but public `.json` returns 403 from datacenter
-      IPs → needs OAuth (REDDIT_CLIENT_ID/SECRET) to be reliable (handled gracefully)
+- ✅ Multi-source `SocialSource` interface — **5 post-based sources wired**
+      (StockTwits, Tickertick, Reddit, Bluesky, Xueqiu), each `internal/<src>` with
+      a `New()` + table-driven `_test.go`; disabled sources degrade to 0 posts:
+  - ✅ **StockTwits** (keyless, always on) — live since Phase 3
+  - ✅ **Tickertick** (keyless, always on) — free UGC/analysis links; OAuth-free.
+        Live-verified (real Forbes/Fool AAPL stories flowing alongside StockTwits)
+  - ✅ **Reddit** OAuth rewrite — `oauth.reddit.com` + password grant + proper UA
+        (the old public `.json` 403'd from datacenter IPs). Activates with
+        REDDIT_CLIENT_ID/SECRET/USERNAME/PASSWORD (script app + bot acct); disabled
+        & graceful without them
+  - ✅ **Bluesky** `searchPosts` (AT Protocol) — session cached + 401-retry.
+        Activates with BLUESKY_HANDLE + BLUESKY_APP_PASSWORD; disabled without
+  - ✅ **Xueqiu (雪球)** unofficial JSON (keyless, mints its own cookie). Best
+        US-ticker fit of the China sources; datacenter IPs get soft-blocked
+        (HTTP 200 empty → 0 posts, no error), so it mainly helps from residential/
+        China egress
+- ⬜ **Numeric buzz/sentiment sources** (different data shape — a per-ticker signal,
+      not posts; needs a small new store + UI): **ApeWisdom** (free Reddit/WSB
+      mention-momentum, keyless) + **Alpha Vantage NEWS_SENTIMENT** (free 25/day,
+      per-ticker score — batch+cache). Designed next as a "buzz" model
 - 📋 **Opinion-source research (2026-06, 4 parallel agents)** — prioritized for
       future ingestion (engineering-first, redistribution-safe, $0-ish):
       **do-now:** fix Reddit OAuth (script app → `oauth.reddit.com` + proper UA),

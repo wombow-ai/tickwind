@@ -55,9 +55,24 @@ feature-flagged plugin, never on the critical path. Web only.
   news also LIVE-VERIFIED (real AAPL headlines). Phase 3: StockTwits social ✅
   (live-verified, no key) via `internal/stocktwits` → `Post` store →
   `/v1/stocks/{ticker}/social` + frontend `SocialFeed` (Discussion section).
-  Social is now multi-source via `ingest.SocialSource` (Name + Posts); StockTwits
-  live, Reddit client done but its public `.json` 403s from datacenter IPs (needs
-  OAuth via REDDIT_CLIENT_ID/SECRET — graceful fallback). Clipper inbox ✅
+  Social is now multi-source via `ingest.SocialSource` (Name + Posts) — **5
+  post-based sources** in `cmd/server/main.go`'s `social` slice, each a small
+  `internal/<src>` client with a `New()` + `_test.go`. The scheduler calls every
+  source per ticker and `SaveSocial`s each batch; the store **merges by id**, so
+  sources coexist (e.g. StockTwits + Tickertick = 60 posts for AAPL, verified).
+  Sources: **StockTwits** + **Tickertick** are keyless & always on (Tickertick =
+  free UGC/analysis links via `api.tickertick.com/feed?q=(and z:<t> ...)`,
+  live-verified). **Reddit** rewritten to OAuth (`oauth.reddit.com`, password
+  grant, UA `tickwind:com.tickwind.ingest:0.1`; the old public `.json` 403'd from
+  datacenter IPs) — needs `REDDIT_CLIENT_ID/SECRET/USERNAME/PASSWORD`, disabled &
+  graceful without. **Bluesky** `app.bsky.feed.searchPosts` (AT Protocol; session
+  cached + 401-retry) — needs `BLUESKY_HANDLE` + `BLUESKY_APP_PASSWORD`. **Xueqiu
+  (雪球)** unofficial JSON, keyless (mints its own cookie via `/hq`), but datacenter
+  IPs get soft-blocked (HTTP 200 empty body → 0 posts, no error — helps from
+  residential/China egress). Each disabled/blocked source degrades to 0 posts, so
+  the feed is robust. (Next: numeric **ApeWisdom** + **Alpha Vantage
+  NEWS_SENTIMENT** "buzz/sentiment" signals — a new per-ticker data shape.)
+  Clipper inbox ✅
   (`POST /v1/stocks/{ticker}/clip` → title fetch → `clip` Post; frontend paste box
   + Saved-links section). Phase 3 done. Phase 4 started: persisted editable
   watchlist ✅ (`/v1/watchlist` CRUD; scheduler + poller read it live, seeded from
@@ -179,8 +194,10 @@ feature-flagged plugin, never on the critical path. Web only.
 - Covered: memory store, clip title extraction, alpaca session classifier, API
   httptest flows (health, watchlist CRUD, clip→social), and the **bars endpoints**
   (`internal/api/bars_test.go`: `/v1/bars` dedupe + cap + nil-source→empty via a
-  fake `BarSource`, and the single `/v1/stocks/{t}/bars`). Network-dependent clients
-  (edgar/finnhub/stocktwits/reddit) are exercised live during dev runs.
+  fake `BarSource`, and the single `/v1/stocks/{t}/bars`). Each social source has a
+  table-driven `_test.go` (httptest, incl. Reddit `-race`); network-dependent
+  clients (edgar/finnhub/stocktwits/reddit/bluesky/tickertick/xueqiu) are also
+  exercised live during dev runs.
 
 ## Environment notes (gotchas for future sessions)
 - **Go proxy truncates large module zips** (e.g. `golang.org/x/text`) via

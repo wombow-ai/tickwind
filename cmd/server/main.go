@@ -15,6 +15,7 @@ import (
 	"github.com/wombow-ai/tickwind/internal/alpaca"
 	"github.com/wombow-ai/tickwind/internal/api"
 	"github.com/wombow-ai/tickwind/internal/auth"
+	"github.com/wombow-ai/tickwind/internal/bluesky"
 	"github.com/wombow-ai/tickwind/internal/config"
 	"github.com/wombow-ai/tickwind/internal/edgar"
 	"github.com/wombow-ai/tickwind/internal/enrich"
@@ -26,6 +27,8 @@ import (
 	"github.com/wombow-ai/tickwind/internal/store/memory"
 	"github.com/wombow-ai/tickwind/internal/store/postgres"
 	"github.com/wombow-ai/tickwind/internal/stream"
+	"github.com/wombow-ai/tickwind/internal/tickertick"
+	"github.com/wombow-ai/tickwind/internal/xueqiu"
 )
 
 // maxIngestTickers caps how many distinct tickers we ingest, to control cost as
@@ -74,7 +77,13 @@ func main() {
 		log.Warn("FINNHUB_TOKEN not set — news ingestion disabled")
 	}
 
-	social := []ingest.SocialSource{stocktwits.New(), reddit.New()}
+	social := []ingest.SocialSource{
+		stocktwits.New(),
+		reddit.New(cfg.RedditClientID, cfg.RedditSecret, cfg.RedditUsername, cfg.RedditPassword),
+		bluesky.New(cfg.BlueskyHandle, cfg.BlueskyAppPassword),
+		xueqiu.New(),
+		tickertick.New(),
+	}
 
 	// Tickers to ingest = the default set (always available for public pages)
 	// ∪ every user's watchlist, deduped and capped.

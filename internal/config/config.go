@@ -33,6 +33,15 @@ type Config struct {
 	// Finnhub company news. Empty token disables news ingestion.
 	FinnhubToken string
 
+	// Social sources (optional; empty disables that source). Reddit needs a
+	// "script" app + a bot account; Bluesky needs a handle + an app password.
+	RedditClientID     string
+	RedditSecret       string
+	RedditUsername     string
+	RedditPassword     string
+	BlueskyHandle      string
+	BlueskyAppPassword string
+
 	// Optional LLM enrichment (OpenAI-compatible). Empty key disables it.
 	LLMAPIKey  string
 	LLMBaseURL string // default https://api.openai.com/v1
@@ -50,25 +59,31 @@ type Config struct {
 
 func Load() Config {
 	return Config{
-		Port:              env("PORT", "8080"),
-		EDGARUserAgent:    env("EDGAR_USER_AGENT", "Tickwind/0.1 (contact@tickwind.com)"),
-		Watchlist:         splitCSV(env("WATCHLIST", "AAPL,NVDA,TSLA,MSFT,AMZN,GOOGL,META,AMD,NFLX,AVGO")),
-		StoreBackend:      env("STORE_BACKEND", "memory"),
-		DatabaseURL:       env("DATABASE_URL", "postgres://tickwind:tickwind@localhost:5432/tickwind?sslmode=disable"),
-		MarketDatabaseURL: env("MARKET_DATABASE_URL", ""),
-		UserDatabaseURL:   env("USER_DATABASE_URL", ""),
-		IngestEvery:       envDur("INGEST_EVERY", 15*time.Minute),
-		AlpacaKeyID:       env("ALPACA_API_KEY", ""),
-		AlpacaSecret:      env("ALPACA_API_SECRET", ""),
-		AlpacaDataURL:     env("ALPACA_DATA_URL", ""),
-		AlpacaFeed:        env("ALPACA_FEED", "iex"),
-		PricePollEvery:    envDur("PRICE_POLL_EVERY", 10*time.Second),
-		FinnhubToken:      env("FINNHUB_TOKEN", ""),
-		LLMAPIKey:         env("LLM_API_KEY", ""),
-		LLMBaseURL:        env("LLM_BASE_URL", ""),
-		LLMModel:          env("LLM_MODEL", ""),
-		SupabaseURL:       strings.TrimRight(env("SUPABASE_URL", ""), "/"),
-		SupabaseJWTSecret: env("SUPABASE_JWT_SECRET", ""),
+		Port:               env("PORT", "8080"),
+		EDGARUserAgent:     env("EDGAR_USER_AGENT", "Tickwind/0.1 (contact@tickwind.com)"),
+		Watchlist:          splitCSV(env("WATCHLIST", "AAPL,NVDA,TSLA,MSFT,AMZN,GOOGL,META,AMD,NFLX,AVGO")),
+		StoreBackend:       env("STORE_BACKEND", "memory"),
+		DatabaseURL:        env("DATABASE_URL", "postgres://tickwind:tickwind@localhost:5432/tickwind?sslmode=disable"),
+		MarketDatabaseURL:  env("MARKET_DATABASE_URL", ""),
+		UserDatabaseURL:    env("USER_DATABASE_URL", ""),
+		IngestEvery:        envDur("INGEST_EVERY", 15*time.Minute),
+		AlpacaKeyID:        env("ALPACA_API_KEY", ""),
+		AlpacaSecret:       env("ALPACA_API_SECRET", ""),
+		AlpacaDataURL:      env("ALPACA_DATA_URL", ""),
+		AlpacaFeed:         env("ALPACA_FEED", "iex"),
+		PricePollEvery:     envDur("PRICE_POLL_EVERY", 10*time.Second),
+		FinnhubToken:       env("FINNHUB_TOKEN", ""),
+		RedditClientID:     env("REDDIT_CLIENT_ID", ""),
+		RedditSecret:       env("REDDIT_CLIENT_SECRET", ""),
+		RedditUsername:     env("REDDIT_USERNAME", ""),
+		RedditPassword:     env("REDDIT_PASSWORD", ""),
+		BlueskyHandle:      env("BLUESKY_HANDLE", ""),
+		BlueskyAppPassword: env("BLUESKY_APP_PASSWORD", ""),
+		LLMAPIKey:          env("LLM_API_KEY", ""),
+		LLMBaseURL:         env("LLM_BASE_URL", ""),
+		LLMModel:           env("LLM_MODEL", ""),
+		SupabaseURL:        strings.TrimRight(env("SUPABASE_URL", ""), "/"),
+		SupabaseJWTSecret:  env("SUPABASE_JWT_SECRET", ""),
 	}
 }
 
