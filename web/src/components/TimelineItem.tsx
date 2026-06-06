@@ -102,7 +102,7 @@ export function TimelineItem({
 
       <div
         className={cx(
-          'mb-3 flex-1 rounded-2xl border p-3.5 transition-colors',
+          'mb-3 min-w-0 flex-1 rounded-2xl border p-3.5 transition-colors',
           t.card,
           t.border,
           t.soft,
@@ -170,7 +170,12 @@ export function TimelineItem({
             rel="noopener noreferrer"
             className="group block"
           >
-            <p className={cx('text-[14px] font-semibold leading-snug', t.text)}>
+            <p
+              className={cx(
+                'break-words text-[14px] font-semibold leading-snug',
+                t.text,
+              )}
+            >
               {entry.item.headline}
               <ArrowUpRight
                 className="ml-1 -mt-0.5 inline opacity-50 transition group-hover:opacity-100"
@@ -178,7 +183,7 @@ export function TimelineItem({
               />
             </p>
             {entry.item.summary && (
-              <p className={cx('mt-1 text-[12.5px] leading-relaxed', t.sub)}>
+              <p className={cx('mt-1 break-words text-[12.5px] leading-relaxed', t.sub)}>
                 {entry.item.summary}
               </p>
             )}
@@ -192,7 +197,12 @@ export function TimelineItem({
             rel="noopener noreferrer"
             className="block"
           >
-            <p className={cx('text-[13px] leading-relaxed', t.text)}>
+            <p
+              className={cx(
+                'whitespace-pre-line break-words text-[13px] leading-relaxed',
+                t.text,
+              )}
+            >
               {entry.item.body}
             </p>
             <p className={cx('mt-1 text-[11px]', t.faint)}>via {entry.item.source}</p>
@@ -206,7 +216,7 @@ export function TimelineItem({
             rel="noopener noreferrer"
             className="group block"
           >
-            <p className={cx('text-[13.5px] font-medium leading-snug', t.text)}>
+            <p className={cx('break-words text-[13.5px] font-medium leading-snug', t.text)}>
               {entry.item.title}
             </p>
             <p
@@ -227,7 +237,7 @@ export function TimelineItem({
             rel="noopener noreferrer"
             className="group block"
           >
-            <p className={cx('text-[13.5px] font-medium leading-snug', t.text)}>
+            <p className={cx('break-words text-[13.5px] font-medium leading-snug', t.text)}>
               {entry.item.title}
               <ArrowUpRight
                 className="ml-1 -mt-0.5 inline opacity-50 transition group-hover:opacity-100"

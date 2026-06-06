@@ -62,12 +62,22 @@ export function Board({variant = 'markets'}: {variant?: 'markets' | 'watchlist'}
   const [barsMap, setBarsMap] = useState<Record<string, number[]>>({});
   const [listLoading, setListLoading] = useState(false);
   const [adding, setAdding] = useState('');
+  // Watchlist page only: the feeds are optional and can be focused on one stock.
+  const [feedsOpen, setFeedsOpen] = useState(true);
+  const [focusTicker, setFocusTicker] = useState<string | null>(null);
 
   const [news, setNews] = useState<Feed<NewsItem>>({status: 'loading', items: []});
   const [social, setSocial] = useState<Feed<Post>>({status: 'loading', items: []});
 
   const quotes = useQuotes(tickers);
   const tickerKey = tickers.join(',');
+  // Which tickers the feeds aggregate over: a single focused stock, else all.
+  const feedTickers =
+    watchlistMode && focusTicker && tickers.includes(focusTicker)
+      ? [focusTicker]
+      : tickers;
+  const feedKey = feedTickers.join(',');
+  const feedsVisible = !watchlistMode || feedsOpen;
 
   // Markets → a popular set; Watchlist → the signed-in user's own tickers.
   useEffect(() => {
@@ -134,29 +144,29 @@ export function Board({variant = 'markets'}: {variant?: 'markets' | 'watchlist'}
 
   // Aggregated News + Discussion feeds across the tracked tickers.
   const loadNews = useCallback(() => {
-    if (tickers.length === 0) {
+    if (feedTickers.length === 0) {
       setNews({status: 'ready', items: []});
       return;
     }
     setNews(f => ({...f, status: 'loading'}));
-    getNewsBatch(tickers).then(
+    getNewsBatch(feedTickers).then(
       r => setNews({status: 'ready', items: r.news ?? []}),
       () => setNews({status: 'error', items: []}),
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tickerKey]);
+  }, [feedKey]);
   const loadSocial = useCallback(() => {
-    if (tickers.length === 0) {
+    if (feedTickers.length === 0) {
       setSocial({status: 'ready', items: []});
       return;
     }
     setSocial(f => ({...f, status: 'loading'}));
-    getSocialBatch(tickers).then(
+    getSocialBatch(feedTickers).then(
       r => setSocial({status: 'ready', items: r.posts ?? []}),
       () => setSocial({status: 'error', items: []}),
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tickerKey]);
+  }, [feedKey]);
 
   useEffect(() => {
     loadNews();
@@ -389,8 +399,48 @@ export function Board({variant = 'markets'}: {variant?: 'markets' | 'watchlist'}
         </div>
         ))}
 
+      {/* Watchlist: feeds are optional and can be focused on a single stock. */}
+      {watchlistMode && !needLogin && tickers.length > 0 && (
+        <div className="mb-4 flex flex-wrap items-center gap-2">
+          <button
+            onClick={() => setFeedsOpen(o => !o)}
+            aria-pressed={feedsOpen}
+            className={cx(
+              'inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-[12.5px] font-semibold',
+              t.border,
+              t.ghost,
+              t.text,
+            )}
+          >
+            {feedsOpen ? 'Hide news & discussion' : 'Show news & discussion'}
+          </button>
+          {feedsOpen && (
+            <div className="flex flex-wrap items-center gap-1.5">
+              {[null, ...tickers].map(tk => {
+                const active = focusTicker === tk;
+                return (
+                  <button
+                    key={tk ?? '__all'}
+                    onClick={() => setFocusTicker(tk)}
+                    aria-pressed={active}
+                    className={cx(
+                      'rounded-full px-2.5 py-1 text-[12px] font-semibold transition',
+                      active
+                        ? btnPrimary(dark)
+                        : cx('border hover:opacity-80', t.border, t.sub),
+                    )}
+                  >
+                    {tk ?? 'All'}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* News + Discussion */}
-      {!needLogin && (
+      {!needLogin && feedsVisible && (
         <div className="grid gap-6 md:grid-cols-2">
         <FeedColumn
           title="News"
@@ -465,7 +515,7 @@ function FeedColumn<T>({
   const dark = useDark();
   const t = tok(dark);
   return (
-    <section>
+    <section className="min-w-0">
       <h2 className={cx('mb-3 flex items-center gap-2 text-[15px] font-bold', t.text)}>
         <Icon size={16} className={dark ? 'text-teal-300' : 'text-teal-600'} />
         {title}

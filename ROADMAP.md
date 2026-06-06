@@ -42,6 +42,18 @@ Status: ✅ done · 🟡 in progress · ⬜ todo
 - ✅ Multi-source `SocialSource` interface (StockTwits + Reddit plug in uniformly)
 - 🟡 Reddit ingestion: client done, but public `.json` returns 403 from datacenter
       IPs → needs OAuth (REDDIT_CLIENT_ID/SECRET) to be reliable (handled gracefully)
+- 📋 **Opinion-source research (2026-06, 4 parallel agents)** — prioritized for
+      future ingestion (engineering-first, redistribution-safe, $0-ish):
+      **do-now:** fix Reddit OAuth (script app → `oauth.reddit.com` + proper UA),
+      **Bluesky** `searchPosts` (free, open API), **ApeWisdom** (free Reddit/WSB
+      mention-momentum, NOT sentiment), **Alpha Vantage NEWS_SENTIMENT** (free
+      25/day, real per-ticker sentiment — batch+cache), **Tickertick** (free UGC/
+      analysis links). **China:** 雪球 Xueqiu (best US-ticker fit, unofficial JSON,
+      integrate first), 东方财富股吧 Eastmoney Guba (US boards `list,us<t>.html`).
+      **later:** Substack RSS, YouTube comments (30-day cache cap), StockGeist,
+      Benzinga (paid). **avoid:** X (~$5k/mo), Discord/TikTok/Threads (gated),
+      Xiaohongshu/小红书 (keyword-only, monthly-rotating signature, steep legal risk —
+      soft buzz signal at best), TradingView/SeekingAlpha/Yahoo (ToS/scrape-unsafe).
 - ✅ Clipper inbox: `POST /v1/stocks/{ticker}/clip` fetches the page title and
       saves it as a `clip` post; frontend paste box + "Saved links" section
       (video/Whisper transcription deferred to Phase 4)
