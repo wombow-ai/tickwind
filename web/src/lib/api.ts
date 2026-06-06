@@ -581,6 +581,31 @@ export function getOpportunities(
   return getJson<OpportunitiesResponse>(`/v1/opportunities${q}`, signal);
 }
 
+/** One curated-KOL ("guru") post in the Guru-watch rail. */
+export interface GuruItem {
+  author: string; // the writer / publication (e.g. "Serenity")
+  title: string;
+  url: string; // link to the source post
+  teaser: string; // short fair-use snippet, never the full body
+  published: string;
+  tickers: string[]; // tickers the post mentions (cashtags)
+}
+
+/** Envelope returned by `GET /v1/gurus`. */
+export interface GurusResponse {
+  count: number;
+  items: GuruItem[];
+}
+
+/**
+ * Fetches the Guru-watch rail — recent posts from curated finance writers
+ * (KOLs) with the tickers each mentions. Opinions for context, not advice.
+ */
+export function getGurus(limit = 0, signal?: AbortSignal): Promise<GurusResponse> {
+  const q = limit > 0 ? `?limit=${encodeURIComponent(String(limit))}` : '';
+  return getJson<GurusResponse>(`/v1/gurus${q}`, signal);
+}
+
 /** A link a user saved to a ticker (private, per-user). */
 export interface Clip {
   id: string;
