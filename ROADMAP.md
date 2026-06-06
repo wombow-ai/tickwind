@@ -45,12 +45,16 @@ Status: ✅ done · 🟡 in progress · ⬜ todo
   - ✅ **StockTwits** (keyless, always on) — live since Phase 3
   - ✅ **Tickertick** (keyless, always on) — free UGC/analysis links; OAuth-free.
         Live-verified (real Forbes/Fool AAPL stories flowing alongside StockTwits)
-  - ✅ **Reddit** OAuth rewrite — `oauth.reddit.com` + password grant + proper UA
-        (the old public `.json` 403'd from datacenter IPs). Activates with
-        REDDIT_CLIENT_ID/SECRET/USERNAME/PASSWORD (script app + bot acct); disabled
-        & graceful without them
   - ✅ **Bluesky** `searchPosts` (AT Protocol) — session cached + 401-retry.
-        Activates with BLUESKY_HANDLE + BLUESKY_APP_PASSWORD; disabled without
+        **LIVE** (creds on the VPS; ~30 finance posts/ticker, e.g. AAPL feed =
+        StockTwits + Bluesky + Tickertick merged)
+  - 🚫 **Reddit** (owner's call, 2026-06): NOT pursued. Both keyless routes are
+        datacenter-IP-blocked (verified from the VPS: `.json`→403, `.rss`→429), so
+        only the official OAuth API works server-side — and that's commercially
+        restricted/charged. Reddit's signal is already covered by **ApeWisdom**
+        (mention buzz) + **Tickertick** (`T:ugc` Reddit links). The OAuth client
+        (`internal/reddit`) stays in code, disabled by default; set
+        REDDIT_CLIENT_ID/SECRET/USERNAME/PASSWORD to enable if ever wanted
   - ✅ **Xueqiu (雪球)** unofficial JSON (keyless, mints its own cookie). Best
         US-ticker fit of the China sources; datacenter IPs get soft-blocked
         (HTTP 200 empty → 0 posts, no error), so it mainly helps from residential/

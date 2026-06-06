@@ -424,7 +424,7 @@ export function StockView({ticker}: {ticker: string}) {
             onRetry={loadSocial}
             empty={{
               label: 'No chatter right now',
-              sub: `Posts from StockTwits and Reddit about ${norm} will show up here.`,
+              sub: `Posts from StockTwits, Bluesky and more about ${norm} will show up here.`,
               icon: MessageSquare,
             }}
             render={p => (

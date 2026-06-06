@@ -64,9 +64,13 @@ feature-flagged plugin, never on the critical path. Web only.
   free UGC/analysis links via `api.tickertick.com/feed?q=(and z:<t> ...)`,
   live-verified). **Reddit** rewritten to OAuth (`oauth.reddit.com`, password
   grant, UA `tickwind:com.tickwind.ingest:0.1`; the old public `.json` 403'd from
-  datacenter IPs) — needs `REDDIT_CLIENT_ID/SECRET/USERNAME/PASSWORD`, disabled &
-  graceful without. **Bluesky** `app.bsky.feed.searchPosts` (AT Protocol; session
-  cached + 401-retry) — needs `BLUESKY_HANDLE` + `BLUESKY_APP_PASSWORD`. **Xueqiu
+  datacenter IPs; the keyless `.rss` route is *also* 429-blocked from datacenter
+  IPs — verified from the VPS — so only OAuth works server-side). **Reddit is NOT
+  pursued** (owner's call, 2026-06): commercially restricted + its signal is
+  already covered by ApeWisdom (buzz) + Tickertick (`T:ugc` Reddit links); the
+  `internal/reddit` client stays in code, disabled by default. **Bluesky**
+  `app.bsky.feed.searchPosts` (AT Protocol; session cached + 401-retry) is **LIVE**
+  (creds in the VPS `.env`; ~30 finance posts/ticker, merged into the feed). **Xueqiu
   (雪球)** unofficial JSON, keyless (mints its own cookie via `/hq`), but datacenter
   IPs get soft-blocked (HTTP 200 empty body → 0 posts, no error — helps from
   residential/China egress). Each disabled/blocked source degrades to 0 posts, so
