@@ -20,7 +20,8 @@ services:
       STORE_BACKEND: postgres
       DATABASE_URL: postgres://tickwind:${POSTGRES_PASSWORD:-tickwind}@postgres:5432/tickwind?sslmode=disable
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
     # No host ports: reachable only inside the compose network, via cloudflared.
 
   postgres:
@@ -32,6 +33,11 @@ services:
       POSTGRES_DB: tickwind
     volumes:
       - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tickwind -d tickwind"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
 
 volumes:
   pgdata:
