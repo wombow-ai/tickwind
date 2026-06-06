@@ -8,6 +8,7 @@ import {useAuth} from '@/lib/auth';
 import {useTheme} from '@/lib/theme';
 import {btnPrimary, cx, tok} from '@/lib/ui';
 import {Logo} from '@/components/ui/atoms';
+import {SearchBox} from '@/components/SearchBox';
 
 /** Two-letter initials for an email/name, for the avatar chip. */
 function initials(email: string | undefined): string {
@@ -25,7 +26,6 @@ export function TopNav() {
   const t = tok(dark);
   const router = useRouter();
   const pathname = usePathname();
-  const [query, setQuery] = useState('');
   const [menu, setMenu] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
 
@@ -41,14 +41,7 @@ export function TopNav() {
     return () => document.removeEventListener('keydown', onKey);
   }, []);
 
-  function search(e: React.FormEvent) {
-    e.preventDefault();
-    const ticker = query.trim().toUpperCase();
-    if (!ticker) return;
-    setQuery('');
-    setSearchOpen(false);
-    router.push(`/stock/${encodeURIComponent(ticker)}`);
-  }
+  const go = (ticker: string) => router.push(`/stock/${encodeURIComponent(ticker)}`);
 
   return (
     <div
@@ -63,28 +56,7 @@ export function TopNav() {
           <Logo size={28} />
         </Link>
 
-        <form onSubmit={search} className="ml-1 hidden sm:flex">
-          <div
-            className={cx(
-              'flex items-center gap-1.5 rounded-full border px-3 py-1.5',
-              t.border,
-              t.surf2,
-            )}
-          >
-            <Search size={14} className={t.faint} />
-            <input
-              value={query}
-              onChange={e => setQuery(e.target.value)}
-              placeholder="Search a ticker…"
-              className={cx(
-                'w-36 bg-transparent text-[13px] uppercase tracking-wide outline-none',
-                dark
-                  ? 'text-slate-100 placeholder:text-slate-500'
-                  : 'text-slate-900 placeholder:text-slate-400',
-              )}
-            />
-          </div>
-        </form>
+        <SearchBox onSelect={go} className="ml-1 hidden w-56 sm:block" />
 
         <nav className="hidden items-center gap-1 md:flex">
           <Link
@@ -212,29 +184,16 @@ export function TopNav() {
       </div>
 
       {searchOpen && (
-        <form onSubmit={search} className={cx('border-t px-4 pb-3 pt-2 sm:hidden', t.border)}>
-          <div
-            className={cx(
-              'flex items-center gap-2 rounded-full border px-3.5 py-2.5',
-              t.border,
-              t.surf2,
-            )}
-          >
-            <Search size={16} className={t.faint} />
-            <input
-              autoFocus
-              value={query}
-              onChange={e => setQuery(e.target.value)}
-              placeholder="Search a ticker…"
-              className={cx(
-                'flex-1 bg-transparent text-[14px] uppercase tracking-wide outline-none',
-                dark
-                  ? 'text-slate-100 placeholder:text-slate-500'
-                  : 'text-slate-900 placeholder:text-slate-400',
-              )}
-            />
-          </div>
-        </form>
+        <div className={cx('border-t px-4 pb-3 pt-2 sm:hidden', t.border)}>
+          <SearchBox
+            onSelect={tk => {
+              setSearchOpen(false);
+              go(tk);
+            }}
+            autoFocus
+            size="md"
+          />
+        </div>
       )}
     </div>
   );

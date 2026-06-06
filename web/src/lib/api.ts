@@ -606,6 +606,34 @@ export function getGurus(limit = 0, signal?: AbortSignal): Promise<GurusResponse
   return getJson<GurusResponse>(`/v1/gurus${q}`, signal);
 }
 
+/** One symbol-directory match for search autocomplete. */
+export interface SymbolMatch {
+  ticker: string;
+  name: string;
+  exchange: string;
+  country: string;
+}
+
+/** Envelope returned by `GET /v1/search`. */
+export interface SearchResponse {
+  count: number;
+  results: SymbolMatch[];
+}
+
+/**
+ * Searches the symbol directory (ticker + company name) for autocomplete.
+ * Public endpoint; results are ranked best-first.
+ */
+export function searchSymbols(
+  q: string,
+  limit = 8,
+  signal?: AbortSignal,
+): Promise<SearchResponse> {
+  const params = new URLSearchParams({q});
+  if (limit > 0) params.set('limit', String(limit));
+  return getJson<SearchResponse>(`/v1/search?${params.toString()}`, signal);
+}
+
 /** A link a user saved to a ticker (private, per-user). */
 export interface Clip {
   id: string;

@@ -1,6 +1,6 @@
 'use client';
 
-import {Lock, MessageSquare, Newspaper, Plus, Search, Wind} from 'lucide-react';
+import {Lock, MessageSquare, Newspaper, Plus, Wind} from 'lucide-react';
 import type {LucideIcon} from 'lucide-react';
 import Link from 'next/link';
 import {useCallback, useEffect, useMemo, useState} from 'react';
@@ -21,6 +21,7 @@ import {POPULAR_TICKERS, SUGGESTED_TICKERS} from '@/lib/config';
 import {useDark} from '@/lib/theme';
 import {btnPrimary, cx, tok} from '@/lib/ui';
 import {useQuotes} from '@/lib/useQuotes';
+import {SearchBox} from '@/components/SearchBox';
 import {StockCard} from '@/components/StockCard';
 import {TimelineItem} from '@/components/TimelineItem';
 import {EmptyState, ErrorState, FeedSkeleton} from '@/components/ui/states';
@@ -61,7 +62,6 @@ export function Board({variant = 'markets'}: {variant?: 'markets' | 'watchlist'}
   const [securities, setSecurities] = useState<Record<string, Security>>({});
   const [barsMap, setBarsMap] = useState<Record<string, number[]>>({});
   const [listLoading, setListLoading] = useState(false);
-  const [adding, setAdding] = useState('');
   // Watchlist page only: the feeds are optional and can be focused on one stock.
   const [feedsOpen, setFeedsOpen] = useState(true);
   const [focusTicker, setFocusTicker] = useState<string | null>(null);
@@ -185,7 +185,6 @@ export function Board({variant = 'markets'}: {variant?: 'markets' | 'watchlist'}
       return;
     }
     setTickers(prev => [...prev, ticker]); // optimistic
-    setAdding('');
     try {
       const token = await getToken();
       const res = await addToWatchlist(token, ticker);
@@ -234,41 +233,12 @@ export function Board({variant = 'markets'}: {variant?: 'markets' | 'watchlist'}
         </div>
 
         {watchlistMode && isAuthed ? (
-          <form
-            onSubmit={e => {
-              e.preventDefault();
-              add(adding);
-            }}
-            className={cx(
-              'flex items-center gap-2 rounded-xl border p-1.5 sm:w-72',
-              t.card,
-              t.border,
-              t.soft,
-            )}
-          >
-            <Search size={16} className={cx('ml-1.5', t.faint)} />
-            <input
-              value={adding}
-              onChange={e => setAdding(e.target.value)}
-              placeholder="Add a ticker…"
-              className={cx(
-                'flex-1 bg-transparent text-[13.5px] uppercase tracking-wide outline-none',
-                dark
-                  ? 'text-slate-100 placeholder:text-slate-500'
-                  : 'text-slate-900 placeholder:text-slate-400',
-              )}
-            />
-            <button
-              type="submit"
-              className={cx(
-                'inline-flex h-7 w-7 items-center justify-center rounded-lg',
-                btnPrimary(dark),
-              )}
-              aria-label="Add ticker"
-            >
-              <Plus size={16} />
-            </button>
-          </form>
+          <SearchBox
+            onSelect={add}
+            placeholder="Add a stock…"
+            size="md"
+            className="sm:w-72"
+          />
         ) : !watchlistMode && !isAuthed ? (
           <Link
             href="/login"
