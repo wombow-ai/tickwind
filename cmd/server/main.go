@@ -138,7 +138,7 @@ func main() {
 	// Guru-watch rail: curated finance-KOL newsletters (public RSS) → the tickers
 	// they mention. Needs no API key, so it always runs (independent of prices).
 	guruCache := guru.NewCache()
-	guruIngestor := ingest.NewGuruIngestor(substack.New(), substack.Feeds, guruCache, 60, 2*time.Hour, log)
+	guruIngestor := ingest.NewGuruIngestor(substack.New(), substack.Feeds, guruCache, st, 60, 2*time.Hour, log)
 	go guruIngestor.Run(ctx)
 	log.Info("guru-watch rail enabled", "feeds", len(substack.Feeds))
 
