@@ -25,6 +25,7 @@ import (
 	"github.com/wombow-ai/tickwind/internal/guru"
 	"github.com/wombow-ai/tickwind/internal/opportunity"
 	"github.com/wombow-ai/tickwind/internal/store"
+	"github.com/wombow-ai/tickwind/internal/symbols"
 	"github.com/wombow-ai/tickwind/internal/topics"
 )
 
@@ -64,6 +65,11 @@ type TickerIngestor interface {
 	IngestOne(ctx context.Context, ticker string)
 }
 
+// SymbolSearcher searches the symbol directory for autocomplete. nil → empty.
+type SymbolSearcher interface {
+	Search(q string, limit int) []symbols.Symbol
+}
+
 type Server struct {
 	store    store.Store
 	hub      QuoteStream
@@ -75,11 +81,12 @@ type Server struct {
 	opps     OpportunitySource
 	gurus    GuruSource
 	ingestor TickerIngestor
+	symbols  SymbolSearcher
 	log      *slog.Logger
 }
 
-func New(st store.Store, hub QuoteStream, enricher enrich.Enricher, verifier *auth.Verifier, bars BarSource, topicSrc TopicSource, oppSrc OpportunitySource, guruSrc GuruSource, ingestor TickerIngestor, log *slog.Logger) http.Handler {
-	s := &Server{store: st, hub: hub, clip: clip.NewFetcher(), enrich: enricher, auth: verifier, bars: bars, topics: topicSrc, opps: oppSrc, gurus: guruSrc, ingestor: ingestor, log: log}
+func New(st store.Store, hub QuoteStream, enricher enrich.Enricher, verifier *auth.Verifier, bars BarSource, topicSrc TopicSource, oppSrc OpportunitySource, guruSrc GuruSource, ingestor TickerIngestor, symbolSrc SymbolSearcher, log *slog.Logger) http.Handler {
+	s := &Server{store: st, hub: hub, clip: clip.NewFetcher(), enrich: enricher, auth: verifier, bars: bars, topics: topicSrc, opps: oppSrc, gurus: guruSrc, ingestor: ingestor, symbols: symbolSrc, log: log}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", s.health)
 
@@ -106,6 +113,7 @@ func New(st store.Store, hub QuoteStream, enricher enrich.Enricher, verifier *au
 	mux.HandleFunc("GET /v1/topics", s.getTopics)
 	mux.HandleFunc("GET /v1/opportunities", s.getOpportunities)
 	mux.HandleFunc("GET /v1/gurus", s.getGurus)
+	mux.HandleFunc("GET /v1/search", s.getSearch)
 	mux.HandleFunc("GET /v1/stream", s.getStream)
 
 	// auth.Middleware attaches the user when a valid bearer token is present;
@@ -460,6 +468,19 @@ func (s *Server) getGurus(w http.ResponseWriter, r *http.Request) {
 		rail = rail[:lim]
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"count": len(rail), "items": rail})
+}
+
+// getSearch returns symbol-directory autocomplete matches for ?q= (best first).
+// Always 200 with a (possibly empty) list; ?limit= caps results (default 10).
+func (s *Server) getSearch(w http.ResponseWriter, r *http.Request) {
+	var results []symbols.Symbol
+	if s.symbols != nil {
+		results = s.symbols.Search(r.URL.Query().Get("q"), queryLimit(r, 10))
+	}
+	if results == nil {
+		results = []symbols.Symbol{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"count": len(results), "results": results})
 }
 
 // getTopics returns the trending-topics snapshot (empty when disabled).

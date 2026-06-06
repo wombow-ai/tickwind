@@ -31,6 +31,7 @@ func newTestServer() *httptest.Server {
 		nil, // no opportunity source in tests
 		nil, // no guru source in tests
 		nil, // no ticker ingestor in tests
+		nil, // no symbol searcher in tests
 		slog.New(slog.NewTextHandler(io.Discard, nil)),
 	)
 	return httptest.NewServer(h)
@@ -94,6 +95,7 @@ func TestWatchlistAddTriggersIngest(t *testing.T) {
 		auth.NewVerifier(testSecret, ""),
 		nil, nil, nil, nil, // bars, topics, opps, gurus
 		ing,
+		nil, // no symbol searcher
 		slog.New(slog.NewTextHandler(io.Discard, nil)),
 	)
 	srv := httptest.NewServer(h)

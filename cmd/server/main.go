@@ -33,6 +33,7 @@ import (
 	"github.com/wombow-ai/tickwind/internal/store/postgres"
 	"github.com/wombow-ai/tickwind/internal/stream"
 	"github.com/wombow-ai/tickwind/internal/substack"
+	"github.com/wombow-ai/tickwind/internal/symbols"
 	"github.com/wombow-ai/tickwind/internal/tickertick"
 	"github.com/wombow-ai/tickwind/internal/topics"
 	"github.com/wombow-ai/tickwind/internal/xueqiu"
@@ -142,6 +143,11 @@ func main() {
 	go guruIngestor.Run(ctx)
 	log.Info("guru-watch rail enabled", "feeds", len(substack.Feeds))
 
+	// Symbol search directory: SEC public-domain US tickers for autocomplete,
+	// refreshed daily (key-free; needs SEC's required User-Agent).
+	symbolCache := symbols.NewCache()
+	go ingest.NewSymbolIngestor(symbolCache, cfg.EDGARUserAgent, 24*time.Hour, log).Run(ctx)
+
 	// Opportunity board (small-cap insider buys); shared cache, populated below
 	// when Alpaca prices are available (needed for market cap).
 	oppCache := opportunity.NewCache()
@@ -166,7 +172,7 @@ func main() {
 
 	srv := &http.Server{
 		Addr:              ":" + cfg.Port,
-		Handler:           api.New(st, hub, enricher, verifier, bars, topicCache, oppCache, guruCache, scheduler, log),
+		Handler:           api.New(st, hub, enricher, verifier, bars, topicCache, oppCache, guruCache, scheduler, symbolCache, log),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
