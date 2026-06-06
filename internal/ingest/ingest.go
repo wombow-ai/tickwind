@@ -100,6 +100,17 @@ func (s *Scheduler) runOnce(ctx context.Context) {
 	s.ingestTopics(ctx, tickers)
 }
 
+// IngestOne runs a one-shot filings+news+social pull for a single ticker, used
+// to populate a freshly watch-listed stock immediately rather than waiting for
+// the next scheduler cycle. Safe to call concurrently with Run — it only
+// touches the concurrency-safe store, not scheduler state.
+func (s *Scheduler) IngestOne(ctx context.Context, ticker string) {
+	s.ingestFilings(ctx, ticker)
+	s.ingestNews(ctx, ticker)
+	s.ingestSocial(ctx, ticker)
+	s.log.Info("ingested on-demand", "ticker", ticker)
+}
+
 // ingestTopics recomputes the trending-topics snapshot from the recent news
 // across all tickers (already in the store), keyed by article id so a story
 // tagged to several tickers is counted once.
@@ -144,11 +155,15 @@ func (s *Scheduler) ingestFilings(ctx context.Context, ticker string) {
 	s.log.Info("ingested filings", "ticker", ticker, "name", sec.Name, "count", len(filings))
 }
 
+// newsLookbackDays is how far back company-news is fetched — 30 (vs a tight 7)
+// so a freshly-added or thinly-covered ticker still surfaces recent articles.
+const newsLookbackDays = 30
+
 func (s *Scheduler) ingestNews(ctx context.Context, ticker string) {
 	if s.finnhub == nil {
 		return
 	}
-	items, err := s.finnhub.CompanyNews(ctx, ticker, 7)
+	items, err := s.finnhub.CompanyNews(ctx, ticker, newsLookbackDays)
 	if err != nil {
 		s.log.Warn("finnhub fetch failed", "ticker", ticker, "err", err)
 		return

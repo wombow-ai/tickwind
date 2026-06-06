@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/base64"
@@ -29,6 +30,7 @@ func newTestServer() *httptest.Server {
 		nil, // no topic source in tests
 		nil, // no opportunity source in tests
 		nil, // no guru source in tests
+		nil, // no ticker ingestor in tests
 		slog.New(slog.NewTextHandler(io.Discard, nil)),
 	)
 	return httptest.NewServer(h)
@@ -76,6 +78,39 @@ func TestHealthz(t *testing.T) {
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status = %d", resp.StatusCode)
+	}
+}
+
+// fakeIngestor records IngestOne calls for the on-add trigger test.
+type fakeIngestor struct{ called chan string }
+
+func (f fakeIngestor) IngestOne(_ context.Context, ticker string) { f.called <- ticker }
+
+// Adding a ticker should fire a one-shot ingest for it (normalized, async).
+func TestWatchlistAddTriggersIngest(t *testing.T) {
+	ing := fakeIngestor{called: make(chan string, 1)}
+	h := New(
+		memory.New(), stream.NewHub(), enrich.Noop{},
+		auth.NewVerifier(testSecret, ""),
+		nil, nil, nil, nil, // bars, topics, opps, gurus
+		ing,
+		slog.New(slog.NewTextHandler(io.Discard, nil)),
+	)
+	srv := httptest.NewServer(h)
+	defer srv.Close()
+
+	resp := authed(t, http.MethodPost, srv.URL+"/v1/watchlist", `{"ticker":"nvda"}`)
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("status = %d", resp.StatusCode)
+	}
+	select {
+	case got := <-ing.called:
+		if got != "NVDA" { // lower-case input is normalized before ingest
+			t.Errorf("ingested %q, want NVDA", got)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("IngestOne was not called on add")
 	}
 }
 

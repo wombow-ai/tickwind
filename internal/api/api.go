@@ -57,21 +57,29 @@ type GuruSource interface {
 	Get() []guru.Item
 }
 
-type Server struct {
-	store  store.Store
-	hub    QuoteStream
-	clip   *clip.Fetcher
-	enrich enrich.Enricher
-	auth   *auth.Verifier
-	bars   BarSource
-	topics TopicSource
-	opps   OpportunitySource
-	gurus  GuruSource
-	log    *slog.Logger
+// TickerIngestor triggers a one-shot data pull (filings/news/social) for a
+// single ticker, so a newly watch-listed stock is populated immediately instead
+// of waiting for the next scheduler cycle. nil disables on-add ingestion.
+type TickerIngestor interface {
+	IngestOne(ctx context.Context, ticker string)
 }
 
-func New(st store.Store, hub QuoteStream, enricher enrich.Enricher, verifier *auth.Verifier, bars BarSource, topicSrc TopicSource, oppSrc OpportunitySource, guruSrc GuruSource, log *slog.Logger) http.Handler {
-	s := &Server{store: st, hub: hub, clip: clip.NewFetcher(), enrich: enricher, auth: verifier, bars: bars, topics: topicSrc, opps: oppSrc, gurus: guruSrc, log: log}
+type Server struct {
+	store    store.Store
+	hub      QuoteStream
+	clip     *clip.Fetcher
+	enrich   enrich.Enricher
+	auth     *auth.Verifier
+	bars     BarSource
+	topics   TopicSource
+	opps     OpportunitySource
+	gurus    GuruSource
+	ingestor TickerIngestor
+	log      *slog.Logger
+}
+
+func New(st store.Store, hub QuoteStream, enricher enrich.Enricher, verifier *auth.Verifier, bars BarSource, topicSrc TopicSource, oppSrc OpportunitySource, guruSrc GuruSource, ingestor TickerIngestor, log *slog.Logger) http.Handler {
+	s := &Server{store: st, hub: hub, clip: clip.NewFetcher(), enrich: enricher, auth: verifier, bars: bars, topics: topicSrc, opps: oppSrc, gurus: guruSrc, ingestor: ingestor, log: log}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", s.health)
 
@@ -164,6 +172,16 @@ func (s *Server) postWatchlist(w http.ResponseWriter, r *http.Request) {
 	if err := s.store.AddToWatchlist(r.Context(), u.ID, ticker); err != nil {
 		writeJSON(w, http.StatusInternalServerError, errBody(err.Error()))
 		return
+	}
+	// Populate the new ticker right away (filings/news/social) instead of waiting
+	// for the next scheduler cycle. Detached context — the request's is cancelled
+	// once we respond — and fire-and-forget so the response isn't blocked.
+	if s.ingestor != nil {
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			s.ingestor.IngestOne(ctx, ticker)
+		}()
 	}
 	s.writeWatchlist(w, r, u.ID, http.StatusCreated)
 }
