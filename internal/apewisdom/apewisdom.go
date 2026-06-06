@@ -79,7 +79,7 @@ func (c *Client) Signals(ctx context.Context, tickers []string) ([]store.Signal,
 	now := time.Now().UTC()
 	found := make(map[string]struct{})
 	for page := 1; page <= maxPages; page++ {
-		resp, err := c.fetchPage(ctx, page)
+		resp, err := c.fetchPage(ctx, "all-stocks", page)
 		if err != nil {
 			if page == 1 {
 				return nil, err
@@ -125,7 +125,7 @@ func (c *Client) Leaderboard(ctx context.Context, limit int) ([]store.HotStock, 
 	}
 	out := make([]store.HotStock, 0, limit)
 	for page := 1; page <= maxPages && len(out) < limit; page++ {
-		resp, err := c.fetchPage(ctx, page)
+		resp, err := c.fetchPage(ctx, "all-stocks", page)
 		if err != nil {
 			if page == 1 {
 				return nil, err
@@ -155,9 +155,42 @@ func (c *Client) Leaderboard(ctx context.Context, limit int) ([]store.HotStock, 
 	return out, nil
 }
 
-// fetchPage retrieves one leaderboard page of the all-stocks filter.
-func (c *Client) fetchPage(ctx context.Context, page int) (*pageResp, error) {
-	url := c.baseURL + "/api/v1.0/filter/all-stocks/page/" + strconv.Itoa(page)
+// WallStreetBets returns the top-`limit` most-mentioned tickers on
+// r/wallstreetbets specifically (vs Leaderboard's all-subreddits board), for the
+// "WSB Trending" view. Same HotStock shape (Ticker, Name, Mentions,
+// MentionsPrev, Upvotes); ranking/Change are the caller's. limit <= 0 → top 100.
+func (c *Client) WallStreetBets(ctx context.Context, limit int) ([]store.HotStock, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	resp, err := c.fetchPage(ctx, "wallstreetbets", 1) // one page (top 100) is plenty
+	if err != nil {
+		return nil, err
+	}
+	out := make([]store.HotStock, 0, limit)
+	for _, r := range resp.Results {
+		tk := strings.ToUpper(strings.TrimSpace(r.Ticker))
+		if tk == "" {
+			continue
+		}
+		out = append(out, store.HotStock{
+			Ticker:       tk,
+			Name:         html.UnescapeString(r.Name),
+			Mentions:     r.Mentions,
+			MentionsPrev: r.Mentions24hAgo,
+			Upvotes:      r.Upvotes,
+		})
+		if len(out) >= limit {
+			break
+		}
+	}
+	return out, nil
+}
+
+// fetchPage retrieves one page of the given ApeWisdom filter (e.g. "all-stocks"
+// or "wallstreetbets").
+func (c *Client) fetchPage(ctx context.Context, filter string, page int) (*pageResp, error) {
+	url := c.baseURL + "/api/v1.0/filter/" + filter + "/page/" + strconv.Itoa(page)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("apewisdom: build request page %d: %w", page, err)

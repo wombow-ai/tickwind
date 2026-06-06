@@ -236,6 +236,40 @@ func (s *Scheduler) ingestHotList(ctx context.Context) {
 		}
 		s.log.Info("ingested hotlist", "board", board, "source", s.hot.Name(), "count", len(stocks))
 	}
+
+	// WSB-specific "what r/wallstreetbets is buzzing about" board — optional,
+	// only when the source provides it (the apewisdom client does).
+	if wsbSrc, ok := s.hot.(wsbSource); ok {
+		wsb, err := wsbSrc.WallStreetBets(ctx, hotListSize)
+		if err != nil {
+			s.log.Warn("wsb fetch failed", "err", err)
+			return
+		}
+		board := buildWSBBoard(wsb)
+		if err := s.store.SaveHotList(ctx, "wsb", board); err != nil {
+			s.log.Warn("save hotlist failed", "board", "wsb", "err", err)
+			return
+		}
+		s.log.Info("ingested hotlist", "board", "wsb", "source", s.hot.Name(), "count", len(board))
+	}
+}
+
+// wsbSource is an optional HotSource capability: a WallStreetBets-only board.
+type wsbSource interface {
+	WallStreetBets(ctx context.Context, limit int) ([]store.HotStock, error)
+}
+
+// buildWSBBoard ranks the WSB board by raw mention volume (what r/wallstreetbets
+// is most discussing now), setting Change so the UI can show a momentum arrow.
+func buildWSBBoard(raw []store.HotStock) []store.HotStock {
+	now := time.Now().UTC()
+	for i := range raw {
+		if prev := raw[i].MentionsPrev; prev > 0 {
+			raw[i].Change = float64(raw[i].Mentions-prev) / float64(prev)
+		}
+		raw[i].UpdatedAt = now
+	}
+	return rankBoard(raw, "wsb", 0, func(h store.HotStock) float64 { return float64(h.Mentions) })
 }
 
 // buildBoards derives the leaderboards from raw ApeWisdom entries:
