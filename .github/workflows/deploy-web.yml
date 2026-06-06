@@ -1,0 +1,38 @@
+# Build the static frontend and deploy it to Cloudflare Pages on every push.
+# This bypasses Cloudflare's Git auto-detection (which forces the OpenNext
+# adapter) by building the static export ourselves and uploading web/out via
+# wrangler. Requires repo secrets CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID.
+name: Deploy web
+
+on:
+  push:
+    branches: [main]
+    paths: ['web/**']
+  workflow_dispatch: {}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Build static export
+        working-directory: web
+        env:
+          NEXT_PUBLIC_API_BASE: https://api.tickwind.com
+        run: |
+          npm ci
+          npm run build
+
+      - name: Deploy to Cloudflare Pages
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy web/out --project-name=tickwind --branch=main
