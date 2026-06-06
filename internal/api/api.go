@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/wombow-ai/tickwind/internal/auth"
@@ -65,6 +66,7 @@ func New(st store.Store, hub QuoteStream, enricher enrich.Enricher, verifier *au
 	mux.HandleFunc("GET /v1/stocks/{ticker}/news", s.getNews)
 	mux.HandleFunc("GET /v1/stocks/{ticker}/social", s.getSocial)
 	mux.HandleFunc("GET /v1/stocks/{ticker}/summary", s.getSummary)
+	mux.HandleFunc("GET /v1/bars", s.getBarsBatch)
 	mux.HandleFunc("GET /v1/stream", s.getStream)
 
 	// auth.Middleware attaches the user when a valid bearer token is present;
@@ -280,6 +282,55 @@ func (s *Server) getBars(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ticker": ticker, "closes": closes})
+}
+
+// maxBarsBatch caps how many tickers one /v1/bars request resolves.
+const maxBarsBatch = 30
+
+// getBarsBatch returns daily-close series for multiple tickers in one request
+// (board sparklines). Tickers come from the comma-separated `tickers` query
+// param, deduped and capped; series are fetched concurrently via the cache.
+// Missing/empty series are omitted, so the response is always 200 with a
+// (possibly partial) map.
+func (s *Server) getBarsBatch(w http.ResponseWriter, r *http.Request) {
+	result := map[string][]float64{}
+	raw := strings.TrimSpace(r.URL.Query().Get("tickers"))
+	if s.bars != nil && raw != "" {
+		seen := make(map[string]struct{})
+		var list []string
+		for _, t := range strings.Split(raw, ",") {
+			t = strings.ToUpper(strings.TrimSpace(t))
+			if t == "" {
+				continue
+			}
+			if _, ok := seen[t]; ok {
+				continue
+			}
+			seen[t] = struct{}{}
+			list = append(list, t)
+			if len(list) >= maxBarsBatch {
+				break
+			}
+		}
+
+		var mu sync.Mutex
+		var wg sync.WaitGroup
+		for _, ticker := range list {
+			wg.Add(1)
+			go func(ticker string) {
+				defer wg.Done()
+				closes, err := s.bars.DailyBars(r.Context(), ticker)
+				if err != nil || len(closes) == 0 {
+					return
+				}
+				mu.Lock()
+				result[ticker] = closes
+				mu.Unlock()
+			}(ticker)
+		}
+		wg.Wait()
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"bars": result})
 }
 
 func (s *Server) getNews(w http.ResponseWriter, r *http.Request) {

@@ -306,6 +306,24 @@ export function getBars(
   );
 }
 
+/** Envelope returned by `GET /v1/bars?tickers=...`. */
+export interface BarsBatchResponse {
+  /** Map from ticker to its recent daily closes (oldest first). */
+  bars: Record<string, number[]>;
+}
+
+/** Fetches daily-close series for several tickers in one batched request. */
+export function getBarsBatch(
+  tickers: readonly string[],
+  signal?: AbortSignal,
+): Promise<BarsBatchResponse> {
+  const q = tickers.map(normalizeTicker).join(',');
+  return getJson<BarsBatchResponse>(
+    `/v1/bars?tickers=${encodeURIComponent(q)}`,
+    signal,
+  );
+}
+
 /**
  * Fetches recent filings for a ticker, most recent first.
  *

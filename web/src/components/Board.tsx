@@ -5,6 +5,7 @@ import Link from 'next/link';
 import {useEffect, useMemo, useState} from 'react';
 import {
   addToWatchlist,
+  getBarsBatch,
   getStock,
   getWatchlist,
   removeFromWatchlist,
@@ -40,6 +41,7 @@ export function Board() {
 
   const [tickers, setTickers] = useState<string[]>([...POPULAR_TICKERS]);
   const [securities, setSecurities] = useState<Record<string, Security>>({});
+  const [barsMap, setBarsMap] = useState<Record<string, number[]>>({});
   const [listLoading, setListLoading] = useState(false);
   const [adding, setAdding] = useState('');
 
@@ -85,6 +87,21 @@ export function Board() {
           ),
       );
     }
+    return () => controller.abort();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tickerKey]);
+
+  // Batched trend sparklines for the whole board (one request).
+  useEffect(() => {
+    if (tickers.length === 0) {
+      setBarsMap({});
+      return;
+    }
+    const controller = new AbortController();
+    getBarsBatch(tickers, controller.signal).then(
+      r => setBarsMap(r.bars),
+      () => setBarsMap({}),
+    );
     return () => controller.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tickerKey]);
@@ -258,6 +275,7 @@ export function Board() {
               key={sec.ticker}
               security={sec}
               quote={quotes.get(sec.ticker)}
+              closes={barsMap[sec.ticker]}
               onRemove={isAuthed ? () => remove(sec.ticker) : undefined}
             />
           ))}

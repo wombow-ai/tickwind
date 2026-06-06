@@ -83,7 +83,9 @@ Status: ✅ done · 🟡 in progress · ⬜ todo
   - ✅ Bars endpoint `GET /v1/stocks/{ticker}/bars` (Alpaca daily bars, 30 closes,
         server-cached 1h) → **`Sparkline` renders** on the detail header (real trend,
         green up / rose down). Verified e2e (AAPL up, NVDA down; light + dark)
-  - ⬜ (optional) sparkline on board tiles too (needs a batched/cached bars call)
+  - ✅ Board-tile sparklines via a batched `GET /v1/bars?tickers=…` (parallel
+        fan-out over `BarCache`, capped at 30) — one request per board, each
+        `StockCard` shows a compact trend (hidden when empty). Verified light + dark
   - ✅ Default `WATCHLIST` bumped to `POPULAR_TICKERS` (config + `.env.example`) so
         every public tile is live after redeploy
   - ⬜ Redeploy VPS backend multi-tenant + Supabase (`DATABASE_URL` pooler +

@@ -10,6 +10,7 @@ import {
   MarketBadge,
   PriceTag,
   SessionBadge,
+  Sparkline,
 } from '@/components/ui/atoms';
 
 /**
@@ -19,10 +20,13 @@ import {
 export function StockCard({
   security,
   quote,
+  closes,
   onRemove,
 }: {
   security: Security;
   quote?: Quote;
+  /** Recent daily closes for a trend sparkline; omitted/empty hides it. */
+  closes?: number[];
   onRemove?: () => void;
 }) {
   const dark = useDark();
@@ -49,25 +53,38 @@ export function StockCard({
         <p className={cx('mb-3 truncate text-[12px]', t.sub)}>{security.name}</p>
 
         <div className="flex items-end justify-between gap-2">
-          {quote ? (
-            <div>
-              <PriceTag value={quote.price} cur={cur} size="md" />
-              {quote.prev_close ? (
-                <div className="mt-0.5">
-                  <ChangeLine
-                    chg={quote.price - quote.prev_close}
-                    pct={
-                      ((quote.price - quote.prev_close) / quote.prev_close) * 100
-                    }
-                    cur={cur}
-                  />
-                </div>
-              ) : null}
+          <div>
+            {quote ? (
+              <>
+                <PriceTag value={quote.price} cur={cur} size="md" />
+                {quote.prev_close ? (
+                  <div className="mt-0.5">
+                    <ChangeLine
+                      chg={quote.price - quote.prev_close}
+                      pct={
+                        ((quote.price - quote.prev_close) / quote.prev_close) *
+                        100
+                      }
+                      cur={cur}
+                    />
+                  </div>
+                ) : null}
+              </>
+            ) : (
+              <span className={cx('text-2xl font-semibold tabular-nums', t.faint)}>
+                {cur}—
+              </span>
+            )}
+          </div>
+          {closes && closes.length >= 2 && (
+            <div className="-mb-1 shrink-0 opacity-90">
+              <Sparkline
+                values={closes}
+                up={closes[closes.length - 1] >= closes[0]}
+                w={84}
+                h={36}
+              />
             </div>
-          ) : (
-            <span className={cx('text-2xl font-semibold tabular-nums', t.faint)}>
-              {cur}—
-            </span>
           )}
         </div>
 
