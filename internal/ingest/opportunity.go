@@ -167,7 +167,7 @@ func (o *OpportunityIngestor) recompute(ctx context.Context) {
 	seenT := make(map[string]struct{})
 	var tickers []string
 	for _, b := range buys {
-		if b.Ticker == "" {
+		if !opportunity.ValidTicker(b.Ticker) {
 			continue
 		}
 		if _, ok := seenT[b.Ticker]; ok {

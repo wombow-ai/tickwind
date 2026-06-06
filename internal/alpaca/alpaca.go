@@ -9,6 +9,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -153,9 +154,11 @@ func (c *Client) DailyBars(ctx context.Context, ticker string, limit int) ([]flo
 // request to keep URLs sane; one call can price the whole small-cap candidate
 // set. Used to compute market cap (= shares × price) for the Opportunity board.
 func (c *Client) Snapshots(ctx context.Context, symbols []string) (map[string]float64, error) {
+	const batch = 100
 	out := make(map[string]float64, len(symbols))
-	for i := 0; i < len(symbols); i += 100 {
-		end := i + 100
+	var lastErr error
+	for i := 0; i < len(symbols); i += batch {
+		end := i + batch
 		if end > len(symbols) {
 			end = len(symbols)
 		}
@@ -170,17 +173,23 @@ func (c *Client) Snapshots(ctx context.Context, symbols []string) (map[string]fl
 
 		resp, err := c.http.Do(req)
 		if err != nil {
-			return nil, fmt.Errorf("alpaca: get snapshots: %w", err)
+			lastErr = fmt.Errorf("alpaca: get snapshots: %w", err)
+			continue
+		}
+		// Skip a bad batch (e.g. an unknown symbol → 400) rather than failing the
+		// whole call; surface the reason if every batch fails.
+		if resp.StatusCode != http.StatusOK {
+			b, _ := io.ReadAll(io.LimitReader(resp.Body, 300))
+			resp.Body.Close()
+			lastErr = fmt.Errorf("alpaca: snapshots %s: %s", resp.Status, strings.TrimSpace(string(b)))
+			continue
 		}
 		var body map[string]snapshotResp
-		if resp.StatusCode == http.StatusOK {
-			err = json.NewDecoder(resp.Body).Decode(&body)
-		} else {
-			err = fmt.Errorf("alpaca: snapshots: %s", resp.Status)
-		}
+		err = json.NewDecoder(resp.Body).Decode(&body)
 		resp.Body.Close()
 		if err != nil {
-			return nil, err
+			lastErr = fmt.Errorf("alpaca: decode snapshots: %w", err)
+			continue
 		}
 		for sym, snap := range body {
 			price := snap.DailyBar.Close
@@ -194,6 +203,9 @@ func (c *Client) Snapshots(ctx context.Context, symbols []string) (map[string]fl
 				out[sym] = price
 			}
 		}
+	}
+	if len(out) == 0 && lastErr != nil {
+		return nil, lastErr
 	}
 	return out, nil
 }

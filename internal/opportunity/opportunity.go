@@ -66,7 +66,7 @@ func Recompute(now time.Time, buys []store.InsiderBuy, shares map[int]int64, pri
 	}
 	byTicker := map[string]*agg{}
 	for _, b := range buys {
-		if b.Ticker == "" || b.Value < MinBuyValue {
+		if !ValidTicker(b.Ticker) || b.Value < MinBuyValue {
 			continue
 		}
 		a := byTicker[b.Ticker]
@@ -127,6 +127,25 @@ func Recompute(now time.Time, buys []store.InsiderBuy, shares map[int]int64, pri
 		out[i].Rank = i + 1
 	}
 	return out
+}
+
+// ValidTicker reports whether t is a well-formed US symbol — uppercase letters
+// with an optional non-leading dot (e.g. "ABC", "BRK.A"). This drops the empty
+// or odd issuer symbols some Form 4s carry, which would otherwise poison a bulk
+// price request.
+func ValidTicker(t string) bool {
+	if len(t) < 1 || len(t) > 6 {
+		return false
+	}
+	for i, c := range t {
+		switch {
+		case c >= 'A' && c <= 'Z':
+		case c == '.' && i > 0:
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 func explainer(buyers int, value float64) string {

@@ -93,8 +93,11 @@ func (c *Client) Shares(ctx context.Context, year, quarter int) (map[int]int64, 
 	}
 	var resp struct {
 		Data []struct {
-			CIK int   `json:"cik"`
-			Val int64 `json:"val"`
+			CIK int `json:"cik"`
+			// val is usually an integer share count, but a few filers report a
+			// fractional value — decode as float64 so one odd row can't fail the
+			// whole frame, then truncate to a share count.
+			Val float64 `json:"val"`
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(body, &resp); err != nil {
@@ -102,8 +105,9 @@ func (c *Client) Shares(ctx context.Context, year, quarter int) (map[int]int64, 
 	}
 	out := make(map[int]int64, len(resp.Data))
 	for _, d := range resp.Data {
-		if d.Val > out[d.CIK] { // defensive: keep the largest if dupes appear
-			out[d.CIK] = d.Val
+		v := int64(d.Val)
+		if v > out[d.CIK] { // defensive: keep the largest if dupes appear
+			out[d.CIK] = v
 		}
 	}
 	return out, nil
