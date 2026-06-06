@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/wombow-ai/tickwind/internal/store"
@@ -144,6 +145,57 @@ func (c *Client) DailyBars(ctx context.Context, ticker string, limit int) ([]flo
 		closes = append(closes, body.Bars[i].Close)
 	}
 	return closes, nil
+}
+
+// Snapshots returns the latest price per symbol, fetched in bulk (the daily
+// bar's close, falling back to the previous daily bar off-hours, then the latest
+// trade). Symbols with no usable price are omitted. Batches at 100 symbols per
+// request to keep URLs sane; one call can price the whole small-cap candidate
+// set. Used to compute market cap (= shares × price) for the Opportunity board.
+func (c *Client) Snapshots(ctx context.Context, symbols []string) (map[string]float64, error) {
+	out := make(map[string]float64, len(symbols))
+	for i := 0; i < len(symbols); i += 100 {
+		end := i + 100
+		if end > len(symbols) {
+			end = len(symbols)
+		}
+		url := fmt.Sprintf("%s/v2/stocks/snapshots?symbols=%s&feed=%s",
+			c.dataURL, strings.Join(symbols[i:end], ","), c.feed)
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("APCA-API-KEY-ID", c.keyID)
+		req.Header.Set("APCA-API-SECRET-KEY", c.secret)
+
+		resp, err := c.http.Do(req)
+		if err != nil {
+			return nil, fmt.Errorf("alpaca: get snapshots: %w", err)
+		}
+		var body map[string]snapshotResp
+		if resp.StatusCode == http.StatusOK {
+			err = json.NewDecoder(resp.Body).Decode(&body)
+		} else {
+			err = fmt.Errorf("alpaca: snapshots: %s", resp.Status)
+		}
+		resp.Body.Close()
+		if err != nil {
+			return nil, err
+		}
+		for sym, snap := range body {
+			price := snap.DailyBar.Close
+			if price <= 0 {
+				price = snap.PrevDailyBar.Close
+			}
+			if price <= 0 {
+				price = snap.LatestTrade.Price
+			}
+			if price > 0 {
+				out[sym] = price
+			}
+		}
+	}
+	return out, nil
 }
 
 // sessionAt classifies a US-equity trading session for a timestamp, evaluated
