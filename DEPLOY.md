@@ -10,17 +10,15 @@ ports are never exposed to the internet.
                           │
                   Cloudflare Tunnel (outbound-only, no open ports)
                           │
-        Oracle Always-Free VM ── docker compose:
-           cloudflared · tickwind-api (Go) · postgres · redis
+        Your VM (any 1GB+ host) ── docker compose:
+           cloudflared · tickwind-api (Go) · postgres
 ```
 
-## 1. Oracle Always-Free VM
-- Oracle Cloud → Compute → Instances → Create.
-- Shape: **VM.Standard.A1.Flex** (Ampere ARM), e.g. 2 OCPU / 12 GB (Always Free
-  allows up to 4 OCPU / 24 GB total). Image: **Ubuntu 24.04 (aarch64)**. Boot
-  volume up to 200 GB (free).
-- If you hit "Out of capacity", try another Availability Domain or region.
-- SSH in, then install Docker:
+## 1. A small VM (any cheap host — 1 GB RAM is enough)
+The slim stack (api + postgres + cloudflared) fits in ~1 GB. Good options:
+**GCP e2-micro** (always-free, US regions), **RackNerd** (~$11–24/yr),
+**Hetzner CAX11** (~€3.79/mo, 4 GB), or **IONOS/OVH** (~$2–4/mo). Use Ubuntu 24.04
+(x86 or ARM — images are multi-arch). Then SSH in and install Docker:
   ```bash
   curl -fsSL https://get.docker.com | sh
   sudo usermod -aG docker $USER   # re-login after this
