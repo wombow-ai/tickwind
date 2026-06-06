@@ -68,10 +68,12 @@ feature-flagged plugin, never on the critical path. Web only.
 - News: `internal/finnhub` → `News` store → `GET /v1/stocks/{ticker}/news`,
   ingested on the scheduler (needs `FINNHUB_TOKEN`); frontend `NewsTimeline`.
 - API `?limit=` parsing is shared via `queryLimit` in `internal/api`.
-- Prices: Alpaca REST `trades/latest` (feed-aware, all-session ET classifier) →
-  `Quote` in store → `GET /v1/stocks/{ticker}/quote`. Poller auto-disables when
-  `ALPACA_API_KEY/SECRET` are unset, so the app always runs. Needs a real Alpaca
-  paper key to live-verify.
+- Prices: Alpaca REST **snapshot** (`/v2/stocks/{t}/snapshot`) → one call gives the
+  latest all-session trade (feed-aware ET session classifier) **plus `prevDailyBar`
+  close = `Quote.PrevClose`** (the day's change reference). `Quote` in store →
+  `GET /v1/stocks/{ticker}/quote`. Poller auto-disables when `ALPACA_API_KEY/SECRET`
+  are unset. Postgres `quotes.prev_close` column (idempotent `ADD COLUMN IF NOT
+  EXISTS`); `GetQuote` `COALESCE(prev_close,0)`. Verified e2e locally.
 - Live push: `GET /v1/stream` = Server-Sent Events via `internal/stream.Hub`
   (chose SSE over WebSocket — one-way, stdlib-only). Poller publishes each quote;
   handler sends an initial `: connected` so headers flush immediately.
@@ -122,8 +124,9 @@ feature-flagged plugin, never on the critical path. Web only.
 - **Routes**: route groups — `(main)` = chrome (TopNav+Footer): `/`, `/stock/[ticker]`,
   `/settings`, `/announcements`; `(auth)` = centered: `/login`, `/signup`; `/designs/*`
   kept as references (self-contained). `/stock/[ticker]` is SSR with SEO metadata.
-- **ChangeLine + Sparkline exist but are not rendered** — no fake data. Light them
-  up once the backend exposes `prev_close` + intraday bars (Alpaca snapshot).
+- **ChangeLine renders** the day's change (signed %/▲▼) on the board tile + detail
+  header whenever `quote.prev_close` is present (real Alpaca data). **Sparkline still
+  hidden** — no fake data; light it up once a backend intraday-bars endpoint exists.
 - Verify: `cd web && npm run lint && npm run build` (both green; 9 lint *warnings*
   are the experimental React-Compiler rules on intentional client-fetch/mount
   patterns, downgraded to warn in `eslint.config.mjs`).

@@ -5,7 +5,12 @@ import Link from 'next/link';
 import type {Quote, Security} from '@/lib/api';
 import {useDark} from '@/lib/theme';
 import {cx, marketCurrency, tok} from '@/lib/ui';
-import {MarketBadge, PriceTag, SessionBadge} from '@/components/ui/atoms';
+import {
+  ChangeLine,
+  MarketBadge,
+  PriceTag,
+  SessionBadge,
+} from '@/components/ui/atoms';
 
 /**
  * A watchlist/board tile: ticker, name, live price and session. Links to the
@@ -45,7 +50,20 @@ export function StockCard({
 
         <div className="flex items-end justify-between gap-2">
           {quote ? (
-            <PriceTag value={quote.price} cur={cur} size="md" />
+            <div>
+              <PriceTag value={quote.price} cur={cur} size="md" />
+              {quote.prev_close ? (
+                <div className="mt-0.5">
+                  <ChangeLine
+                    chg={quote.price - quote.prev_close}
+                    pct={
+                      ((quote.price - quote.prev_close) / quote.prev_close) * 100
+                    }
+                    cur={cur}
+                  />
+                </div>
+              ) : null}
+            </div>
           ) : (
             <span className={cx('text-2xl font-semibold tabular-nums', t.faint)}>
               {cur}—

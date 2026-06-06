@@ -134,11 +134,11 @@ FROM filings WHERE ticker = $1 ORDER BY filed_at DESC`
 // UpsertQuote stores the latest quote for a security, keyed by ticker.
 func (s *Store) UpsertQuote(ctx context.Context, q store.Quote) error {
 	const query = `
-INSERT INTO quotes (ticker, price, session, source, at, updated_at)
-VALUES ($1, $2, $3, $4, $5, now())
+INSERT INTO quotes (ticker, price, prev_close, session, source, at, updated_at)
+VALUES ($1, $2, $3, $4, $5, $6, now())
 ON CONFLICT (ticker) DO UPDATE
-SET price = EXCLUDED.price, session = EXCLUDED.session, source = EXCLUDED.source, at = EXCLUDED.at, updated_at = now()`
-	if _, err := s.pool.Exec(ctx, query, q.Ticker, q.Price, q.Session, q.Source, q.At); err != nil {
+SET price = EXCLUDED.price, prev_close = EXCLUDED.prev_close, session = EXCLUDED.session, source = EXCLUDED.source, at = EXCLUDED.at, updated_at = now()`
+	if _, err := s.pool.Exec(ctx, query, q.Ticker, q.Price, q.PrevClose, q.Session, q.Source, q.At); err != nil {
 		return fmt.Errorf("postgres: upsert quote %s: %w", q.Ticker, err)
 	}
 	return nil
@@ -147,9 +147,9 @@ SET price = EXCLUDED.price, session = EXCLUDED.session, source = EXCLUDED.source
 // GetQuote returns the latest quote for ticker. The boolean is false when no
 // quote has been stored yet.
 func (s *Store) GetQuote(ctx context.Context, ticker string) (store.Quote, bool, error) {
-	const query = `SELECT ticker, price, session, source, at FROM quotes WHERE ticker = $1`
+	const query = `SELECT ticker, price, COALESCE(prev_close, 0), session, source, at FROM quotes WHERE ticker = $1`
 	var q store.Quote
-	err := s.pool.QueryRow(ctx, query, ticker).Scan(&q.Ticker, &q.Price, &q.Session, &q.Source, &q.At)
+	err := s.pool.QueryRow(ctx, query, ticker).Scan(&q.Ticker, &q.Price, &q.PrevClose, &q.Session, &q.Source, &q.At)
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
 		return store.Quote{}, false, nil

@@ -29,11 +29,14 @@ type Filing struct {
 // Quote is the latest traded price for a security. It covers all trading
 // sessions — pre-market, regular, after-hours and overnight.
 type Quote struct {
-	Ticker  string    `json:"ticker"`
-	Price   float64   `json:"price"`
-	Session string    `json:"session"` // pre | regular | post | overnight | closed
-	Source  string    `json:"source"`
-	At      time.Time `json:"at"`
+	Ticker string  `json:"ticker"`
+	Price  float64 `json:"price"`
+	// PrevClose is the previous trading day's closing price, used to compute
+	// the day's change. Zero when unknown (omitted from JSON).
+	PrevClose float64   `json:"prev_close,omitempty"`
+	Session   string    `json:"session"` // pre | regular | post | overnight | closed
+	Source    string    `json:"source"`
+	At        time.Time `json:"at"`
 }
 
 // News is a company-news article for a security.

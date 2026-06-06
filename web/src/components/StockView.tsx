@@ -31,7 +31,12 @@ import {useAuth} from '@/lib/auth';
 import {useDark} from '@/lib/theme';
 import {btnPrimary, cx, marketCurrency, timeAgo, tok} from '@/lib/ui';
 import {useQuotes} from '@/lib/useQuotes';
-import {MarketBadge, PriceTag, SessionBadge} from '@/components/ui/atoms';
+import {
+  ChangeLine,
+  MarketBadge,
+  PriceTag,
+  SessionBadge,
+} from '@/components/ui/atoms';
 import {EmptyState, ErrorState, FeedSkeleton} from '@/components/ui/states';
 import {useToast} from '@/components/ui/Toast';
 import {TimelineItem} from '@/components/TimelineItem';
@@ -226,7 +231,17 @@ export function StockView({ticker}: {ticker: string}) {
                 {cur}—
               </span>
             )}
-            <div className="mt-1.5 flex items-center gap-2">
+            <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
+              {quote?.prev_close ? (
+                <ChangeLine
+                  chg={quote.price - quote.prev_close}
+                  pct={
+                    ((quote.price - quote.prev_close) / quote.prev_close) * 100
+                  }
+                  cur={cur}
+                  size="lg"
+                />
+              ) : null}
               {quote ? (
                 <span className={cx('inline-flex items-center gap-1.5 text-[11px]', t.faint)}>
                   {quote.session === 'regular' && (

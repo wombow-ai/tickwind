@@ -1,7 +1,8 @@
 // Package alpaca is a minimal client for the Alpaca Market Data API. It fetches
-// the latest trade, which includes pre-market, after-hours and overnight
-// prints, so Tickwind can show an all-session price. Market data works with an
-// unfunded paper account, so no real money is ever at risk.
+// the per-symbol snapshot, whose latest trade includes pre-market, after-hours
+// and overnight prints (so Tickwind can show an all-session price) and whose
+// previous daily bar gives the prior close for the day's change. Market data
+// works with an unfunded paper account, so no real money is ever at risk.
 package alpaca
 
 import (
@@ -50,18 +51,26 @@ func New(keyID, secret, dataURL, feed string) *Client {
 	}
 }
 
-type latestTradeResp struct {
-	Symbol string `json:"symbol"`
-	Trade  struct {
+// bar is a single OHLC bar; only the close is used here.
+type bar struct {
+	Close float64 `json:"c"`
+}
+
+type snapshotResp struct {
+	LatestTrade struct {
 		Timestamp time.Time `json:"t"`
 		Price     float64   `json:"p"`
-	} `json:"trade"`
+	} `json:"latestTrade"`
+	PrevDailyBar bar `json:"prevDailyBar"`
+	DailyBar     bar `json:"dailyBar"`
 }
 
 // LatestQuote returns the most recent trade for ticker as a store.Quote,
-// including extended-hours and overnight prints.
+// including extended-hours and overnight prints, along with the previous
+// trading day's close (for the day's change). Uses the snapshot endpoint so
+// price, session and prior close come from a single request.
 func (c *Client) LatestQuote(ctx context.Context, ticker string) (store.Quote, error) {
-	url := fmt.Sprintf("%s/v2/stocks/%s/trades/latest?feed=%s", c.dataURL, ticker, c.feed)
+	url := fmt.Sprintf("%s/v2/stocks/%s/snapshot?feed=%s", c.dataURL, ticker, c.feed)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return store.Quote{}, err
@@ -71,23 +80,24 @@ func (c *Client) LatestQuote(ctx context.Context, ticker string) (store.Quote, e
 
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return store.Quote{}, fmt.Errorf("alpaca: get latest trade %s: %w", ticker, err)
+		return store.Quote{}, fmt.Errorf("alpaca: get snapshot %s: %w", ticker, err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return store.Quote{}, fmt.Errorf("alpaca: latest trade %s: %s", ticker, resp.Status)
+		return store.Quote{}, fmt.Errorf("alpaca: snapshot %s: %s", ticker, resp.Status)
 	}
 
-	var body latestTradeResp
+	var body snapshotResp
 	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
-		return store.Quote{}, fmt.Errorf("alpaca: decode trade %s: %w", ticker, err)
+		return store.Quote{}, fmt.Errorf("alpaca: decode snapshot %s: %w", ticker, err)
 	}
 	return store.Quote{
-		Ticker:  ticker,
-		Price:   body.Trade.Price,
-		Session: c.sessionAt(body.Trade.Timestamp),
-		Source:  "alpaca",
-		At:      body.Trade.Timestamp,
+		Ticker:    ticker,
+		Price:     body.LatestTrade.Price,
+		PrevClose: body.PrevDailyBar.Close,
+		Session:   c.sessionAt(body.LatestTrade.Timestamp),
+		Source:    "alpaca",
+		At:        body.LatestTrade.Timestamp,
 	}, nil
 }
 

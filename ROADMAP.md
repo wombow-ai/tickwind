@@ -72,11 +72,14 @@ Status: ✅ done · 🟡 in progress · ⬜ todo
         `/announcements`; JWT attached to private API calls; session-refresh `proxy`
   - ✅ Route-group layout split (app chrome vs auth vs `/designs`); build + lint green
   - ⬜ Deploy on Vercel; re-point `tickwind.com` DNS; set env (API base + Supabase)
-  - ⬜ Backend: add `prev_close` (Alpaca snapshot) + intraday bars → light up
-        `ChangeLine` + `Sparkline` (components ready, currently hidden — no fake data)
+  - ✅ Backend `prev_close` via Alpaca **snapshot** endpoint (honest prior close) →
+        `ChangeLine` (signed %/▲▼) now renders on the board + detail header.
+        Verified e2e locally (AAPL 307.23 / prev 311.21 = −1.28%; light + dark)
+  - ⬜ Intraday bars endpoint → light up the `Sparkline` (still hidden — no fake data)
+  - ✅ Default `WATCHLIST` bumped to `POPULAR_TICKERS` (config + `.env.example`) so
+        every public tile is live after redeploy
   - ⬜ Redeploy VPS backend multi-tenant + Supabase (`DATABASE_URL` pooler +
-        `SUPABASE_JWT_SECRET`); bump `WATCHLIST` to `POPULAR_TICKERS` so every
-        public tile is live
+        `SUPABASE_JWT_SECRET`, `WATCHLIST` set)
   - ⬜ Mobile nav polish; optional Google OAuth
 - ⬜ HK (HKEXnews) + KR (DART) filings (needs DART key); later Futu/KIS realtime
 

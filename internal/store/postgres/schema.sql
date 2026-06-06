@@ -24,11 +24,15 @@ CREATE INDEX IF NOT EXISTS filings_ticker_filed_at_idx
 CREATE TABLE IF NOT EXISTS quotes (
     ticker     text PRIMARY KEY,
     price      double precision NOT NULL,
+    prev_close double precision,
     session    text,
     source     text,
     at         timestamptz,
     updated_at timestamptz NOT NULL DEFAULT now()
 );
+
+-- Add prev_close to pre-existing quotes tables (idempotent).
+ALTER TABLE quotes ADD COLUMN IF NOT EXISTS prev_close double precision;
 
 CREATE TABLE IF NOT EXISTS news (
     ticker    text NOT NULL,

@@ -101,6 +101,8 @@ export type Session =
 export interface Quote {
   ticker: string;
   price: number;
+  /** Previous trading day's close, for the day's change. Absent when unknown. */
+  prev_close?: number;
   /** Trading session the price was observed in. */
   session: Session;
   /** Upstream data provider, e.g. `alpaca`. */
