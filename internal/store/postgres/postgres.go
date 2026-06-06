@@ -8,6 +8,7 @@ import (
 	_ "embed"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -391,6 +392,60 @@ FROM hotlist WHERE board = $1 ORDER BY rank`
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("postgres: iterate hotlist: %w", err)
+	}
+	return out, nil
+}
+
+// SaveInsiderBuys upserts insider open-market purchases, deduped on accession.
+func (s *Store) SaveInsiderBuys(ctx context.Context, buys []store.InsiderBuy) error {
+	if len(buys) == 0 {
+		return nil
+	}
+	const q = `
+INSERT INTO insider_buys (accession, ticker, cik, company, owner_name, title, is_officer, is_director, filed_date, shares, price, value, filing_url)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+ON CONFLICT (accession) DO UPDATE
+SET ticker = EXCLUDED.ticker, cik = EXCLUDED.cik, company = EXCLUDED.company,
+    owner_name = EXCLUDED.owner_name, title = EXCLUDED.title, is_officer = EXCLUDED.is_officer,
+    is_director = EXCLUDED.is_director, filed_date = EXCLUDED.filed_date, shares = EXCLUDED.shares,
+    price = EXCLUDED.price, value = EXCLUDED.value, filing_url = EXCLUDED.filing_url`
+	batch := &pgx.Batch{}
+	for _, b := range buys {
+		batch.Queue(q, b.Accession, b.Ticker, b.CIK, b.Company, b.OwnerName, b.Title,
+			b.IsOfficer, b.IsDirector, b.FiledDate, b.Shares, b.Price, b.Value, b.FilingURL)
+	}
+	br := s.pool.SendBatch(ctx, batch)
+	defer br.Close()
+	for range buys {
+		if _, err := br.Exec(); err != nil {
+			return fmt.Errorf("postgres: save insider buys: %w", err)
+		}
+	}
+	return nil
+}
+
+// RecentInsiderBuys returns buys filed on/after since, newest first.
+func (s *Store) RecentInsiderBuys(ctx context.Context, since time.Time) ([]store.InsiderBuy, error) {
+	const q = `
+SELECT accession, ticker, cik, company, owner_name, title, is_officer, is_director, filed_date, shares, price, value, filing_url
+FROM insider_buys WHERE filed_date >= $1 ORDER BY filed_date DESC`
+	rows, err := s.pool.Query(ctx, q, since)
+	if err != nil {
+		return nil, fmt.Errorf("postgres: recent insider buys: %w", err)
+	}
+	defer rows.Close()
+
+	var out []store.InsiderBuy
+	for rows.Next() {
+		var b store.InsiderBuy
+		if err := rows.Scan(&b.Accession, &b.Ticker, &b.CIK, &b.Company, &b.OwnerName, &b.Title,
+			&b.IsOfficer, &b.IsDirector, &b.FiledDate, &b.Shares, &b.Price, &b.Value, &b.FilingURL); err != nil {
+			return nil, fmt.Errorf("postgres: scan insider buy: %w", err)
+		}
+		out = append(out, b)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("postgres: iterate insider buys: %w", err)
 	}
 	return out, nil
 }

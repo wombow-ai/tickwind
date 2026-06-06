@@ -1,6 +1,9 @@
 package store
 
-import "context"
+import (
+	"context"
+	"time"
+)
 
 // Split presents a single Store while routing each operation to one of two
 // backends:
@@ -76,6 +79,14 @@ func (s Split) SaveHotList(ctx context.Context, board string, stocks []HotStock)
 
 func (s Split) HotList(ctx context.Context, board string, limit int) ([]HotStock, error) {
 	return s.Market.HotList(ctx, board, limit)
+}
+
+func (s Split) SaveInsiderBuys(ctx context.Context, buys []InsiderBuy) error {
+	return s.Market.SaveInsiderBuys(ctx, buys)
+}
+
+func (s Split) RecentInsiderBuys(ctx context.Context, since time.Time) ([]InsiderBuy, error) {
+	return s.Market.RecentInsiderBuys(ctx, since)
 }
 
 // ── User: per-user state (local/ephemeral) ───────────────────────────────

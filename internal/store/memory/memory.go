@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/wombow-ai/tickwind/internal/store"
 )
@@ -20,6 +21,7 @@ type Store struct {
 	social    map[string]map[string]store.Post   // ticker -> id -> Post
 	signals   map[string]map[string]store.Signal // ticker -> source -> Signal
 	hot       map[string][]store.HotStock        // board -> ranked snapshot
+	insiders  map[string]store.InsiderBuy        // accession -> insider buy
 	watchlist map[string][]string                // userID -> ordered tickers
 	clips     map[string]map[string]store.Clip   // userID -> clipID -> Clip
 }
@@ -33,6 +35,7 @@ func New() *Store {
 		social:    make(map[string]map[string]store.Post),
 		signals:   make(map[string]map[string]store.Signal),
 		hot:       make(map[string][]store.HotStock),
+		insiders:  make(map[string]store.InsiderBuy),
 		watchlist: make(map[string][]string),
 		clips:     make(map[string]map[string]store.Clip),
 	}
@@ -192,6 +195,31 @@ func (s *Store) HotList(_ context.Context, board string, limit int) ([]store.Hot
 	out := append([]store.HotStock(nil), s.hot[board]...)
 	sort.Slice(out, func(i, j int) bool { return out[i].Rank < out[j].Rank })
 	return limited(out, limit), nil
+}
+
+func (s *Store) SaveInsiderBuys(_ context.Context, buys []store.InsiderBuy) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, b := range buys {
+		if b.Accession == "" {
+			continue
+		}
+		s.insiders[b.Accession] = b // upsert by accession
+	}
+	return nil
+}
+
+func (s *Store) RecentInsiderBuys(_ context.Context, since time.Time) ([]store.InsiderBuy, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([]store.InsiderBuy, 0)
+	for _, b := range s.insiders {
+		if !b.FiledDate.Before(since) {
+			out = append(out, b)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].FiledDate.After(out[j].FiledDate) })
+	return out, nil
 }
 
 func (s *Store) Watchlist(_ context.Context, userID string) ([]string, error) {

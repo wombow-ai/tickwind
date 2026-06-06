@@ -104,6 +104,26 @@ type HotStock struct {
 	UpdatedAt    time.Time `json:"updated_at"`
 }
 
+// InsiderBuy is one Form 4 filing's open-market insider PURCHASE, summarized
+// (the filing's P-transactions aggregated). It is the persistent backbone of the
+// Opportunity board — the board itself is derived from recent buys + live market
+// caps. Public-domain SEC data; dedupe key is the accession number.
+type InsiderBuy struct {
+	Accession  string    `json:"accession"` // PK / dedupe key
+	Ticker     string    `json:"ticker"`
+	CIK        int       `json:"cik"`
+	Company    string    `json:"company"`
+	OwnerName  string    `json:"owner_name"`
+	Title      string    `json:"title"` // officer title, or "Director"
+	IsOfficer  bool      `json:"is_officer"`
+	IsDirector bool      `json:"is_director"`
+	FiledDate  time.Time `json:"filed_date"`
+	Shares     float64   `json:"shares"` // total P-shares in the filing
+	Price      float64   `json:"price"`  // average buy price
+	Value      float64   `json:"value"`  // total $ value of the buys
+	FilingURL  string    `json:"filing_url"`
+}
+
 // Clip is a link a user saved to a ticker (private, per-user).
 type Clip struct {
 	ID        string    `json:"id"`
@@ -142,6 +162,12 @@ type Store interface {
 	// replaces one board's snapshot; HotList returns that board's top by rank.
 	SaveHotList(ctx context.Context, board string, stocks []HotStock) error
 	HotList(ctx context.Context, board string, limit int) ([]HotStock, error)
+
+	// InsiderBuys are the persistent corpus behind the Opportunity board.
+	// SaveInsiderBuys upserts by accession; RecentInsiderBuys returns buys filed
+	// on/after `since`.
+	SaveInsiderBuys(ctx context.Context, buys []InsiderBuy) error
+	RecentInsiderBuys(ctx context.Context, since time.Time) ([]InsiderBuy, error)
 
 	// Watchlist is one user's tracked tickers, in insertion order.
 	Watchlist(ctx context.Context, userID string) ([]string, error)

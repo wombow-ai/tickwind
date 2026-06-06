@@ -101,6 +101,26 @@ CREATE TABLE hotlist (
 
 CREATE INDEX hotlist_board_rank_idx ON hotlist (board, rank);
 
+-- Insider open-market purchases (Form 4, code P), the persistent corpus behind
+-- the Opportunity board. Public-domain SEC data; deduped on accession.
+CREATE TABLE IF NOT EXISTS insider_buys (
+    accession   text PRIMARY KEY,
+    ticker      text NOT NULL,
+    cik         integer NOT NULL DEFAULT 0,
+    company     text NOT NULL DEFAULT '',
+    owner_name  text NOT NULL DEFAULT '',
+    title       text NOT NULL DEFAULT '',
+    is_officer  boolean NOT NULL DEFAULT false,
+    is_director boolean NOT NULL DEFAULT false,
+    filed_date  timestamptz,
+    shares      double precision NOT NULL DEFAULT 0,
+    price       double precision NOT NULL DEFAULT 0,
+    value       double precision NOT NULL DEFAULT 0,
+    filing_url  text NOT NULL DEFAULT ''
+);
+
+CREATE INDEX IF NOT EXISTS insider_buys_filed_idx ON insider_buys (filed_date DESC);
+
 -- Migrate the legacy single-tenant watchlist (ticker PK, no user) to per-user.
 -- Runs at most once: the condition is false after user_id exists.
 DO $$
