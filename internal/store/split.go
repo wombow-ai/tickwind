@@ -70,12 +70,12 @@ func (s Split) ListSignals(ctx context.Context, ticker string) ([]Signal, error)
 	return s.Market.ListSignals(ctx, ticker)
 }
 
-func (s Split) SaveHotList(ctx context.Context, stocks []HotStock) error {
-	return s.Market.SaveHotList(ctx, stocks)
+func (s Split) SaveHotList(ctx context.Context, board string, stocks []HotStock) error {
+	return s.Market.SaveHotList(ctx, board, stocks)
 }
 
-func (s Split) HotList(ctx context.Context, limit int) ([]HotStock, error) {
-	return s.Market.HotList(ctx, limit)
+func (s Split) HotList(ctx context.Context, board string, limit int) ([]HotStock, error) {
+	return s.Market.HotList(ctx, board, limit)
 }
 
 // ── User: per-user state (local/ephemeral) ───────────────────────────────

@@ -322,35 +322,35 @@ FROM signals WHERE ticker = $1 ORDER BY source`
 	return out, nil
 }
 
-// SaveHotList replaces the trending leaderboard snapshot atomically (clear +
-// re-insert in one transaction), so the table always reflects the latest refresh.
-func (s *Store) SaveHotList(ctx context.Context, stocks []store.HotStock) error {
+// SaveHotList replaces one board's leaderboard snapshot atomically (clear that
+// board + re-insert in one transaction), leaving other boards untouched.
+func (s *Store) SaveHotList(ctx context.Context, board string, stocks []store.HotStock) error {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("postgres: hotlist begin: %w", err)
 	}
 	defer tx.Rollback(ctx)
 
-	if _, err := tx.Exec(ctx, `DELETE FROM hotlist`); err != nil {
-		return fmt.Errorf("postgres: hotlist clear: %w", err)
+	if _, err := tx.Exec(ctx, `DELETE FROM hotlist WHERE board = $1`, board); err != nil {
+		return fmt.Errorf("postgres: hotlist clear %s: %w", board, err)
 	}
 	if len(stocks) > 0 {
 		const q = `
-INSERT INTO hotlist (ticker, name, rank, mentions, mentions_prev, mention_change, upvotes, heat, updated_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now())
-ON CONFLICT (ticker) DO UPDATE
+INSERT INTO hotlist (board, ticker, name, rank, mentions, mentions_prev, mention_change, upvotes, score, updated_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, now())
+ON CONFLICT (board, ticker) DO UPDATE
 SET name = EXCLUDED.name, rank = EXCLUDED.rank, mentions = EXCLUDED.mentions,
     mentions_prev = EXCLUDED.mentions_prev, mention_change = EXCLUDED.mention_change,
-    upvotes = EXCLUDED.upvotes, heat = EXCLUDED.heat, updated_at = now()`
+    upvotes = EXCLUDED.upvotes, score = EXCLUDED.score, updated_at = now()`
 		batch := &pgx.Batch{}
 		for _, h := range stocks {
-			batch.Queue(q, h.Ticker, h.Name, h.Rank, h.Mentions, h.MentionsPrev, h.Change, h.Upvotes, h.Heat)
+			batch.Queue(q, board, h.Ticker, h.Name, h.Rank, h.Mentions, h.MentionsPrev, h.Change, h.Upvotes, h.Score)
 		}
 		br := tx.SendBatch(ctx, batch)
 		for range stocks {
 			if _, err := br.Exec(); err != nil {
 				br.Close()
-				return fmt.Errorf("postgres: hotlist insert: %w", err)
+				return fmt.Errorf("postgres: hotlist insert %s: %w", board, err)
 			}
 		}
 		if err := br.Close(); err != nil {
@@ -363,28 +363,28 @@ SET name = EXCLUDED.name, rank = EXCLUDED.rank, mentions = EXCLUDED.mentions,
 	return nil
 }
 
-// HotList returns the trending leaderboard, hottest first. limit <= 0 = all.
-func (s *Store) HotList(ctx context.Context, limit int) ([]store.HotStock, error) {
+// HotList returns one board's leaderboard, top first. limit <= 0 = all.
+func (s *Store) HotList(ctx context.Context, board string, limit int) ([]store.HotStock, error) {
 	query := `
-SELECT ticker, name, rank, mentions, mentions_prev, mention_change, upvotes, heat, updated_at
-FROM hotlist ORDER BY rank`
-	args := []any{}
+SELECT board, ticker, name, rank, mentions, mentions_prev, mention_change, upvotes, score, updated_at
+FROM hotlist WHERE board = $1 ORDER BY rank`
+	args := []any{board}
 	if limit > 0 {
-		query += ` LIMIT $1`
+		query += ` LIMIT $2`
 		args = append(args, limit)
 	}
 
 	rows, err := s.pool.Query(ctx, query, args...)
 	if err != nil {
-		return nil, fmt.Errorf("postgres: hotlist: %w", err)
+		return nil, fmt.Errorf("postgres: hotlist %s: %w", board, err)
 	}
 	defer rows.Close()
 
 	var out []store.HotStock
 	for rows.Next() {
 		var h store.HotStock
-		if err := rows.Scan(&h.Ticker, &h.Name, &h.Rank, &h.Mentions, &h.MentionsPrev,
-			&h.Change, &h.Upvotes, &h.Heat, &h.UpdatedAt); err != nil {
+		if err := rows.Scan(&h.Board, &h.Ticker, &h.Name, &h.Rank, &h.Mentions, &h.MentionsPrev,
+			&h.Change, &h.Upvotes, &h.Score, &h.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("postgres: scan hotlist: %w", err)
 		}
 		out = append(out, h)

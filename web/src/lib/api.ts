@@ -128,10 +128,12 @@ export interface SignalsResponse {
  * market-wide, ranked by a "heat" score (discussion volume × momentum).
  */
 export interface HotStock {
+  /** Which board this row belongs to: `hot` | `surging`. */
+  board: string;
   ticker: string;
   /** Company / instrument name. */
   name: string;
-  /** Heat rank, 1 = hottest. */
+  /** Rank within the board, 1 = top. */
   rank: number;
   /** Discussion volume — mentions in the last 24h. */
   mentions: number;
@@ -141,13 +143,14 @@ export interface HotStock {
   change: number;
   /** Total upvotes on those mentions. */
   upvotes: number;
-  /** Composite heat score (volume × momentum). */
-  heat: number;
+  /** This board's ranking score (volume×momentum for hot, momentum for surging). */
+  score: number;
   updated_at: string;
 }
 
 /** Envelope returned by `GET /v1/hot`. */
 export interface HotResponse {
+  board: string;
   count: number;
   stocks: HotStock[];
 }
@@ -491,14 +494,18 @@ export function getSignals(
 }
 
 /**
- * Fetches the market-wide trending leaderboard (most-discussed stocks),
- * hottest first.
+ * Fetches one trending board, top first.
  *
+ * @param board `hot` (most discussed, default) or `surging` (biggest risers).
  * @param limit Maximum number of stocks to return (defaults to 40).
  */
-export function getHot(limit = 40, signal?: AbortSignal): Promise<HotResponse> {
+export function getHot(
+  board = 'hot',
+  limit = 40,
+  signal?: AbortSignal,
+): Promise<HotResponse> {
   return getJson<HotResponse>(
-    `/v1/hot?limit=${encodeURIComponent(String(limit))}`,
+    `/v1/hot?board=${encodeURIComponent(board)}&limit=${encodeURIComponent(String(limit))}`,
     signal,
   );
 }

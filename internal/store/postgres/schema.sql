@@ -80,21 +80,26 @@ CREATE TABLE IF NOT EXISTS signals (
     PRIMARY KEY (ticker, source)
 );
 
--- Global trending leaderboard snapshot (most-discussed stocks). Replaced
--- wholesale on each refresh, so no historical rows accumulate.
-CREATE TABLE IF NOT EXISTS hotlist (
-    ticker         text PRIMARY KEY,
+-- Trending leaderboard boards (hot / surging / …). One ranked snapshot per
+-- board, replaced wholesale on each refresh — fully ephemeral (regenerated
+-- within one ingest cycle), so we DROP+CREATE to absorb shape changes without
+-- migration ceremony rather than ALTER an existing single-board table.
+DROP TABLE IF EXISTS hotlist;
+CREATE TABLE hotlist (
+    board          text NOT NULL,
+    ticker         text NOT NULL,
     name           text NOT NULL DEFAULT '',
     rank           integer NOT NULL DEFAULT 0,
     mentions       integer NOT NULL DEFAULT 0,
     mentions_prev  integer NOT NULL DEFAULT 0,
     mention_change double precision NOT NULL DEFAULT 0,
     upvotes        integer NOT NULL DEFAULT 0,
-    heat           double precision NOT NULL DEFAULT 0,
-    updated_at     timestamptz NOT NULL DEFAULT now()
+    score          double precision NOT NULL DEFAULT 0,
+    updated_at     timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (board, ticker)
 );
 
-CREATE INDEX IF NOT EXISTS hotlist_rank_idx ON hotlist (rank);
+CREATE INDEX hotlist_board_rank_idx ON hotlist (board, rank);
 
 -- Migrate the legacy single-tenant watchlist (ticker PK, no user) to per-user.
 -- Runs at most once: the condition is false after user_id exists.

@@ -86,19 +86,21 @@ type Signal struct {
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
-// HotStock is one row of the trending leaderboard — a market-wide ranking of the
-// most-discussed US stocks (from Reddit mention volume + momentum, via
-// ApeWisdom). Unlike Signal it is not tied to a watched ticker: the list is a
-// global snapshot, replaced wholesale on each refresh.
+// HotStock is one row of a trending leaderboard — a market-wide ranking of US
+// stocks by social attention (mention volume/momentum, via ApeWisdom). Several
+// boards share this shape, distinguished by Board ("hot" = most discussed,
+// "surging" = biggest attention risers). Unlike Signal it is not tied to a
+// watched ticker: each board is a global snapshot, replaced wholesale on refresh.
 type HotStock struct {
+	Board        string    `json:"board"` // "hot" | "surging" | …
 	Ticker       string    `json:"ticker"`
 	Name         string    `json:"name"`
-	Rank         int       `json:"rank"`          // 1 = hottest (by heat score)
+	Rank         int       `json:"rank"`          // 1 = top of this board
 	Mentions     int       `json:"mentions"`      // discussion volume in the window
 	MentionsPrev int       `json:"mentions_prev"` // same window, 24h earlier
 	Change       float64   `json:"change"`        // mention growth vs 24h ago (0.2 = +20%)
 	Upvotes      int       `json:"upvotes"`
-	Heat         float64   `json:"heat"` // composite score (volume × momentum)
+	Score        float64   `json:"score"` // this board's ranking score
 	UpdatedAt    time.Time `json:"updated_at"`
 }
 
@@ -136,10 +138,10 @@ type Store interface {
 	SaveSignals(ctx context.Context, signals []Signal) error
 	ListSignals(ctx context.Context, ticker string) ([]Signal, error)
 
-	// HotList is the global trending leaderboard (most-discussed stocks).
-	// SaveHotList replaces the whole snapshot; HotList returns the top by rank.
-	SaveHotList(ctx context.Context, stocks []HotStock) error
-	HotList(ctx context.Context, limit int) ([]HotStock, error)
+	// HotList boards (hot / surging / …) are global leaderboards. SaveHotList
+	// replaces one board's snapshot; HotList returns that board's top by rank.
+	SaveHotList(ctx context.Context, board string, stocks []HotStock) error
+	HotList(ctx context.Context, board string, limit int) ([]HotStock, error)
 
 	// Watchlist is one user's tracked tickers, in insertion order.
 	Watchlist(ctx context.Context, userID string) ([]string, error)

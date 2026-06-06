@@ -401,10 +401,14 @@ func (s *Server) getSocialBatch(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"count": len(all), "posts": all})
 }
 
-// getHot returns the market-wide trending leaderboard (most-discussed stocks),
-// hottest first. Always 200 with a (possibly empty) list — never null.
+// getHot returns one trending board, top first. ?board=hot (default) | surging.
+// Always 200 with a (possibly empty) list — never null.
 func (s *Server) getHot(w http.ResponseWriter, r *http.Request) {
-	stocks, err := s.store.HotList(r.Context(), queryLimit(r, 40))
+	board := strings.TrimSpace(r.URL.Query().Get("board"))
+	if board == "" {
+		board = "hot"
+	}
+	stocks, err := s.store.HotList(r.Context(), board, queryLimit(r, 40))
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, errBody(err.Error()))
 		return
@@ -413,6 +417,7 @@ func (s *Server) getHot(w http.ResponseWriter, r *http.Request) {
 		stocks = []store.HotStock{} // marshal as [] not null
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
+		"board":  board,
 		"count":  len(stocks),
 		"stocks": stocks,
 	})

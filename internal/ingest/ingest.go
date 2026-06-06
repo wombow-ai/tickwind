@@ -156,68 +156,126 @@ func (s *Scheduler) ingestSignals(ctx context.Context, tickers []string) {
 	}
 }
 
-// hotListSize caps how many stocks the trending leaderboard holds.
+// hotListSize caps how many leaderboard rows we fetch + rank per board.
 const hotListSize = 40
+
+// Scoring constants. shrinkC is the Bayesian-shrinkage pseudo-count: a stock
+// with shrinkC mentions has its momentum term halved, dampening low-base
+// blow-ups (e.g. 2→6 mentions = +200%) while leaving high-volume names ~intact.
+// surgingMinMentions floors the surging board so micro-chatter can't surge in.
+const (
+	shrinkC            = 50
+	surgingMinMentions = 25
+)
 
 func (s *Scheduler) ingestHotList(ctx context.Context) {
 	if s.hot == nil {
 		return
 	}
-	stocks, err := s.hot.Leaderboard(ctx, hotListSize)
+	raw, err := s.hot.Leaderboard(ctx, hotListSize)
 	if err != nil {
 		s.log.Warn("hotlist fetch failed", "source", s.hot.Name(), "err", err)
 		return
 	}
-	rankHotList(stocks)
-	if err := s.store.SaveHotList(ctx, stocks); err != nil {
-		s.log.Warn("save hotlist failed", "err", err)
-		return
+	for board, stocks := range buildBoards(raw) {
+		if err := s.store.SaveHotList(ctx, board, stocks); err != nil {
+			s.log.Warn("save hotlist failed", "board", board, "err", err)
+			continue
+		}
+		s.log.Info("ingested hotlist", "board", board, "source", s.hot.Name(), "count", len(stocks))
 	}
-	s.log.Info("ingested hotlist", "source", s.hot.Name(), "count", len(stocks))
 }
 
-// rankHotList fills each stock's Change + Heat from its mention counts, sorts the
-// slice hottest-first, and assigns Rank (1..N).
+// buildBoards derives the leaderboards from raw ApeWisdom entries:
+//   - "hot": most discussed — volume × momentum (heatScore).
+//   - "surging": biggest attention risers — momentum-led (surgeScore), gated by
+//     a minimum mention floor.
 //
-// Heat blends discussion VOLUME with MOMENTUM — a stock is "hot" when it is both
-// heavily mentioned and gaining attention (the distinction trackers like
-// StockTwits draw between "most active" and "trending"). See heatScore.
-func rankHotList(stocks []store.HotStock) {
+// Both share a Bayesian-shrunk momentum term so a tiny-base spike can't dominate
+// (the distinction trackers like StockTwits draw between "most active" and
+// "trending"). Each entry's Change is set once; rankBoard then tags Board, Score
+// and Rank per board.
+func buildBoards(raw []store.HotStock) map[string][]store.HotStock {
 	now := time.Now().UTC()
-	for i := range stocks {
-		m, prev := stocks[i].Mentions, stocks[i].MentionsPrev
+	for i := range raw {
+		m, prev := raw[i].Mentions, raw[i].MentionsPrev
 		if prev > 0 {
-			stocks[i].Change = float64(m-prev) / float64(prev)
+			raw[i].Change = float64(m-prev) / float64(prev)
 		}
-		stocks[i].Heat = heatScore(m, prev)
-		stocks[i].UpdatedAt = now
+		raw[i].UpdatedAt = now
 	}
-	sort.SliceStable(stocks, func(i, j int) bool {
-		if stocks[i].Heat != stocks[j].Heat {
-			return stocks[i].Heat > stocks[j].Heat
-		}
-		return stocks[i].Mentions > stocks[j].Mentions
-	})
-	for i := range stocks {
-		stocks[i].Rank = i + 1
+	return map[string][]store.HotStock{
+		"hot": rankBoard(raw, "hot", 0, func(h store.HotStock) float64 {
+			return heatScore(h.Mentions, h.MentionsPrev)
+		}),
+		"surging": rankBoard(raw, "surging", surgingMinMentions, func(h store.HotStock) float64 {
+			return surgeScore(h.Mentions, h.MentionsPrev)
+		}),
 	}
 }
 
-// heatScore = mentions × (1 + rise), where rise is the 24h mention growth
-// clamped to [0, 2]. So a flat or cooling name scores at its raw volume (never
-// penalised below it — it is still being discussed), while an accelerating one
-// is boosted up to 3× (a stock tripling its mentions tops a steadier name with
-// the same volume). This rewards stocks that are both loud and getting louder.
+// rankBoard scores a copy of raw with score(), drops entries below minMentions,
+// sorts highest-first and assigns Board + Rank (1..N).
+func rankBoard(raw []store.HotStock, board string, minMentions int, score func(store.HotStock) float64) []store.HotStock {
+	out := make([]store.HotStock, 0, len(raw))
+	for _, h := range raw {
+		if h.Mentions < minMentions {
+			continue
+		}
+		h.Board = board
+		h.Score = score(h)
+		out = append(out, h)
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].Score != out[j].Score {
+			return out[i].Score > out[j].Score
+		}
+		return out[i].Mentions > out[j].Mentions
+	})
+	for i := range out {
+		out[i].Rank = i + 1
+	}
+	return out
+}
+
+// heatScore = mentions × (1 + shrink·clamp(growth,2)) — VOLUME-led with a
+// momentum boost. The boost is Bayesian-shrunk by volume so a low-base spike
+// can't inflate it; a flat/cooling name scores at its raw volume (never
+// penalised — it is still being discussed).
 func heatScore(mentions, mentionsPrev int) float64 {
-	rise := 0.0
-	if mentionsPrev > 0 {
-		rise = float64(mentions-mentionsPrev) / float64(mentionsPrev)
+	return float64(mentions) * (1 + shrink(mentions)*clamp(growth(mentions, mentionsPrev), 3))
+}
+
+// surgeScore = shrink·clamp(growth,3) — MOMENTUM-led: ranks by 24h mention
+// growth, Bayesian-shrunk by volume so thin names don't dominate (used with a
+// minimum mention floor). Independent of absolute volume, so mid-caps catching
+// fire surface above perennially-loud mega-caps.
+func surgeScore(mentions, mentionsPrev int) float64 {
+	return shrink(mentions) * clamp(growth(mentions, mentionsPrev), 3)
+}
+
+// growth is the 24h mention growth as a fraction, floored at 0 (cooling names
+// contribute no momentum rather than going negative).
+func growth(mentions, mentionsPrev int) float64 {
+	if mentionsPrev <= 0 {
+		return 0
 	}
-	if rise < 0 {
-		rise = 0
+	g := float64(mentions-mentionsPrev) / float64(mentionsPrev)
+	if g < 0 {
+		return 0
 	}
-	if rise > 2 {
-		rise = 2
+	return g
+}
+
+// shrink is the Bayesian shrinkage weight mentions/(mentions+shrinkC) ∈ [0,1).
+func shrink(mentions int) float64 {
+	return float64(mentions) / float64(mentions+shrinkC)
+}
+
+// clamp caps v at hi.
+func clamp(v, hi float64) float64 {
+	if v > hi {
+		return hi
 	}
-	return float64(mentions) * (1 + rise)
+	return v
 }

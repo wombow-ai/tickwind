@@ -11,20 +11,34 @@ import {EmptyState, ErrorState, FeedSkeleton} from '@/components/ui/states';
 type Tokens = ReturnType<typeof tok>;
 type Status = 'loading' | 'ready' | 'error';
 
+const BOARDS = [
+  {
+    key: 'hot',
+    label: 'Hot',
+    blurb: 'The most-discussed US stocks across Reddit right now — ranked by buzz and momentum.',
+  },
+  {
+    key: 'surging',
+    label: 'Surging',
+    blurb: "Stocks whose chatter is accelerating fastest — the biggest 24h jumps in mentions, not just the loudest.",
+  },
+] as const;
+
 /**
- * The trending leaderboard: the most-discussed US stocks market-wide, ranked by
- * a heat score (discussion volume × momentum). Buzz data comes from ApeWisdom
- * (Reddit mentions); each row links through to the full stock page.
+ * The trending leaderboards: the most-discussed US stocks (Hot) and the biggest
+ * 24h attention risers (Surging), market-wide. Buzz data from ApeWisdom (Reddit
+ * mentions); each row links through to the full stock page.
  */
-export function HotList() {
+export function HotList({initialBoard = 'hot'}: {initialBoard?: string}) {
   const dark = useDark();
   const t = tok(dark);
+  const [board, setBoard] = useState<string>(initialBoard);
   const [status, setStatus] = useState<Status>('loading');
   const [stocks, setStocks] = useState<HotStock[]>([]);
 
-  const load = useCallback(() => {
+  const load = useCallback((b: string) => {
     setStatus('loading');
-    getHot(40).then(
+    getHot(b, 40).then(
       r => {
         setStocks(r.stocks ?? []);
         setStatus('ready');
@@ -34,12 +48,14 @@ export function HotList() {
   }, []);
 
   useEffect(() => {
-    load();
-  }, [load]);
+    load(board);
+  }, [board, load]);
+
+  const blurb = BOARDS.find(b => b.key === board)?.blurb ?? '';
 
   return (
     <div className="mx-auto max-w-3xl">
-      <header className="mb-6">
+      <header className="mb-5">
         <h1
           className={cx(
             'flex items-center gap-2 text-[22px] font-bold tracking-tight',
@@ -49,17 +65,41 @@ export function HotList() {
           <Flame size={22} className={dark ? 'text-amber-300' : 'text-amber-500'} />
           Hot stocks
         </h1>
-        <p className={cx('mt-1 text-[13.5px]', t.sub)}>
-          The most-discussed US stocks across Reddit right now, ranked by buzz and
-          momentum.
-        </p>
+        <p className={cx('mt-1 text-[13.5px]', t.sub)}>{blurb}</p>
       </header>
 
+      <div className="mb-4">
+        <div
+          role="tablist"
+          aria-label="Leaderboards"
+          className={cx('inline-flex items-center gap-1 rounded-xl border p-1', t.border, t.surf2)}
+        >
+          {BOARDS.map(b => (
+            <button
+              key={b.key}
+              role="tab"
+              aria-selected={board === b.key}
+              onClick={() => setBoard(b.key)}
+              className={cx(
+                'rounded-lg px-3.5 py-1.5 text-[13px] font-medium transition',
+                board === b.key
+                  ? dark
+                    ? 'bg-slate-700 text-white'
+                    : 'bg-white text-slate-900 shadow-sm'
+                  : t.sub,
+              )}
+            >
+              {b.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
       {status === 'loading' && <FeedSkeleton />}
-      {status === 'error' && <ErrorState onRetry={load} />}
+      {status === 'error' && <ErrorState onRetry={() => load(board)} />}
       {status === 'ready' && stocks.length === 0 && (
         <EmptyState
-          label="No trending data yet"
+          label="No data yet"
           sub="The leaderboard refreshes every few minutes — check back shortly."
           icon={Flame}
         />
@@ -86,8 +126,7 @@ export function HotList() {
       )}
 
       <p className={cx('mt-4 text-center text-[11px]', t.faint)}>
-        Buzz via ApeWisdom (Reddit mentions). Heat = mentions × momentum. Not
-        investment advice.
+        Buzz via ApeWisdom (Reddit mentions). Not investment advice.
       </p>
     </div>
   );

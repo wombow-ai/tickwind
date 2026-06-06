@@ -19,7 +19,7 @@ type Store struct {
 	news      map[string]map[string]store.News   // ticker -> id -> News
 	social    map[string]map[string]store.Post   // ticker -> id -> Post
 	signals   map[string]map[string]store.Signal // ticker -> source -> Signal
-	hot       []store.HotStock                   // global trending leaderboard snapshot
+	hot       map[string][]store.HotStock        // board -> ranked snapshot
 	watchlist map[string][]string                // userID -> ordered tickers
 	clips     map[string]map[string]store.Clip   // userID -> clipID -> Clip
 }
@@ -32,6 +32,7 @@ func New() *Store {
 		news:      make(map[string]map[string]store.News),
 		social:    make(map[string]map[string]store.Post),
 		signals:   make(map[string]map[string]store.Signal),
+		hot:       make(map[string][]store.HotStock),
 		watchlist: make(map[string][]string),
 		clips:     make(map[string]map[string]store.Clip),
 	}
@@ -178,17 +179,17 @@ func (s *Store) ListSignals(_ context.Context, ticker string) ([]store.Signal, e
 	return out, nil
 }
 
-func (s *Store) SaveHotList(_ context.Context, stocks []store.HotStock) error {
+func (s *Store) SaveHotList(_ context.Context, board string, stocks []store.HotStock) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.hot = append([]store.HotStock(nil), stocks...) // replace the snapshot (copy)
+	s.hot[board] = append([]store.HotStock(nil), stocks...) // replace this board's snapshot
 	return nil
 }
 
-func (s *Store) HotList(_ context.Context, limit int) ([]store.HotStock, error) {
+func (s *Store) HotList(_ context.Context, board string, limit int) ([]store.HotStock, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	out := append([]store.HotStock(nil), s.hot...)
+	out := append([]store.HotStock(nil), s.hot[board]...)
 	sort.Slice(out, func(i, j int) bool { return out[i].Rank < out[j].Rank })
 	return limited(out, limit), nil
 }
