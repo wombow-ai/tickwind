@@ -99,6 +99,16 @@ export function TopNav() {
           >
             Opportunities
           </Link>
+          <Link
+            href="/events"
+            aria-current={pathname === '/events' ? 'page' : undefined}
+            className={cx(
+              'rounded-full px-3 py-1.5 text-[13px] font-medium hover:opacity-80',
+              pathname === '/events' ? t.accentText : t.sub,
+            )}
+          >
+            Events
+          </Link>
           {user && (
             <Link
               href="/watchlist"

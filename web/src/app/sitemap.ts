@@ -10,6 +10,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
     {url: `${SITE_URL}/`, changeFrequency: 'hourly', priority: 1},
     {url: `${SITE_URL}/hot`, changeFrequency: 'hourly', priority: 0.7},
     {url: `${SITE_URL}/opportunities`, changeFrequency: 'daily', priority: 0.7},
+    {url: `${SITE_URL}/events`, changeFrequency: 'daily', priority: 0.6},
     {url: `${SITE_URL}/news`, changeFrequency: 'hourly', priority: 0.6},
     {url: `${SITE_URL}/discussion`, changeFrequency: 'hourly', priority: 0.6},
     {url: `${SITE_URL}/announcements`, changeFrequency: 'weekly', priority: 0.5},
