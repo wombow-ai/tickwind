@@ -634,6 +634,35 @@ export function searchSymbols(
   return getJson<SearchResponse>(`/v1/search?${params.toString()}`, signal);
 }
 
+/** One market-moving event on the timeline. */
+export interface EventItem {
+  id: string;
+  title: string;
+  category: string; // "macro" | "world"
+  subtype: string; // "fomc" | "nfp" | "cpi" | "worldcup" | ...
+  start: string; // ISO-8601 UTC
+  all_day: boolean;
+  importance: string; // "high" | "med" | "low"
+  region: string; // "US" | "Global" | country
+  source_name: string;
+  source_url: string;
+}
+
+/** Envelope returned by `GET /v1/events`. */
+export interface EventsResponse {
+  count: number;
+  events: EventItem[];
+}
+
+/**
+ * Fetches the major-events timeline (macro releases like FOMC/CPI/NFP + notable
+ * world events), upcoming first. Public endpoint.
+ */
+export function getEvents(limit = 0, signal?: AbortSignal): Promise<EventsResponse> {
+  const q = limit > 0 ? `?limit=${encodeURIComponent(String(limit))}` : '';
+  return getJson<EventsResponse>(`/v1/events${q}`, signal);
+}
+
 /** A link a user saved to a ticker (private, per-user). */
 export interface Clip {
   id: string;

@@ -58,6 +58,7 @@ func serverWithBars(bars BarSource) *httptest.Server {
 		nil, // no guru source in tests
 		nil, // no ticker ingestor in tests
 		nil, // no symbol searcher in tests
+		nil, // no event source in tests
 		slog.New(slog.NewTextHandler(io.Discard, nil)),
 	)
 	return httptest.NewServer(h)

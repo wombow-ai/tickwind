@@ -21,6 +21,7 @@ import (
 	"github.com/wombow-ai/tickwind/internal/config"
 	"github.com/wombow-ai/tickwind/internal/edgar"
 	"github.com/wombow-ai/tickwind/internal/enrich"
+	"github.com/wombow-ai/tickwind/internal/events"
 	"github.com/wombow-ai/tickwind/internal/finnhub"
 	"github.com/wombow-ai/tickwind/internal/guru"
 	"github.com/wombow-ai/tickwind/internal/ingest"
@@ -148,6 +149,11 @@ func main() {
 	symbolCache := symbols.NewCache()
 	go ingest.NewSymbolIngestor(symbolCache, cfg.EDGARUserAgent, 24*time.Hour, log).Run(ctx)
 
+	// Major-events timeline: BLS economic calendar + curated FOMC/world events,
+	// refreshed twice a day (key-free, public-domain sources).
+	eventsCache := events.NewCache()
+	go ingest.NewEventsIngestor(eventsCache, 12*time.Hour, log).Run(ctx)
+
 	// Opportunity board (small-cap insider buys); shared cache, populated below
 	// when Alpaca prices are available (needed for market cap).
 	oppCache := opportunity.NewCache()
@@ -172,7 +178,7 @@ func main() {
 
 	srv := &http.Server{
 		Addr:              ":" + cfg.Port,
-		Handler:           api.New(st, hub, enricher, verifier, bars, topicCache, oppCache, guruCache, scheduler, symbolCache, log),
+		Handler:           api.New(st, hub, enricher, verifier, bars, topicCache, oppCache, guruCache, scheduler, symbolCache, eventsCache, log),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 

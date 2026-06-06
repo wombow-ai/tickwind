@@ -22,6 +22,7 @@ import (
 	"github.com/wombow-ai/tickwind/internal/auth"
 	"github.com/wombow-ai/tickwind/internal/clip"
 	"github.com/wombow-ai/tickwind/internal/enrich"
+	"github.com/wombow-ai/tickwind/internal/events"
 	"github.com/wombow-ai/tickwind/internal/guru"
 	"github.com/wombow-ai/tickwind/internal/opportunity"
 	"github.com/wombow-ai/tickwind/internal/store"
@@ -70,6 +71,11 @@ type SymbolSearcher interface {
 	Search(q string, limit int) []symbols.Symbol
 }
 
+// EventSource provides the latest major-events timeline. nil → empty list.
+type EventSource interface {
+	Get() []events.Event
+}
+
 type Server struct {
 	store    store.Store
 	hub      QuoteStream
@@ -82,11 +88,12 @@ type Server struct {
 	gurus    GuruSource
 	ingestor TickerIngestor
 	symbols  SymbolSearcher
+	events   EventSource
 	log      *slog.Logger
 }
 
-func New(st store.Store, hub QuoteStream, enricher enrich.Enricher, verifier *auth.Verifier, bars BarSource, topicSrc TopicSource, oppSrc OpportunitySource, guruSrc GuruSource, ingestor TickerIngestor, symbolSrc SymbolSearcher, log *slog.Logger) http.Handler {
-	s := &Server{store: st, hub: hub, clip: clip.NewFetcher(), enrich: enricher, auth: verifier, bars: bars, topics: topicSrc, opps: oppSrc, gurus: guruSrc, ingestor: ingestor, symbols: symbolSrc, log: log}
+func New(st store.Store, hub QuoteStream, enricher enrich.Enricher, verifier *auth.Verifier, bars BarSource, topicSrc TopicSource, oppSrc OpportunitySource, guruSrc GuruSource, ingestor TickerIngestor, symbolSrc SymbolSearcher, eventSrc EventSource, log *slog.Logger) http.Handler {
+	s := &Server{store: st, hub: hub, clip: clip.NewFetcher(), enrich: enricher, auth: verifier, bars: bars, topics: topicSrc, opps: oppSrc, gurus: guruSrc, ingestor: ingestor, symbols: symbolSrc, events: eventSrc, log: log}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", s.health)
 
@@ -114,6 +121,7 @@ func New(st store.Store, hub QuoteStream, enricher enrich.Enricher, verifier *au
 	mux.HandleFunc("GET /v1/opportunities", s.getOpportunities)
 	mux.HandleFunc("GET /v1/gurus", s.getGurus)
 	mux.HandleFunc("GET /v1/search", s.getSearch)
+	mux.HandleFunc("GET /v1/events", s.getEvents)
 	mux.HandleFunc("GET /v1/stream", s.getStream)
 
 	// auth.Middleware attaches the user when a valid bearer token is present;
@@ -481,6 +489,28 @@ func (s *Server) getSearch(w http.ResponseWriter, r *http.Request) {
 		results = []symbols.Symbol{}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"count": len(results), "results": results})
+}
+
+// getEvents returns the major-events timeline windowed to what's relevant now:
+// events from ~2 days ago onward (so a just-passed release stays briefly
+// visible), ascending. Always 200 with a (possibly empty) list; ?limit= caps it.
+func (s *Server) getEvents(w http.ResponseWriter, r *http.Request) {
+	var all []events.Event
+	if s.events != nil {
+		all = s.events.Get()
+	}
+	cutoff := time.Now().UTC().AddDate(0, 0, -2)
+	out := make([]events.Event, 0, len(all))
+	for _, e := range all {
+		if e.StartUTC.Before(cutoff) {
+			continue
+		}
+		out = append(out, e)
+	}
+	if lim := queryLimit(r, 40); lim > 0 && len(out) > lim {
+		out = out[:lim]
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"count": len(out), "events": out})
 }
 
 // getTopics returns the trending-topics snapshot (empty when disabled).
