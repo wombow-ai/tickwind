@@ -42,6 +42,28 @@ html.dark body {
     linear-gradient(180deg, #0b1220, #070b13);
 }
 
+/*
+ * Accessible keyboard focus ring (theme-aware). Element-type + :focus-visible
+ * selectors outrank Tailwind's `outline-none` utility, so it shows on keyboard
+ * focus only (not mouse clicks). The outline follows each element's radius.
+ */
+:root {
+  --tw-focus: #0d9488;
+}
+html.dark {
+  --tw-focus: #2dd4bf;
+}
+a:focus-visible,
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+summary:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid var(--tw-focus);
+  outline-offset: 2px;
+}
+
 /* ------------------------------ depth / surfaces ------------------------------ */
 .tw-soft-l {
   box-shadow:

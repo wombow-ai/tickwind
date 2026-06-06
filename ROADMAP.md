@@ -93,6 +93,11 @@ Status: ✅ done · 🟡 in progress · ⬜ todo
   - ✅ Mobile/responsive polish: TopNav fits one line at 375px (search collapses to
         an icon → dropdown row; theme + search are 36px tap targets; Log in/Sign up
         nowrap). Board + detail reflow cleanly. Verified at 375px in light + dark
+  - ✅ A11y: theme-aware keyboard focus ring (global `:focus-visible` + `--tw-focus`,
+        outranks `outline-none`, keyboard-only); aria-current on active nav,
+        aria-pressed + dynamic label on theme toggle, aria-expanded/haspopup on the
+        account menu + mobile search, aria-pressed on detail tabs; Escape closes the
+        menu + mobile search
   - ⬜ Optional Google OAuth
 - ⬜ HK (HKEXnews) + KR (DART) filings (needs DART key); later Futu/KIS realtime
 

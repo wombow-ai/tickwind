@@ -357,6 +357,8 @@ export function StockView({ticker}: {ticker: string}) {
       {/* tabs */}
       <div className="mb-4">
         <div
+          role="group"
+          aria-label="Stock sections"
           className={cx(
             'inline-flex items-center gap-1 overflow-x-auto rounded-xl border p-1',
             t.border,
@@ -367,6 +369,7 @@ export function StockView({ticker}: {ticker: string}) {
             <button
               key={tb}
               onClick={() => setTab(tb)}
+              aria-pressed={tab === tb}
               className={cx(
                 'whitespace-nowrap rounded-lg px-3 py-1.5 text-[13px] font-medium transition',
                 tab === tb

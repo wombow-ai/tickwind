@@ -126,6 +126,11 @@ feature-flagged plugin, never on the critical path. Web only.
   kept as references (self-contained). `/stock/[ticker]` is SSR with SEO metadata.
 - **Responsive**: mobile-first; TopNav collapses the ticker search to an icon →
   dropdown row < `sm`; one-line nav at 375px; board/detail reflow to a single column.
+- **A11y**: global theme-aware keyboard focus ring in `globals.css` (`:focus-visible`
+  + `--tw-focus`; element-type selectors outrank Tailwind `outline-none`, so it's
+  keyboard-only). aria-current on active nav, aria-pressed + dynamic label on the
+  theme toggle, aria-expanded/haspopup on the account menu + mobile search,
+  aria-pressed on detail tabs; Escape closes the account menu + mobile search.
 - **SEO/deploy**: `lib/config.SITE_URL` (`NEXT_PUBLIC_SITE_URL` → prod) drives
   `metadataBase` + OpenGraph in `layout.tsx`, `app/robots.ts`, and `app/sitemap.ts`
   (board + announcements + popular stock pages). `next.config.ts` sets baseline

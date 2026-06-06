@@ -3,7 +3,7 @@
 import {ChevronDown, LogOut, Moon, Search, Settings, Star, Sun} from 'lucide-react';
 import Link from 'next/link';
 import {usePathname, useRouter} from 'next/navigation';
-import {useRef, useState} from 'react';
+import {useEffect, useRef, useState} from 'react';
 import {useAuth} from '@/lib/auth';
 import {useTheme} from '@/lib/theme';
 import {btnPrimary, cx, tok} from '@/lib/ui';
@@ -28,6 +28,18 @@ export function TopNav() {
   const [query, setQuery] = useState('');
   const [menu, setMenu] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
+
+  // Escape closes the account menu and the mobile search.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') {
+        setMenu(false);
+        setSearchOpen(false);
+      }
+    }
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, []);
 
   function search(e: React.FormEvent) {
     e.preventDefault();
@@ -89,6 +101,7 @@ export function TopNav() {
           </button>
           <Link
             href="/announcements"
+            aria-current={pathname === '/announcements' ? 'page' : undefined}
             className={cx(
               'hidden rounded-full px-3 py-1.5 text-[13px] font-medium sm:inline-flex',
               pathname === '/announcements' ? t.accentText : t.sub,
@@ -100,7 +113,8 @@ export function TopNav() {
 
           <button
             onClick={toggle}
-            aria-label="Toggle theme"
+            aria-label={dark ? 'Switch to light theme' : 'Switch to dark theme'}
+            aria-pressed={dark}
             className={cx(
               'inline-flex h-9 w-9 items-center justify-center rounded-full border',
               t.border,
@@ -196,6 +210,8 @@ function AccountMenu({
           t.ghost,
         )}
         aria-label="Account menu"
+        aria-haspopup="menu"
+        aria-expanded={open}
       >
         <span
           className="flex h-7 w-7 items-center justify-center rounded-full text-[11px] font-bold text-white"
