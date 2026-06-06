@@ -1,6 +1,7 @@
 import type {Metadata} from 'next';
 import {GuruRail} from '@/components/GuruRail';
 import {OpportunityBoard} from '@/components/OpportunityBoard';
+import {WsbBoard} from '@/components/WsbBoard';
 
 export const metadata: Metadata = {
   title: 'Opportunity board',
@@ -15,7 +16,8 @@ export default function OpportunitiesPage() {
       <div className="lg:col-span-2">
         <OpportunityBoard />
       </div>
-      <div className="lg:col-span-1">
+      <div className="flex flex-col gap-8 lg:col-span-1">
+        <WsbBoard />
         <GuruRail />
       </div>
     </div>
