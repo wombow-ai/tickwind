@@ -22,6 +22,7 @@ import (
 	"github.com/wombow-ai/tickwind/internal/auth"
 	"github.com/wombow-ai/tickwind/internal/clip"
 	"github.com/wombow-ai/tickwind/internal/enrich"
+	"github.com/wombow-ai/tickwind/internal/opportunity"
 	"github.com/wombow-ai/tickwind/internal/store"
 	"github.com/wombow-ai/tickwind/internal/topics"
 )
@@ -44,6 +45,11 @@ type TopicSource interface {
 	Get() topics.Snapshot
 }
 
+// OpportunitySource provides the latest Opportunity board. nil → empty list.
+type OpportunitySource interface {
+	Get() []opportunity.Stock
+}
+
 type Server struct {
 	store  store.Store
 	hub    QuoteStream
@@ -52,11 +58,12 @@ type Server struct {
 	auth   *auth.Verifier
 	bars   BarSource
 	topics TopicSource
+	opps   OpportunitySource
 	log    *slog.Logger
 }
 
-func New(st store.Store, hub QuoteStream, enricher enrich.Enricher, verifier *auth.Verifier, bars BarSource, topicSrc TopicSource, log *slog.Logger) http.Handler {
-	s := &Server{store: st, hub: hub, clip: clip.NewFetcher(), enrich: enricher, auth: verifier, bars: bars, topics: topicSrc, log: log}
+func New(st store.Store, hub QuoteStream, enricher enrich.Enricher, verifier *auth.Verifier, bars BarSource, topicSrc TopicSource, oppSrc OpportunitySource, log *slog.Logger) http.Handler {
+	s := &Server{store: st, hub: hub, clip: clip.NewFetcher(), enrich: enricher, auth: verifier, bars: bars, topics: topicSrc, opps: oppSrc, log: log}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", s.health)
 
@@ -81,6 +88,7 @@ func New(st store.Store, hub QuoteStream, enricher enrich.Enricher, verifier *au
 	mux.HandleFunc("GET /v1/social", s.getSocialBatch)
 	mux.HandleFunc("GET /v1/hot", s.getHot)
 	mux.HandleFunc("GET /v1/topics", s.getTopics)
+	mux.HandleFunc("GET /v1/opportunities", s.getOpportunities)
 	mux.HandleFunc("GET /v1/stream", s.getStream)
 
 	// auth.Middleware attaches the user when a valid bearer token is present;
@@ -392,6 +400,22 @@ func (s *Server) getNewsBatch(w http.ResponseWriter, r *http.Request) {
 		all = all[:maxFeed]
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"count": len(all), "news": all})
+}
+
+// getOpportunities returns the small-cap insider-buy Opportunity board, top
+// first. Always 200 with a (possibly empty) list; ?limit= caps the rows.
+func (s *Server) getOpportunities(w http.ResponseWriter, r *http.Request) {
+	var board []opportunity.Stock
+	if s.opps != nil {
+		board = s.opps.Get()
+	}
+	if board == nil {
+		board = []opportunity.Stock{}
+	}
+	if lim := queryLimit(r, 0); lim > 0 && len(board) > lim {
+		board = board[:lim]
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"count": len(board), "stocks": board})
 }
 
 // getTopics returns the trending-topics snapshot (empty when disabled).

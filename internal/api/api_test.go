@@ -27,6 +27,7 @@ func newTestServer() *httptest.Server {
 		auth.NewVerifier(testSecret, ""),
 		nil, // no bar source in tests
 		nil, // no topic source in tests
+		nil, // no opportunity source in tests
 		slog.New(slog.NewTextHandler(io.Discard, nil)),
 	)
 	return httptest.NewServer(h)

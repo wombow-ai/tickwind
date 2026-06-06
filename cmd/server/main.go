@@ -23,7 +23,9 @@ import (
 	"github.com/wombow-ai/tickwind/internal/enrich"
 	"github.com/wombow-ai/tickwind/internal/finnhub"
 	"github.com/wombow-ai/tickwind/internal/ingest"
+	"github.com/wombow-ai/tickwind/internal/opportunity"
 	"github.com/wombow-ai/tickwind/internal/reddit"
+	"github.com/wombow-ai/tickwind/internal/sec"
 	"github.com/wombow-ai/tickwind/internal/stocktwits"
 	"github.com/wombow-ai/tickwind/internal/store"
 	"github.com/wombow-ai/tickwind/internal/store/memory"
@@ -131,6 +133,10 @@ func main() {
 	scheduler := ingest.NewScheduler(st, edgarClient, newsClient, social, signals, apewisdomClient, topicCache, ingestTickers, cfg.IngestEvery, log)
 	go scheduler.Run(ctx)
 
+	// Opportunity board (small-cap insider buys); shared cache, populated below
+	// when Alpaca prices are available (needed for market cap).
+	oppCache := opportunity.NewCache()
+
 	// bars feeds the sparkline endpoint; nil (disabled) without Alpaca creds.
 	var bars api.BarSource
 	if cfg.AlpacaKeyID != "" && cfg.AlpacaSecret != "" {
@@ -139,13 +145,19 @@ func main() {
 		go poller.Run(ctx)
 		bars = ingest.NewBarCache(priceClient, 30, time.Hour)
 		log.Info("price polling enabled", "every", cfg.PricePollEvery.String(), "feed", cfg.AlpacaFeed)
+
+		// Opportunity board: SEC Form-4 insider buys + market cap (needs prices).
+		secClient := sec.New(cfg.EDGARUserAgent)
+		oppIngestor := ingest.NewOpportunityIngestor(st, secClient, priceClient, oppCache, 2*time.Hour, cfg.OpportunityBackfillDays, log)
+		go oppIngestor.Run(ctx)
+		log.Info("opportunity board enabled (SEC insider buys)", "backfill_days", cfg.OpportunityBackfillDays)
 	} else {
-		log.Warn("ALPACA_API_KEY/SECRET not set — price polling disabled")
+		log.Warn("ALPACA_API_KEY/SECRET not set — price polling + opportunity board disabled")
 	}
 
 	srv := &http.Server{
 		Addr:              ":" + cfg.Port,
-		Handler:           api.New(st, hub, enricher, verifier, bars, topicCache, log),
+		Handler:           api.New(st, hub, enricher, verifier, bars, topicCache, oppCache, log),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 

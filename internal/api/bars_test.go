@@ -54,6 +54,7 @@ func serverWithBars(bars BarSource) *httptest.Server {
 		auth.NewVerifier(testSecret, ""),
 		bars,
 		nil, // no topic source in tests
+		nil, // no opportunity source in tests
 		slog.New(slog.NewTextHandler(io.Discard, nil)),
 	)
 	return httptest.NewServer(h)
