@@ -21,6 +21,14 @@ export const POPULAR_TICKERS: readonly string[] = [
 /** Suggested tickers offered on the empty watchlist state. */
 export const SUGGESTED_TICKERS: readonly string[] = ['AAPL', 'NVDA', 'TSLA'];
 
+/**
+ * Canonical public origin, used for metadata, robots and the sitemap. Override
+ * with `NEXT_PUBLIC_SITE_URL` (e.g. a Vercel preview URL); defaults to prod.
+ */
+export const SITE_URL: string = (
+  process.env.NEXT_PUBLIC_SITE_URL ?? 'https://tickwind.com'
+).replace(/\/+$/, '');
+
 /** Product name, used in the header and document title. */
 export const APP_NAME = 'Tickwind';
 

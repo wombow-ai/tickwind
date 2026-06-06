@@ -126,6 +126,12 @@ feature-flagged plugin, never on the critical path. Web only.
   kept as references (self-contained). `/stock/[ticker]` is SSR with SEO metadata.
 - **Responsive**: mobile-first; TopNav collapses the ticker search to an icon →
   dropdown row < `sm`; one-line nav at 375px; board/detail reflow to a single column.
+- **SEO/deploy**: `lib/config.SITE_URL` (`NEXT_PUBLIC_SITE_URL` → prod) drives
+  `metadataBase` + OpenGraph in `layout.tsx`, `app/robots.ts`, and `app/sitemap.ts`
+  (board + announcements + popular stock pages). `next.config.ts` sets baseline
+  security headers. Frontend deploys on **Vercel** (Root Directory `web/`); see
+  `DEPLOY.md` §5. CSP intentionally deferred (would need a nonce for the no-flash
+  script + allowances for Supabase/API/SSE).
 - **ChangeLine renders** the day's change (signed %/▲▼) on the board tile + detail
   header whenever `quote.prev_close` is present (real Alpaca data). **Sparkline
   renders** on the detail header from `GET /v1/stocks/{ticker}/bars` (Alpaca daily

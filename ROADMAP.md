@@ -71,7 +71,12 @@ Status: ✅ done · 🟡 in progress · ⬜ todo
   - ✅ Supabase email/password `/login` + `/signup`; account menu; `/settings`;
         `/announcements`; JWT attached to private API calls; session-refresh `proxy`
   - ✅ Route-group layout split (app chrome vs auth vs `/designs`); build + lint green
-  - ⬜ Deploy on Vercel; re-point `tickwind.com` DNS; set env (API base + Supabase)
+  - ✅ Deploy prep: `DEPLOY.md` "Frontend on Vercel" section (root=web/, the 3
+        NEXT_PUBLIC_* envs, Cloudflare DNS records, Supabase redirect URLs);
+        canonical metadata + OpenGraph (`metadataBase`/`SITE_URL`); `robots.txt` +
+        `sitemap.xml` (board + popular stock pages); baseline security headers.
+        SSR build Vercel-ready (14 routes, green)
+  - ⬜ Deploy on Vercel; re-point `tickwind.com` DNS; set env (user action)
   - ✅ Backend `prev_close` via Alpaca **snapshot** endpoint (honest prior close) →
         `ChangeLine` (signed %/▲▼) now renders on the board + detail header.
         Verified e2e locally (AAPL 307.23 / prev 311.21 = −1.28%; light + dark)
