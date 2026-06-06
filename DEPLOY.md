@@ -31,7 +31,9 @@ cp .env.example .env
 # edit .env:
 #   EDGAR_USER_AGENT (your email), POSTGRES_PASSWORD, TUNNEL_TOKEN (next step)
 #   ALPACA_API_KEY/SECRET (paper), FINNHUB_TOKEN          → prices + news
-#   SUPABASE_JWT_SECRET = your Supabase "Legacy JWT Secret" → enables login
+#   SUPABASE_URL = https://<project-ref>.supabase.co  → verifies ES256 user
+#       tokens via JWKS (REQUIRED for login; Supabase signs with asymmetric keys)
+#   SUPABASE_JWT_SECRET = your "Legacy JWT Secret"     → optional HS256 fallback
 # Storage: per-user data (watchlist/clips) stays on the local Postgres below.
 # To keep the collected corpus (filings/news/quotes/social) on a durable,
 # backed-up DB, also set:

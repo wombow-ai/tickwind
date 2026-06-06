@@ -24,7 +24,7 @@ const testSecret = "api-test-secret"
 func newTestServer() *httptest.Server {
 	h := New(
 		memory.New(), stream.NewHub(), enrich.Noop{},
-		auth.NewVerifier(testSecret),
+		auth.NewVerifier(testSecret, ""),
 		nil, // no bar source in tests
 		slog.New(slog.NewTextHandler(io.Discard, nil)),
 	)

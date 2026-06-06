@@ -90,9 +90,15 @@ feature-flagged plugin, never on the critical path. Web only.
 - Stays off the critical path (per the engineering-first requirement).
 
 ## Multi-tenant + auth (商用)
-- `internal/auth`: stdlib HS256 verify of Supabase JWTs (hardcoded HS256 to block
-  alg confusion). `Middleware` attaches the user when a valid bearer token is
-  present (does NOT reject anon — handlers gate via `requireUser`).
+- `internal/auth`: stdlib verify of Supabase JWTs. **Dispatches on `alg`:
+  `ES256` → verified against the project's JWKS public keys (Supabase signs user
+  tokens with asymmetric ECC keys now — this is what real logins use), `HS256` →
+  legacy shared secret. Each alg uses its own key type, so no alg confusion.**
+  JWKS fetched from `SUPABASE_URL/auth/v1/.well-known/jwks.json` (cached, refetch
+  on unknown kid, rate-limited). `Middleware` attaches the user when a valid
+  bearer token is present (does NOT reject anon — handlers gate via `requireUser`).
+  Config: `SUPABASE_URL` (ES256, required for login) + optional
+  `SUPABASE_JWT_SECRET` (HS256). Tested incl. real ES256 via a test JWKS.
 - Data split: **shared/global** (securities, filings, quotes, news, social =
   public market data) vs **per-user** (watchlist + private clips, keyed by the
   JWT `sub` UUID). Public stock-data endpoints stay open (SEO); watchlist/clip

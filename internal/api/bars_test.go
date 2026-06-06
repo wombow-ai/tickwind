@@ -51,7 +51,7 @@ func (f *fakeBarSource) callsFor(ticker string) int {
 func serverWithBars(bars BarSource) *httptest.Server {
 	h := New(
 		memory.New(), stream.NewHub(), enrich.Noop{},
-		auth.NewVerifier(testSecret),
+		auth.NewVerifier(testSecret, ""),
 		bars,
 		slog.New(slog.NewTextHandler(io.Discard, nil)),
 	)

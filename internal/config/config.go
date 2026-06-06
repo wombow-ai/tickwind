@@ -38,10 +38,13 @@ type Config struct {
 	LLMBaseURL string // default https://api.openai.com/v1
 	LLMModel   string // default gpt-4o-mini
 
-	// Supabase JWT secret (HS256) — verifies user tokens. Empty disables auth
-	// (all private endpoints 401). Watchlist below is the default ticker set
-	// always ingested (so public stock pages have data), unioned with every
-	// user's watchlist.
+	// Supabase auth. SupabaseURL (e.g. https://<ref>.supabase.co) enables ES256
+	// verification via the project's JWKS — required because Supabase now signs
+	// user tokens with asymmetric keys. SupabaseJWTSecret keeps legacy HS256
+	// working too. With neither set, all private endpoints 401. Watchlist below
+	// is the default ticker set always ingested (so public stock pages have
+	// data), unioned with every user's watchlist.
+	SupabaseURL       string
 	SupabaseJWTSecret string
 }
 
@@ -64,6 +67,7 @@ func Load() Config {
 		LLMAPIKey:         env("LLM_API_KEY", ""),
 		LLMBaseURL:        env("LLM_BASE_URL", ""),
 		LLMModel:          env("LLM_MODEL", ""),
+		SupabaseURL:       strings.TrimRight(env("SUPABASE_URL", ""), "/"),
 		SupabaseJWTSecret: env("SUPABASE_JWT_SECRET", ""),
 	}
 }

@@ -48,11 +48,15 @@ func main() {
 
 	hub := stream.NewHub()
 
-	verifier := auth.NewVerifier(cfg.SupabaseJWTSecret)
+	var jwksURL string
+	if cfg.SupabaseURL != "" {
+		jwksURL = cfg.SupabaseURL + "/auth/v1/.well-known/jwks.json"
+	}
+	verifier := auth.NewVerifier(cfg.SupabaseJWTSecret, jwksURL)
 	if verifier.Enabled() {
-		log.Info("auth enabled (supabase jwt)")
+		log.Info("auth enabled (supabase jwt)", "es256", jwksURL != "", "hs256", cfg.SupabaseJWTSecret != "")
 	} else {
-		log.Warn("SUPABASE_JWT_SECRET not set — per-user endpoints will return 401")
+		log.Warn("auth disabled — set SUPABASE_URL and/or SUPABASE_JWT_SECRET; per-user endpoints return 401")
 	}
 
 	// Optional LLM enrichment (disabled without LLM_API_KEY).
