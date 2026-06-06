@@ -3,7 +3,9 @@
 import {
   Flame,
   MessageSquare,
+  Mic,
   Newspaper,
+  Sparkles,
   TrendingDown,
   TrendingUp,
 } from 'lucide-react';
@@ -11,12 +13,16 @@ import Link from 'next/link';
 import {useEffect, useMemo, useState} from 'react';
 import {
   getBarsBatch,
+  getGurus,
   getHot,
   getNewsBatch,
+  getOpportunities,
   getSocialBatch,
   getStock,
+  type GuruItem,
   type HotStock,
   type NewsItem,
+  type OpportunityStock,
   type Post,
   type Security,
 } from '@/lib/api';
@@ -37,6 +43,12 @@ function guessMarket(ticker: string): string {
 function placeholder(ticker: string): Security {
   return {ticker, name: ticker, market: guessMarket(ticker)};
 }
+function money(v: number): string {
+  if (v >= 1e9) return `$${(v / 1e9).toFixed(1)}B`;
+  if (v >= 1e6) return `$${(v / 1e6).toFixed(1)}M`;
+  if (v >= 1e3) return `$${(v / 1e3).toFixed(0)}K`;
+  return `$${v.toFixed(0)}`;
+}
 
 /**
  * The home as an information-source hub: a live Markets strip (hero), then a
@@ -54,6 +66,8 @@ export function HomeHub() {
   const [securities, setSecurities] = useState<Record<string, Security>>({});
   const [bars, setBars] = useState<Record<string, number[]>>({});
   const [hot, setHot] = useState<HotStock[]>([]);
+  const [opps, setOpps] = useState<OpportunityStock[]>([]);
+  const [gurus, setGurus] = useState<GuruItem[]>([]);
   const [news, setNews] = useState<NewsItem[]>([]);
   const [posts, setPosts] = useState<Post[]>([]);
   const quotes = useQuotes(tickers);
@@ -68,6 +82,11 @@ export function HomeHub() {
     }
     getBarsBatch(tickers, c.signal).then(r => setBars(r.bars), () => setBars({}));
     getHot('hot', 5, c.signal).then(r => setHot(r.stocks ?? []), () => setHot([]));
+    getOpportunities(5, c.signal).then(
+      r => setOpps(r.stocks ?? []),
+      () => setOpps([]),
+    );
+    getGurus(3, c.signal).then(r => setGurus(r.items ?? []), () => setGurus([]));
     getNewsBatch(tickers, 6, c.signal).then(
       r => setNews((r.news ?? []).slice(0, 3)),
       () => setNews([]),
@@ -109,8 +128,8 @@ export function HomeHub() {
         ))}
       </div>
 
-      {/* Module hub */}
-      <div className="grid gap-5 md:grid-cols-3">
+      {/* Boards & signals (榜单 · 机会 · 大V) */}
+      <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
         <ModuleCard
           t={t}
           title="Hot stocks"
@@ -147,6 +166,86 @@ export function HomeHub() {
           )}
         </ModuleCard>
 
+        <ModuleCard
+          t={t}
+          title="Opportunity"
+          href="/opportunities"
+          seeAll="Full board"
+          icon={<Sparkles size={15} className={dark ? 'text-sky-300' : 'text-sky-600'} />}
+        >
+          {opps.length === 0 ? (
+            <CardEmpty t={t} label="No signals yet" />
+          ) : (
+            opps.map((s, i) => (
+              <Link
+                key={s.ticker}
+                href={`/stock/${encodeURIComponent(s.ticker)}`}
+                className={cx(
+                  'flex items-center gap-2 py-1.5',
+                  i < opps.length - 1 && cx('border-b', t.hair),
+                )}
+              >
+                <span className={cx('w-4 text-[12px] font-bold tabular-nums', t.faint)}>
+                  {s.rank}
+                </span>
+                <span className={cx('flex-1 truncate text-[13px] font-bold', t.text)}>
+                  {s.ticker}
+                </span>
+                <span
+                  className={cx(
+                    'shrink-0 text-[11px] font-semibold tabular-nums',
+                    t.faint,
+                  )}
+                >
+                  {s.buyers} ins · {money(s.buy_value)}
+                </span>
+              </Link>
+            ))
+          )}
+        </ModuleCard>
+
+        <ModuleCard
+          t={t}
+          title="Guru-watch"
+          href="/opportunities"
+          seeAll="See all"
+          icon={<Mic size={15} className={dark ? 'text-violet-300' : 'text-violet-600'} />}
+        >
+          {gurus.length === 0 ? (
+            <CardEmpty t={t} label="No posts yet" />
+          ) : (
+            gurus.map((g, i) => (
+              <a
+                key={g.url}
+                href={g.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={cx(
+                  'block py-2',
+                  i < gurus.length - 1 && cx('border-b', t.hair),
+                )}
+              >
+                <div className="flex items-center gap-1.5">
+                  <span className={cx('truncate text-[12px] font-semibold', t.text)}>
+                    {g.author}
+                  </span>
+                  {g.tickers[0] && (
+                    <span
+                      className={cx('shrink-0 text-[11px] font-semibold', t.accentText)}
+                    >
+                      ${g.tickers[0]}
+                    </span>
+                  )}
+                </div>
+                <p className={cx('mt-0.5 line-clamp-2 text-[12.5px]', t.sub)}>{g.title}</p>
+              </a>
+            ))
+          )}
+        </ModuleCard>
+      </div>
+
+      {/* Feeds (消息 · 评论) */}
+      <div className="mt-5 grid gap-5 sm:grid-cols-2">
         <ModuleCard
           t={t}
           title="News"
