@@ -2,8 +2,12 @@
 // API (https://github.com/hczhu/TickerTick-API). It returns per-ticker
 // user-generated and analysis story links. No API key is required.
 //
-// The API enforces a rate limit of ~10 requests per minute per IP address, so
-// callers should pace their requests (the ingest scheduler already does).
+// The API enforces a strict per-IP rate limit (roughly ~10 requests/minute, and
+// stricter on bursts). The ingest scheduler fans out across many tickers back to
+// back, which trips that limit, so the client self-throttles: it spaces its own
+// outbound requests at least minInterval apart (see throttle). That keeps every
+// ticker covered each cycle instead of the first few winning and the rest eating
+// 429s. The 15-minute scheduler cadence easily absorbs the added pacing.
 package tickertick
 
 import (
@@ -12,6 +16,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"sync"
 	"time"
 
 	"github.com/wombow-ai/tickwind/internal/store"
@@ -20,17 +25,30 @@ import (
 // defaultBaseURL is the public TickerTick feed endpoint.
 const defaultBaseURL = "https://api.tickertick.com"
 
-// Client fetches per-ticker story feeds from TickerTick.
+// defaultMinInterval paces outbound requests to stay under TickerTick's rate
+// limit. ~8s ≈ 7.5 req/min, comfortably below the ~10/min ceiling with margin
+// for the stricter burst behavior observed in production.
+const defaultMinInterval = 8 * time.Second
+
+// Client fetches per-ticker story feeds from TickerTick. It is safe for
+// concurrent use; requests are serialized to respect the rate limit.
 type Client struct {
 	http    *http.Client
 	baseURL string
+
+	// minInterval is the minimum spacing between outbound requests (0 disables
+	// throttling, used in tests). mu guards last across concurrent callers.
+	mu          sync.Mutex
+	last        time.Time
+	minInterval time.Duration
 }
 
 // New returns a Client pointed at the public TickerTick API. No key is needed.
 func New() *Client {
 	return &Client{
-		http:    &http.Client{Timeout: 15 * time.Second},
-		baseURL: defaultBaseURL,
+		http:        &http.Client{Timeout: 15 * time.Second},
+		baseURL:     defaultBaseURL,
+		minInterval: defaultMinInterval,
 	}
 }
 
@@ -77,8 +95,35 @@ func (c *Client) Posts(ctx context.Context, ticker string, limit int) ([]store.P
 	return c.fetch(ctx, ticker, "z:"+ticker, n, limit)
 }
 
+// throttle blocks until at least minInterval has elapsed since the previous
+// request, keeping us under TickerTick's per-IP rate limit instead of bursting
+// and eating 429s. It serializes concurrent callers and returns early if ctx is
+// cancelled (so shutdown stays responsive).
+func (c *Client) throttle(ctx context.Context) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.minInterval <= 0 {
+		return nil
+	}
+	if wait := c.minInterval - time.Since(c.last); wait > 0 {
+		timer := time.NewTimer(wait)
+		defer timer.Stop()
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-timer.C:
+		}
+	}
+	c.last = time.Now()
+	return nil
+}
+
 // fetch runs one /feed request for query q and maps the stories to posts.
 func (c *Client) fetch(ctx context.Context, ticker, q string, n, limit int) ([]store.Post, error) {
+	if err := c.throttle(ctx); err != nil {
+		return nil, fmt.Errorf("tickertick: throttle %s: %w", ticker, err)
+	}
+
 	params := url.Values{}
 	params.Set("q", q)
 	params.Set("n", fmt.Sprintf("%d", n))

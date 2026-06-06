@@ -62,6 +62,7 @@ func TestPostsParsesFeed(t *testing.T) {
 
 	c := New()
 	c.baseURL = srv.URL
+	c.minInterval = 0 // disable rate-limit pacing in tests
 
 	posts, err := c.Posts(context.Background(), "aapl", 30)
 	if err != nil {
@@ -110,6 +111,7 @@ func TestPostsRespectsLimit(t *testing.T) {
 
 	c := New()
 	c.baseURL = srv.URL
+	c.minInterval = 0 // disable rate-limit pacing in tests
 
 	posts, err := c.Posts(context.Background(), "aapl", 1)
 	if err != nil {
@@ -139,6 +141,7 @@ func TestPostsFallsBackWhenEmpty(t *testing.T) {
 
 	c := New()
 	c.baseURL = srv.URL
+	c.minInterval = 0 // disable rate-limit pacing in tests
 
 	posts, err := c.Posts(context.Background(), "aapl", 30)
 	if err != nil {
@@ -160,8 +163,64 @@ func TestPostsErrorOnNon200(t *testing.T) {
 
 	c := New()
 	c.baseURL = srv.URL
+	c.minInterval = 0 // disable rate-limit pacing in tests
 
 	if _, err := c.Posts(context.Background(), "aapl", 5); err == nil {
 		t.Fatal("expected error on 429, got nil")
+	}
+}
+
+func TestThrottleSpacesRequests(t *testing.T) {
+	var times []time.Time
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		times = append(times, time.Now())
+		_, _ = w.Write([]byte(sampleFeed))
+	}))
+	defer srv.Close()
+
+	c := New()
+	c.baseURL = srv.URL
+	c.minInterval = 60 * time.Millisecond // small, real interval for the test
+
+	// Three Posts calls, each one request (the narrow query returns stories so
+	// no fallback). The throttle should space them by ~minInterval.
+	for i := 0; i < 3; i++ {
+		if _, err := c.Posts(context.Background(), "aapl", 30); err != nil {
+			t.Fatalf("Posts %d: %v", i, err)
+		}
+	}
+	if len(times) != 3 {
+		t.Fatalf("got %d requests, want 3", len(times))
+	}
+	for i := 1; i < len(times); i++ {
+		if gap := times[i].Sub(times[i-1]); gap < 50*time.Millisecond {
+			t.Errorf("request %d gap = %v, want >= ~60ms (throttled)", i, gap)
+		}
+	}
+}
+
+func TestThrottleRespectsContextCancel(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(sampleFeed))
+	}))
+	defer srv.Close()
+
+	c := New()
+	c.baseURL = srv.URL
+	c.minInterval = time.Hour // force the second call to block on the throttle
+
+	// First call primes last (no wait).
+	if _, err := c.Posts(context.Background(), "aapl", 30); err != nil {
+		t.Fatalf("first Posts: %v", err)
+	}
+	// The second would wait ~1h; a cancelled context must abort it promptly.
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	start := time.Now()
+	if _, err := c.Posts(ctx, "aapl", 30); err == nil {
+		t.Fatal("expected context error from throttle, got nil")
+	}
+	if elapsed := time.Since(start); elapsed > 500*time.Millisecond {
+		t.Errorf("throttle blocked %v after cancel, want prompt return", elapsed)
 	}
 }
