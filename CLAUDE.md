@@ -121,6 +121,9 @@ feature-flagged plugin, never on the critical path. Web only.
   user + exposes `getToken()`; `web/src/lib/api.ts` private calls take that token
   as `Authorization: Bearer`. `web/src/proxy.ts` refreshes the session cookie
   (Next 16 renamed `middleware`→`proxy`; guarded no-op when Supabase env is unset).
+  Email/password + optional **Google OAuth** (`signInWithOAuth` → `/auth/callback`
+  route's `exchangeCodeForSession`); the Google button is gated behind
+  `GOOGLE_OAUTH_ENABLED` (`NEXT_PUBLIC_GOOGLE_OAUTH=1`), hidden until configured.
 - **Routes**: route groups — `(main)` = chrome (TopNav+Footer): `/`, `/stock/[ticker]`,
   `/settings`, `/announcements`; `(auth)` = centered: `/login`, `/signup`; `/designs/*`
   kept as references (self-contained). `/stock/[ticker]` is SSR with SEO metadata.

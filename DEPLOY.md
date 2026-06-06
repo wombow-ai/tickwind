@@ -82,6 +82,16 @@ Vercel (not the static Pages export). DNS stays on Cloudflare.
    - **Site URL**: `https://tickwind.com`
    - **Redirect URLs**: `https://tickwind.com/**` and `https://*.vercel.app/**`
 
+### Optional: "Continue with Google"
+The button is **hidden** until you enable it, so you can ship without it.
+8. Google Cloud Console → **APIs & Services → Credentials → OAuth client ID**
+   (Web). Authorized redirect URI: `https://<project-ref>.supabase.co/auth/v1/callback`.
+9. Supabase → **Authentication → Providers → Google**: enable it, paste the
+   Client ID + Secret. Ensure `https://tickwind.com/auth/callback` is covered by
+   the Redirect URLs above.
+10. Set **`NEXT_PUBLIC_GOOGLE_OAUTH=1`** in Vercel to reveal the button. The app's
+    `/auth/callback` route exchanges the code for a session and redirects home.
+
 > Recommended order: get the `*.vercel.app` URL working first, then switch the
 > custom domain + Supabase URLs.
 >

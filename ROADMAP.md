@@ -98,7 +98,11 @@ Status: ✅ done · 🟡 in progress · ⬜ todo
         aria-pressed + dynamic label on theme toggle, aria-expanded/haspopup on the
         account menu + mobile search, aria-pressed on detail tabs; Escape closes the
         menu + mobile search
-  - ⬜ Optional Google OAuth
+  - ✅ Google OAuth (Supabase) — "Continue with Google" on the auth form +
+        `/auth/callback` route (exchangeCodeForSession). **Gated** behind
+        `NEXT_PUBLIC_GOOGLE_OAUTH=1` (hidden by default); activate by enabling the
+        Google provider in Supabase + setting the flag. Button render verified;
+        setup documented in DEPLOY.md §5
 - ⬜ HK (HKEXnews) + KR (DART) filings (needs DART key); later Futu/KIS realtime
 
 ---
