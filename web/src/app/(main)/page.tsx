@@ -1,6 +1,9 @@
-import {Board} from '@/components/Board';
+import {HomeHub} from '@/components/HomeHub';
 
-/** Data-first home: the markets overview (popular stocks + news + discussion). */
+/**
+ * Data-first home, as an information-source hub: a live Markets strip over
+ * module cards (Hot stocks, News, Discussion) that link to their full pages.
+ */
 export default function HomePage() {
-  return <Board variant="markets" />;
+  return <HomeHub />;
 }

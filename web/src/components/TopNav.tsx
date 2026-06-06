@@ -107,6 +107,16 @@ export function TopNav() {
           >
             Hot
           </Link>
+          <Link
+            href="/news"
+            aria-current={pathname === '/news' ? 'page' : undefined}
+            className={cx(
+              'rounded-full px-3 py-1.5 text-[13px] font-medium hover:opacity-80',
+              pathname === '/news' ? t.accentText : t.sub,
+            )}
+          >
+            News
+          </Link>
           {user && (
             <Link
               href="/watchlist"
