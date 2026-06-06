@@ -30,6 +30,7 @@ import (
 	"github.com/wombow-ai/tickwind/internal/store/postgres"
 	"github.com/wombow-ai/tickwind/internal/stream"
 	"github.com/wombow-ai/tickwind/internal/tickertick"
+	"github.com/wombow-ai/tickwind/internal/topics"
 	"github.com/wombow-ai/tickwind/internal/xueqiu"
 )
 
@@ -124,7 +125,10 @@ func main() {
 		apewisdomClient,
 		alphavantage.New(cfg.AlphaVantageKey),
 	}
-	scheduler := ingest.NewScheduler(st, edgarClient, newsClient, social, signals, apewisdomClient, ingestTickers, cfg.IngestEvery, log)
+	// Trending topics are recomputed each cycle from ingested news; the cache is
+	// shared with the API (lock-free reads).
+	topicCache := topics.NewCache()
+	scheduler := ingest.NewScheduler(st, edgarClient, newsClient, social, signals, apewisdomClient, topicCache, ingestTickers, cfg.IngestEvery, log)
 	go scheduler.Run(ctx)
 
 	// bars feeds the sparkline endpoint; nil (disabled) without Alpaca creds.
@@ -141,7 +145,7 @@ func main() {
 
 	srv := &http.Server{
 		Addr:              ":" + cfg.Port,
-		Handler:           api.New(st, hub, enricher, verifier, bars, log),
+		Handler:           api.New(st, hub, enricher, verifier, bars, topicCache, log),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 

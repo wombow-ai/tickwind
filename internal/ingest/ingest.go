@@ -14,6 +14,7 @@ import (
 	"github.com/wombow-ai/tickwind/internal/edgar"
 	"github.com/wombow-ai/tickwind/internal/finnhub"
 	"github.com/wombow-ai/tickwind/internal/store"
+	"github.com/wombow-ai/tickwind/internal/topics"
 )
 
 // TickerSource returns the tickers to ingest this cycle.
@@ -44,21 +45,22 @@ type HotSource interface {
 }
 
 type Scheduler struct {
-	store   store.Store
-	edgar   *edgar.Client
-	finnhub *finnhub.Client // optional; nil disables news ingestion
-	social  []SocialSource
-	signals []SignalSource
-	hot     HotSource // optional; nil disables the trending hot list
-	tickers TickerSource
-	every   time.Duration
-	log     *slog.Logger
+	store      store.Store
+	edgar      *edgar.Client
+	finnhub    *finnhub.Client // optional; nil disables news ingestion
+	social     []SocialSource
+	signals    []SignalSource
+	hot        HotSource     // optional; nil disables the trending hot list
+	topicCache *topics.Cache // optional; nil disables the topics strip
+	tickers    TickerSource
+	every      time.Duration
+	log        *slog.Logger
 }
 
-// NewScheduler builds the filings+news+social+signals+hotlist scheduler. fh and
-// hot may be nil to disable news / the hot list; social/signals may be empty.
-func NewScheduler(st store.Store, ec *edgar.Client, fh *finnhub.Client, social []SocialSource, signals []SignalSource, hot HotSource, tickers TickerSource, every time.Duration, log *slog.Logger) *Scheduler {
-	return &Scheduler{store: st, edgar: ec, finnhub: fh, social: social, signals: signals, hot: hot, tickers: tickers, every: every, log: log}
+// NewScheduler builds the filings+news+social+signals+hotlist+topics scheduler.
+// fh, hot and topicCache may be nil to disable those; social/signals may be empty.
+func NewScheduler(st store.Store, ec *edgar.Client, fh *finnhub.Client, social []SocialSource, signals []SignalSource, hot HotSource, topicCache *topics.Cache, tickers TickerSource, every time.Duration, log *slog.Logger) *Scheduler {
+	return &Scheduler{store: st, edgar: ec, finnhub: fh, social: social, signals: signals, hot: hot, topicCache: topicCache, tickers: tickers, every: every, log: log}
 }
 
 // Run blocks until ctx is cancelled, refreshing every `every`.
@@ -94,6 +96,41 @@ func (s *Scheduler) runOnce(ctx context.Context) {
 	s.ingestSignals(ctx, tickers)
 	// The trending leaderboard is market-wide (not tied to the watchlist).
 	s.ingestHotList(ctx)
+	// Trending topics are derived from the news just ingested across all tickers.
+	s.ingestTopics(ctx, tickers)
+}
+
+// ingestTopics recomputes the trending-topics snapshot from the recent news
+// across all tickers (already in the store), keyed by article id so a story
+// tagged to several tickers is counted once.
+func (s *Scheduler) ingestTopics(ctx context.Context, tickers []string) {
+	if s.topicCache == nil {
+		return
+	}
+	seen := make(map[string]int) // news id -> index in arts
+	var arts []topics.Article
+	for _, tk := range tickers {
+		items, err := s.store.ListNews(ctx, tk, 40)
+		if err != nil {
+			continue
+		}
+		for _, n := range items {
+			if idx, ok := seen[n.ID]; ok {
+				arts[idx].Tickers = append(arts[idx].Tickers, n.Ticker)
+				continue
+			}
+			seen[n.ID] = len(arts)
+			arts = append(arts, topics.Article{
+				Headline:    n.Headline,
+				Summary:     n.Summary,
+				Tickers:     []string{n.Ticker},
+				PublishedAt: n.Published,
+			})
+		}
+	}
+	snap := topics.Recompute(time.Now().UTC(), arts)
+	s.topicCache.Set(snap)
+	s.log.Info("recomputed topics", "count", len(snap.Topics))
 }
 
 func (s *Scheduler) ingestFilings(ctx context.Context, ticker string) {

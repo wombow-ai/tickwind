@@ -23,6 +23,7 @@ import (
 	"github.com/wombow-ai/tickwind/internal/clip"
 	"github.com/wombow-ai/tickwind/internal/enrich"
 	"github.com/wombow-ai/tickwind/internal/store"
+	"github.com/wombow-ai/tickwind/internal/topics"
 )
 
 // QuoteStream is the subset of the live hub the API needs to stream prices.
@@ -37,6 +38,12 @@ type BarSource interface {
 	DailyBars(ctx context.Context, ticker string) ([]float64, error)
 }
 
+// TopicSource provides the latest trending-topics snapshot. nil disables the
+// topics endpoint (returns an empty list).
+type TopicSource interface {
+	Get() topics.Snapshot
+}
+
 type Server struct {
 	store  store.Store
 	hub    QuoteStream
@@ -44,11 +51,12 @@ type Server struct {
 	enrich enrich.Enricher
 	auth   *auth.Verifier
 	bars   BarSource
+	topics TopicSource
 	log    *slog.Logger
 }
 
-func New(st store.Store, hub QuoteStream, enricher enrich.Enricher, verifier *auth.Verifier, bars BarSource, log *slog.Logger) http.Handler {
-	s := &Server{store: st, hub: hub, clip: clip.NewFetcher(), enrich: enricher, auth: verifier, bars: bars, log: log}
+func New(st store.Store, hub QuoteStream, enricher enrich.Enricher, verifier *auth.Verifier, bars BarSource, topicSrc TopicSource, log *slog.Logger) http.Handler {
+	s := &Server{store: st, hub: hub, clip: clip.NewFetcher(), enrich: enricher, auth: verifier, bars: bars, topics: topicSrc, log: log}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", s.health)
 
@@ -72,6 +80,7 @@ func New(st store.Store, hub QuoteStream, enricher enrich.Enricher, verifier *au
 	mux.HandleFunc("GET /v1/news", s.getNewsBatch)
 	mux.HandleFunc("GET /v1/social", s.getSocialBatch)
 	mux.HandleFunc("GET /v1/hot", s.getHot)
+	mux.HandleFunc("GET /v1/topics", s.getTopics)
 	mux.HandleFunc("GET /v1/stream", s.getStream)
 
 	// auth.Middleware attaches the user when a valid bearer token is present;
@@ -368,11 +377,30 @@ func (s *Server) getNewsBatch(w http.ResponseWriter, r *http.Request) {
 			all = append(all, n)
 		}
 	}
+	// Optional ?topic= filter: keep only articles matching a hot-topic's keywords.
+	if topic := strings.TrimSpace(r.URL.Query().Get("topic")); topic != "" {
+		kept := all[:0]
+		for _, n := range all {
+			if topics.Match(topic, n.Headline+" "+n.Summary) {
+				kept = append(kept, n)
+			}
+		}
+		all = kept
+	}
 	sort.Slice(all, func(i, j int) bool { return all[i].Published.After(all[j].Published) })
 	if len(all) > maxFeed {
 		all = all[:maxFeed]
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"count": len(all), "news": all})
+}
+
+// getTopics returns the trending-topics snapshot (empty when disabled).
+func (s *Server) getTopics(w http.ResponseWriter, _ *http.Request) {
+	if s.topics == nil {
+		writeJSON(w, http.StatusOK, topics.Snapshot{Window: "24h", Topics: []topics.HotTopic{}})
+		return
+	}
+	writeJSON(w, http.StatusOK, s.topics.Get())
 }
 
 // getSocialBatch returns recent social posts merged across several tickers (the

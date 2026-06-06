@@ -53,6 +53,7 @@ func serverWithBars(bars BarSource) *httptest.Server {
 		memory.New(), stream.NewHub(), enrich.Noop{},
 		auth.NewVerifier(testSecret, ""),
 		bars,
+		nil, // no topic source in tests
 		slog.New(slog.NewTextHandler(io.Discard, nil)),
 	)
 	return httptest.NewServer(h)
