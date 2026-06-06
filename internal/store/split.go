@@ -89,6 +89,14 @@ func (s Split) RecentInsiderBuys(ctx context.Context, since time.Time) ([]Inside
 	return s.Market.RecentInsiderBuys(ctx, since)
 }
 
+func (s Split) MarkForm4Seen(ctx context.Context, accessions []string, filedDate time.Time) error {
+	return s.Market.MarkForm4Seen(ctx, accessions, filedDate)
+}
+
+func (s Split) SeenForm4Since(ctx context.Context, since time.Time) ([]string, error) {
+	return s.Market.SeenForm4Since(ctx, since)
+}
+
 // ── User: per-user state (local/ephemeral) ───────────────────────────────
 
 func (s Split) Watchlist(ctx context.Context, userID string) ([]string, error) {

@@ -129,6 +129,34 @@ func mustSaveFilings(t *testing.T, s *Store, ticker string, f []store.Filing) {
 	}
 }
 
+func TestSeenForm4(t *testing.T) {
+	s := New()
+	ctx := context.Background()
+	old := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	recent := time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)
+
+	if err := s.MarkForm4Seen(ctx, []string{"acc-old"}, old); err != nil {
+		t.Fatalf("mark old: %v", err)
+	}
+	if err := s.MarkForm4Seen(ctx, []string{"acc-a", "acc-b", "", "acc-a"}, recent); err != nil {
+		t.Fatalf("mark recent: %v", err)
+	}
+
+	// Only accessions on/after `since` come back (the empty one is dropped, the
+	// duplicate is collapsed by the map).
+	got, err := s.SeenForm4Since(ctx, time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatalf("seen since: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("got %v, want [acc-a acc-b]", got)
+	}
+	set := map[string]bool{got[0]: true, got[1]: true}
+	if !set["acc-a"] || !set["acc-b"] || set["acc-old"] || set[""] {
+		t.Errorf("unexpected seen set: %v", got)
+	}
+}
+
 func mustUpsertQuote(t *testing.T, s *Store, q store.Quote) {
 	t.Helper()
 	if err := s.UpsertQuote(context.Background(), q); err != nil {

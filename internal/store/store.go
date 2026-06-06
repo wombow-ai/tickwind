@@ -169,6 +169,13 @@ type Store interface {
 	SaveInsiderBuys(ctx context.Context, buys []InsiderBuy) error
 	RecentInsiderBuys(ctx context.Context, since time.Time) ([]InsiderBuy, error)
 
+	// SeenForm4 records which Form-4 accessions have already been fetched (a
+	// buy or not), so a restart skips re-fetching them instead of re-sweeping
+	// the whole SEC index. MarkForm4Seen upserts; SeenForm4Since returns the
+	// accessions seen on/after `since` (the only window the ingestor rescans).
+	MarkForm4Seen(ctx context.Context, accessions []string, filedDate time.Time) error
+	SeenForm4Since(ctx context.Context, since time.Time) ([]string, error)
+
 	// Watchlist is one user's tracked tickers, in insertion order.
 	Watchlist(ctx context.Context, userID string) ([]string, error)
 	AddToWatchlist(ctx context.Context, userID, ticker string) error

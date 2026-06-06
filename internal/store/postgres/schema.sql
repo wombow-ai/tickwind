@@ -121,6 +121,15 @@ CREATE TABLE IF NOT EXISTS insider_buys (
 
 CREATE INDEX IF NOT EXISTS insider_buys_filed_idx ON insider_buys (filed_date DESC);
 
+-- Form-4 accessions already fetched (a buy or not), so a restart skips
+-- re-fetching them instead of re-sweeping the SEC index. Public-domain metadata.
+CREATE TABLE IF NOT EXISTS seen_form4 (
+    accession   text PRIMARY KEY,
+    filed_date  timestamptz
+);
+
+CREATE INDEX IF NOT EXISTS seen_form4_filed_idx ON seen_form4 (filed_date DESC);
+
 -- Migrate the legacy single-tenant watchlist (ticker PK, no user) to per-user.
 -- Runs at most once: the condition is false after user_id exists.
 DO $$

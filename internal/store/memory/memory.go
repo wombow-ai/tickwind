@@ -22,6 +22,7 @@ type Store struct {
 	signals   map[string]map[string]store.Signal // ticker -> source -> Signal
 	hot       map[string][]store.HotStock        // board -> ranked snapshot
 	insiders  map[string]store.InsiderBuy        // accession -> insider buy
+	seenF4    map[string]time.Time               // form-4 accession -> filed date
 	watchlist map[string][]string                // userID -> ordered tickers
 	clips     map[string]map[string]store.Clip   // userID -> clipID -> Clip
 }
@@ -36,6 +37,7 @@ func New() *Store {
 		signals:   make(map[string]map[string]store.Signal),
 		hot:       make(map[string][]store.HotStock),
 		insiders:  make(map[string]store.InsiderBuy),
+		seenF4:    make(map[string]time.Time),
 		watchlist: make(map[string][]string),
 		clips:     make(map[string]map[string]store.Clip),
 	}
@@ -219,6 +221,29 @@ func (s *Store) RecentInsiderBuys(_ context.Context, since time.Time) ([]store.I
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].FiledDate.After(out[j].FiledDate) })
+	return out, nil
+}
+
+func (s *Store) MarkForm4Seen(_ context.Context, accessions []string, filedDate time.Time) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, a := range accessions {
+		if a != "" {
+			s.seenF4[a] = filedDate
+		}
+	}
+	return nil
+}
+
+func (s *Store) SeenForm4Since(_ context.Context, since time.Time) ([]string, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([]string, 0)
+	for a, d := range s.seenF4 {
+		if !d.Before(since) {
+			out = append(out, a)
+		}
+	}
 	return out, nil
 }
 

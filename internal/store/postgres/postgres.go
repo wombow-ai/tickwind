@@ -450,6 +450,52 @@ FROM insider_buys WHERE filed_date >= $1 ORDER BY filed_date DESC`
 	return out, nil
 }
 
+// MarkForm4Seen records Form-4 accessions as already fetched, deduped on
+// accession (existing rows keep their original filed_date).
+func (s *Store) MarkForm4Seen(ctx context.Context, accessions []string, filedDate time.Time) error {
+	const q = `INSERT INTO seen_form4 (accession, filed_date) VALUES ($1, $2)
+ON CONFLICT (accession) DO NOTHING`
+	batch := &pgx.Batch{}
+	for _, a := range accessions {
+		if a != "" {
+			batch.Queue(q, a, filedDate)
+		}
+	}
+	if batch.Len() == 0 {
+		return nil
+	}
+	br := s.pool.SendBatch(ctx, batch)
+	defer br.Close()
+	for i := 0; i < batch.Len(); i++ {
+		if _, err := br.Exec(); err != nil {
+			return fmt.Errorf("postgres: mark form4 seen: %w", err)
+		}
+	}
+	return nil
+}
+
+// SeenForm4Since returns Form-4 accessions seen on/after since.
+func (s *Store) SeenForm4Since(ctx context.Context, since time.Time) ([]string, error) {
+	const q = `SELECT accession FROM seen_form4 WHERE filed_date >= $1`
+	rows, err := s.pool.Query(ctx, q, since)
+	if err != nil {
+		return nil, fmt.Errorf("postgres: seen form4: %w", err)
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var a string
+		if err := rows.Scan(&a); err != nil {
+			return nil, fmt.Errorf("postgres: scan seen form4: %w", err)
+		}
+		out = append(out, a)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("postgres: iterate seen form4: %w", err)
+	}
+	return out, nil
+}
+
 // Watchlist returns one user's tracked tickers, in insertion order.
 func (s *Store) Watchlist(ctx context.Context, userID string) ([]string, error) {
 	rows, err := s.pool.Query(ctx, `SELECT ticker FROM watchlist WHERE user_id = $1 ORDER BY added_at`, userID)

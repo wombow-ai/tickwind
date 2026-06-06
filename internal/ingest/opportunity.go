@@ -31,7 +31,7 @@ type OpportunityIngestor struct {
 	backfill int // days of Form-4 history to seed on startup
 	log      *slog.Logger
 
-	seen     map[string]struct{} // accessions fetched this run (skip re-fetch)
+	seen     map[string]struct{} // processed accessions (seeded from store on start)
 	shares   map[int]int64       // cik -> shares outstanding (cached)
 	sharesAt time.Time
 }
@@ -47,6 +47,7 @@ func NewOpportunityIngestor(st store.Store, sc *sec.Client, prices PriceSnapshot
 
 // Run blocks until ctx is cancelled.
 func (o *OpportunityIngestor) Run(ctx context.Context) {
+	o.loadSeen(ctx) // skip re-fetching Form-4s already processed before a restart
 	o.refreshShares(ctx)
 	o.recompute(ctx) // surface any already-persisted buys immediately
 	now := time.Now().UTC()
@@ -77,7 +78,9 @@ func (o *OpportunityIngestor) Run(ctx context.Context) {
 }
 
 // ingestDay fetches the daily Form-4 index for date and persists the open-market
-// buys from filings not already seen this run.
+// buys from filings not already seen (this run or, via the persisted seen-set, a
+// previous one). Successfully-fetched accessions are recorded so a restart skips
+// re-fetching them.
 func (o *OpportunityIngestor) ingestDay(ctx context.Context, date time.Time) {
 	refs, err := o.sec.DailyForm4(ctx, date)
 	if err != nil {
@@ -86,18 +89,23 @@ func (o *OpportunityIngestor) ingestDay(ctx context.Context, date time.Time) {
 		return
 	}
 	var buys []store.InsiderBuy
+	var seenNow []string // accessions fetched successfully this pass → persist
 	fetched := 0
 	for _, ref := range refs {
 		if ctx.Err() != nil {
 			return
 		}
 		if _, ok := o.seen[ref.Accession]; ok {
-			continue
+			continue // already processed (this run or before a restart)
 		}
-		o.seen[ref.Accession] = struct{}{}
 		fetched++
 		f, err := o.sec.FetchForm4(ctx, ref)
-		if err != nil || !f.HasBuys() {
+		if err != nil {
+			continue // transient fetch error → not marked seen, retried on a later pass
+		}
+		o.seen[ref.Accession] = struct{}{}
+		seenNow = append(seenNow, ref.Accession)
+		if !f.HasBuys() {
 			continue // most Form 4s are awards/sales, not buys
 		}
 		var sh float64
@@ -121,6 +129,11 @@ func (o *OpportunityIngestor) ingestDay(ctx context.Context, date time.Time) {
 			FilingURL: fmt.Sprintf("https://www.sec.gov/Archives/edgar/data/%d/%s/", ref.CIK, accNo),
 		})
 	}
+	if len(seenNow) > 0 {
+		if err := o.store.MarkForm4Seen(ctx, seenNow, date); err != nil {
+			o.log.Warn("opportunity: mark form-4 seen", "err", err)
+		}
+	}
 	if err := o.store.SaveInsiderBuys(ctx, buys); err != nil {
 		o.log.Warn("opportunity: save insider buys", "err", err)
 		return
@@ -128,6 +141,27 @@ func (o *OpportunityIngestor) ingestDay(ctx context.Context, date time.Time) {
 	if fetched > 0 {
 		o.log.Info("opportunity: ingested form-4", "date", date.Format("2006-01-02"), "fetched", fetched, "buys", len(buys))
 	}
+}
+
+// loadSeen seeds the in-memory seen-set from persisted processed accessions, so
+// a restart skips re-fetching Form-4s we already handled (no full re-sweep). The
+// window must cover everything the ingestor rescans — the backfill span plus the
+// daily forward catch-up — with margin.
+func (o *OpportunityIngestor) loadSeen(ctx context.Context) {
+	days := o.backfill + 7
+	if days < 40 {
+		days = 40
+	}
+	since := time.Now().UTC().AddDate(0, 0, -days)
+	accs, err := o.store.SeenForm4Since(ctx, since)
+	if err != nil {
+		o.log.Warn("opportunity: load seen form-4", "err", err)
+		return
+	}
+	for _, a := range accs {
+		o.seen[a] = struct{}{}
+	}
+	o.log.Info("opportunity: loaded seen form-4", "count", len(accs))
 }
 
 // refreshShares pulls shares-outstanding from the last few dei frames and merges.
