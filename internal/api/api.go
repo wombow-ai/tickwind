@@ -22,6 +22,7 @@ import (
 	"github.com/wombow-ai/tickwind/internal/auth"
 	"github.com/wombow-ai/tickwind/internal/clip"
 	"github.com/wombow-ai/tickwind/internal/enrich"
+	"github.com/wombow-ai/tickwind/internal/guru"
 	"github.com/wombow-ai/tickwind/internal/opportunity"
 	"github.com/wombow-ai/tickwind/internal/store"
 	"github.com/wombow-ai/tickwind/internal/topics"
@@ -50,6 +51,12 @@ type OpportunitySource interface {
 	Get() []opportunity.Stock
 }
 
+// GuruSource provides the latest Guru-watch rail (curated-KOL posts). nil →
+// empty list.
+type GuruSource interface {
+	Get() []guru.Item
+}
+
 type Server struct {
 	store  store.Store
 	hub    QuoteStream
@@ -59,11 +66,12 @@ type Server struct {
 	bars   BarSource
 	topics TopicSource
 	opps   OpportunitySource
+	gurus  GuruSource
 	log    *slog.Logger
 }
 
-func New(st store.Store, hub QuoteStream, enricher enrich.Enricher, verifier *auth.Verifier, bars BarSource, topicSrc TopicSource, oppSrc OpportunitySource, log *slog.Logger) http.Handler {
-	s := &Server{store: st, hub: hub, clip: clip.NewFetcher(), enrich: enricher, auth: verifier, bars: bars, topics: topicSrc, opps: oppSrc, log: log}
+func New(st store.Store, hub QuoteStream, enricher enrich.Enricher, verifier *auth.Verifier, bars BarSource, topicSrc TopicSource, oppSrc OpportunitySource, guruSrc GuruSource, log *slog.Logger) http.Handler {
+	s := &Server{store: st, hub: hub, clip: clip.NewFetcher(), enrich: enricher, auth: verifier, bars: bars, topics: topicSrc, opps: oppSrc, gurus: guruSrc, log: log}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", s.health)
 
@@ -89,6 +97,7 @@ func New(st store.Store, hub QuoteStream, enricher enrich.Enricher, verifier *au
 	mux.HandleFunc("GET /v1/hot", s.getHot)
 	mux.HandleFunc("GET /v1/topics", s.getTopics)
 	mux.HandleFunc("GET /v1/opportunities", s.getOpportunities)
+	mux.HandleFunc("GET /v1/gurus", s.getGurus)
 	mux.HandleFunc("GET /v1/stream", s.getStream)
 
 	// auth.Middleware attaches the user when a valid bearer token is present;
@@ -416,6 +425,23 @@ func (s *Server) getOpportunities(w http.ResponseWriter, r *http.Request) {
 		board = board[:lim]
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"count": len(board), "stocks": board})
+}
+
+// getGurus returns the Guru-watch rail (recent curated-KOL posts with the
+// tickers they mention), newest first. Always 200 with a (possibly empty) list;
+// ?limit= caps the rows.
+func (s *Server) getGurus(w http.ResponseWriter, r *http.Request) {
+	var rail []guru.Item
+	if s.gurus != nil {
+		rail = s.gurus.Get()
+	}
+	if rail == nil {
+		rail = []guru.Item{}
+	}
+	if lim := queryLimit(r, 0); lim > 0 && len(rail) > lim {
+		rail = rail[:lim]
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"count": len(rail), "items": rail})
 }
 
 // getTopics returns the trending-topics snapshot (empty when disabled).

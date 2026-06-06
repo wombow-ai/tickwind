@@ -22,6 +22,7 @@ import (
 	"github.com/wombow-ai/tickwind/internal/edgar"
 	"github.com/wombow-ai/tickwind/internal/enrich"
 	"github.com/wombow-ai/tickwind/internal/finnhub"
+	"github.com/wombow-ai/tickwind/internal/guru"
 	"github.com/wombow-ai/tickwind/internal/ingest"
 	"github.com/wombow-ai/tickwind/internal/opportunity"
 	"github.com/wombow-ai/tickwind/internal/reddit"
@@ -31,6 +32,7 @@ import (
 	"github.com/wombow-ai/tickwind/internal/store/memory"
 	"github.com/wombow-ai/tickwind/internal/store/postgres"
 	"github.com/wombow-ai/tickwind/internal/stream"
+	"github.com/wombow-ai/tickwind/internal/substack"
 	"github.com/wombow-ai/tickwind/internal/tickertick"
 	"github.com/wombow-ai/tickwind/internal/topics"
 	"github.com/wombow-ai/tickwind/internal/xueqiu"
@@ -133,6 +135,13 @@ func main() {
 	scheduler := ingest.NewScheduler(st, edgarClient, newsClient, social, signals, apewisdomClient, topicCache, ingestTickers, cfg.IngestEvery, log)
 	go scheduler.Run(ctx)
 
+	// Guru-watch rail: curated finance-KOL newsletters (public RSS) → the tickers
+	// they mention. Needs no API key, so it always runs (independent of prices).
+	guruCache := guru.NewCache()
+	guruIngestor := ingest.NewGuruIngestor(substack.New(), substack.Feeds, guruCache, 60, 2*time.Hour, log)
+	go guruIngestor.Run(ctx)
+	log.Info("guru-watch rail enabled", "feeds", len(substack.Feeds))
+
 	// Opportunity board (small-cap insider buys); shared cache, populated below
 	// when Alpaca prices are available (needed for market cap).
 	oppCache := opportunity.NewCache()
@@ -157,7 +166,7 @@ func main() {
 
 	srv := &http.Server{
 		Addr:              ":" + cfg.Port,
-		Handler:           api.New(st, hub, enricher, verifier, bars, topicCache, oppCache, log),
+		Handler:           api.New(st, hub, enricher, verifier, bars, topicCache, oppCache, guruCache, log),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 

@@ -28,6 +28,7 @@ func newTestServer() *httptest.Server {
 		nil, // no bar source in tests
 		nil, // no topic source in tests
 		nil, // no opportunity source in tests
+		nil, // no guru source in tests
 		slog.New(slog.NewTextHandler(io.Discard, nil)),
 	)
 	return httptest.NewServer(h)
