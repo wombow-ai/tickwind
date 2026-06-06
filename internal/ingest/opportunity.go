@@ -48,14 +48,15 @@ func NewOpportunityIngestor(st store.Store, sc *sec.Client, prices PriceSnapshot
 // Run blocks until ctx is cancelled.
 func (o *OpportunityIngestor) Run(ctx context.Context) {
 	o.refreshShares(ctx)
+	o.recompute(ctx) // surface any already-persisted buys immediately
 	now := time.Now().UTC()
 	for d := o.backfill; d >= 0; d-- { // oldest → newest
 		if ctx.Err() != nil {
 			return
 		}
 		o.ingestDay(ctx, now.AddDate(0, 0, -d))
+		o.recompute(ctx) // progressive: fill the board as each day completes
 	}
-	o.recompute(ctx)
 
 	t := time.NewTicker(o.every)
 	defer t.Stop()
@@ -135,6 +136,7 @@ func (o *OpportunityIngestor) refreshShares(ctx context.Context) {
 	for _, qd := range recentQuarters(time.Now().UTC(), 3) {
 		m, err := o.sec.Shares(ctx, qd[0], qd[1])
 		if err != nil {
+			o.log.Warn("opportunity: shares fetch failed", "quarter", fmt.Sprintf("CY%dQ%d", qd[0], qd[1]), "err", err)
 			continue
 		}
 		for cik, v := range m {
@@ -146,8 +148,8 @@ func (o *OpportunityIngestor) refreshShares(ctx context.Context) {
 	if len(merged) > 0 {
 		o.shares = merged
 		o.sharesAt = time.Now().UTC()
-		o.log.Info("opportunity: refreshed shares", "ciks", len(merged))
 	}
+	o.log.Info("opportunity: refreshed shares", "ciks", len(merged))
 }
 
 // recompute rebuilds the board from the trailing-30-day buys + live prices.
