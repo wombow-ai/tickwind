@@ -83,7 +83,10 @@ Status: ✅ done · 🟡 in progress · ⬜ todo
         every public tile is live after redeploy
   - ⬜ Redeploy VPS backend multi-tenant + Supabase (`DATABASE_URL` pooler +
         `SUPABASE_JWT_SECRET`, `WATCHLIST` set)
-  - ⬜ Mobile nav polish; optional Google OAuth
+  - ✅ Mobile/responsive polish: TopNav fits one line at 375px (search collapses to
+        an icon → dropdown row; theme + search are 36px tap targets; Log in/Sign up
+        nowrap). Board + detail reflow cleanly. Verified at 375px in light + dark
+  - ⬜ Optional Google OAuth
 - ⬜ HK (HKEXnews) + KR (DART) filings (needs DART key); later Futu/KIS realtime
 
 ---

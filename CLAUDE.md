@@ -124,6 +124,8 @@ feature-flagged plugin, never on the critical path. Web only.
 - **Routes**: route groups — `(main)` = chrome (TopNav+Footer): `/`, `/stock/[ticker]`,
   `/settings`, `/announcements`; `(auth)` = centered: `/login`, `/signup`; `/designs/*`
   kept as references (self-contained). `/stock/[ticker]` is SSR with SEO metadata.
+- **Responsive**: mobile-first; TopNav collapses the ticker search to an icon →
+  dropdown row < `sm`; one-line nav at 375px; board/detail reflow to a single column.
 - **ChangeLine renders** the day's change (signed %/▲▼) on the board tile + detail
   header whenever `quote.prev_close` is present (real Alpaca data). **Sparkline
   renders** on the detail header from `GET /v1/stocks/{ticker}/bars` (Alpaca daily

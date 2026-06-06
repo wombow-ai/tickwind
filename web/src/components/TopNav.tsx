@@ -27,12 +27,14 @@ export function TopNav() {
   const pathname = usePathname();
   const [query, setQuery] = useState('');
   const [menu, setMenu] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
 
   function search(e: React.FormEvent) {
     e.preventDefault();
     const ticker = query.trim().toUpperCase();
     if (!ticker) return;
     setQuery('');
+    setSearchOpen(false);
     router.push(`/stock/${encodeURIComponent(ticker)}`);
   }
 
@@ -72,7 +74,19 @@ export function TopNav() {
           </div>
         </form>
 
-        <div className="ml-auto flex items-center gap-2">
+        <div className="ml-auto flex items-center gap-1.5 sm:gap-2">
+          <button
+            onClick={() => setSearchOpen(o => !o)}
+            aria-label="Search a ticker"
+            aria-expanded={searchOpen}
+            className={cx(
+              'inline-flex h-9 w-9 items-center justify-center rounded-full border sm:hidden',
+              t.border,
+              t.ghost,
+            )}
+          >
+            <Search size={16} />
+          </button>
           <Link
             href="/announcements"
             className={cx(
@@ -87,7 +101,11 @@ export function TopNav() {
           <button
             onClick={toggle}
             aria-label="Toggle theme"
-            className={cx('rounded-full border p-2', t.border, t.ghost)}
+            className={cx(
+              'inline-flex h-9 w-9 items-center justify-center rounded-full border',
+              t.border,
+              t.ghost,
+            )}
           >
             {dark ? <Sun size={15} /> : <Moon size={15} />}
           </button>
@@ -97,7 +115,7 @@ export function TopNav() {
               <Link
                 href="/login"
                 className={cx(
-                  'rounded-full px-3.5 py-1.5 text-[13px] font-medium',
+                  'whitespace-nowrap rounded-full px-3 py-1.5 text-[13px] font-medium sm:px-3.5',
                   t.ghost,
                 )}
               >
@@ -106,7 +124,7 @@ export function TopNav() {
               <Link
                 href="/signup"
                 className={cx(
-                  'rounded-full px-3.5 py-1.5 text-[13px] font-semibold shadow-sm',
+                  'whitespace-nowrap rounded-full px-3 py-1.5 text-[13px] font-semibold shadow-sm sm:px-3.5',
                   btnPrimary(dark),
                 )}
               >
@@ -123,6 +141,32 @@ export function TopNav() {
           )}
         </div>
       </div>
+
+      {searchOpen && (
+        <form onSubmit={search} className={cx('border-t px-4 pb-3 pt-2 sm:hidden', t.border)}>
+          <div
+            className={cx(
+              'flex items-center gap-2 rounded-full border px-3.5 py-2.5',
+              t.border,
+              t.surf2,
+            )}
+          >
+            <Search size={16} className={t.faint} />
+            <input
+              autoFocus
+              value={query}
+              onChange={e => setQuery(e.target.value)}
+              placeholder="Search a ticker…"
+              className={cx(
+                'flex-1 bg-transparent text-[14px] uppercase tracking-wide outline-none',
+                dark
+                  ? 'text-slate-100 placeholder:text-slate-500'
+                  : 'text-slate-900 placeholder:text-slate-400',
+              )}
+            />
+          </div>
+        </form>
+      )}
     </div>
   );
 }
