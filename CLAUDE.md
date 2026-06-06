@@ -156,8 +156,10 @@ feature-flagged plugin, never on the critical path. Web only.
 ## Tests
 - `make test` = `go test ./cmd/... ./internal/...` (scoped to skip `web/node_modules`).
 - Covered: memory store, clip title extraction, alpaca session classifier, API
-  httptest flows. Network-dependent clients (edgar/finnhub/stocktwits/reddit) are
-  exercised live during dev runs; add httptest-mocked unit tests when convenient.
+  httptest flows (health, watchlist CRUD, clip→social), and the **bars endpoints**
+  (`internal/api/bars_test.go`: `/v1/bars` dedupe + cap + nil-source→empty via a
+  fake `BarSource`, and the single `/v1/stocks/{t}/bars`). Network-dependent clients
+  (edgar/finnhub/stocktwits/reddit) are exercised live during dev runs.
 
 ## Environment notes (gotchas for future sessions)
 - **Go proxy truncates large module zips** (e.g. `golang.org/x/text`) via

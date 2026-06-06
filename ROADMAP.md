@@ -17,7 +17,8 @@ Status: ✅ done · 🟡 in progress · ⬜ todo
 - ⬜ Verify Postgres end-to-end on the VM (blocked on provisioning the Oracle VM)
 - ✅ Tests: table-driven unit tests — memory store (CRUD/order/dedupe/copy), clip
       (og:title/title/entities/scheme), alpaca (session classifier), API (httptest:
-      health, watchlist CRUD, 400/404, clip→social). `make test` green
+      health, watchlist CRUD, 400/404, clip→social, bars dedupe/cap/nil-source).
+      `make test` green
 
 ## Phase 2 — Prices + News  ✅
 - ✅ Alpaca REST client: latest trade incl. extended-hours/overnight (feed-aware;
