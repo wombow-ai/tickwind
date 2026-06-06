@@ -1,79 +1,80 @@
+'use client';
+
+import {X} from 'lucide-react';
 import Link from 'next/link';
 import type {Quote, Security} from '@/lib/api';
-import {MarketBadge} from '@/components/MarketBadge';
-import {PriceTag} from '@/components/PriceTag';
-
-interface StockCardProps {
-  security: Security;
-  /** Latest live price, or `undefined` until one arrives. */
-  quote?: Quote;
-}
+import {useDark} from '@/lib/theme';
+import {cx, marketCurrency, tok} from '@/lib/ui';
+import {MarketBadge, PriceTag, SessionBadge} from '@/components/ui/atoms';
 
 /**
- * A watchlist tile linking to the stock detail page. Built from a resolved
- * {@link Security} plus an optional live {@link Quote}; the parent decides how
- * to handle load/error per ticker and supplies prices as they stream in.
+ * A watchlist/board tile: ticker, name, live price and session. Links to the
+ * stock's detail page. When `onRemove` is set, a hover affordance removes it.
  */
-export function StockCard({security, quote}: StockCardProps) {
-  return (
-    <Link
-      href={{pathname: '/stock', query: {ticker: security.ticker}}}
-      className="group relative flex flex-col gap-4 rounded-2xl border border-white/10 bg-white/[0.03] p-5 transition hover:border-sky-400/40 hover:bg-white/[0.06] focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400/60"
-    >
-      <div className="flex items-start justify-between gap-3">
-        <span className="font-mono text-lg font-bold tracking-tight text-zinc-100">
-          {security.ticker}
-        </span>
-        <MarketBadge market={security.market} />
-      </div>
-      <PriceTag quote={quote} />
-      <p className="line-clamp-2 text-sm text-zinc-400 group-hover:text-zinc-300">
-        {security.name}
-      </p>
-      <span className="mt-auto inline-flex items-center gap-1 text-xs font-medium text-sky-400/80 group-hover:text-sky-300">
-        View filings
-        <span aria-hidden className="transition group-hover:translate-x-0.5">
-          →
-        </span>
-      </span>
-    </Link>
-  );
-}
-
-/** Skeleton placeholder matching {@link StockCard}'s footprint. */
-export function StockCardSkeleton({ticker}: {ticker: string}) {
-  return (
-    <div className="flex flex-col gap-4 rounded-2xl border border-white/10 bg-white/[0.03] p-5">
-      <div className="flex items-start justify-between gap-3">
-        <span className="font-mono text-lg font-bold tracking-tight text-zinc-300">
-          {ticker}
-        </span>
-        <span className="h-5 w-9 animate-pulse rounded-full bg-white/10" />
-      </div>
-      <span className="h-4 w-3/4 animate-pulse rounded bg-white/10" />
-      <span className="mt-auto h-4 w-1/3 animate-pulse rounded bg-white/5" />
-    </div>
-  );
-}
-
-/** Error tile shown when a single watchlist ticker fails to load. */
-export function StockCardError({
-  ticker,
-  message,
+export function StockCard({
+  security,
+  quote,
+  onRemove,
 }: {
-  ticker: string;
-  message: string;
+  security: Security;
+  quote?: Quote;
+  onRemove?: () => void;
 }) {
+  const dark = useDark();
+  const t = tok(dark);
+  const cur = marketCurrency(security.market);
+
   return (
-    <Link
-      href={{pathname: '/stock', query: {ticker}}}
-      className="flex flex-col gap-3 rounded-2xl border border-rose-500/25 bg-rose-500/[0.04] p-5 transition hover:border-rose-500/40"
-    >
-      <span className="font-mono text-lg font-bold tracking-tight text-zinc-200">
-        {ticker}
-      </span>
-      <p className="text-sm text-rose-300/80">{message}</p>
-      <span className="mt-auto text-xs text-zinc-500">Open anyway →</span>
-    </Link>
+    <div className="group relative">
+      <Link
+        href={`/stock/${encodeURIComponent(security.ticker)}`}
+        className={cx(
+          'block overflow-hidden rounded-2xl border p-4',
+          t.card,
+          t.border,
+          t.cardI,
+        )}
+      >
+        <div className="mb-1 flex items-center gap-2">
+          <span className={cx('text-[15px] font-bold tracking-tight', t.text)}>
+            {security.ticker}
+          </span>
+          <MarketBadge mkt={security.market} />
+        </div>
+        <p className={cx('mb-3 truncate text-[12px]', t.sub)}>{security.name}</p>
+
+        <div className="flex items-end justify-between gap-2">
+          {quote ? (
+            <PriceTag value={quote.price} cur={cur} size="md" />
+          ) : (
+            <span className={cx('text-2xl font-semibold tabular-nums', t.faint)}>
+              {cur}—
+            </span>
+          )}
+        </div>
+
+        <div className="mt-3">
+          {quote ? (
+            <SessionBadge session={quote.session} sm />
+          ) : (
+            <span className={cx('text-[11px]', t.faint)}>Waiting for price…</span>
+          )}
+        </div>
+      </Link>
+
+      {onRemove && (
+        <button
+          onClick={onRemove}
+          className={cx(
+            'absolute right-2.5 top-2.5 z-10 inline-flex h-7 w-7 items-center justify-center rounded-full opacity-0 transition hover:text-rose-500 group-hover:opacity-100',
+            t.surf2,
+            t.sub,
+          )}
+          aria-label={`Remove ${security.ticker}`}
+        >
+          <X size={14} />
+        </button>
+      )}
+    </div>
   );
 }

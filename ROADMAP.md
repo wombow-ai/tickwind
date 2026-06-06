@@ -59,9 +59,25 @@ Status: ✅ done · 🟡 in progress · ⬜ todo
       verify, no dep); per-user watchlist + private clips; public market-data
       endpoints stay open (SEO); ingest = default ∪ all users' watchlists (capped);
       Supabase Postgres (session pooler). Verified e2e against real Supabase.
-- ⬜ Frontend rebuild: Next.js (SSR) + Supabase Auth — public SEO pages (landing,
-      /stock/[ticker], announcements) + private app; deploy on Vercel; modern
-      (non-terminal) redesign
+- 🟡 Frontend rebuild — **"Aurora" data-first app** (Next 16 SSR + Supabase Auth):
+  - ✅ Design system ported from the product spec: light-first Aurora palette
+        (teal/sky) + dark variant via `.dark` + `useSyncExternalStore` (no-flash);
+        signature `SessionBadge`, `PriceTag` (live tick-flash), timeline feed,
+        empty/error/skeleton states, toasts, Inter — all in `web/src/components/ui`
+  - ✅ **Data-first entry** (no marketing page): `/` IS the board — popular US
+        stocks with live prices for anyone; the user's watchlist when signed in
+  - ✅ `/stock/[ticker]`: live header + News / Discussion / Filings (+ Saved links
+        when signed in) from the real API; add-to-watchlist; clip box
+  - ✅ Supabase email/password `/login` + `/signup`; account menu; `/settings`;
+        `/announcements`; JWT attached to private API calls; session-refresh `proxy`
+  - ✅ Route-group layout split (app chrome vs auth vs `/designs`); build + lint green
+  - ⬜ Deploy on Vercel; re-point `tickwind.com` DNS; set env (API base + Supabase)
+  - ⬜ Backend: add `prev_close` (Alpaca snapshot) + intraday bars → light up
+        `ChangeLine` + `Sparkline` (components ready, currently hidden — no fake data)
+  - ⬜ Redeploy VPS backend multi-tenant + Supabase (`DATABASE_URL` pooler +
+        `SUPABASE_JWT_SECRET`); bump `WATCHLIST` to `POPULAR_TICKERS` so every
+        public tile is live
+  - ⬜ Mobile nav polish; optional Google OAuth
 - ⬜ HK (HKEXnews) + KR (DART) filings (needs DART key); later Futu/KIS realtime
 
 ---

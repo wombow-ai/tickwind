@@ -13,6 +13,15 @@ const eslintConfig = defineConfig([
     "build/**",
     "next-env.d.ts",
   ]),
+  {
+    rules: {
+      // Experimental React-Compiler rules. They flag patterns we use on
+      // purpose — client-side data fetching inside effects and one-time mount
+      // initialization — so surface them as warnings rather than hard errors.
+      "react-hooks/set-state-in-effect": "warn",
+      "react-hooks/preserve-manual-memoization": "warn",
+    },
+  },
 ]);
 
 export default eslintConfig;

@@ -1,40 +1,212 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 @import 'tailwindcss';
 
+/* Class-based dark mode (toggled on <html> by the ThemeProvider). */
+@custom-variant dark (&:where(.dark, .dark *));
+
 /*
- * Tickwind theme. Dark-first; the surface is near-black zinc with cool accents.
- * Fonts use the platform stack so the static build is hermetic (no Google
- * Fonts fetch at build time) while still rendering crisply everywhere.
+ * Tickwind "Aurora" theme — light-first, airy, premium. Soft teal/sky accents,
+ * gentle depth, tasteful motion. A dark variant rides along on the `.dark`
+ * class. This is a faithful port of the product design system.
  */
 @theme inline {
-  --color-background: #09090b;
-  --color-foreground: #ededed;
-  --font-sans:
-    ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica,
+  --font-sans: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica,
     Arial, sans-serif;
-  --font-mono:
-    ui-monospace, 'SF Mono', SFMono-Regular, 'Menlo', 'Consolas',
-    'Liberation Mono', monospace;
+  --font-mono: ui-monospace, 'SF Mono', SFMono-Regular, 'Menlo', 'Consolas',
+    monospace;
 }
 
 html {
+  color-scheme: light;
+}
+html.dark {
   color-scheme: dark;
 }
 
 body {
-  background: var(--color-background);
-  color: var(--color-foreground);
   font-family: var(--font-sans);
+  font-feature-settings: 'cv11', 'ss01';
   -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  min-height: 100vh;
+  color: #0f172a;
+  background:
+    radial-gradient(60% 50% at 50% 0%, rgba(45, 212, 191, 0.1), transparent),
+    linear-gradient(180deg, #f1f5f9, #e9eef4);
+  background-attachment: fixed;
+}
+html.dark body {
+  color: #f1f5f9;
+  background:
+    radial-gradient(60% 50% at 50% 0%, rgba(20, 184, 166, 0.1), transparent),
+    linear-gradient(180deg, #0b1220, #070b13);
 }
 
-/* Subtle ambient gradient behind page content. */
-body::before {
-  content: '';
-  position: fixed;
-  inset: 0;
-  z-index: -1;
-  background:
-    radial-gradient(60rem 40rem at 50% -10%, rgba(56, 189, 248, 0.08), transparent),
-    radial-gradient(40rem 30rem at 100% 0%, rgba(99, 102, 241, 0.06), transparent);
-  pointer-events: none;
+/* ------------------------------ depth / surfaces ------------------------------ */
+.tw-soft-l {
+  box-shadow:
+    0 1px 2px rgba(15, 23, 42, 0.04),
+    0 12px 30px -20px rgba(15, 23, 42, 0.22);
+}
+.tw-soft-d {
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.5),
+    0 18px 44px -24px rgba(0, 0, 0, 0.85);
+}
+.tw-card-l {
+  box-shadow:
+    0 1px 2px rgba(15, 23, 42, 0.04),
+    0 12px 28px -20px rgba(15, 23, 42, 0.22);
+  transition:
+    transform 0.2s ease,
+    box-shadow 0.2s ease,
+    border-color 0.2s ease;
+}
+.tw-card-l:hover {
+  transform: translateY(-3px);
+  box-shadow:
+    0 2px 6px rgba(15, 23, 42, 0.06),
+    0 24px 44px -22px rgba(15, 23, 42, 0.3);
+}
+.tw-card-d {
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.5),
+    0 18px 40px -24px rgba(0, 0, 0, 0.85);
+  transition:
+    transform 0.2s ease,
+    box-shadow 0.2s ease,
+    border-color 0.2s ease;
+}
+.tw-card-d:hover {
+  transform: translateY(-3px);
+  box-shadow:
+    0 4px 10px rgba(0, 0, 0, 0.6),
+    0 28px 56px -24px rgba(0, 0, 0, 0.95);
+}
+
+/* ------------------------------ skeletons ------------------------------ */
+.tw-skel-l {
+  background: linear-gradient(90deg, #eef2f6 25%, #e2e8f0 37%, #eef2f6 63%);
+  background-size: 400% 100%;
+  animation: tw-shimmer 1.4s ease-in-out infinite;
+}
+.tw-skel-d {
+  background: linear-gradient(90deg, #1e293b 25%, #334155 37%, #1e293b 63%);
+  background-size: 400% 100%;
+  animation: tw-shimmer 1.4s ease-in-out infinite;
+}
+@keyframes tw-shimmer {
+  0% {
+    background-position: 100% 0;
+  }
+  100% {
+    background-position: -100% 0;
+  }
+}
+
+/* ------------------------------ price flash ------------------------------ */
+.tw-flash-up {
+  animation: tw-up 0.85s ease-out;
+}
+.tw-flash-down {
+  animation: tw-down 0.85s ease-out;
+}
+@keyframes tw-up {
+  0% {
+    background-color: rgba(16, 185, 129, 0.18);
+  }
+  100% {
+    background-color: transparent;
+  }
+}
+@keyframes tw-down {
+  0% {
+    background-color: rgba(244, 63, 94, 0.18);
+  }
+  100% {
+    background-color: transparent;
+  }
+}
+
+/* ------------------------------ misc motion ------------------------------ */
+.tw-fade {
+  animation: tw-fade 0.35s ease both;
+}
+@keyframes tw-fade {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.tw-toast {
+  animation: tw-toastin 0.3s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+@keyframes tw-toastin {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.tw-livedot {
+  animation: tw-blink 1.6s ease-in-out infinite;
+}
+@keyframes tw-blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.3;
+  }
+}
+.tw-float {
+  animation: tw-float 6.5s ease-in-out infinite;
+}
+@keyframes tw-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-9px);
+  }
+}
+.tw-breeze {
+  stroke-dasharray: 6 12;
+  animation: tw-drift 3.4s linear infinite;
+}
+@keyframes tw-drift {
+  to {
+    stroke-dashoffset: -180;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tw-float,
+  .tw-breeze,
+  .tw-livedot,
+  .tw-skel-l,
+  .tw-skel-d {
+    animation: none;
+  }
+}
+
+/* ------------------------------ scrollbar ------------------------------ */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.4);
+  border-radius: 8px;
+  border: 2px solid transparent;
+  background-clip: content-box;
 }

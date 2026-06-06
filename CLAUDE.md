@@ -19,7 +19,8 @@ feature-flagged plugin, never on the critical path. Web only.
 - Backend: **Go 1.26**, stdlib-first. Module `github.com/wombow-ai/tickwind`.
 - Storage behind the `store.Store` interface: `memory` (dev) + `postgres`
   (TimescaleDB + pgvector) on the server.
-- Frontend: **Next.js** (App Router, TypeScript, Tailwind), **static export** → Pages.
+- Frontend: **Next.js 16** (App Router, **SSR**, TypeScript, Tailwind v4) +
+  **Supabase Auth** (`@supabase/ssr`), deploy target **Vercel**. "Aurora" design.
 - Later: Python **Futu** sidecar (HK/US realtime), **LLM** enrichment plugin.
 
 ## Key decisions (do not re-litigate)
@@ -99,6 +100,35 @@ feature-flagged plugin, never on the critical path. Web only.
 - DB: Supabase Postgres via the session-pooler connection string (IPv4). Schema
   has a guarded DO-block that migrates the legacy single-tenant `watchlist` once.
 - Config: `SUPABASE_JWT_SECRET` (HS256) + `DATABASE_URL` (Supabase pooler).
+
+## Frontend — "Aurora" data-first app (`web/`)
+- **Data-first, no marketing page** (explicit user direction): `/` IS the board.
+  Anonymous → popular US tickers (`POPULAR_TICKERS`) with live prices; signed-in →
+  the user's watchlist (`/v1/watchlist`) with add/remove. Synthesized from the
+  user's own design (`tickwind-app-claude.tsx`, kept as `.design-ref.tsx`).
+- **Design system** in `web/src/components/ui/` + `web/src/lib/ui.ts` (tokens):
+  light-first Aurora (teal `#2DD4BF`/sky `#0EA5E9`) with a dark variant. Signature
+  `SessionBadge` (pre=amber, regular=emerald+livedot, post=violet, overnight=blue,
+  closed=slate — keyed to the API's `Quote.session`), `PriceTag` (flashes on tick),
+  `TimelineItem` (news/disc/clip/filing), empty/error/skeleton, toasts, Inter font,
+  CSS motion in `globals.css`.
+- **Theme**: `.dark` class on `<html>`, read via `useSyncExternalStore` (single
+  source of truth = the DOM class) + a no-flash inline script in `layout.tsx`.
+  `useTheme`/`useDark` in `web/src/lib/theme.tsx`. Default light.
+- **Auth**: `web/src/lib/auth.tsx` (`AuthProvider`/`useAuth`) tracks the Supabase
+  user + exposes `getToken()`; `web/src/lib/api.ts` private calls take that token
+  as `Authorization: Bearer`. `web/src/proxy.ts` refreshes the session cookie
+  (Next 16 renamed `middleware`→`proxy`; guarded no-op when Supabase env is unset).
+- **Routes**: route groups — `(main)` = chrome (TopNav+Footer): `/`, `/stock/[ticker]`,
+  `/settings`, `/announcements`; `(auth)` = centered: `/login`, `/signup`; `/designs/*`
+  kept as references (self-contained). `/stock/[ticker]` is SSR with SEO metadata.
+- **ChangeLine + Sparkline exist but are not rendered** — no fake data. Light them
+  up once the backend exposes `prev_close` + intraday bars (Alpaca snapshot).
+- Verify: `cd web && npm run lint && npm run build` (both green; 9 lint *warnings*
+  are the experimental React-Compiler rules on intentional client-fetch/mount
+  patterns, downgraded to warn in `eslint.config.mjs`).
+- Env (`web/.env.local`, gitignored): `NEXT_PUBLIC_API_BASE`,
+  `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`.
 
 ## Tests
 - `make test` = `go test ./cmd/... ./internal/...` (scoped to skip `web/node_modules`).

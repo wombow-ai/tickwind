@@ -27,3 +27,7 @@ Thumbs.db
 *.db
 *.sqlite
 *.sqlite3
+
+# local tooling / design scratch (not source)
+/.claude/
+/.design-ref.tsx
