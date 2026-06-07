@@ -243,8 +243,11 @@ verified). TTM is a later enhancement; v1 = latest fiscal year, labelled.
 **🏗 SEO trio (in progress, autonomous/$0):** ✅ ① **sitemap** → popular ∪ all live-board tickers
 (~60 URLs, hourly revalidate, real-data only). ✅ ② **JSON-LD** per `/stock/[ticker]`
 (Corporation + BreadcrumbList) + canonical + company-name title (server-fetched, ISR 10m;
-live-verified AAPL). ⬜ ③ hreflang (en/zh-Hant/zh-Hans/x-default). Later: FinancialProduct schema
-(needs server-fetched price/financials).
+live-verified AAPL). ⚠️ ③ **hreflang / bilingual SEO — needs URL-level i18n** (`?lang=` or
+`/zh|/en` + server-side per-language render); single-URL client toggle can't do valid hreflang →
+**larger item, deferred (design / owner input)**. Later: FinancialProduct schema (needs server price).
+- ✅ **CI security**: govulncheck (blocking — confirmed no reachable vulns) + gosec (informational)
+  + Dependabot (gomod / github-actions / npm, weekly). All 3 CI jobs green.
 
 ### Backlog (owner-approved, in `/loop` order)
 - ✅ ① CI.  ✅ ② Opportunity seen-set persistence (was already built+live — `seen_form4`,
