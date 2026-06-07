@@ -123,11 +123,11 @@ export function StockView({ticker}: {ticker: string}) {
         },
         () => {
           tries++;
-          if (tries < 12) {
+          if (tries < 18) {
             setCollecting(true);
-            timer = setTimeout(resolve, 5000); // poll while data is being collected
+            timer = setTimeout(resolve, 5000); // poll while data is collected (~90s, outlasts the 60s server collect)
           } else {
-            setCollecting(false); // give up after ~1min → show normal empty states
+            setCollecting(false); // give up after ~90s → show normal empty states
           }
         },
       );

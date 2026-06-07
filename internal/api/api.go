@@ -303,10 +303,35 @@ func (s *Server) getStock(w http.ResponseWriter, r *http.Request) {
 	case err != nil:
 		writeJSON(w, http.StatusInternalServerError, errBody(err.Error()))
 	case !ok:
+		s.maybeCollect(ticker) // first-time visit of a real symbol → kick off collection
 		writeJSON(w, http.StatusNotFound, errBody("not tracked yet: "+ticker))
 	default:
 		writeJSON(w, http.StatusOK, sec)
 	}
+}
+
+// maybeCollect fires a one-shot on-demand collection for an untracked but REAL
+// symbol, so a first-time visit populates itself instead of showing an empty page
+// forever (the bug where $MU stayed blank: nothing ever triggered its collection).
+// Safe to call on every 404: it no-ops unless the ticker is in the symbol
+// directory (so scraped/garbage tickers do no work), and the ingestor
+// single-flights per ticker (repeated polls while collecting don't duplicate it).
+func (s *Server) maybeCollect(ticker string) {
+	if s.ingestor == nil || s.symbols == nil {
+		return
+	}
+	tk := strings.ToUpper(strings.TrimSpace(ticker))
+	if tk == "" {
+		return
+	}
+	if hits := s.symbols.Search(tk, 1); len(hits) == 0 || strings.ToUpper(hits[0].Ticker) != tk {
+		return // not a known symbol — don't trigger collection
+	}
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+		s.ingestor.IngestOne(ctx, tk)
+	}()
 }
 
 func (s *Server) getFilings(w http.ResponseWriter, r *http.Request) {

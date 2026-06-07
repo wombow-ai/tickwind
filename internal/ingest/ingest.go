@@ -9,6 +9,8 @@ import (
 	"context"
 	"log/slog"
 	"sort"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/wombow-ai/tickwind/internal/edgar"
@@ -57,6 +59,7 @@ type Scheduler struct {
 	every      time.Duration
 	log        *slog.Logger
 	adapters   map[market.Market]MarketAdapter // per-market dispatch; US = none
+	inflight   sync.Map                        // ticker -> struct{}: in-flight on-demand collections (single-flight)
 }
 
 // NewScheduler builds the filings+news+social+signals+hotlist+topics scheduler.
@@ -107,10 +110,24 @@ func (s *Scheduler) runOnce(ctx context.Context) {
 }
 
 // IngestOne runs a one-shot filings+news+social pull for a single ticker, used
-// to populate a freshly watch-listed stock immediately rather than waiting for
-// the next scheduler cycle. Safe to call concurrently with Run — it only
-// touches the concurrency-safe store, not scheduler state.
+// to populate a freshly watch-listed OR just-viewed stock immediately rather than
+// waiting for the next scheduler cycle. Safe to call concurrently with Run (it
+// only touches the concurrency-safe store).
+//
+// Single-flight: at most one collection per ticker runs at a time. The on-view
+// trigger fires on every getStock 404 (and a user may also re-load a still-empty
+// page), so without this guard a brand-new ticker would be collected many times
+// concurrently. LoadOrStore admits exactly one; the rest return immediately —
+// "有且只有一次初始化收集信息任务".
 func (s *Scheduler) IngestOne(ctx context.Context, ticker string) {
+	ticker = strings.ToUpper(strings.TrimSpace(ticker))
+	if ticker == "" {
+		return
+	}
+	if _, busy := s.inflight.LoadOrStore(ticker, struct{}{}); busy {
+		return // a collection for this ticker is already in flight
+	}
+	defer s.inflight.Delete(ticker)
 	s.ingestFilings(ctx, ticker)
 	s.ingestNews(ctx, ticker)
 	s.ingestSocial(ctx, ticker)
