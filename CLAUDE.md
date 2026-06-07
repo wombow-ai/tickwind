@@ -163,8 +163,12 @@ feature-flagged plugin, never on the critical path. Web only.
   `alpaca.Snapshots` (bulk ≤100/req, resilient — skips bad batches). Served
   `GET /v1/opportunities`; frontend `OpportunityBoard` at `/opportunities` (TopNav
   "Opportunities") — evidence-first cards ("3 insiders bought $1.2M", top buyers,
-  "View SEC filing"), muted (no green-hero), on-card disclaimers. **Known**: SEC
-  re-sweeps ~26min on each redeploy (in-memory seen-set; persisted-seen deferred).
+  "View SEC filing"), muted (no green-hero), on-card disclaimers. **Persisted
+  seen-set** ✅ (no re-sweep on redeploy): processed Form-4 accessions are stored
+  in the durable Market DB (`seen_form4` table, routed via Split; `MarkForm4Seen`
+  upserts, `SeenForm4Since` loads on startup over backfill+7d/≥40d, pruned 60d).
+  `OpportunityIngestor.loadSeen` seeds the in-memory set on boot — verified live
+  (a restart logged `loaded seen form-4 count=3362`, board recomputed immediately).
 - **大V / Guru-watch rail** ✅ LIVE: newsletter-cadence opinions from curated finance
   KOLs, anchored to tickers. `internal/substack` (public-RSS client + curated
   `Feeds` incl. **Serenity** `aleabitoreddit.substack.com/feed`; extracts cashtag
@@ -205,6 +209,8 @@ feature-flagged plugin, never on the critical path. Web only.
     population-σ Bollinger; null warmup; compute over full history then slice);
     `KLineChart` (TradingView **lightweight-charts v5**, Apache-2.0, keep
     `attributionLogo`) — candles + MA5/10/20/60 + Volume/MACD/RSI panes, client-only.
+    A **BOLL** legend chip toggles a dashed Bollinger (20,2σ) upper/lower envelope on
+    the price pane (off by default; middle band = SMA20 = the MA20 line).
 - **On-demand collection** ✅ — `getStock` 404 for a REAL symbol (validated vs the
   symbol directory) fires `IngestOne` (fixes the "$MU all-empty" bug). `IngestOne` is
   **single-flight** (sync.Map per ticker → exactly one init collection). Frontend polls

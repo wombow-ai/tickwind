@@ -208,7 +208,8 @@ Status: ✅ done · 🟡 in progress · ⬜ todo
   @v6, green-verified. Surfaced + fixed a SearchBox combobox a11y gap.
 
 ### Backlog (owner-approved, in `/loop` order)
-- ✅ ① CI.  ⬜ ② Opportunity seen-set persistence (no re-sweep on restart).  ⬜ ③ Bollinger
+- ✅ ① CI.  ✅ ② Opportunity seen-set persistence (was already built+live — `seen_form4`,
+  verified `loaded ... count=3362` on restart; corrected stale note).  ✅ ③ Bollinger
   Bands (toggle).  ⬜ ④ K-line >3yr lazy history (`?before=`).  ⬜ ⑤ Notes/comments
   enhancements (Markdown/edit/like).  ⬜ ⑥ Watchlist grouping/sorting.  ⬜ ⑦ Brazil B3
   market.  ⬜ ⑧ Error monitoring/metrics.
