@@ -128,53 +128,57 @@ func (m *Store) PruneSeenForm4(ctx context.Context, before time.Time) (int64, er
 	return n, nil
 }
 
-// CapPerTicker keeps only the newest n rows per ticker in "news" or "social".
-func (m *Store) CapPerTicker(ctx context.Context, table string, n int) (int64, error) {
+// CapPerTicker keeps only the newest n rows per ticker in "news" or "social",
+// never counting or evicting rows whose source is in protect (the 大V rail).
+func (m *Store) CapPerTicker(ctx context.Context, table string, n int, protect []string) (int64, error) {
 	if n <= 0 {
 		return 0, nil
+	}
+	prot := make(map[string]bool, len(protect))
+	for _, s := range protect {
+		prot[s] = true
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	switch table {
 	case "news":
-		var removed int64
-		for _, byID := range m.news {
-			if len(byID) <= n {
-				continue
-			}
-			ids := make([]string, 0, len(byID))
-			for id := range byID {
-				ids = append(ids, id)
-			}
-			sort.Slice(ids, func(i, j int) bool {
-				return byID[ids[i]].Published.After(byID[ids[j]].Published)
-			})
-			for _, id := range ids[n:] {
-				delete(byID, id)
-				removed++
-			}
-		}
-		return removed, nil
+		return capNewest(m.news, n, prot, func(v store.News) (time.Time, string) {
+			return v.Published, v.Source
+		}), nil
 	case "social":
-		var removed int64
-		for _, byID := range m.social {
-			if len(byID) <= n {
-				continue
-			}
-			ids := make([]string, 0, len(byID))
-			for id := range byID {
-				ids = append(ids, id)
-			}
-			sort.Slice(ids, func(i, j int) bool {
-				return byID[ids[i]].CreatedAt.After(byID[ids[j]].CreatedAt)
-			})
-			for _, id := range ids[n:] {
-				delete(byID, id)
-				removed++
-			}
-		}
-		return removed, nil
+		return capNewest(m.social, n, prot, func(v store.Post) (time.Time, string) {
+			return v.CreatedAt, v.Source
+		}), nil
 	default:
 		return 0, fmt.Errorf("cap per ticker: unsupported table %q", table)
 	}
+}
+
+// capNewest deletes all but the newest n non-protected rows per ticker from a
+// ticker→id→record map. Protected-source rows are kept and don't count toward n.
+func capNewest[T any](byTicker map[string]map[string]T, n int, prot map[string]bool, key func(T) (time.Time, string)) int64 {
+	var removed int64
+	for _, byID := range byTicker {
+		type rec struct {
+			id string
+			t  time.Time
+		}
+		recs := make([]rec, 0, len(byID))
+		for id, v := range byID {
+			t, src := key(v)
+			if prot[src] {
+				continue // protected → never capped
+			}
+			recs = append(recs, rec{id, t})
+		}
+		if len(recs) <= n {
+			continue
+		}
+		sort.Slice(recs, func(i, j int) bool { return recs[i].t.After(recs[j].t) })
+		for _, r := range recs[n:] {
+			delete(byID, r.id)
+			removed++
+		}
+	}
+	return removed
 }

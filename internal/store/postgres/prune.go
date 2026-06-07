@@ -77,7 +77,9 @@ func (s *Store) PruneSeenForm4(ctx context.Context, before time.Time) (int64, er
 var capColumns = map[string]string{"news": "published", "social": "created_at"}
 
 // CapPerTicker keeps only the newest n rows per ticker, deleting the overflow.
-func (s *Store) CapPerTicker(ctx context.Context, table string, n int) (int64, error) {
+// Rows whose source is in protect are excluded from the ranking entirely, so
+// they neither count toward the cap nor get evicted (the 大V rail is kept).
+func (s *Store) CapPerTicker(ctx context.Context, table string, n int, protect []string) (int64, error) {
 	col, ok := capColumns[table]
 	if !ok {
 		return 0, fmt.Errorf("cap per ticker: unsupported table %q", table)
@@ -85,15 +87,19 @@ func (s *Store) CapPerTicker(ctx context.Context, table string, n int) (int64, e
 	if n <= 0 {
 		return 0, nil
 	}
+	if protect == nil {
+		protect = []string{} // a NULL array makes `= ANY` yield NULL → nothing capped
+	}
 	q := fmt.Sprintf(`
 		DELETE FROM %[1]s WHERE (ticker, id) IN (
 			SELECT ticker, id FROM (
 				SELECT ticker, id,
 				       row_number() OVER (PARTITION BY ticker ORDER BY %[2]s DESC NULLS LAST) AS rn
 				  FROM %[1]s
+				 WHERE NOT (COALESCE(source, '') = ANY($2))
 			) ranked WHERE ranked.rn > $1
 		)`, table, col)
-	tag, err := s.pool.Exec(ctx, q, n)
+	tag, err := s.pool.Exec(ctx, q, n, protect)
 	if err != nil {
 		return 0, fmt.Errorf("cap %s per ticker: %w", table, err)
 	}

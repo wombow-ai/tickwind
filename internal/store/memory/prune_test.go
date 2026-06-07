@@ -153,7 +153,7 @@ func TestCapPerTickerKeepsNewest(t *testing.T) {
 	for i := 0; i < 5; i++ { // n0 newest … n4 oldest
 		saveNews(t, s, "T", "n"+strconv.Itoa(i), now.Add(-time.Duration(i)*time.Hour))
 	}
-	n, err := s.CapPerTicker(ctx, "news", 2)
+	n, err := s.CapPerTicker(ctx, "news", 2, nil)
 	must(t, err)
 	if n != 3 {
 		t.Errorf("capped %d, want 3 removed", n)
@@ -161,7 +161,32 @@ func TestCapPerTickerKeepsNewest(t *testing.T) {
 	if got := newsIDs(t, s, "T"); len(got) != 2 || !got["n0"] || !got["n1"] {
 		t.Errorf("kept %v, want {n0, n1} (newest)", got)
 	}
-	if _, err := s.CapPerTicker(ctx, "bogus", 2); err == nil {
+	if _, err := s.CapPerTicker(ctx, "bogus", 2, nil); err == nil {
 		t.Error("cap on unknown table: want error")
+	}
+}
+
+func TestCapPerTickerProtectsSource(t *testing.T) {
+	ctx := context.Background()
+	s := New()
+	now := time.Now().UTC()
+	// An OLD guru (substack) post + 3 newer stocktwits posts on the same ticker.
+	savePost(t, s, "T", "kol", "substack", now.Add(-100*time.Hour))
+	for i := 0; i < 3; i++ {
+		savePost(t, s, "T", "st"+strconv.Itoa(i), "stocktwits", now.Add(-time.Duration(i)*time.Hour))
+	}
+	// Cap to 1, protecting substack: the 3 stocktwits → keep 1 (st0), drop 2;
+	// the older guru post is never counted nor evicted.
+	n, err := s.CapPerTicker(ctx, "social", 1, []string{"substack"})
+	must(t, err)
+	if n != 2 {
+		t.Errorf("capped %d, want 2 (stocktwits only)", n)
+	}
+	got := socialIDs(t, s, "T")
+	if !got["kol"] {
+		t.Errorf("guru post evicted by the cap; ids=%v", got)
+	}
+	if len(got) != 2 || !got["st0"] {
+		t.Errorf("social ids=%v, want {kol, st0}", got)
 	}
 }

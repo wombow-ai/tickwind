@@ -49,9 +49,9 @@ func (s Split) PruneSeenForm4(ctx context.Context, before time.Time) (int64, err
 	return 0, nil
 }
 
-func (s Split) CapPerTicker(ctx context.Context, table string, n int) (int64, error) {
+func (s Split) CapPerTicker(ctx context.Context, table string, n int, protect []string) (int64, error) {
 	if p, ok := s.Market.(Pruner); ok {
-		return p.CapPerTicker(ctx, table, n)
+		return p.CapPerTicker(ctx, table, n, protect)
 	}
 	return 0, nil
 }

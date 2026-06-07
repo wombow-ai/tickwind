@@ -88,10 +88,12 @@ func (p *Pruner) runOnce(ctx context.Context) {
 		step("seen_form4", func() (int64, error) { return p.store.PruneSeenForm4(ctx, ago(c.SeenForm4Days)) })
 	}
 	if c.CapNewsPerTicker > 0 {
-		step("news_cap", func() (int64, error) { return p.store.CapPerTicker(ctx, "news", c.CapNewsPerTicker) })
+		step("news_cap", func() (int64, error) { return p.store.CapPerTicker(ctx, "news", c.CapNewsPerTicker, nil) })
 	}
 	if c.CapSocialPerTicker > 0 {
-		step("social_cap", func() (int64, error) { return p.store.CapPerTicker(ctx, "social", c.CapSocialPerTicker) })
+		step("social_cap", func() (int64, error) {
+			return p.store.CapPerTicker(ctx, "social", c.CapSocialPerTicker, c.ProtectSocialSources)
+		})
 	}
 
 	if total > 0 {

@@ -31,7 +31,9 @@ type Pruner interface {
 	// PruneSeenForm4 removes seen-Form-4 markers filed before `before`.
 	PruneSeenForm4(ctx context.Context, before time.Time) (int64, error)
 	// CapPerTicker keeps only the newest n rows per ticker in the given table — a
-	// backstop so one perpetually-hot ticker can't accumulate without bound.
-	// table must be "news" or "social"; anything else returns an error.
-	CapPerTicker(ctx context.Context, table string, n int) (int64, error)
+	// backstop so one perpetually-hot ticker can't accumulate without bound. Rows
+	// whose source is in protectSources (e.g. the 大V rail) are never counted
+	// toward the cap nor evicted by it, so guru posts survive even on a 500+-post
+	// ticker. table must be "news" or "social"; anything else returns an error.
+	CapPerTicker(ctx context.Context, table string, n int, protectSources []string) (int64, error)
 }
