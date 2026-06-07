@@ -73,6 +73,9 @@ export function HomeHub() {
   const [gurus, setGurus] = useState<GuruItem[]>([]);
   const [news, setNews] = useState<NewsItem[]>([]);
   const [posts, setPosts] = useState<Post[]>([]);
+  // Per-module loading flags so each card shows a skeleton while fetching, and
+  // its empty state only after the fetch settles (no "No data" flash on load).
+  const [loading, setLoading] = useState({hot: true, opps: true, gurus: true, news: true, posts: true});
   const quotes = useQuotes(tickers);
 
   useEffect(() => {
@@ -84,20 +87,23 @@ export function HomeHub() {
       );
     }
     getBarsBatch(tickers, c.signal).then(r => setBars(r.bars), () => setBars({}));
-    getHot('hot', 5, c.signal).then(r => setHot(r.stocks ?? []), () => setHot([]));
-    getOpportunities(5, c.signal).then(
-      r => setOpps(r.stocks ?? []),
-      () => setOpps([]),
-    );
-    getGurus(3, c.signal).then(r => setGurus(r.items ?? []), () => setGurus([]));
-    getNewsBatch(tickers, 6, c.signal).then(
-      r => setNews((r.news ?? []).slice(0, 3)),
-      () => setNews([]),
-    );
-    getSocialBatch(tickers, 6, c.signal).then(
-      r => setPosts((r.posts ?? []).slice(0, 2)),
-      () => setPosts([]),
-    );
+    const settle = (k: 'hot' | 'opps' | 'gurus' | 'news' | 'posts') =>
+      setLoading(p => ({...p, [k]: false}));
+    getHot('hot', 5, c.signal)
+      .then(r => setHot(r.stocks ?? []), () => setHot([]))
+      .finally(() => settle('hot'));
+    getOpportunities(5, c.signal)
+      .then(r => setOpps(r.stocks ?? []), () => setOpps([]))
+      .finally(() => settle('opps'));
+    getGurus(3, c.signal)
+      .then(r => setGurus(r.items ?? []), () => setGurus([]))
+      .finally(() => settle('gurus'));
+    getNewsBatch(tickers, 6, c.signal)
+      .then(r => setNews((r.news ?? []).slice(0, 3)), () => setNews([]))
+      .finally(() => settle('news'));
+    getSocialBatch(tickers, 6, c.signal)
+      .then(r => setPosts((r.posts ?? []).slice(0, 2)), () => setPosts([]))
+      .finally(() => settle('posts'));
     return () => c.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tickerKey]);
@@ -139,7 +145,9 @@ export function HomeHub() {
           seeAll={tr('mod.fullBoard')}
           icon={<Flame size={15} className={dark ? 'text-amber-300' : 'text-amber-500'} />}
         >
-          {hot.length === 0 ? (
+          {loading.hot ? (
+            <CardSkeleton t={t} />
+          ) : hot.length === 0 ? (
             <CardEmpty t={t} label={tr('mod.noData')} />
           ) : (
             hot.map((s, i) => (
@@ -175,7 +183,9 @@ export function HomeHub() {
           seeAll={tr('mod.fullBoard')}
           icon={<Sparkles size={15} className={dark ? 'text-sky-300' : 'text-sky-600'} />}
         >
-          {opps.length === 0 ? (
+          {loading.opps ? (
+            <CardSkeleton t={t} />
+          ) : opps.length === 0 ? (
             <CardEmpty t={t} label={tr('mod.noSignals')} />
           ) : (
             opps.map((s, i) => (
@@ -213,7 +223,9 @@ export function HomeHub() {
           seeAll={tr('mod.seeAll')}
           icon={<Mic size={15} className={dark ? 'text-violet-300' : 'text-violet-600'} />}
         >
-          {gurus.length === 0 ? (
+          {loading.gurus ? (
+            <CardSkeleton t={t} rows={3} />
+          ) : gurus.length === 0 ? (
             <CardEmpty t={t} label={tr('mod.noPosts')} />
           ) : (
             gurus.map((g, i) => (
@@ -255,7 +267,9 @@ export function HomeHub() {
           seeAll={tr('mod.moreNews')}
           icon={<Newspaper size={15} className={dark ? 'text-teal-300' : 'text-teal-600'} />}
         >
-          {news.length === 0 ? (
+          {loading.news ? (
+            <CardSkeleton t={t} rows={3} />
+          ) : news.length === 0 ? (
             <CardEmpty t={t} label={tr('mod.noNews')} />
           ) : (
             news.map((n, i) => (
@@ -289,7 +303,9 @@ export function HomeHub() {
             <MessageSquare size={15} className={dark ? 'text-teal-300' : 'text-teal-600'} />
           }
         >
-          {posts.length === 0 ? (
+          {loading.posts ? (
+            <CardSkeleton t={t} rows={2} />
+          ) : posts.length === 0 ? (
             <CardEmpty t={t} label={tr('mod.noChatter')} />
           ) : (
             posts.map((p, i) => (
@@ -354,6 +370,17 @@ function ModuleCard({
 
 function CardEmpty({t, label}: {t: Tokens; label: string}) {
   return <p className={cx('py-6 text-center text-[12px]', t.faint)}>{label}</p>;
+}
+
+/** Shimmer rows shown while a module's data is still loading. */
+function CardSkeleton({t, rows = 4}: {t: Tokens; rows?: number}) {
+  return (
+    <div className="space-y-2.5 py-2" aria-hidden>
+      {Array.from({length: rows}).map((_, i) => (
+        <div key={i} className={cx('h-3.5 rounded', t.skel)} style={{width: `${88 - i * 9}%`}} />
+      ))}
+    </div>
+  );
 }
 
 function ChangeChip({change, dark}: {change: number; dark: boolean}) {
