@@ -145,6 +145,16 @@ export function AlertsPanel({ticker}: {ticker: string}) {
             >
               <Bell size={14} className={dark ? 'text-amber-300' : 'text-amber-500'} />
               <span className={cx('min-w-0 flex-1 truncate text-[13.5px] font-medium', t.text)}>{describe(a)}</span>
+              {a.triggered_at && (
+                <span
+                  className={cx(
+                    'shrink-0 rounded-md px-1.5 py-0.5 text-[10.5px] font-bold',
+                    dark ? 'bg-emerald-500/20 text-emerald-300' : 'bg-emerald-100 text-emerald-700',
+                  )}
+                >
+                  {tr('alerts.triggered')}
+                </span>
+              )}
               <span className={cx('shrink-0 rounded-md px-1.5 py-0.5 text-[10.5px] font-bold', t.chip, t.accentText)}>
                 {a.ticker}
               </span>

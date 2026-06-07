@@ -882,6 +882,7 @@ export interface Alert {
   threshold: number;
   active: boolean;
   created_at: string;
+  triggered_at?: string; // set once the evaluator fires it
 }
 
 /** Envelope returned by `GET /v1/alerts`. */

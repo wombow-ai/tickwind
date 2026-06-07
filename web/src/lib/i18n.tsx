@@ -115,6 +115,7 @@ const dict: Record<Lang, Record<string, string>> = {
     'alerts.empty': 'No alerts for this stock yet.',
     'alerts.delete': 'Delete alert',
     'alerts.deliveryNote': 'Triggered alerts will appear in-app. (Push notifications coming soon.)',
+    'alerts.triggered': 'Triggered',
     // home hub
     'home.title': 'Markets today',
     'home.subtitle':
@@ -362,6 +363,7 @@ const dict: Record<Lang, Record<string, string>> = {
     'alerts.empty': '这只股票还没有提醒。',
     'alerts.delete': '删除提醒',
     'alerts.deliveryNote': '触发的提醒会在站内显示。（推送通知开发中。）',
+    'alerts.triggered': '已触发',
     // home hub
     'home.title': '今日市场',
     'home.subtitle': '实时价格，以及全市场的趋势、新闻与讨论 —— 一站式呈现。',
