@@ -37,6 +37,7 @@ interface Feed<T> {
 function guessMarket(ticker: string): string {
   if (ticker.endsWith('.HK')) return 'HK';
   if (ticker.endsWith('.KS') || ticker.endsWith('.KQ')) return 'KR';
+  if (ticker.endsWith('.TW') || ticker.endsWith('.TWO')) return 'TW';
   return 'US';
 }
 

@@ -135,6 +135,8 @@ export function marketCurrency(market: string): string {
       return 'HK$';
     case 'KR':
       return '₩';
+    case 'TW':
+      return 'NT$';
     default:
       return '$';
   }
