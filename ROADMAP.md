@@ -236,8 +236,9 @@ stock page, from free SEC XBRL. ✅ backend extractor `edgar.Fundamentals` (late
 income/diluted-EPS + shares + equity, unit-tested; weighted-avg shares fallback for multi-class
 issuers like MSTR). ✅ **API `GET /v1/stocks/{t}/fundamentals`** (`ingest.FundamentalsCache` 24h
 + price → market cap/P/E/P/B; P/E null for losses) — **live-verified**: AAPL mkt-cap $4.51T/PE 41,
-MSTR $40.8B/PE null. Next: ⬜ frontend `FundamentalsCard` on StockView + i18n → deploy. (TTM is a
-later enhancement; v1 = latest fiscal year, clearly labelled.)
+MSTR $40.8B/PE null. ✅ **frontend `FundamentalsCard`** on StockView (市值/市盈率/营收/净利润 +
+EPS/P/B, P/E→亏损 for losses, hides for non-US) — **FEATURE COMPLETE & live** (CI green, AAPL/MSTR
+verified). TTM is a later enhancement; v1 = latest fiscal year, labelled.
 
 ### Backlog (owner-approved, in `/loop` order)
 - ✅ ① CI.  ✅ ② Opportunity seen-set persistence (was already built+live — `seen_form4`,

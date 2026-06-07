@@ -221,7 +221,9 @@ feature-flagged plugin, never on the critical path. Web only.
     shares fallback** for multi-class issuers like MSTR that omit dei shares). `ingest.FundamentalsCache`
     (24h + 1h-neg). `GET /v1/stocks/{t}/fundamentals` (`FundamentalsSource` in api) computes
     **market cap** (price×shares), **P/E** (price÷EPS, null for losses → 亏损/—), **P/B** from the
-    live quote (polled, else on-demand). Live-verified AAPL/MSTR. **TODO: frontend `FundamentalsCard`.**
+    live quote (polled, else on-demand). **Frontend `FundamentalsCard`** on StockView (compact
+    6-cell grid 市值/市盈率/营收/净利润 + EPS/P/B, period chip, P/E→亏损 for losses, `fmtCompactUSD`
+    T/B/M, hides on 404; i18n `fund.*`). ✅ **COMPLETE & live-verified** (AAPL $4.5T/PE41, MSTR $40.8B/PE—).
 - **On-demand collection** ✅ — `getStock` 404 for a REAL symbol (validated vs the
   symbol directory) fires `IngestOne` (fixes the "$MU all-empty" bug). `IngestOne` is
   **single-flight** (sync.Map per ticker → exactly one init collection). Frontend polls
