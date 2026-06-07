@@ -124,6 +124,18 @@ export function TopNav() {
               {tr('nav.watchlist')}
             </Link>
           )}
+          {user && (
+            <Link
+              href="/notes"
+              aria-current={pathname === '/notes' ? 'page' : undefined}
+              className={cx(
+                'rounded-full px-3 py-1.5 text-[13px] font-medium hover:opacity-80',
+                pathname === '/notes' ? t.accentText : t.sub,
+              )}
+            >
+              {tr('nav.notes')}
+            </Link>
+          )}
         </nav>
 
         <div className="ml-auto flex items-center gap-1.5 sm:gap-2">

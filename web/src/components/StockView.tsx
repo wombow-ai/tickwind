@@ -47,6 +47,7 @@ import {EmptyState, ErrorState, FeedSkeleton} from '@/components/ui/states';
 import {useToast} from '@/components/ui/Toast';
 import {TimelineItem} from '@/components/TimelineItem';
 import {PulseBar} from '@/components/PulseBar';
+import {NotesPanel} from '@/components/NotesPanel';
 
 type Status = 'loading' | 'ready' | 'error';
 interface Feed<T> {
@@ -62,11 +63,12 @@ function guessMarket(ticker: string): string {
 }
 
 const TABS_ANON = ['News', 'Discussion', 'Filings'] as const;
-const TABS_AUTH = ['News', 'Discussion', 'Saved links', 'Filings'] as const;
+const TABS_AUTH = ['News', 'Discussion', 'Notes', 'Saved links', 'Filings'] as const;
 // Tab keys stay English (they're the state values); only the display is translated.
 const TAB_LABELS: Record<string, string> = {
   News: 'mod.news',
   Discussion: 'mod.discussion',
+  Notes: 'nav.notes',
   'Saved links': 'stock.savedLinks',
   Filings: 'stock.filings',
 };
@@ -512,6 +514,7 @@ export function StockView({ticker}: {ticker: string}) {
             )}
           />
         )}
+        {tab === 'Notes' && isAuthed && <NotesPanel ticker={norm} />}
         {tab === 'Saved links' && isAuthed && (
           <div className="tw-fade">
             <form

@@ -329,6 +329,43 @@ async function deleteJson<T>(
   return (await res.json()) as T;
 }
 
+async function patchJson<T>(
+  path: string,
+  body: unknown,
+  signal?: AbortSignal,
+  token?: string | null,
+): Promise<T> {
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}${path}`, {
+      method: 'PATCH',
+      headers: authHeaders(
+        {'Content-Type': 'application/json', Accept: 'application/json'},
+        token,
+      ),
+      body: JSON.stringify(body),
+      signal,
+    });
+  } catch {
+    throw new ApiError(`network error contacting ${API_BASE}${path}`, 0);
+  }
+
+  if (!res.ok) {
+    let detail = res.statusText;
+    try {
+      const data = (await res.json()) as ApiErrorBody;
+      if (data.error) {
+        detail = data.error;
+      }
+    } catch {
+      // Non-JSON error body; fall back to the status text.
+    }
+    throw new ApiError(detail, res.status);
+  }
+
+  return (await res.json()) as T;
+}
+
 /** Normalizes a user-supplied ticker into the API's canonical form. */
 function normalizeTicker(ticker: string): string {
   return ticker.trim().toUpperCase();
@@ -712,6 +749,71 @@ export function getClips(
     `/v1/stocks/${encodeURIComponent(normalizeTicker(ticker))}` +
     `/clips?limit=${encodeURIComponent(String(limit))}`;
   return getJson<ClipsResponse>(path, signal, token);
+}
+
+/** A user's private note/opinion (stock- and/or calendar-date-scoped). */
+export interface Note {
+  id: string;
+  user_id: string;
+  ticker?: string;
+  /** "YYYY-MM-DD"; absent when undated. */
+  note_date?: string;
+  body: string;
+  pinned: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+/** Envelope returned by `GET /v1/notes`. */
+export interface NotesResponse {
+  count: number;
+  notes: Note[];
+}
+
+/** Lists the caller's notes — by ticker, by [from,to] date range, or all. */
+export function getNotes(
+  token: string | null,
+  opts: {ticker?: string; from?: string; to?: string; limit?: number} = {},
+  signal?: AbortSignal,
+): Promise<NotesResponse> {
+  const q = new URLSearchParams();
+  if (opts.ticker) q.set('ticker', normalizeTicker(opts.ticker));
+  if (opts.from) q.set('from', opts.from);
+  if (opts.to) q.set('to', opts.to);
+  q.set('limit', String(opts.limit ?? 200));
+  return getJson<NotesResponse>(`/v1/notes?${q.toString()}`, signal, token);
+}
+
+/** Creates a note (stock- and/or date-scoped). Requires authentication. */
+export function createNote(
+  token: string | null,
+  input: {ticker?: string; note_date?: string; body: string; pinned?: boolean},
+  signal?: AbortSignal,
+): Promise<Note> {
+  return postJson<Note>('/v1/notes', input, signal, token);
+}
+
+/** Edits a note's body and/or pinned flag. Requires authentication. */
+export function updateNote(
+  token: string | null,
+  id: string,
+  patch: {body?: string; pinned?: boolean},
+  signal?: AbortSignal,
+): Promise<Note> {
+  return patchJson<Note>(`/v1/notes/${encodeURIComponent(id)}`, patch, signal, token);
+}
+
+/** Deletes a note. Requires authentication. */
+export function deleteNote(
+  token: string | null,
+  id: string,
+  signal?: AbortSignal,
+): Promise<{deleted: boolean}> {
+  return deleteJson<{deleted: boolean}>(
+    `/v1/notes/${encodeURIComponent(id)}`,
+    signal,
+    token,
+  );
 }
 
 /** Fetches backend health. */
