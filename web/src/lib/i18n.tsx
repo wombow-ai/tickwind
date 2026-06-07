@@ -83,7 +83,14 @@ const dict: Record<Lang, Record<string, string>> = {
     'nav.settings': 'Settings',
     'nav.signout': 'Sign out',
     'nav.account': 'Account menu',
+    'nav.signedIn': 'Signed in',
     'nav.menu': 'Menu',
+    // trading-session badge
+    'session.pre': 'Pre-market',
+    'session.regular': 'Regular',
+    'session.post': 'After-hours',
+    'session.overnight': 'Overnight',
+    'session.closed': 'Closed',
     // home hub
     'home.title': 'Markets today',
     'home.subtitle':
@@ -299,7 +306,14 @@ const dict: Record<Lang, Record<string, string>> = {
     'nav.settings': '设置',
     'nav.signout': '退出登录',
     'nav.account': '账户菜单',
+    'nav.signedIn': '已登录',
     'nav.menu': '菜单',
+    // trading-session badge
+    'session.pre': '盘前',
+    'session.regular': '盘中',
+    'session.post': '盘后',
+    'session.overnight': '夜盘',
+    'session.closed': '休市',
     // home hub
     'home.title': '今日市场',
     'home.subtitle': '实时价格，以及全市场的趋势、新闻与讨论 —— 一站式呈现。',

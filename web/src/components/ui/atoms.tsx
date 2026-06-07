@@ -1,8 +1,9 @@
 'use client';
 
 import {useEffect, useId, useRef, useState} from 'react';
+import {useT} from '@/lib/i18n';
 import {useDark} from '@/lib/theme';
-import {cx, fmtDelta, fmtPrice, sessionStyle, tok} from '@/lib/ui';
+import {cx, fmtDelta, fmtPrice, SESSIONS, sessionStyle, tok} from '@/lib/ui';
 
 /** The Tickwind wordmark + breeze-arrow glyph. */
 export function Logo({size = 30}: {size?: number}) {
@@ -51,8 +52,10 @@ export function Logo({size = 30}: {size?: number}) {
 /** Signature trading-session badge (pre / regular / post / overnight / closed). */
 export function SessionBadge({session, sm}: {session: string; sm?: boolean}) {
   const dark = useDark();
+  const tr = useT();
   const s = sessionStyle(session);
   const c = dark ? s.D : s.L;
+  const key = SESSIONS[session] ? session : 'closed';
   return (
     <span
       className={cx(
@@ -65,7 +68,7 @@ export function SessionBadge({session, sm}: {session: string; sm?: boolean}) {
         className={cx('rounded-full', s.live && 'tw-livedot')}
         style={{width: 6, height: 6, background: c.dot}}
       />
-      {s.label}
+      {tr(`session.${key}`)}
     </span>
   );
 }

@@ -366,7 +366,7 @@ function AccountMenu({
           >
             <div className={cx('mb-1 border-b px-2.5 py-2', t.hair)}>
               <p className={cx('truncate text-[13px] font-semibold', t.text)}>
-                {email ?? 'Signed in'}
+                {email ?? tr('nav.signedIn')}
               </p>
             </div>
             <Link
