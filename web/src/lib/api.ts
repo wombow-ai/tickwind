@@ -873,6 +873,46 @@ export function deleteNote(
   );
 }
 
+/** A per-user price/event alert on a ticker. */
+export interface Alert {
+  id: string;
+  user_id: string;
+  ticker: string;
+  kind: string; // price_above | price_below | pct_move | new_filing
+  threshold: number;
+  active: boolean;
+  created_at: string;
+}
+
+/** Envelope returned by `GET /v1/alerts`. */
+export interface AlertsResponse {
+  count: number;
+  alerts: Alert[];
+}
+
+/** Lists the caller's alerts. Requires authentication. */
+export function getAlerts(token: string | null, signal?: AbortSignal): Promise<AlertsResponse> {
+  return getJson<AlertsResponse>('/v1/alerts', signal, token);
+}
+
+/** Creates a price/event alert. Requires authentication. */
+export function createAlert(
+  token: string | null,
+  input: {ticker: string; kind: string; threshold: number},
+  signal?: AbortSignal,
+): Promise<Alert> {
+  return postJson<Alert>('/v1/alerts', input, signal, token);
+}
+
+/** Deletes an alert. Requires authentication. */
+export function deleteAlert(
+  token: string | null,
+  id: string,
+  signal?: AbortSignal,
+): Promise<{deleted: boolean}> {
+  return deleteJson<{deleted: boolean}>(`/v1/alerts/${encodeURIComponent(id)}`, signal, token);
+}
+
 /** A public user comment on a stock or the global community board. */
 export interface Comment {
   id: string;
