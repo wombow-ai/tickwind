@@ -216,6 +216,16 @@ feature-flagged plugin, never on the critical path. Web only.
 - **Theme**: `.dark` class on `<html>`, read via `useSyncExternalStore` (single
   source of truth = the DOM class) + a no-flash inline script in `layout.tsx`.
   `useTheme`/`useDark` in `web/src/lib/theme.tsx`. Default light.
+- **i18n** (zh/en) ✅ mirrors the theme pattern: chosen language lives on `<html lang>`
+  (no-flash inline script + `useSyncExternalStore`), single source of truth in
+  `web/src/lib/i18n.tsx` (`useLang`/`useT`; `tr=useT()` in components since `t`=tokens).
+  TopNav has a 中/EN toggle. **All user-facing chrome is translated** — nav, home hub,
+  Board (Markets/Watchlist), Hot, News/Discussion (FeedPage), Opportunities, Guru, WSB,
+  Events, stock detail (StockView + PulseBar), Topics, error/empty states, auth
+  (login/signup), Footer, Settings, feed timestamps. Data (prices, headlines, company
+  names, source/platform labels) shows as-sourced. `{t}`/`{n}` placeholders +`.replace()`
+  for interpolation. Tab/board keys stay English where they double as state. Left in
+  English by design: the `/announcements` changelog (release-notes content).
 - **Auth**: `web/src/lib/auth.tsx` (`AuthProvider`/`useAuth`) tracks the Supabase
   user + exposes `getToken()`; `web/src/lib/api.ts` private calls take that token
   as `Authorization: Bearer`. `web/src/proxy.ts` refreshes the session cookie
