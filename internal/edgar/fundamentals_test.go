@@ -88,6 +88,22 @@ func TestExtractFundamentals_FallbackTagAndLoss(t *testing.T) {
 	}
 }
 
+func TestExtractFundamentals_SharesFallbackWeightedAvg(t *testing.T) {
+	resp := factsResp{EntityName: "MultiClass Inc"}
+	// No point-in-time shares (multi-class issuer) → fall back to weighted-average.
+	resp.Facts.UsGaap = map[string]xbrlConcept{
+		"WeightedAverageNumberOfSharesOutstandingBasic": shares(
+			factPoint{Start: "2024-10-01", End: "2024-12-31", Val: 250_000_000, FY: 2024, FP: "Q4", Filed: "2025-01-15"},
+			factPoint{Start: "2025-01-01", End: "2025-03-31", Val: 333_913_000, FY: 2025, FP: "Q1", Filed: "2025-04-15"}, // latest
+		),
+		"Revenues": usd(factPoint{Start: "2024-01-01", End: "2024-12-31", Val: 477, FY: 2024, FP: "FY", Form: "10-K"}),
+	}
+	f := extractFundamentals(resp)
+	if f.Shares != 333_913_000 {
+		t.Errorf("Shares = %d, want 333913000 (latest weighted-avg fallback)", f.Shares)
+	}
+}
+
 func TestExtractFundamentals_Empty(t *testing.T) {
 	f := extractFundamentals(factsResp{EntityName: "Empty Co"})
 	if f.HasData() {

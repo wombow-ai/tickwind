@@ -90,6 +90,16 @@ func extractFundamentals(resp factsResp) Fundamentals {
 	} else if p, ok := latestInstant(pick(gaap, "shares", "CommonStockSharesOutstanding")); ok {
 		f.Shares = int64(p.Val)
 	}
+	// Fallback for multi-class / oddly-tagged issuers (e.g. MSTR) that omit a
+	// point-in-time cover-page count: the latest weighted-average share count
+	// (a clean single total — it's also the EPS denominator).
+	if f.Shares == 0 {
+		if p, ok := latestInstant(pick(gaap, "shares",
+			"WeightedAverageNumberOfSharesOutstandingBasic",
+			"WeightedAverageNumberOfDilutedSharesOutstanding")); ok && p.Val > 0 {
+			f.Shares = int64(p.Val)
+		}
+	}
 
 	// Stockholders' equity (point-in-time) — for P/B at the API layer.
 	if p, ok := latestInstant(pick(gaap, "USD",
