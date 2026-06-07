@@ -26,6 +26,7 @@ type Store struct {
 	watchlist map[string][]string                // userID -> ordered tickers
 	clips     map[string]map[string]store.Clip   // userID -> clipID -> Clip
 	notes     map[string]map[string]store.Note   // userID -> noteID -> Note
+	comments  map[string]store.Comment           // commentID -> Comment (public)
 }
 
 func New() *Store {
@@ -42,6 +43,7 @@ func New() *Store {
 		watchlist: make(map[string][]string),
 		clips:     make(map[string]map[string]store.Clip),
 		notes:     make(map[string]map[string]store.Note),
+		comments:  make(map[string]store.Comment),
 	}
 }
 
@@ -392,6 +394,45 @@ func (s *Store) DeleteNote(_ context.Context, userID, id string) (bool, error) {
 	}
 	delete(s.notes[userID], id)
 	return true, nil
+}
+
+func (s *Store) SaveComment(_ context.Context, c store.Comment) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.comments[c.ID] = c
+	return nil
+}
+
+func (s *Store) ListComments(_ context.Context, ticker string, limit int) ([]store.Comment, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	tk := key(ticker) // "" stays "" → matches the global board
+	out := make([]store.Comment, 0)
+	for _, c := range s.comments {
+		if key(c.Ticker) == tk {
+			out = append(out, c)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].CreatedAt.After(out[j].CreatedAt) })
+	return limited(out, limit), nil
+}
+
+func (s *Store) DeleteComment(_ context.Context, id, userID string, admin bool) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	c, ok := s.comments[id]
+	if !ok || (!admin && c.UserID != userID) {
+		return false, nil
+	}
+	delete(s.comments, id) // memory hard-deletes; postgres soft-deletes for audit
+	return true, nil
+}
+
+func (s *Store) ReportComment(_ context.Context, id string) (bool, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	_, ok := s.comments[id]
+	return ok, nil
 }
 
 // limited returns the first limit elements (limit <= 0 means all).

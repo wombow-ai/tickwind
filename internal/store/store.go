@@ -170,6 +170,20 @@ type NoteFilter struct {
 	Limit  int
 }
 
+// Comment is a PUBLIC user comment on a stock (Ticker) or the global community
+// board (Ticker == ""). Unlike notes/clips it's visible to everyone, so it
+// carries a public Author display name. IP is captured for moderation but is
+// never serialized to clients (json:"-").
+type Comment struct {
+	ID        string    `json:"id"`
+	UserID    string    `json:"user_id"`
+	Author    string    `json:"author"`
+	Ticker    string    `json:"ticker,omitempty"`
+	Body      string    `json:"body"`
+	CreatedAt time.Time `json:"created_at"`
+	IP        string    `json:"-"`
+}
+
 // Store is the persistence boundary. Every backend (memory, postgres)
 // implements this so the rest of the app never depends on a driver.
 type Store interface {
@@ -231,4 +245,13 @@ type Store interface {
 	ListNotes(ctx context.Context, f NoteFilter) ([]Note, error)
 	UpdateNote(ctx context.Context, userID, id string, body *string, pinned *bool) (Note, bool, error)
 	DeleteNote(ctx context.Context, userID, id string) (bool, error)
+
+	// Comments are PUBLIC user posts on a stock (Ticker) or the global board
+	// (Ticker == ""). Durable (Market store). List excludes soft-deleted rows;
+	// Delete is author-or-admin (admin=true skips the author check); Report flags
+	// a comment for moderation. All return found=false when the id is unknown.
+	SaveComment(ctx context.Context, c Comment) error
+	ListComments(ctx context.Context, ticker string, limit int) ([]Comment, error)
+	DeleteComment(ctx context.Context, id, userID string, admin bool) (bool, error)
+	ReportComment(ctx context.Context, id string) (bool, error)
 }

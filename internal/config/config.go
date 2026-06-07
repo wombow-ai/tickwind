@@ -72,6 +72,11 @@ type Config struct {
 	SupabaseURL       string
 	SupabaseJWTSecret string
 
+	// AdminUserIDs are Supabase user UUIDs allowed to delete ANY comment
+	// (moderation takedown); everyone else can only delete their own. Comma-
+	// separated env ADMIN_USER_IDS.
+	AdminUserIDs []string
+
 	// Retention tunes the tiered Pruner (off the request path) that bounds the
 	// durable market tables; see RetentionConfig.
 	Retention RetentionConfig
@@ -126,6 +131,7 @@ func Load() Config {
 		LLMModel:                env("LLM_MODEL", ""),
 		SupabaseURL:             strings.TrimRight(env("SUPABASE_URL", ""), "/"),
 		SupabaseJWTSecret:       env("SUPABASE_JWT_SECRET", ""),
+		AdminUserIDs:            splitCSVRaw(env("ADMIN_USER_IDS", "")),
 		Retention: RetentionConfig{
 			NewsDays:             envInt("RETAIN_NEWS_DAYS", 60),
 			NewsHotDays:          envInt("RETAIN_NEWS_HOT_DAYS", 120),

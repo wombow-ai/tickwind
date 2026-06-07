@@ -675,3 +675,68 @@ func (s *Store) DeleteNote(ctx context.Context, userID, id string) (bool, error)
 	}
 	return tag.RowsAffected() == 1, nil
 }
+
+// SaveComment inserts a public comment (empty ticker → NULL = global board).
+func (s *Store) SaveComment(ctx context.Context, c store.Comment) error {
+	const query = `
+INSERT INTO comments (id, user_id, author, ticker, body, ip, created_at)
+VALUES ($1, $2, $3, NULLIF($4,''), $5, NULLIF($6,''), $7)`
+	if _, err := s.pool.Exec(ctx, query, c.ID, c.UserID, c.Author, c.Ticker, c.Body, c.IP, c.CreatedAt); err != nil {
+		return fmt.Errorf("postgres: save comment: %w", err)
+	}
+	return nil
+}
+
+// ListComments returns non-deleted comments for a ticker ("" = the global board,
+// i.e. ticker IS NULL), newest first.
+func (s *Store) ListComments(ctx context.Context, ticker string, limit int) ([]store.Comment, error) {
+	var query string
+	var args []any
+	if ticker == "" {
+		query = `SELECT id, user_id, author, COALESCE(ticker,''), body, created_at FROM comments WHERE ticker IS NULL AND NOT deleted ORDER BY created_at DESC`
+	} else {
+		query = `SELECT id, user_id, author, COALESCE(ticker,''), body, created_at FROM comments WHERE ticker = $1 AND NOT deleted ORDER BY created_at DESC`
+		args = append(args, ticker)
+	}
+	if limit > 0 {
+		args = append(args, limit)
+		query += fmt.Sprintf(" LIMIT $%d", len(args))
+	}
+	rows, err := s.pool.Query(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("postgres: list comments: %w", err)
+	}
+	defer rows.Close()
+	var out []store.Comment
+	for rows.Next() {
+		var c store.Comment
+		if err := rows.Scan(&c.ID, &c.UserID, &c.Author, &c.Ticker, &c.Body, &c.CreatedAt); err != nil {
+			return nil, fmt.Errorf("postgres: scan comment: %w", err)
+		}
+		out = append(out, c)
+	}
+	return out, rows.Err()
+}
+
+// DeleteComment soft-deletes a comment (kept for moderation audit). admin=true
+// skips the author check; otherwise only the author can delete. found=false when
+// the id is unknown or not permitted.
+func (s *Store) DeleteComment(ctx context.Context, id, userID string, admin bool) (bool, error) {
+	tag, err := s.pool.Exec(ctx,
+		`UPDATE comments SET deleted = true WHERE id = $1 AND NOT deleted AND ($3 OR user_id = $2)`,
+		id, userID, admin)
+	if err != nil {
+		return false, fmt.Errorf("postgres: delete comment: %w", err)
+	}
+	return tag.RowsAffected() == 1, nil
+}
+
+// ReportComment flags a comment for moderation (increments its report count).
+func (s *Store) ReportComment(ctx context.Context, id string) (bool, error) {
+	tag, err := s.pool.Exec(ctx,
+		`UPDATE comments SET reports = reports + 1, flagged = true WHERE id = $1 AND NOT deleted`, id)
+	if err != nil {
+		return false, fmt.Errorf("postgres: report comment: %w", err)
+	}
+	return tag.RowsAffected() == 1, nil
+}

@@ -136,3 +136,21 @@ func (s Split) UpdateNote(ctx context.Context, userID, id string, body *string, 
 func (s Split) DeleteNote(ctx context.Context, userID, id string) (bool, error) {
 	return s.User.DeleteNote(ctx, userID, id)
 }
+
+// Comments are public, valuable community content → the durable Market store.
+
+func (s Split) SaveComment(ctx context.Context, c Comment) error {
+	return s.Market.SaveComment(ctx, c)
+}
+
+func (s Split) ListComments(ctx context.Context, ticker string, limit int) ([]Comment, error) {
+	return s.Market.ListComments(ctx, ticker, limit)
+}
+
+func (s Split) DeleteComment(ctx context.Context, id, userID string, admin bool) (bool, error) {
+	return s.Market.DeleteComment(ctx, id, userID, admin)
+}
+
+func (s Split) ReportComment(ctx context.Context, id string) (bool, error) {
+	return s.Market.ReportComment(ctx, id)
+}

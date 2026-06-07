@@ -33,6 +33,7 @@ func newTestServer() *httptest.Server {
 		nil, // no ticker ingestor in tests
 		nil, // no symbol searcher in tests
 		nil, // no event source in tests
+		nil, // no admin user ids in tests
 		slog.New(slog.NewTextHandler(io.Discard, nil)),
 	)
 	return httptest.NewServer(h)
@@ -98,6 +99,7 @@ func TestWatchlistAddTriggersIngest(t *testing.T) {
 		ing,
 		nil, // no symbol searcher
 		nil, // no event source
+		nil, // no admin user ids
 		slog.New(slog.NewTextHandler(io.Discard, nil)),
 	)
 	srv := httptest.NewServer(h)

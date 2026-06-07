@@ -14,6 +14,7 @@ import (
 	"hash/fnv"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"sort"
 	"strconv"
@@ -80,23 +81,29 @@ type EventSource interface {
 }
 
 type Server struct {
-	store    store.Store
-	hub      QuoteStream
-	clip     *clip.Fetcher
-	enrich   enrich.Enricher
-	auth     *auth.Verifier
-	bars     BarSource
-	topics   TopicSource
-	opps     OpportunitySource
-	gurus    GuruSource
-	ingestor TickerIngestor
-	symbols  SymbolSearcher
-	events   EventSource
-	log      *slog.Logger
+	store     store.Store
+	hub       QuoteStream
+	clip      *clip.Fetcher
+	enrich    enrich.Enricher
+	auth      *auth.Verifier
+	bars      BarSource
+	topics    TopicSource
+	opps      OpportunitySource
+	gurus     GuruSource
+	ingestor  TickerIngestor
+	symbols   SymbolSearcher
+	events    EventSource
+	admins    map[string]bool // user IDs allowed to delete any comment
+	commentRL *rateLimiter    // per-user comment-post throttle
+	log       *slog.Logger
 }
 
-func New(st store.Store, hub QuoteStream, enricher enrich.Enricher, verifier *auth.Verifier, bars BarSource, topicSrc TopicSource, oppSrc OpportunitySource, guruSrc GuruSource, ingestor TickerIngestor, symbolSrc SymbolSearcher, eventSrc EventSource, log *slog.Logger) http.Handler {
-	s := &Server{store: st, hub: hub, clip: clip.NewFetcher(), enrich: enricher, auth: verifier, bars: bars, topics: topicSrc, opps: oppSrc, gurus: guruSrc, ingestor: ingestor, symbols: symbolSrc, events: eventSrc, log: log}
+func New(st store.Store, hub QuoteStream, enricher enrich.Enricher, verifier *auth.Verifier, bars BarSource, topicSrc TopicSource, oppSrc OpportunitySource, guruSrc GuruSource, ingestor TickerIngestor, symbolSrc SymbolSearcher, eventSrc EventSource, adminIDs []string, log *slog.Logger) http.Handler {
+	admins := make(map[string]bool, len(adminIDs))
+	for _, id := range adminIDs {
+		admins[id] = true
+	}
+	s := &Server{store: st, hub: hub, clip: clip.NewFetcher(), enrich: enricher, auth: verifier, bars: bars, topics: topicSrc, opps: oppSrc, gurus: guruSrc, ingestor: ingestor, symbols: symbolSrc, events: eventSrc, admins: admins, commentRL: newRateLimiter(10, 10*time.Minute), log: log}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", s.health)
 
@@ -110,6 +117,10 @@ func New(st store.Store, hub QuoteStream, enricher enrich.Enricher, verifier *au
 	mux.HandleFunc("GET /v1/notes", s.getNotes)
 	mux.HandleFunc("PATCH /v1/notes/{id}", s.patchNote)
 	mux.HandleFunc("DELETE /v1/notes/{id}", s.deleteNote)
+	mux.HandleFunc("GET /v1/comments", s.getComments) // public read
+	mux.HandleFunc("POST /v1/comments", s.postComment)
+	mux.HandleFunc("DELETE /v1/comments/{id}", s.deleteComment)
+	mux.HandleFunc("POST /v1/comments/{id}/report", s.reportComment)
 
 	// Public (market data — open for SEO / shareable stock pages)
 	mux.HandleFunc("GET /v1/stocks/{ticker}", s.getStock)
@@ -428,6 +439,173 @@ func (s *Server) deleteNote(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"deleted": true})
+}
+
+// ── Comments (PUBLIC read; authenticated write) ──────────────────────────
+//
+// Comments are a §230-style neutral-host feature: users post opinions, we host
+// them. Safeguards here: auth-gated posting, per-user rate-limiting (anti-spam),
+// author/IP/timestamp captured for moderation, soft-delete (author or admin) and
+// a report endpoint. The "not investment advice" disclaimer + ToS live in the UI.
+
+func (s *Server) getComments(w http.ResponseWriter, r *http.Request) {
+	ticker := strings.ToUpper(strings.TrimSpace(r.URL.Query().Get("ticker")))
+	comments, err := s.store.ListComments(r.Context(), ticker, queryLimit(r, 100))
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, errBody(err.Error()))
+		return
+	}
+	if comments == nil {
+		comments = []store.Comment{} // marshal as [] not null
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ticker":   ticker,
+		"count":    len(comments),
+		"comments": comments,
+	})
+}
+
+func (s *Server) postComment(w http.ResponseWriter, r *http.Request) {
+	u, ok := s.requireUser(w, r)
+	if !ok {
+		return
+	}
+	if !s.commentRL.allow(u.ID) {
+		writeJSON(w, http.StatusTooManyRequests, errBody("you're posting too fast — please wait a moment"))
+		return
+	}
+	var req struct {
+		Ticker string `json:"ticker"`
+		Body   string `json:"body"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 8<<10)).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, errBody("invalid request body"))
+		return
+	}
+	body := strings.TrimSpace(req.Body)
+	if body == "" {
+		writeJSON(w, http.StatusBadRequest, errBody("a comment body is required"))
+		return
+	}
+	if len([]rune(body)) > 2000 {
+		writeJSON(w, http.StatusBadRequest, errBody("comment too long (2000 chars max)"))
+		return
+	}
+	c := store.Comment{
+		ID:        "cmt:" + randHex(),
+		UserID:    u.ID,
+		Author:    authorName(u.Email),
+		Ticker:    strings.ToUpper(strings.TrimSpace(req.Ticker)),
+		Body:      body,
+		CreatedAt: time.Now().UTC(),
+		IP:        clientIP(r),
+	}
+	if err := s.store.SaveComment(r.Context(), c); err != nil {
+		writeJSON(w, http.StatusInternalServerError, errBody(err.Error()))
+		return
+	}
+	writeJSON(w, http.StatusCreated, c)
+}
+
+func (s *Server) deleteComment(w http.ResponseWriter, r *http.Request) {
+	u, ok := s.requireUser(w, r)
+	if !ok {
+		return
+	}
+	deleted, err := s.store.DeleteComment(r.Context(), r.PathValue("id"), u.ID, s.admins[u.ID])
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, errBody(err.Error()))
+		return
+	}
+	if !deleted {
+		writeJSON(w, http.StatusNotFound, errBody("comment not found"))
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"deleted": true})
+}
+
+func (s *Server) reportComment(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.requireUser(w, r); !ok {
+		return
+	}
+	reported, err := s.store.ReportComment(r.Context(), r.PathValue("id"))
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, errBody(err.Error()))
+		return
+	}
+	if !reported {
+		writeJSON(w, http.StatusNotFound, errBody("comment not found"))
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"reported": true})
+}
+
+// randHex returns 16 random bytes hex-encoded, for entity ids.
+func randHex() string {
+	var b [16]byte
+	_, _ = rand.Read(b[:])
+	return hex.EncodeToString(b[:])
+}
+
+// authorName derives a public display handle from an email (local-part), with a
+// neutral fallback. (We never expose the full email or the user id publicly.)
+func authorName(email string) string {
+	email = strings.TrimSpace(email)
+	if i := strings.IndexByte(email, '@'); i > 0 {
+		return email[:i]
+	}
+	if email != "" {
+		return email
+	}
+	return "anon"
+}
+
+// clientIP is the best-effort client IP for moderation (Cloudflare / X-Forwarded-For aware).
+func clientIP(r *http.Request) string {
+	if ip := r.Header.Get("CF-Connecting-IP"); ip != "" {
+		return ip
+	}
+	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+		if i := strings.IndexByte(xff, ','); i > 0 {
+			return strings.TrimSpace(xff[:i])
+		}
+		return strings.TrimSpace(xff)
+	}
+	if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
+		return host
+	}
+	return r.RemoteAddr
+}
+
+// rateLimiter is a simple per-key sliding-window limiter (anti-spam).
+type rateLimiter struct {
+	mu     sync.Mutex
+	hits   map[string][]time.Time
+	max    int
+	window time.Duration
+}
+
+func newRateLimiter(max int, window time.Duration) *rateLimiter {
+	return &rateLimiter{hits: make(map[string][]time.Time), max: max, window: window}
+}
+
+// allow records a hit for key and reports whether it's within the limit.
+func (rl *rateLimiter) allow(key string) bool {
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+	cutoff := time.Now().Add(-rl.window)
+	kept := rl.hits[key][:0]
+	for _, t := range rl.hits[key] {
+		if t.After(cutoff) {
+			kept = append(kept, t)
+		}
+	}
+	if len(kept) >= rl.max {
+		rl.hits[key] = kept
+		return false
+	}
+	rl.hits[key] = append(kept, time.Now())
+	return true
 }
 
 // ── Public: market data ──────────────────────────────────────────────────
