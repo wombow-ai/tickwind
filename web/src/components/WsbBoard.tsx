@@ -4,6 +4,7 @@ import {Flame, TrendingDown, TrendingUp} from 'lucide-react';
 import Link from 'next/link';
 import {useCallback, useEffect, useState} from 'react';
 import {getHot, type HotStock} from '@/lib/api';
+import {useT} from '@/lib/i18n';
 import {useDark} from '@/lib/theme';
 import {cx, tok} from '@/lib/ui';
 
@@ -16,6 +17,7 @@ import {cx, tok} from '@/lib/ui';
 export function WsbBoard() {
   const dark = useDark();
   const t = tok(dark);
+  const tr = useT();
   const [stocks, setStocks] = useState<HotStock[]>([]);
 
   const load = useCallback(() => {
@@ -35,13 +37,13 @@ export function WsbBoard() {
       <div className="mb-2 flex items-center justify-between">
         <h2 className={cx('flex items-center gap-1.5 text-[14px] font-bold', t.text)}>
           <Flame size={15} className={dark ? 'text-orange-300' : 'text-orange-500'} />
-          WSB Trending
+          {tr('wsb.title')}
         </h2>
         <Link
           href="/hot"
           className={cx('shrink-0 text-[12px] font-semibold hover:opacity-80', t.accentText)}
         >
-          Hot list →
+          {tr('wsb.hotList')} →
         </Link>
       </div>
       <div>
@@ -66,14 +68,14 @@ export function WsbBoard() {
               {s.ticker}
             </span>
             <span className={cx('shrink-0 text-[11px] tabular-nums', t.faint)}>
-              {s.mentions} mentions
+              {s.mentions} {tr('wsb.mentions')}
             </span>
             <Arrow change={s.change} dark={dark} />
           </Link>
         ))}
       </div>
       <p className={cx('mt-2 text-[10.5px]', t.faint)}>
-        Source: ApeWisdom · discussion volume, not advice.
+        {tr('wsb.footer')}
       </p>
     </section>
   );

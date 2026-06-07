@@ -4,6 +4,7 @@ import {FileText, Sparkles, Users} from 'lucide-react';
 import Link from 'next/link';
 import {useCallback, useEffect, useState} from 'react';
 import {getOpportunities, type OpportunityStock} from '@/lib/api';
+import {useT} from '@/lib/i18n';
 import {useDark} from '@/lib/theme';
 import {cx, tok} from '@/lib/ui';
 import {EmptyState, ErrorState, FeedSkeleton} from '@/components/ui/states';
@@ -27,6 +28,7 @@ function money(v: number): string {
 export function OpportunityBoard() {
   const dark = useDark();
   const t = tok(dark);
+  const tr = useT();
   const [status, setStatus] = useState<Status>('loading');
   const [stocks, setStocks] = useState<OpportunityStock[]>([]);
 
@@ -55,12 +57,9 @@ export function OpportunityBoard() {
           )}
         >
           <Sparkles size={20} className={dark ? 'text-sky-300' : 'text-sky-600'} />
-          Opportunity board
+          {tr('opp.title')}
         </h1>
-        <p className={cx('mt-1 text-[13.5px]', t.sub)}>
-          Small-cap US stocks where company insiders are buying on the open market
-          — surfaced from SEC Form 4 filings.
-        </p>
+        <p className={cx('mt-1 text-[13.5px]', t.sub)}>{tr('opp.subtitle')}</p>
       </header>
 
       <div
@@ -71,17 +70,15 @@ export function OpportunityBoard() {
           t.sub,
         )}
       >
-        Rows are surfaced by data signals (insider open-market buying), not
-        recommendations. Inclusion is not a rating or a suggestion to buy.
-        Small-caps can be volatile and illiquid. Not investment advice.
+        {tr('opp.disclaimer')}
       </div>
 
       {status === 'loading' && <FeedSkeleton />}
       {status === 'error' && <ErrorState onRetry={load} />}
       {status === 'ready' && stocks.length === 0 && (
         <EmptyState
-          label="No insider-buy signals yet"
-          sub="The board fills in as recent SEC Form 4 open-market buys are filed."
+          label={tr('opp.empty')}
+          sub={tr('opp.emptySub')}
           icon={Users}
         />
       )}
@@ -94,13 +91,14 @@ export function OpportunityBoard() {
       )}
 
       <p className={cx('mt-4 text-center text-[11px]', t.faint)}>
-        Insider data from public SEC EDGAR filings. Not investment advice.
+        {tr('opp.footer')}
       </p>
     </div>
   );
 }
 
 function OppCard({s, dark, t}: {s: OpportunityStock; dark: boolean; t: Tokens}) {
+  const tr = useT();
   return (
     <section className={cx('rounded-2xl border p-4', t.card, t.border, t.soft)}>
       <div className="flex items-start gap-3">
@@ -129,7 +127,7 @@ function OppCard({s, dark, t}: {s: OpportunityStock; dark: boolean; t: Tokens}) 
                 dark ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-500',
               )}
             >
-              Small cap · {money(s.market_cap)}
+              {tr('opp.smallCap')} · {money(s.market_cap)}
             </span>
           </div>
 
@@ -181,7 +179,7 @@ function OppCard({s, dark, t}: {s: OpportunityStock; dark: boolean; t: Tokens}) 
                 t.accentText,
               )}
             >
-              <FileText size={12} /> View SEC filing
+              <FileText size={12} /> {tr('opp.viewFiling')}
             </a>
           )}
         </div>

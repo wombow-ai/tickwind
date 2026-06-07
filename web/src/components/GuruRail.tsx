@@ -4,6 +4,7 @@ import {ExternalLink, Mic} from 'lucide-react';
 import Link from 'next/link';
 import {useCallback, useEffect, useState} from 'react';
 import {getGurus, type GuruItem} from '@/lib/api';
+import {useT} from '@/lib/i18n';
 import {useDark} from '@/lib/theme';
 import {cx, tok} from '@/lib/ui';
 import {EmptyState, ErrorState, FeedSkeleton} from '@/components/ui/states';
@@ -29,6 +30,7 @@ function ago(iso: string): string {
 export function GuruRail() {
   const dark = useDark();
   const t = tok(dark);
+  const tr = useT();
   const [status, setStatus] = useState<Status>('loading');
   const [items, setItems] = useState<GuruItem[]>([]);
 
@@ -57,20 +59,17 @@ export function GuruRail() {
           )}
         >
           <Mic size={20} className={dark ? 'text-violet-300' : 'text-violet-600'} />
-          Guru-watch
+          {tr('guru.title')}
         </h2>
-        <p className={cx('mt-1 text-[13.5px]', t.sub)}>
-          What independent finance writers are publishing — and the tickers they
-          name. Opinions for context, linked to the source.
-        </p>
+        <p className={cx('mt-1 text-[13.5px]', t.sub)}>{tr('guru.subtitle')}</p>
       </header>
 
       {status === 'loading' && <FeedSkeleton />}
       {status === 'error' && <ErrorState onRetry={load} />}
       {status === 'ready' && items.length === 0 && (
         <EmptyState
-          label="No guru posts yet"
-          sub="The rail fills in as curated writers publish new pieces."
+          label={tr('guru.empty')}
+          sub={tr('guru.emptySub')}
           icon={Mic}
         />
       )}
@@ -83,14 +82,14 @@ export function GuruRail() {
       )}
 
       <p className={cx('mt-4 text-center text-[11px]', t.faint)}>
-        Third-party opinions from public RSS feeds, shown for context. Not an
-        endorsement. Not investment advice.
+        {tr('guru.footer')}
       </p>
     </div>
   );
 }
 
 function GuruCard({g, dark, t}: {g: GuruItem; dark: boolean; t: Tokens}) {
+  const tr = useT();
   const when = ago(g.published);
   return (
     <section className={cx('rounded-2xl border p-4', t.card, t.border, t.soft)}>
@@ -143,7 +142,7 @@ function GuruCard({g, dark, t}: {g: GuruItem; dark: boolean; t: Tokens}) {
             t.faint,
           )}
         >
-          <ExternalLink size={11} /> Source
+          <ExternalLink size={11} /> {tr('guru.source')}
         </a>
       </div>
     </section>

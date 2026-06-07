@@ -3,6 +3,7 @@
 import {CalendarClock, Globe, Landmark} from 'lucide-react';
 import {useCallback, useEffect, useState} from 'react';
 import {getEvents, type EventItem} from '@/lib/api';
+import {useT} from '@/lib/i18n';
 import {useDark} from '@/lib/theme';
 import {cx, tok} from '@/lib/ui';
 import {EmptyState, ErrorState, FeedSkeleton} from '@/components/ui/states';
@@ -31,6 +32,7 @@ function relative(d: Date): string {
 export function EventsTimeline() {
   const dark = useDark();
   const t = tok(dark);
+  const tr = useT();
   const [status, setStatus] = useState<Status>('loading');
   const [events, setEvents] = useState<EventItem[]>([]);
 
@@ -58,18 +60,15 @@ export function EventsTimeline() {
           )}
         >
           <CalendarClock size={20} className={dark ? 'text-sky-300' : 'text-sky-600'} />
-          Events timeline
+          {tr('events.title')}
         </h1>
-        <p className={cx('mt-1 text-[13.5px]', t.sub)}>
-          Upcoming market-moving events — Fed decisions, key US data (CPI, jobs), and
-          notable world events. For context, not advice.
-        </p>
+        <p className={cx('mt-1 text-[13.5px]', t.sub)}>{tr('events.subtitle')}</p>
       </header>
 
       {status === 'loading' && <FeedSkeleton />}
       {status === 'error' && <ErrorState onRetry={load} />}
       {status === 'ready' && events.length === 0 && (
-        <EmptyState label="No upcoming events" sub="Check back soon." icon={CalendarClock} />
+        <EmptyState label={tr('events.empty')} sub={tr('events.emptySub')} icon={CalendarClock} />
       )}
       {status === 'ready' && events.length > 0 && (
         <ol className="tw-fade space-y-2">
@@ -80,14 +79,14 @@ export function EventsTimeline() {
       )}
 
       <p className={cx('mt-4 text-center text-[11px]', t.faint)}>
-        Sources: BLS, Federal Reserve + curated. Times in your local zone. Not investment
-        advice.
+        {tr('events.footer')}
       </p>
     </div>
   );
 }
 
 function Row({e, dark, t}: {e: EventItem; dark: boolean; t: Tokens}) {
+  const tr = useT();
   const d = new Date(e.start);
   const high = e.importance === 'high';
   const Icon = e.category === 'world' ? Globe : Landmark;
@@ -116,7 +115,7 @@ function Row({e, dark, t}: {e: EventItem; dark: boolean; t: Tokens}) {
                 dark ? 'bg-amber-500/15 text-amber-300' : 'bg-amber-50 text-amber-700',
               )}
             >
-              High
+              {tr('events.high')}
             </span>
           )}
         </div>
