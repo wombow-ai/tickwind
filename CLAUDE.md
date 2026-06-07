@@ -192,10 +192,13 @@ feature-flagged plugin, never on the critical path. Web only.
     host). `store.Comment` + `/v1/comments` (GET public; POST/DELETE/`{id}/report`
     auth) routed to the **Market** (durable) store; **safeguards**: per-user rate-limit
     (10/10min), report+flag, **soft-delete** (author-or-admin), admin takedown via
-    `ADMIN_USER_IDS` env, IP+author+ts captured for moderation; author = email
+    `ADMIN_USER_IDS` env (matched by Supabase **UUID or email**, case-insensitive,
+    via `Server.isAdmin`), IP+author+ts captured for moderation; author = email
     local-part (email/uid never exposed). Frontend `CommentsPanel` on a public
     StockView "Comments" tab + a `/community` page, with a "not investment advice"
-    disclaimer. Owner TODO: set `ADMIN_USER_IDS`; register a DMCA agent before launch.
+    disclaimer. Owner TODO: set `ADMIN_USER_IDS` (can be just the login email);
+    register a DMCA agent ($6/3yr, dmca.copyright.gov/osp/) + add an on-site DMCA
+    notice page before launch.
   - **K线 / K-line** ✅ — `store.Candle` + `alpaca.DailyOHLC` + `BarCache.DailyCandles`
     (≈260-bar cache) → `GET /v1/stocks/{ticker}/candles`; `web/src/lib/indicators.ts`
     (sma/ema/macd/rsi/bollinger, canonical formulas: SMA-seeded EMA, **Wilder** RSI,
