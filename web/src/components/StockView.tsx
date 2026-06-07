@@ -48,6 +48,7 @@ import {useToast} from '@/components/ui/Toast';
 import {TimelineItem} from '@/components/TimelineItem';
 import {PulseBar} from '@/components/PulseBar';
 import {NotesPanel} from '@/components/NotesPanel';
+import {KLineChart} from '@/components/KLineChart';
 
 type Status = 'loading' | 'ready' | 'error';
 interface Feed<T> {
@@ -397,6 +398,11 @@ export function StockView({ticker}: {ticker: string}) {
 
       {/* pulse: Reddit buzz + news sentiment (renders nothing when empty) */}
       <PulseBar signals={signals} />
+
+      {/* K-line candlestick chart + indicators (MA/MACD/RSI/Volume) */}
+      <div className="mb-6">
+        <KLineChart ticker={norm} />
+      </div>
 
       {/* login gate */}
       {!isAuthed && (

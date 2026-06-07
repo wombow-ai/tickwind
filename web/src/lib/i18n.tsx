@@ -211,6 +211,10 @@ const dict: Record<Lang, Record<string, string>> = {
     'pulse.upvotes': 'upvotes',
     'pulse.sentiment': 'News sentiment',
     'pulse.across': 'across {n} recent articles',
+    // k-line chart
+    'kline.title': 'Price & indicators',
+    'kline.empty': 'No price history yet',
+    'kline.footer': 'Daily OHLC · MA/MACD/RSI computed locally. Not investment advice.',
     // settings
     'settings.signInTitle': 'Sign in to continue',
     'settings.signInSub': 'Your settings live with your account.',
@@ -387,6 +391,10 @@ const dict: Record<Lang, Record<string, string>> = {
     'pulse.upvotes': '次赞',
     'pulse.sentiment': '新闻情绪',
     'pulse.across': '基于 {n} 篇近期文章',
+    // k-line chart
+    'kline.title': 'K线与指标',
+    'kline.empty': '暂无价格历史',
+    'kline.footer': '日K线 · MA/MACD/RSI 本地计算。非投资建议。',
     // settings
     'settings.signInTitle': '请先登录',
     'settings.signInSub': '你的设置与账户绑定。',
