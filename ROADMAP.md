@@ -249,6 +249,10 @@ live-verified AAPL). ⚠️ ③ **hreflang / bilingual SEO — needs URL-level i
 P/E / revenue / net income as `variableMeasured`, server-fetched, conditional) — live on AAPL.
 - ✅ **CI security**: govulncheck (blocking — confirmed no reachable vulns) + gosec (informational)
   + Dependabot (gomod / github-actions / npm, weekly). All 3 CI jobs green.
+- 🏗 **Alerts** (greenlit, multi-tick): ✅ data layer (`store.Alert` {ticker/kind/threshold/active}
+  + Save/List/Delete across memory+postgres+Split→User + `alerts` table, ownership-enforced,
+  tested, deployed). Next: ⬜ API `/v1/alerts` CRUD (requireUser, mirror notes) → ⬜ frontend
+  alerts UI → ⬜ evaluator goroutine (price-cross / new 8-K / new Form-4) → ⬜ web-push (self-gen VAPID).
 
 ### Backlog (owner-approved, in `/loop` order)
 - ✅ ① CI.  ✅ ② Opportunity seen-set persistence (was already built+live — `seen_form4`,
