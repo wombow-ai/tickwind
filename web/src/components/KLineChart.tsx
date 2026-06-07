@@ -6,11 +6,12 @@ import {
   createChart,
   HistogramSeries,
   LineSeries,
+  LineStyle,
   type Time,
 } from 'lightweight-charts';
 import {useEffect, useRef, useState} from 'react';
 import {getCandles, type Candle} from '@/lib/api';
-import {macd, rsi, sma, type Series} from '@/lib/indicators';
+import {bollinger, macd, rsi, sma, type Series} from '@/lib/indicators';
 import {useT} from '@/lib/i18n';
 import {useDark} from '@/lib/theme';
 import {cx, tok} from '@/lib/ui';
@@ -24,6 +25,10 @@ const MAS = [
   {period: 20, color: '#a855f7'},
   {period: 60, color: '#14b8a6'},
 ];
+
+// Bollinger Bands (20, 2σ): a toggleable envelope on the price pane. The middle
+// band is SMA20 (already drawn as MA20), so only the upper/lower bands are shown.
+const BOLL_COLOR = '#6366f1';
 
 /** Daily bar date → lightweight-charts business-day time. */
 function toTime(iso: string): Time {
@@ -53,6 +58,7 @@ export function KLineChart({ticker}: {ticker: string}) {
   const tr = useT();
   const [status, setStatus] = useState<Status>('loading');
   const [candles, setCandles] = useState<Candle[]>([]);
+  const [showBoll, setShowBoll] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -121,6 +127,23 @@ export function KLineChart({ticker}: {ticker: string}) {
         crosshairMarkerVisible: false,
       });
       s.setData(lineData(times, sma(closes, ma.period)));
+    }
+
+    // Bollinger Bands (20, 2σ) on pane 0 — upper + lower envelope, dashed.
+    // Toggled off by default to keep the price pane uncluttered.
+    if (showBoll) {
+      const bb = bollinger(closes, 20, 2);
+      for (const band of [bb.upper, bb.lower]) {
+        const s = chart.addSeries(LineSeries, {
+          color: BOLL_COLOR,
+          lineWidth: 1,
+          lineStyle: LineStyle.Dashed,
+          priceLineVisible: false,
+          lastValueVisible: false,
+          crosshairMarkerVisible: false,
+        });
+        s.setData(lineData(times, band));
+      }
     }
 
     // Volume (pane 1).
@@ -192,7 +215,7 @@ export function KLineChart({ticker}: {ticker: string}) {
     }
 
     return () => chart.remove();
-  }, [status, candles, dark]);
+  }, [status, candles, dark, showBoll]);
 
   return (
     <section className={cx('rounded-2xl border p-4', t.card, t.border, t.soft)}>
@@ -206,6 +229,17 @@ export function KLineChart({ticker}: {ticker: string}) {
             </span>
           ))}
           <span className={t.faint}>· MACD · RSI · VOL</span>
+          <button
+            onClick={() => setShowBoll(v => !v)}
+            aria-pressed={showBoll}
+            className={cx(
+              'rounded-full border px-2 py-0.5 text-[10.5px] font-semibold transition',
+              showBoll ? '' : cx(t.faint, t.border),
+            )}
+            style={showBoll ? {color: BOLL_COLOR, borderColor: BOLL_COLOR} : undefined}
+          >
+            BOLL
+          </button>
         </div>
       </div>
 
