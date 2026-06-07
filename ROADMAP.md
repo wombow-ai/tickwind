@@ -219,7 +219,9 @@ Status: ✅ done · 🟡 in progress · ⬜ todo
 > **Owner directive (2026-06): MONETIZATION DEFERRED — build everything EXCEPT paid/monetization
 > work** (no pricing/payments/quote-licensing/paywalls/subscriptions). Strategy round-2's
 > monetization plan (`docs/strategy-research-2026-06.md`) is parked until the owner says go;
-> the rest of that doc (growth/SEO, positioning, engineering, legal) is in scope.
+> the rest of that doc (growth/SEO, positioning, engineering, legal) is in scope. Also:
+> **web-push deferred**; the dev loop runs at a **5-min cadence** and is **currently PAUSED**
+> (resume with `/loop`).
 
 3 parallel research agents (competitor gaps · free data sources · AI/LLM). **Convergence: the
 SEC/EDGAR backbone is the defensible, redistribution-safe lane.** Owner picks which to build:
@@ -231,37 +233,23 @@ SEC/EDGAR backbone is the defensible, redistribution-safe lane.** Owner picks wh
   upgrade · paper-trading.  **RED:** earnings-call transcripts (paid feed), Google Trends,
   CoinGecko free tier.  Standing RED unchanged: live quote redistribution (Alpaca/Yahoo).
 
-**🏗 Building now (owner greenlit 2026-06):** **Financials tab** — 市值/市盈率/营收/净利润 on the
-stock page, from free SEC XBRL. ✅ backend extractor `edgar.Fundamentals` (latest-FY revenue/net
-income/diluted-EPS + shares + equity, unit-tested; weighted-avg shares fallback for multi-class
-issuers like MSTR). ✅ **API `GET /v1/stocks/{t}/fundamentals`** (`ingest.FundamentalsCache` 24h
-+ price → market cap/P/E/P/B; P/E null for losses) — **live-verified**: AAPL mkt-cap $4.51T/PE 41,
-MSTR $40.8B/PE null. ✅ **frontend `FundamentalsCard`** on StockView (市值/市盈率/营收/净利润 +
-EPS/P/B, P/E→亏损 for losses, hides for non-US) — **FEATURE COMPLETE & live** (CI green, AAPL/MSTR
-verified). TTM is a later enhancement; v1 = latest fiscal year, labelled.
+**✅ Shipped this session (2026-06):**
+- **Financials tab** (free SEC XBRL): `edgar.Fundamentals` (latest-FY revenue/net-income/EPS +
+  shares/equity, weighted-avg fallback) + `GET /v1/stocks/{t}/fundamentals` (market cap / P/E / P/B
+  from live price) + `FundamentalsCard` on StockView (市值/市盈率/营收/净利润). Live-verified AAPL/MSTR.
+  TTM is a later enhancement (v1 = latest fiscal year).
 
-**🏗 SEO trio (in progress, autonomous/$0):** ✅ ① **sitemap** → popular ∪ all live-board tickers
-(~60 URLs, hourly revalidate, real-data only). ✅ ② **JSON-LD** per `/stock/[ticker]`
-(Corporation + BreadcrumbList) + canonical + company-name title (server-fetched, ISR 10m;
-live-verified AAPL). ⚠️ ③ **hreflang / bilingual SEO — needs URL-level i18n** (`?lang=` or
-`/zh|/en` + server-side per-language render); single-URL client toggle can't do valid hreflang →
-**larger item, deferred (design / owner input)**. ✅ financials **Dataset** JSON-LD (market cap /
-P/E / revenue / net income as `variableMeasured`, server-fetched, conditional) — live on AAPL.
+- **SEO**: full-universe sitemap (popular ∪ live boards, ISR) + per-stock JSON-LD (Corporation +
+  BreadcrumbList + financials Dataset) + canonical + company-name titles. Live. ⚠️ hreflang /
+  bilingual SEO deferred (needs URL-level i18n — design / owner).
 - ✅ **CI security**: govulncheck (blocking — confirmed no reachable vulns) + gosec (informational)
   + Dependabot (gomod / github-actions / npm, weekly). All 3 CI jobs green.
-- 🏗 **Alerts** (greenlit, multi-tick): ✅ data layer (`store.Alert` {ticker/kind/threshold/active}
-  + Save/List/Delete across memory+postgres+Split→User + `alerts` table, ownership-enforced,
-  tested, deployed). ✅ API `/v1/alerts` CRUD (auth-scoped + validated; live: 401 without token).
-  ✅ frontend alerts UI (StockView auth-only "Alerts" tab: condition + threshold, list/delete,
-  bilingual, delivery note). ✅ evaluator store layer (`triggered_at` + `ListActiveAlerts`/
-  `MarkAlertTriggered`, deployed). ✅ evaluator goroutine (internal/ingest, every 2m: price-cross
-  → MarkTriggered; live, log-verified). ✅ ④c frontend "triggered" badge (+ TS `triggered_at`).
-  ✅ ④d evaluator pct_move + new_filing — **Alerts CORE COMPLETE** (all 4 kinds evaluate every 2m
-  + in-app triggered badge; live, tested). ✅ **Alerts = v1 DONE.** ⑤ web-push DEFERRED (owner
-  2026-06: do other high-value first; revisit later — needs a PWA for iOS reach; email is an alt
-  needing SMTP creds).
+- **Alerts v1**: `store.Alert` + `/v1/alerts` CRUD + StockView "Alerts" tab (price-above/below,
+  daily-move %, new-filing) + evaluator goroutine (every 2m → triggered) + in-app "triggered"
+  badge. All store backends + tests; live. ⑤ web-push DEFERRED (owner; iOS needs a PWA; email alt
+  needs SMTP creds).
 
-**🏗 Next feature (owner: high-ROI/$0/autonomous): FINRA short-interest "squeeze radar"** — per-stock
+**⏸ Next feature — PAUSED by owner (resume with `/loop`): FINRA short-interest "squeeze radar"** — per-stock
 short pressure (short volume %, and bi-monthly short interest / days-to-cover if accessible), a
 free "follow the money" signal that's ticker-keyed (no CUSIP/entity mapping). Plan: ⬜ verify FINRA
 data access from the VPS (regsho daily short-volume CDN files are public/keyless; bi-monthly short

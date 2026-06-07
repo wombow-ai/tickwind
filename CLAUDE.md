@@ -90,6 +90,11 @@ feature-flagged plugin, never on the critical path. Web only.
 - Full stack (server): `docker compose up -d --build`.
 
 ## Current state (update each iteration)
+- **Session status (2026-06):** dev driven by a 5-min `/loop`, **currently PAUSED by owner**.
+  Recently shipped: Financials tab, full SEO structured data, CI security, **Alerts v1**, mobile
+  nav, session-badge i18n, HomeHub skeletons. Owner directives: **monetization deferred**,
+  **web-push deferred**. Next when resumed: **FINRA short-interest "squeeze radar"** (verify VPS
+  data access first; SEC-13F fallback). See `ROADMAP.md` for the live status + backlog.
 - Phase 0 ✅ · Phase 1 ✅ · Phase 2 ✅ (prices REST + SSE live stream + frontend
   live price + Finnhub news; all auto-disable without keys). Alpaca prices
   LIVE-VERIFIED end-to-end with paper keys (local `.env`, gitignored). Finnhub
@@ -204,9 +209,9 @@ feature-flagged plugin, never on the critical path. Web only.
     via `Server.isAdmin`), IP+author+ts captured for moderation; author = email
     local-part (email/uid never exposed). Frontend `CommentsPanel` on a public
     StockView "Comments" tab + a `/community` page, with a "not investment advice"
-    disclaimer. Owner TODO: set `ADMIN_USER_IDS` (can be just the login email);
-    register a DMCA agent ($6/3yr, dmca.copyright.gov/osp/) + add an on-site DMCA
-    notice page before launch.
+    disclaimer. `ADMIN_USER_IDS` ✅ SET on the VPS (`allalphaplus@gmail.com`, via SSH).
+    Owner TODO: finish DMCA agent registration (in progress — copyright.gov login error LG22,
+    owner emailed their support) + add an on-site `/dmca` notice page before launch.
   - **K线 / K-line** ✅ — `store.Candle` + `alpaca.DailyOHLC` + `BarCache.DailyCandles`
     (≈260-bar cache) → `GET /v1/stocks/{ticker}/candles`; `web/src/lib/indicators.ts`
     (sma/ema/macd/rsi/bollinger, canonical formulas: SMA-seeded EMA, **Wilder** RSI,
@@ -215,7 +220,7 @@ feature-flagged plugin, never on the critical path. Web only.
     `attributionLogo`) — candles + MA5/10/20/60 + Volume/MACD/RSI panes, client-only.
     A **BOLL** legend chip toggles a dashed Bollinger (20,2σ) upper/lower envelope on
     the price pane (off by default; middle band = SMA20 = the MA20 line).
-  - **财务信息 / Fundamentals** 🏗 (owner-greenlit, backend live) — free **SEC XBRL** (no quote
+  - **财务信息 / Fundamentals** ✅ — free **SEC XBRL** (no quote
     license needed → safe for a future paid tier). `edgar.Fundamentals(ticker)` pulls companyfacts
     → latest-FY revenue/net-income/diluted-EPS + shares + equity (tag-priority; **weighted-avg
     shares fallback** for multi-class issuers like MSTR that omit dei shares). `ingest.FundamentalsCache`
@@ -224,6 +229,17 @@ feature-flagged plugin, never on the critical path. Web only.
     live quote (polled, else on-demand). **Frontend `FundamentalsCard`** on StockView (compact
     6-cell grid 市值/市盈率/营收/净利润 + EPS/P/B, period chip, P/E→亏损 for losses, `fmtCompactUSD`
     T/B/M, hides on 404; i18n `fund.*`). ✅ **COMPLETE & live-verified** (AAPL $4.5T/PE41, MSTR $40.8B/PE—).
+  - **提醒 / Alerts** ✅ v1 — per-user price/event alerts. `store.Alert`
+    {ticker,kind,threshold,active,triggered_at} + `/v1/alerts` CRUD (requireUser, Split→User) +
+    StockView auth-only "Alerts" tab (kinds: price_above/price_below/pct_move/new_filing).
+    `ingest.AlertEvaluator` goroutine (every 2m): ListActiveAlerts → latest quote (BarCache) /
+    latest filing → MarkAlertTriggered; frontend shows an in-app "triggered" badge. Memory+postgres
+    +Split, `alerts` table, unit-tested, deployed. **web-push deferred** (owner; iOS needs a PWA).
+  - **SEO** ✅ — `app/sitemap.ts` = popular ∪ live-board tickers (ISR, real-data only, ~60+ URLs);
+    `/stock/[ticker]` SSR emits JSON-LD (`Corporation` + `BreadcrumbList` + financials `Dataset`) +
+    canonical + company-name title (server-fetched security+fundamentals, ISR 10m). ⚠️ hreflang /
+    bilingual SEO **deferred** — needs URL-level i18n (`?lang=` or `/zh|/en`); single-URL client
+    toggle can't do valid hreflang.
 - **On-demand collection** ✅ — `getStock` 404 for a REAL symbol (validated vs the
   symbol directory) fires `IngestOne` (fixes the "$MU all-empty" bug). `IngestOne` is
   **single-flight** (sync.Map per ticker → exactly one init collection). Frontend polls
