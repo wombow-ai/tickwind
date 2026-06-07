@@ -216,6 +216,11 @@ Status: ✅ done · 🟡 in progress · ⬜ todo
   handler missed it (Esc did nothing); now closes + restores focus to its trigger.
 
 ### Future features — researched 2026-06 (see `docs/future-features-2026-06.md`)
+> **Owner directive (2026-06): MONETIZATION DEFERRED — build everything EXCEPT paid/monetization
+> work** (no pricing/payments/quote-licensing/paywalls/subscriptions). Strategy round-2's
+> monetization plan (`docs/strategy-research-2026-06.md`) is parked until the owner says go;
+> the rest of that doc (growth/SEO, positioning, engineering, legal) is in scope.
+
 3 parallel research agents (competitor gaps · free data sources · AI/LLM). **Convergence: the
 SEC/EDGAR backbone is the defensible, redistribution-safe lane.** Owner picks which to build:
 - **Top sequence (free/GREEN data):** ① Price/event **Alerts** (own data, #1 retention) · ②

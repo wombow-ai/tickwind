@@ -33,11 +33,15 @@ feature-flagged plugin, never on the critical path. Web only.
   + relevant `go test`; frontend `npm run build`. Then deploy + live-verify.
 - **Quality bar**: "**精不在多**" — precision/correctness over quantity (e.g. ship few, correct
   indicators). Engineering-first; LLM optional/off the critical path.
-- **Commercial intent**: $0 now, **considering paid AI + subscriptions later**. Mind
-  commercialization risk PROACTIVELY — esp. **market-quote redistribution** (Alpaca + Yahoo are
-  RED; see `docs/feature-research-2026-06.md`). Default to free/redistribution-safe sources, but
-  the owner **will explicitly override** for specific cases (e.g. HK gray Yahoo) — honor the
-  override + flag the risk.
+- **Commercial intent**: $0 now. **MONETIZATION DEFERRED (owner, 2026-06): do NOT build any
+  paid/monetization work yet** — no pricing/tiers, payment infra (Stripe/LemonSqueezy), quote-
+  redistribution licensing, paywalls, or subscription gating. **Everything else on the roadmap is
+  greenlit** to build autonomously (Financials, Alerts, gov-data "follow-the-money" suite, AI
+  filing summaries, SEO, observability/backups, polish, HK/markets). Keep features free + quotes
+  delayed. Still mind commercialization risk PROACTIVELY for *future* paid plans — esp.
+  **market-quote redistribution** (Alpaca + Yahoo are RED; see `docs/feature-research-2026-06.md`)
+  — but that's a later gate, not now. Default to free/redistribution-safe sources; the owner
+  **will explicitly override** for specific cases (e.g. HK gray Yahoo) — honor the override + flag.
 - **Security**: do NOT rotate secrets / VPS password / Supabase JWT — owner-driven before launch;
   keys handed over are for staging/use. Never touch a funded brokerage account.
 - **Memory discipline**: update `CLAUDE.md` + `ROADMAP.md` + `docs/` every iteration so a
