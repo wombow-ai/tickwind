@@ -245,7 +245,8 @@ verified). TTM is a later enhancement; v1 = latest fiscal year, labelled.
 (Corporation + BreadcrumbList) + canonical + company-name title (server-fetched, ISR 10m;
 live-verified AAPL). ⚠️ ③ **hreflang / bilingual SEO — needs URL-level i18n** (`?lang=` or
 `/zh|/en` + server-side per-language render); single-URL client toggle can't do valid hreflang →
-**larger item, deferred (design / owner input)**. Later: FinancialProduct schema (needs server price).
+**larger item, deferred (design / owner input)**. ✅ financials **Dataset** JSON-LD (market cap /
+P/E / revenue / net income as `variableMeasured`, server-fetched, conditional) — live on AAPL.
 - ✅ **CI security**: govulncheck (blocking — confirmed no reachable vulns) + gosec (informational)
   + Dependabot (gomod / github-actions / npm, weekly). All 3 CI jobs green.
 
