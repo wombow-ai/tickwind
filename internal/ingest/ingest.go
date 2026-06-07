@@ -89,6 +89,10 @@ func (s *Scheduler) Run(ctx context.Context) {
 
 func (s *Scheduler) runOnce(ctx context.Context) {
 	tickers := s.tickers(ctx)
+	// Market-wide leaderboard FIRST — it's a single bulk call independent of the
+	// per-ticker passes, so the Hot board repopulates within seconds of a restart
+	// instead of waiting out the whole (~minutes-long) per-ticker loop below.
+	s.ingestHotList(ctx)
 	for _, ticker := range tickers {
 		s.ingestFilings(ctx, ticker)
 		s.ingestNews(ctx, ticker)
@@ -103,8 +107,6 @@ func (s *Scheduler) runOnce(ctx context.Context) {
 	// Signal sources are bulk (one call covers many tickers), so run them once
 	// per cycle after the per-ticker passes.
 	s.ingestSignals(ctx, tickers)
-	// The trending leaderboard is market-wide (not tied to the watchlist).
-	s.ingestHotList(ctx)
 	// Trending topics are derived from the news just ingested across all tickers.
 	s.ingestTopics(ctx, tickers)
 }
