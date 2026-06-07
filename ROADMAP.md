@@ -228,8 +228,10 @@ SEC/EDGAR backbone is the defensible, redistribution-safe lane.** Owner picks wh
 
 **🏗 Building now (owner greenlit 2026-06):** **Financials tab** — 市值/市盈率/营收/净利润 on the
 stock page, from free SEC XBRL. ✅ backend extractor `edgar.Fundamentals` (latest-FY revenue/net
-income/diluted-EPS + shares + equity, unit-tested). Next: ⬜ API `/v1/stocks/{t}/fundamentals`
-(cache + price → market cap & P/E) → ⬜ frontend `FundamentalsCard` + i18n → deploy. (TTM is a
+income/diluted-EPS + shares + equity, unit-tested; weighted-avg shares fallback for multi-class
+issuers like MSTR). ✅ **API `GET /v1/stocks/{t}/fundamentals`** (`ingest.FundamentalsCache` 24h
++ price → market cap/P/E/P/B; P/E null for losses) — **live-verified**: AAPL mkt-cap $4.51T/PE 41,
+MSTR $40.8B/PE null. Next: ⬜ frontend `FundamentalsCard` on StockView + i18n → deploy. (TTM is a
 later enhancement; v1 = latest fiscal year, clearly labelled.)
 
 ### Backlog (owner-approved, in `/loop` order)

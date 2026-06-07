@@ -211,6 +211,13 @@ feature-flagged plugin, never on the critical path. Web only.
     `attributionLogo`) — candles + MA5/10/20/60 + Volume/MACD/RSI panes, client-only.
     A **BOLL** legend chip toggles a dashed Bollinger (20,2σ) upper/lower envelope on
     the price pane (off by default; middle band = SMA20 = the MA20 line).
+  - **财务信息 / Fundamentals** 🏗 (owner-greenlit, backend live) — free **SEC XBRL** (no quote
+    license needed → safe for a future paid tier). `edgar.Fundamentals(ticker)` pulls companyfacts
+    → latest-FY revenue/net-income/diluted-EPS + shares + equity (tag-priority; **weighted-avg
+    shares fallback** for multi-class issuers like MSTR that omit dei shares). `ingest.FundamentalsCache`
+    (24h + 1h-neg). `GET /v1/stocks/{t}/fundamentals` (`FundamentalsSource` in api) computes
+    **market cap** (price×shares), **P/E** (price÷EPS, null for losses → 亏损/—), **P/B** from the
+    live quote (polled, else on-demand). Live-verified AAPL/MSTR. **TODO: frontend `FundamentalsCard`.**
 - **On-demand collection** ✅ — `getStock` 404 for a REAL symbol (validated vs the
   symbol directory) fires `IngestOne` (fixes the "$MU all-empty" bug). `IngestOne` is
   **single-flight** (sync.Map per ticker → exactly one init collection). Frontend polls
