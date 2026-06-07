@@ -193,6 +193,15 @@ func main() {
 	eventsCache := events.NewCache()
 	go ingest.NewEventsIngestor(eventsCache, 12*time.Hour, log).Run(ctx)
 
+	// Retention pruner: bounds the durable market tables off the request path —
+	// evicts old non-key data, but keeps hot-list tickers and the 大V / Serenity
+	// "substack" rail on longer/indefinite windows. Disabled only if the store
+	// doesn't implement store.Pruner (memory, postgres and Split all do).
+	if pr, ok := st.(store.Pruner); ok {
+		go ingest.NewPruner(pr, cfg.Retention, log).Run(ctx)
+		log.Info("retention pruner enabled", "every", cfg.Retention.Every.String())
+	}
+
 	// Opportunity board (small-cap insider buys); shared cache, populated below
 	// when Alpaca prices are available (needed for market cap).
 	oppCache := opportunity.NewCache()

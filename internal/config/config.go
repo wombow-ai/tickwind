@@ -71,6 +71,28 @@ type Config struct {
 	// data), unioned with every user's watchlist.
 	SupabaseURL       string
 	SupabaseJWTSecret string
+
+	// Retention tunes the tiered Pruner (off the request path) that bounds the
+	// durable market tables; see RetentionConfig.
+	Retention RetentionConfig
+}
+
+// RetentionConfig tunes the tiered Pruner (internal/ingest/prune.go). A *Days
+// value <= 0 disables that table's age-based prune; a cap <= 0 disables that
+// per-ticker cap. Hot-list tickers keep the *Hot (longer) window, and
+// ProtectSocialSources (e.g. the 大V / Serenity "substack" rail) are never pruned.
+type RetentionConfig struct {
+	NewsDays             int
+	NewsHotDays          int
+	SocialDays           int
+	SocialHotDays        int
+	FilingsDays          int
+	InsiderDays          int
+	SeenForm4Days        int
+	CapNewsPerTicker     int
+	CapSocialPerTicker   int
+	ProtectSocialSources []string
+	Every                time.Duration
 }
 
 func Load() Config {
@@ -104,7 +126,33 @@ func Load() Config {
 		LLMModel:                env("LLM_MODEL", ""),
 		SupabaseURL:             strings.TrimRight(env("SUPABASE_URL", ""), "/"),
 		SupabaseJWTSecret:       env("SUPABASE_JWT_SECRET", ""),
+		Retention: RetentionConfig{
+			NewsDays:             envInt("RETAIN_NEWS_DAYS", 60),
+			NewsHotDays:          envInt("RETAIN_NEWS_HOT_DAYS", 120),
+			SocialDays:           envInt("RETAIN_SOCIAL_DAYS", 30),
+			SocialHotDays:        envInt("RETAIN_SOCIAL_HOT_DAYS", 90),
+			FilingsDays:          envInt("RETAIN_FILINGS_DAYS", 730),
+			InsiderDays:          envInt("RETAIN_INSIDER_DAYS", 90),
+			SeenForm4Days:        envInt("RETAIN_SEEN_FORM4_DAYS", 60),
+			CapNewsPerTicker:     envInt("CAP_NEWS_PER_TICKER", 500),
+			CapSocialPerTicker:   envInt("CAP_SOCIAL_PER_TICKER", 500),
+			ProtectSocialSources: splitCSVRaw(env("PROTECT_SOCIAL_SOURCES", "substack")),
+			Every:                envDur("PRUNE_EVERY", 6*time.Hour),
+		},
 	}
+}
+
+// splitCSVRaw splits a comma list, trimming spaces but preserving case (unlike
+// splitCSV, which upper-cases tickers) — used for source names like "substack".
+func splitCSVRaw(s string) []string {
+	parts := strings.Split(s, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if p = strings.TrimSpace(p); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 func env(key, def string) string {

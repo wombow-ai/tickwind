@@ -60,8 +60,8 @@ knobs: `RETAIN_NEWS_DAYS`/`_HOT_DAYS`, `RETAIN_SOCIAL_DAYS`/`_HOT_DAYS`,
 Moves `news`/`social`/`seen_form4` from linear-in-time growth → bounded steady
 state (seen_form4 ~85-95% reduction). Fits the Oracle free VM + Supabase free tier.
 
-### Build checklist
-store.Pruner iface → postgres impls (pool.Exec DELETEs) → memory impls (map sweeps + hotTickers()) → split forwards to Market → config knobs → internal/ingest/prune.go → wire in main → prune_test.go (memory: old/protected/hot rows; split routes to Market).
+### Build checklist — ✅ BUILT (2026-06)
+store.Pruner iface → postgres impls (pool.Exec DELETEs) → memory impls (map sweeps + hotTickerSet()) → Split forwards to Market → config knobs (RetentionConfig) → internal/ingest/prune.go (Pruner goroutine, initial pass + 6h ticker) → wired in main (type-asserted) → prune_test.go (memory: window/hot/protected/cap; Split routes to Market). All green; deployed.
 
 ---
 

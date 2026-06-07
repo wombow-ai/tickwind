@@ -93,7 +93,17 @@ feature-flagged plugin, never on the critical path. Web only.
   clamp(24h-growth, 0, 2)) — volume × momentum, computed/ranked in
   `ingest.rankHotList`+`heatScore` (unit-tested); served at `GET /v1/hot`, shown
   at `/hot` (`HotList`, TopNav "Hot") with mentions + Δ% (no opaque score). The
-  hotlist pg table is replaced in a tx (clear+insert). Clipper inbox ✅
+  hotlist pg table is replaced in a tx (clear+insert). **WSB board** ranks by 24h
+  leaderboard rank-climb (`rank_24h_ago−rank`), NOT mention delta — ApeWisdom
+  mention counts are an intraday accumulation so deltas read uniformly negative
+  ("all declining"); rank is normalised → a real green/red mix (`rankClimb` +
+  `RankPrev`, unit-tested). **Retention pruner** ✅ (`store.Pruner` +
+  `internal/ingest/prune.go`, own goroutine off the request path, `PRUNE_EVERY`=6h):
+  tiered DELETEs — news 60d/hot120, social 30d/hot90 (NEVER `source=substack`, the
+  大V/Serenity rail), filings 730d, insider 90d, seen_form4 60d, + per-ticker caps
+  500; hot-list tickers keep the longer window; Split forwards to the Market store;
+  memory+postgres impls, tested. Env: `RETAIN_*`/`PROTECT_SOCIAL_SOURCES`/`CAP_*`.
+  Clipper inbox ✅
   (`POST /v1/stocks/{ticker}/clip` → title fetch → `clip` Post; frontend paste box
   + Saved-links section). Phase 3 done. Phase 4 started: persisted editable
   watchlist ✅ (`/v1/watchlist` CRUD; scheduler + poller read it live, seeded from
