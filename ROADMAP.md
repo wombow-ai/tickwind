@@ -220,8 +220,7 @@ Status: ✅ done · 🟡 in progress · ⬜ todo
 > work** (no pricing/payments/quote-licensing/paywalls/subscriptions). Strategy round-2's
 > monetization plan (`docs/strategy-research-2026-06.md`) is parked until the owner says go;
 > the rest of that doc (growth/SEO, positioning, engineering, legal) is in scope. Also:
-> **web-push deferred**; the dev loop runs at a **5-min cadence** and is **currently PAUSED**
-> (resume with `/loop`).
+> **web-push deferred**; the dev loop runs at a **5-min cadence** and is **currently RUNNING**.
 
 3 parallel research agents (competitor gaps · free data sources · AI/LLM). **Convergence: the
 SEC/EDGAR backbone is the defensible, redistribution-safe lane.** Owner picks which to build:
@@ -249,14 +248,30 @@ SEC/EDGAR backbone is the defensible, redistribution-safe lane.** Owner picks wh
   badge. All store backends + tests; live. ⑤ web-push DEFERRED (owner; iOS needs a PWA; email alt
   needs SMTP creds).
 
-**⏸ Next feature — PAUSED by owner (resume with `/loop`): FINRA short-interest "squeeze radar"** — per-stock
-short pressure (short volume %, and bi-monthly short interest / days-to-cover if accessible), a
-free "follow the money" signal that's ticker-keyed (no CUSIP/entity mapping). Plan: ⬜ verify FINRA
-data access from the VPS (regsho daily short-volume CDN files are public/keyless; bi-monthly short
-interest may need the FINRA API token) → ⬜ `internal/finra` client → ⬜ store signal + ingest →
-⬜ surface on the stock page (near PulseBar/Fundamentals). **Fallback if FINRA is IP-blocked from
-the datacenter: SEC 13F "super-investor holdings" (by issuer name; guaranteed access via the
-existing EDGAR client).** Attribute "Source: FINRA"; display-only (no bulk redistribution).
+**🏗 Building now: FINRA short-interest "squeeze radar"** — per-stock short pressure, a free "follow
+the money" signal that's ticker-keyed (no CUSIP/entity mapping). Attribute "Source: FINRA";
+display-only (no bulk redistribution). **Fallback (SEC 13F) NOT needed — FINRA reachable.**
+
+✅ **Step ① data-access verified (2026-06-08), both sources keyless + reachable from local AND VPS:**
+- **Daily short volume** — `GET https://cdn.finra.org/equity/regsho/daily/CNMSshvol{YYYYMMDD}.txt`
+  (the consolidated NMS file). Pipe-delimited, header
+  `Date|Symbol|ShortVolume|ShortExemptVolume|TotalVolume|Market`. Signal = **% short of daily
+  volume** = ShortVolume/TotalVolume (e.g. 20260605 AAPL ≈48.5%, MSTR ≈40.3%, GME ≈61.3%, NVDA ≈34%).
+  Whole-universe file (~8k symbols, a few MB) → fetch once/day, keep an in-memory `map[symbol]`,
+  serve per-ticker instantly. Try today's date, fall back to prior trading days until 200.
+- **Bi-monthly consolidated short interest** — `POST
+  https://api.finra.org/data/group/otcMarket/name/consolidatedShortInterest`, `Accept:
+  application/json`, body `{"limit":N,"compareFilters":[{"compareType":"EQUAL","fieldName":"symbolCode","fieldValue":"<T>"}]}`.
+  Returns the famous fields: `daysToCoverQuantity`, `currentShortPositionQuantity`,
+  `previousShortPositionQuantity`, `changePercent`, `averageDailyVolumeQuantity`, `settlementDate`,
+  `accountingYearMonthNumber`. **Keyless** (no OAuth). Caveat: `sortFields` needs the partition key
+  `settlementDate` as an EQUAL filter → just fetch the symbol's rows and sort client-side by
+  `accountingYearMonthNumber` desc to get the latest. (Monthly bulk dir is 403 — not needed.)
+
+Build plan (next ticks): ⬜ ② `internal/finra` client (pure parser for the pipe file + SI JSON +
+unit tests) → ⬜ ③ ingest wiring (`ShortVolumeCache` daily whole-file map; per-symbol SI fetch with
+TTL) → ⬜ ④ `GET /v1/stocks/{t}/short` (short_volume_pct, days_to_cover, SI change; display-only) →
+⬜ ⑤ "Short pressure" card on the stock page near Fundamentals/PulseBar + i18n + "Source: FINRA".
 
 ### Backlog (owner-approved, in `/loop` order)
 - ✅ ① CI.  ✅ ② Opportunity seen-set persistence (was already built+live — `seen_form4`,
