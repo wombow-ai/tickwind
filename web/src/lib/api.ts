@@ -844,6 +844,71 @@ export function deleteNote(
   );
 }
 
+/** A public user comment on a stock or the global community board. */
+export interface Comment {
+  id: string;
+  user_id: string;
+  author: string;
+  ticker?: string;
+  body: string;
+  created_at: string;
+}
+
+/** Envelope returned by `GET /v1/comments`. */
+export interface CommentsResponse {
+  ticker: string;
+  count: number;
+  comments: Comment[];
+}
+
+/** Lists public comments for a ticker, or the global board when ticker is empty. Public (no auth). */
+export function getComments(
+  ticker: string,
+  limit = 100,
+  signal?: AbortSignal,
+): Promise<CommentsResponse> {
+  const q = new URLSearchParams();
+  if (ticker) q.set('ticker', normalizeTicker(ticker));
+  q.set('limit', String(limit));
+  return getJson<CommentsResponse>(`/v1/comments?${q.toString()}`, signal);
+}
+
+/** Posts a public comment (stock-scoped when ticker is set). Requires authentication. */
+export function postComment(
+  token: string | null,
+  input: {ticker?: string; body: string},
+  signal?: AbortSignal,
+): Promise<Comment> {
+  return postJson<Comment>('/v1/comments', input, signal, token);
+}
+
+/** Deletes a comment (author or admin). Requires authentication. */
+export function deleteComment(
+  token: string | null,
+  id: string,
+  signal?: AbortSignal,
+): Promise<{deleted: boolean}> {
+  return deleteJson<{deleted: boolean}>(
+    `/v1/comments/${encodeURIComponent(id)}`,
+    signal,
+    token,
+  );
+}
+
+/** Flags a comment for moderation. Requires authentication. */
+export function reportComment(
+  token: string | null,
+  id: string,
+  signal?: AbortSignal,
+): Promise<{reported: boolean}> {
+  return postJson<{reported: boolean}>(
+    `/v1/comments/${encodeURIComponent(id)}/report`,
+    {},
+    signal,
+    token,
+  );
+}
+
 /** Fetches backend health. */
 export function getHealth(signal?: AbortSignal): Promise<Health> {
   return getJson<Health>('/healthz', signal);
