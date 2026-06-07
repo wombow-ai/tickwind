@@ -178,6 +178,34 @@ feature-flagged plugin, never on the critical path. Web only.
 - **Home hub** = info-source entry (`HomeHub`): a live Markets strip + `TopicsStrip`,
   then **Boards & signals** (Hot stocks · Opportunity · Guru-watch) over **Feeds**
   (News · Discussion) — each module previews real items and links to its full page.
+- **User features (2026-06, all live)**:
+  - **私人笔记 / Notes** ✅ — per-user private notes (stock- and/or date-scoped).
+    `store.Note` + `/v1/notes` (POST/GET/PATCH/DELETE, requireUser, ownership in the
+    query → 404 not 403) routed to the **User** store via Split; frontend `NotesPanel`
+    (compose + pinned-first list + pin/delete) on a StockView "Notes" tab + a `/notes`
+    page. v1.1 deferred = month-grid calendar over the existing `?from=&to=`.
+  - **评论区 / Comments** ✅ — PUBLIC per-stock + global-board comments (§230 neutral
+    host). `store.Comment` + `/v1/comments` (GET public; POST/DELETE/`{id}/report`
+    auth) routed to the **Market** (durable) store; **safeguards**: per-user rate-limit
+    (10/10min), report+flag, **soft-delete** (author-or-admin), admin takedown via
+    `ADMIN_USER_IDS` env, IP+author+ts captured for moderation; author = email
+    local-part (email/uid never exposed). Frontend `CommentsPanel` on a public
+    StockView "Comments" tab + a `/community` page, with a "not investment advice"
+    disclaimer. Owner TODO: set `ADMIN_USER_IDS`; register a DMCA agent before launch.
+  - **K线 / K-line** ✅ — `store.Candle` + `alpaca.DailyOHLC` + `BarCache.DailyCandles`
+    (≈260-bar cache) → `GET /v1/stocks/{ticker}/candles`; `web/src/lib/indicators.ts`
+    (sma/ema/macd/rsi/bollinger, canonical formulas: SMA-seeded EMA, **Wilder** RSI,
+    population-σ Bollinger; null warmup; compute over full history then slice);
+    `KLineChart` (TradingView **lightweight-charts v5**, Apache-2.0, keep
+    `attributionLogo`) — candles + MA5/10/20/60 + Volume/MACD/RSI panes, client-only.
+- **On-demand collection** ✅ — `getStock` 404 for a REAL symbol (validated vs the
+  symbol directory) fires `IngestOne` (fixes the "$MU all-empty" bug). `IngestOne` is
+  **single-flight** (sync.Map per ticker → exactly one init collection). Frontend polls
+  ~90s while collecting.
+- **Commercialization risk** (for paid/AI later): see `docs/feature-research-2026-06.md`
+  — **Alpaca + Yahoo quote redistribution is RED** (must move to a redistribution-
+  licensed vendor before charging); SEC/Bluesky/TWSE green; Finnhub/ApeWisdom/Substack
+  yellow.
 - Frontend live price: `web/src/lib/useQuotes.ts` (one shared EventSource for all
   cards) + `PriceTag`/`SessionBadge`; shows "—" gracefully when `/quote` 404s.
 - News: `internal/finnhub` → `News` store → `GET /v1/stocks/{ticker}/news`,

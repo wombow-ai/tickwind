@@ -188,6 +188,17 @@ Status: ✅ done · 🟡 in progress · ⬜ todo
   to go live).
 - ⬜ Later: Futu/KIS realtime; add the foreign seed tickers (TW/HK) to symbol search.
 
+### Shipped 2026-06 (user-feature batch)
+- ✅ **Private notes** (个股 + 日历) — `/v1/notes`, Notes tab + `/notes`. (v1.1: calendar grid.)
+- ✅ **Comments** (个股 + 综合评论区) — public `/v1/comments` + §230 safeguards (rate-limit,
+  report, soft-delete, admin takedown via `ADMIN_USER_IDS`, IP capture); Comments tab + `/community`.
+- ✅ **K-line + indicators** — `/v1/stocks/{t}/candles` + `lib/indicators.ts` + lightweight-charts
+  (MA/MACD/RSI/Volume).
+- ✅ **Fix**: on-view single-flight collection (`$MU` all-empty bug); ~90s frontend poll.
+- ✅ **Commercialization risk audit** — `docs/feature-research-2026-06.md` (Alpaca/Yahoo quote
+  redistribution = RED; fix before charging).
+- ⬜ Owner actions before wide launch: set `ADMIN_USER_IDS`; register a DMCA agent (~$6).
+
 ---
 _Working agreement: each `/loop` iteration picks the next unchecked item(s),
 implements rigorously (Google style, OSS reuse, parallel subagents where safe),

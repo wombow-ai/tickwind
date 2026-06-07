@@ -204,6 +204,8 @@ const dict: Record<Lang, Record<string, string>> = {
     'footer.copyright': '© 2026 Tickwind. Not investment advice.',
     'footer.tagline': 'Made for the curious investor.',
     'stock.waiting': 'Waiting for price…',
+    'stock.loginAdd': 'Log in to track {t} and save links',
+    'stock.loginAddSub': 'Keep a watchlist and clip posts from anywhere — free.',
     // pulse bar (detail-page buzz + sentiment chips)
     'pulse.buzz': 'Reddit buzz',
     'pulse.mentions24h': 'mentions / 24h',
@@ -397,6 +399,8 @@ const dict: Record<Lang, Record<string, string>> = {
     'footer.copyright': '© 2026 Tickwind。非投资建议。',
     'footer.tagline': '为好奇的投资者而做。',
     'stock.waiting': '正在等待价格…',
+    'stock.loginAdd': '登录以关注 {t} 并保存链接',
+    'stock.loginAddSub': '随时随地维护自选股、收藏帖子 —— 免费。',
     // pulse bar
     'pulse.buzz': 'Reddit 热度',
     'pulse.mentions24h': '次提及 / 24h',

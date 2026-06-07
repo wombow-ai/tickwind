@@ -427,11 +427,9 @@ export function StockView({ticker}: {ticker: string}) {
           </span>
           <div className="min-w-0 flex-1">
             <p className={cx('text-[13.5px] font-semibold', t.text)}>
-              Log in to add {norm} and save links
+              {tr('stock.loginAdd').replace('{t}', norm)}
             </p>
-            <p className={cx('text-[12px]', t.sub)}>
-              Keep a watchlist and clip posts from anywhere — free.
-            </p>
+            <p className={cx('text-[12px]', t.sub)}>{tr('stock.loginAddSub')}</p>
           </div>
           <Link
             href="/login"
@@ -440,7 +438,7 @@ export function StockView({ticker}: {ticker: string}) {
               btnPrimary(dark),
             )}
           >
-            Log in
+            {tr('nav.login')}
           </Link>
         </div>
       )}
