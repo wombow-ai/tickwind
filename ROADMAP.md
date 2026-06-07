@@ -226,6 +226,12 @@ SEC/EDGAR backbone is the defensible, redistribution-safe lane.** Owner picks wh
   upgrade · paper-trading.  **RED:** earnings-call transcripts (paid feed), Google Trends,
   CoinGecko free tier.  Standing RED unchanged: live quote redistribution (Alpaca/Yahoo).
 
+**🏗 Building now (owner greenlit 2026-06):** **Financials tab** — 市值/市盈率/营收/净利润 on the
+stock page, from free SEC XBRL. ✅ backend extractor `edgar.Fundamentals` (latest-FY revenue/net
+income/diluted-EPS + shares + equity, unit-tested). Next: ⬜ API `/v1/stocks/{t}/fundamentals`
+(cache + price → market cap & P/E) → ⬜ frontend `FundamentalsCard` + i18n → deploy. (TTM is a
+later enhancement; v1 = latest fiscal year, clearly labelled.)
+
 ### Backlog (owner-approved, in `/loop` order)
 - ✅ ① CI.  ✅ ② Opportunity seen-set persistence (was already built+live — `seen_form4`,
   verified `loaded ... count=3362` on restart; corrected stale note).  ✅ ③ Bollinger
