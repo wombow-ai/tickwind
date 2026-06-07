@@ -160,3 +160,24 @@ CREATE TABLE IF NOT EXISTS clips (
 
 CREATE INDEX IF NOT EXISTS clips_user_ticker_created_idx
     ON clips (user_id, ticker, created_at DESC);
+
+-- Private per-user notes/opinions, attached to a stock (ticker), a calendar date
+-- (note_date), both, or neither. Per-user → routed to the User (local) store by
+-- store.Split; keyed by the Supabase JWT sub. Editable, so updated_at is tracked.
+CREATE TABLE IF NOT EXISTS notes (
+    id         text PRIMARY KEY,
+    user_id    uuid NOT NULL,
+    ticker     text,
+    note_date  date,
+    body       text NOT NULL DEFAULT '',
+    pinned     boolean NOT NULL DEFAULT false,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS notes_user_ticker_created_idx
+    ON notes (user_id, ticker, created_at DESC);
+CREATE INDEX IF NOT EXISTS notes_user_date_idx
+    ON notes (user_id, note_date) WHERE note_date IS NOT NULL;
+CREATE INDEX IF NOT EXISTS notes_user_created_idx
+    ON notes (user_id, created_at DESC);

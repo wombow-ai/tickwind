@@ -7,6 +7,8 @@ package api
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"hash/fnv"
@@ -103,6 +105,10 @@ func New(st store.Store, hub QuoteStream, enricher enrich.Enricher, verifier *au
 	mux.HandleFunc("DELETE /v1/watchlist/{ticker}", s.deleteWatchlist)
 	mux.HandleFunc("POST /v1/stocks/{ticker}/clip", s.postClip)
 	mux.HandleFunc("GET /v1/stocks/{ticker}/clips", s.getClips)
+	mux.HandleFunc("POST /v1/notes", s.postNote)
+	mux.HandleFunc("GET /v1/notes", s.getNotes)
+	mux.HandleFunc("PATCH /v1/notes/{id}", s.patchNote)
+	mux.HandleFunc("DELETE /v1/notes/{id}", s.deleteNote)
 
 	// Public (market data — open for SEO / shareable stock pages)
 	mux.HandleFunc("GET /v1/stocks/{ticker}", s.getStock)
@@ -133,7 +139,7 @@ func (s *Server) middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
@@ -292,6 +298,134 @@ func (s *Server) getClips(w http.ResponseWriter, r *http.Request) {
 		"count":  len(clips),
 		"clips":  clips,
 	})
+}
+
+// ── Per-user: notes ──────────────────────────────────────────────────────
+
+// randNoteID returns a random "note:<hex>" id (notes aren't deduped like clips —
+// a user may legitimately write two identical lines, so no content hash).
+func randNoteID() string {
+	var b [16]byte
+	_, _ = rand.Read(b[:])
+	return "note:" + hex.EncodeToString(b[:])
+}
+
+func (s *Server) postNote(w http.ResponseWriter, r *http.Request) {
+	u, ok := s.requireUser(w, r)
+	if !ok {
+		return
+	}
+	var req struct {
+		Ticker string `json:"ticker"`
+		Date   string `json:"note_date"`
+		Body   string `json:"body"`
+		Pinned bool   `json:"pinned"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 16<<10)).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, errBody("invalid request body"))
+		return
+	}
+	body := strings.TrimSpace(req.Body)
+	if body == "" {
+		writeJSON(w, http.StatusBadRequest, errBody("a note body is required"))
+		return
+	}
+	date := strings.TrimSpace(req.Date)
+	if date != "" {
+		if _, err := time.Parse("2006-01-02", date); err != nil {
+			writeJSON(w, http.StatusBadRequest, errBody("note_date must be YYYY-MM-DD"))
+			return
+		}
+	}
+	now := time.Now().UTC()
+	n := store.Note{
+		ID:        randNoteID(),
+		UserID:    u.ID,
+		Ticker:    strings.ToUpper(strings.TrimSpace(req.Ticker)),
+		Date:      date,
+		Body:      body,
+		Pinned:    req.Pinned,
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+	if err := s.store.SaveNote(r.Context(), n); err != nil {
+		writeJSON(w, http.StatusInternalServerError, errBody(err.Error()))
+		return
+	}
+	writeJSON(w, http.StatusCreated, n)
+}
+
+func (s *Server) getNotes(w http.ResponseWriter, r *http.Request) {
+	u, ok := s.requireUser(w, r)
+	if !ok {
+		return
+	}
+	q := r.URL.Query()
+	notes, err := s.store.ListNotes(r.Context(), store.NoteFilter{
+		UserID: u.ID,
+		Ticker: strings.ToUpper(strings.TrimSpace(q.Get("ticker"))),
+		From:   strings.TrimSpace(q.Get("from")),
+		To:     strings.TrimSpace(q.Get("to")),
+		Limit:  queryLimit(r, 200),
+	})
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, errBody(err.Error()))
+		return
+	}
+	if notes == nil {
+		notes = []store.Note{} // marshal as [] not null
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"count": len(notes), "notes": notes})
+}
+
+func (s *Server) patchNote(w http.ResponseWriter, r *http.Request) {
+	u, ok := s.requireUser(w, r)
+	if !ok {
+		return
+	}
+	var req struct {
+		Body   *string `json:"body"`
+		Pinned *bool   `json:"pinned"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 16<<10)).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, errBody("invalid request body"))
+		return
+	}
+	if req.Body != nil {
+		b := strings.TrimSpace(*req.Body)
+		if b == "" {
+			writeJSON(w, http.StatusBadRequest, errBody("note body cannot be empty"))
+			return
+		}
+		req.Body = &b
+	}
+	n, ok2, err := s.store.UpdateNote(r.Context(), u.ID, r.PathValue("id"), req.Body, req.Pinned)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, errBody(err.Error()))
+		return
+	}
+	if !ok2 {
+		writeJSON(w, http.StatusNotFound, errBody("note not found"))
+		return
+	}
+	writeJSON(w, http.StatusOK, n)
+}
+
+func (s *Server) deleteNote(w http.ResponseWriter, r *http.Request) {
+	u, ok := s.requireUser(w, r)
+	if !ok {
+		return
+	}
+	deleted, err := s.store.DeleteNote(r.Context(), u.ID, r.PathValue("id"))
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, errBody(err.Error()))
+		return
+	}
+	if !deleted {
+		writeJSON(w, http.StatusNotFound, errBody("note not found"))
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"deleted": true})
 }
 
 // ── Public: market data ──────────────────────────────────────────────────

@@ -25,6 +25,7 @@ type Store struct {
 	seenF4    map[string]time.Time               // form-4 accession -> filed date
 	watchlist map[string][]string                // userID -> ordered tickers
 	clips     map[string]map[string]store.Clip   // userID -> clipID -> Clip
+	notes     map[string]map[string]store.Note   // userID -> noteID -> Note
 }
 
 func New() *Store {
@@ -40,6 +41,7 @@ func New() *Store {
 		seenF4:    make(map[string]time.Time),
 		watchlist: make(map[string][]string),
 		clips:     make(map[string]map[string]store.Clip),
+		notes:     make(map[string]map[string]store.Note),
 	}
 }
 
@@ -324,6 +326,72 @@ func (s *Store) ListClips(_ context.Context, userID, ticker string, limit int) (
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].CreatedAt.After(out[j].CreatedAt) })
 	return limited(out, limit), nil
+}
+
+func (s *Store) SaveNote(_ context.Context, n store.Note) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	m := s.notes[n.UserID]
+	if m == nil {
+		m = make(map[string]store.Note)
+		s.notes[n.UserID] = m
+	}
+	m[n.ID] = n
+	return nil
+}
+
+func (s *Store) ListNotes(_ context.Context, f store.NoteFilter) ([]store.Note, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	tk := key(f.Ticker)
+	out := make([]store.Note, 0)
+	for _, n := range s.notes[f.UserID] {
+		if f.Ticker != "" && key(n.Ticker) != tk {
+			continue
+		}
+		if f.From != "" && (n.Date == "" || n.Date < f.From) { // YYYY-MM-DD sorts lexically
+			continue
+		}
+		if f.To != "" && (n.Date == "" || n.Date > f.To) {
+			continue
+		}
+		out = append(out, n)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Pinned != out[j].Pinned {
+			return out[i].Pinned // pinned first
+		}
+		return out[i].CreatedAt.After(out[j].CreatedAt)
+	})
+	return limited(out, f.Limit), nil
+}
+
+func (s *Store) UpdateNote(_ context.Context, userID, id string, body *string, pinned *bool) (store.Note, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	n, ok := s.notes[userID][id]
+	if !ok {
+		return store.Note{}, false, nil
+	}
+	if body != nil {
+		n.Body = *body
+	}
+	if pinned != nil {
+		n.Pinned = *pinned
+	}
+	n.UpdatedAt = time.Now().UTC()
+	s.notes[userID][id] = n
+	return n, true, nil
+}
+
+func (s *Store) DeleteNote(_ context.Context, userID, id string) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.notes[userID][id]; !ok {
+		return false, nil
+	}
+	delete(s.notes[userID], id)
+	return true, nil
 }
 
 // limited returns the first limit elements (limit <= 0 means all).

@@ -122,3 +122,17 @@ func (s Split) SaveClip(ctx context.Context, c Clip) error {
 func (s Split) ListClips(ctx context.Context, userID, ticker string, limit int) ([]Clip, error) {
 	return s.User.ListClips(ctx, userID, ticker, limit)
 }
+
+func (s Split) SaveNote(ctx context.Context, n Note) error { return s.User.SaveNote(ctx, n) }
+
+func (s Split) ListNotes(ctx context.Context, f NoteFilter) ([]Note, error) {
+	return s.User.ListNotes(ctx, f)
+}
+
+func (s Split) UpdateNote(ctx context.Context, userID, id string, body *string, pinned *bool) (Note, bool, error) {
+	return s.User.UpdateNote(ctx, userID, id, body, pinned)
+}
+
+func (s Split) DeleteNote(ctx context.Context, userID, id string) (bool, error) {
+	return s.User.DeleteNote(ctx, userID, id)
+}

@@ -135,6 +135,30 @@ type Clip struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
+// Note is a user's private note/opinion, attached to a stock (Ticker) and/or a
+// calendar date (Date), or neither (a free-floating note). Per-user data (User
+// store); editable (unlike clips), so it carries UpdatedAt.
+type Note struct {
+	ID        string    `json:"id"`
+	UserID    string    `json:"user_id"`
+	Ticker    string    `json:"ticker,omitempty"`    // "" = not stock-scoped
+	Date      string    `json:"note_date,omitempty"` // "YYYY-MM-DD"; "" = undated
+	Body      string    `json:"body"`
+	Pinned    bool      `json:"pinned"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// NoteFilter selects a user's notes: by Ticker, by [From,To] date range, or all
+// of them (all filters empty). Always scoped to UserID.
+type NoteFilter struct {
+	UserID string
+	Ticker string // "" = any
+	From   string // "YYYY-MM-DD" inclusive; "" = open
+	To     string // "YYYY-MM-DD" inclusive; "" = open
+	Limit  int
+}
+
 // Store is the persistence boundary. Every backend (memory, postgres)
 // implements this so the rest of the app never depends on a driver.
 type Store interface {
@@ -188,4 +212,12 @@ type Store interface {
 	// Clips are a user's private saved links.
 	SaveClip(ctx context.Context, c Clip) error
 	ListClips(ctx context.Context, userID, ticker string, limit int) ([]Clip, error)
+
+	// Notes are a user's private notes/opinions (stock- and/or date-scoped).
+	// Update/Delete take userID so ownership is enforced in the query (not-yours
+	// → found=false → 404), and return found=false when the note isn't the user's.
+	SaveNote(ctx context.Context, n Note) error
+	ListNotes(ctx context.Context, f NoteFilter) ([]Note, error)
+	UpdateNote(ctx context.Context, userID, id string, body *string, pinned *bool) (Note, bool, error)
+	DeleteNote(ctx context.Context, userID, id string) (bool, error)
 }

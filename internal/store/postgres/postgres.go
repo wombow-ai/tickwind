@@ -587,3 +587,91 @@ func (s *Store) ListClips(ctx context.Context, userID, ticker string, limit int)
 	}
 	return out, nil
 }
+
+// noteCols is the SELECT list returning every Note field with NULLs folded to
+// "" (ticker) / "" (note_date as YYYY-MM-DD) so scans go straight into strings.
+const noteCols = `id, user_id, COALESCE(ticker,''), COALESCE(to_char(note_date,'YYYY-MM-DD'),''), body, pinned, created_at, updated_at`
+
+func scanNote(row interface{ Scan(...any) error }) (store.Note, error) {
+	var n store.Note
+	err := row.Scan(&n.ID, &n.UserID, &n.Ticker, &n.Date, &n.Body, &n.Pinned, &n.CreatedAt, &n.UpdatedAt)
+	return n, err
+}
+
+// SaveNote upserts a user's note (by id). Empty ticker/date map to SQL NULL.
+func (s *Store) SaveNote(ctx context.Context, n store.Note) error {
+	const query = `
+INSERT INTO notes (id, user_id, ticker, note_date, body, pinned, created_at, updated_at)
+VALUES ($1, $2, NULLIF($3,''), NULLIF($4,'')::date, $5, $6, $7, $8)
+ON CONFLICT (id) DO UPDATE SET
+  ticker = EXCLUDED.ticker, note_date = EXCLUDED.note_date,
+  body = EXCLUDED.body, pinned = EXCLUDED.pinned, updated_at = EXCLUDED.updated_at`
+	if _, err := s.pool.Exec(ctx, query, n.ID, n.UserID, n.Ticker, n.Date, n.Body, n.Pinned, n.CreatedAt, n.UpdatedAt); err != nil {
+		return fmt.Errorf("postgres: save note: %w", err)
+	}
+	return nil
+}
+
+// ListNotes returns a user's notes, optionally filtered by ticker and/or date
+// range, pinned first then newest.
+func (s *Store) ListNotes(ctx context.Context, f store.NoteFilter) ([]store.Note, error) {
+	query := `SELECT ` + noteCols + ` FROM notes WHERE user_id = $1`
+	args := []any{f.UserID}
+	if f.Ticker != "" {
+		args = append(args, f.Ticker)
+		query += fmt.Sprintf(" AND ticker = $%d", len(args))
+	}
+	if f.From != "" {
+		args = append(args, f.From)
+		query += fmt.Sprintf(" AND note_date >= $%d::date", len(args))
+	}
+	if f.To != "" {
+		args = append(args, f.To)
+		query += fmt.Sprintf(" AND note_date <= $%d::date", len(args))
+	}
+	query += " ORDER BY pinned DESC, created_at DESC"
+	if f.Limit > 0 {
+		args = append(args, f.Limit)
+		query += fmt.Sprintf(" LIMIT $%d", len(args))
+	}
+	rows, err := s.pool.Query(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("postgres: list notes: %w", err)
+	}
+	defer rows.Close()
+	var out []store.Note
+	for rows.Next() {
+		n, err := scanNote(rows)
+		if err != nil {
+			return nil, fmt.Errorf("postgres: scan note: %w", err)
+		}
+		out = append(out, n)
+	}
+	return out, rows.Err()
+}
+
+// UpdateNote patches body and/or pinned for the caller's note (nil = unchanged),
+// returning found=false if the id isn't this user's.
+func (s *Store) UpdateNote(ctx context.Context, userID, id string, body *string, pinned *bool) (store.Note, bool, error) {
+	const query = `
+UPDATE notes SET body = COALESCE($3, body), pinned = COALESCE($4, pinned), updated_at = now()
+WHERE id = $1 AND user_id = $2
+RETURNING ` + noteCols
+	n, err := scanNote(s.pool.QueryRow(ctx, query, id, userID, body, pinned))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return store.Note{}, false, nil
+	}
+	if err != nil {
+		return store.Note{}, false, fmt.Errorf("postgres: update note: %w", err)
+	}
+	return n, true, nil
+}
+
+// DeleteNote removes the caller's note, returning false if it wasn't theirs.
+func (s *Store) DeleteNote(ctx context.Context, userID, id string) (bool, error) {
+	tag, err := s.pool.Exec(ctx, `DELETE FROM notes WHERE id = $1 AND user_id = $2`, id, userID)
+	if err != nil {
+		return false, fmt.Errorf("postgres: delete note: %w", err)
+	}
+	return tag.RowsAffected() == 1, nil
+}
