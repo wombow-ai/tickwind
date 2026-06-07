@@ -266,6 +266,10 @@ const dict: Record<Lang, Record<string, string>> = {
     'notes.pin': 'Pin',
     'notes.unpin': 'Unpin',
     'notes.edited': 'edited',
+    'notes.list': 'List',
+    'notes.calendar': 'Calendar',
+    'notes.dayNote': 'Note for this day…',
+    'notes.dayEmpty': 'No notes for this day.',
     'common.ago': 'ago',
   },
   zh: {
@@ -459,6 +463,10 @@ const dict: Record<Lang, Record<string, string>> = {
     'notes.pin': '置顶',
     'notes.unpin': '取消置顶',
     'notes.edited': '已编辑',
+    'notes.list': '列表',
+    'notes.calendar': '日历',
+    'notes.dayNote': '当天的笔记…',
+    'notes.dayEmpty': '当天还没有笔记。',
     'common.ago': '前',
   },
 };
