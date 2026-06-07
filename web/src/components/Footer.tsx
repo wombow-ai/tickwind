@@ -1,29 +1,32 @@
 'use client';
 
 import Link from 'next/link';
+import {useT} from '@/lib/i18n';
 import {useDark} from '@/lib/theme';
 import {cx, tok} from '@/lib/ui';
 import {Logo} from '@/components/ui/atoms';
 
+// Each column = [headingKey, [[labelKey, href], …]]; headings and labels are
+// i18n dict keys, resolved via the translator at render time.
 const COLUMNS: Array<[string, Array<[string, string]>]> = [
   [
-    'Product',
+    'footer.product',
     [
-      ['Markets', '/'],
-      ['Hot stocks', '/hot'],
-      ['Opportunities', '/opportunities'],
-      ['News', '/news'],
-      ['Discussion', '/discussion'],
-      ['Watchlist', '/watchlist'],
-      ["What's new", '/announcements'],
+      ['nav.markets', '/'],
+      ['mod.hotStocks', '/hot'],
+      ['nav.opportunities', '/opportunities'],
+      ['nav.news', '/news'],
+      ['mod.discussion', '/discussion'],
+      ['nav.watchlist', '/watchlist'],
+      ['nav.whatsnew', '/announcements'],
     ],
   ],
   [
-    'Account',
+    'footer.account',
     [
-      ['Settings', '/settings'],
-      ['Log in', '/login'],
-      ['Sign up', '/signup'],
+      ['nav.settings', '/settings'],
+      ['nav.login', '/login'],
+      ['nav.signup', '/signup'],
     ],
   ],
 ];
@@ -32,6 +35,7 @@ const COLUMNS: Array<[string, Array<[string, string]>]> = [
 export function Footer() {
   const dark = useDark();
   const t = tok(dark);
+  const tr = useT();
   return (
     <footer className={cx('mt-8 border-t', t.border, dark ? 'bg-slate-950' : 'bg-slate-50/60')}>
       <div className="mx-auto max-w-6xl px-4 py-12 sm:px-6">
@@ -39,17 +43,17 @@ export function Footer() {
           <div className="sm:col-span-2">
             <Logo size={28} />
             <p className={cx('mt-3 max-w-[220px] text-[13px]', t.sub)}>
-              Read every tick. See where the market&apos;s blowing.
+              {tr('footer.blurb')}
             </p>
           </div>
           {COLUMNS.map(([heading, items]) => (
             <div key={heading}>
-              <p className={cx('mb-3 text-[12px] font-semibold', t.text)}>{heading}</p>
+              <p className={cx('mb-3 text-[12px] font-semibold', t.text)}>{tr(heading)}</p>
               <ul className="space-y-2">
                 {items.map(([label, href]) => (
                   <li key={label}>
                     <Link href={href} className={cx('text-[13px] hover:opacity-80', t.sub)}>
-                      {label}
+                      {tr(label)}
                     </Link>
                   </li>
                 ))}
@@ -63,10 +67,8 @@ export function Footer() {
             t.hair,
           )}
         >
-          <p className={cx('text-[12px]', t.faint)}>
-            © 2026 Tickwind. Not investment advice.
-          </p>
-          <p className={cx('text-[12px]', t.faint)}>Made for the curious investor.</p>
+          <p className={cx('text-[12px]', t.faint)}>{tr('footer.copyright')}</p>
+          <p className={cx('text-[12px]', t.faint)}>{tr('footer.tagline')}</p>
         </div>
       </div>
     </footer>

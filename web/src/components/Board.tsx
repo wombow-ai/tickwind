@@ -18,6 +18,7 @@ import {
 } from '@/lib/api';
 import {useAuth} from '@/lib/auth';
 import {POPULAR_TICKERS, SUGGESTED_TICKERS} from '@/lib/config';
+import {useT} from '@/lib/i18n';
 import {useDark} from '@/lib/theme';
 import {btnPrimary, cx, tok} from '@/lib/ui';
 import {useQuotes} from '@/lib/useQuotes';
@@ -54,6 +55,7 @@ function placeholder(ticker: string): Security {
 export function Board({variant = 'markets'}: {variant?: 'markets' | 'watchlist'}) {
   const {user, loading: authLoading, getToken} = useAuth();
   const {toast} = useToast();
+  const tr = useT();
   const dark = useDark();
   const t = tok(dark);
   const isAuthed = !!user;
@@ -183,11 +185,11 @@ export function Board({variant = 'markets'}: {variant?: 'markets' | 'watchlist'}
     const ticker = raw.trim().toUpperCase();
     if (!ticker) return;
     if (!isAuthed) {
-      toast('Log in to build your watchlist');
+      toast(tr('board.loginToBuild'));
       return;
     }
     if (tickers.includes(ticker)) {
-      toast(`${ticker} is already on your watchlist`);
+      toast(tr('board.already').replace('{t}', ticker));
       return;
     }
     setTickers(prev => [...prev, ticker]); // optimistic
@@ -195,10 +197,10 @@ export function Board({variant = 'markets'}: {variant?: 'markets' | 'watchlist'}
       const token = await getToken();
       const res = await addToWatchlist(token, ticker);
       setTickers(res.tickers);
-      toast(`Added ${ticker}`, {tone: 'ok'});
+      toast(tr('board.added').replace('{t}', ticker), {tone: 'ok'});
     } catch {
       setTickers(prev => prev.filter(x => x !== ticker));
-      toast(`Couldn't add ${ticker}`);
+      toast(tr('board.addFailed').replace('{t}', ticker));
     }
   }
 
@@ -209,10 +211,12 @@ export function Board({variant = 'markets'}: {variant?: 'markets' | 'watchlist'}
       const token = await getToken();
       const res = await removeFromWatchlist(token, ticker);
       setTickers(res.tickers);
-      toast(`Removed ${ticker}`, {action: {label: 'Undo', fn: () => add(ticker)}});
+      toast(tr('board.removed').replace('{t}', ticker), {
+        action: {label: tr('board.undo'), fn: () => add(ticker)},
+      });
     } catch {
       setTickers(prev);
-      toast(`Couldn't remove ${ticker}`);
+      toast(tr('board.removeFailed').replace('{t}', ticker));
     }
   }
 
@@ -229,19 +233,17 @@ export function Board({variant = 'markets'}: {variant?: 'markets' | 'watchlist'}
       <header className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h1 className={cx('text-[26px] font-bold tracking-tight', t.text)}>
-            {watchlistMode ? 'Your watchlist' : 'Markets today'}
+            {watchlistMode ? tr('board.titleWatchlist') : tr('home.title')}
           </h1>
           <p className={cx('mt-1 text-[13.5px]', t.sub)}>
-            {watchlistMode
-              ? 'Your stocks — prices, news and chatter in one place.'
-              : 'Live prices, then the news and chatter across the market.'}
+            {watchlistMode ? tr('board.subWatchlist') : tr('board.subMarkets')}
           </p>
         </div>
 
         {watchlistMode && isAuthed ? (
           <SearchBox
             onSelect={add}
-            placeholder="Add a stock…"
+            placeholder={tr('board.addStock')}
             size="md"
             className="sm:w-72"
           />
@@ -255,7 +257,7 @@ export function Board({variant = 'markets'}: {variant?: 'markets' | 'watchlist'}
               t.text,
             )}
           >
-            <Lock size={14} className={t.sub} /> Log in
+            <Lock size={14} className={t.sub} /> {tr('nav.login')}
           </Link>
         ) : null}
       </header>
@@ -280,10 +282,10 @@ export function Board({variant = 'markets'}: {variant?: 'markets' | 'watchlist'}
             <Lock className={dark ? 'text-teal-300' : 'text-teal-600'} size={26} />
           </div>
           <h3 className={cx('text-[16px] font-semibold', t.text)}>
-            Log in to see your watchlist
+            {tr('board.loginTitle')}
           </h3>
           <p className={cx('mt-1.5 max-w-sm text-[13.5px]', t.sub)}>
-            Track your own stocks and clip links from anywhere — free.
+            {tr('board.loginSub')}
           </p>
           <Link
             href="/login"
@@ -292,7 +294,7 @@ export function Board({variant = 'markets'}: {variant?: 'markets' | 'watchlist'}
               btnPrimary(dark),
             )}
           >
-            Log in
+            {tr('nav.login')}
           </Link>
         </div>
       )}
@@ -319,10 +321,10 @@ export function Board({variant = 'markets'}: {variant?: 'markets' | 'watchlist'}
             <Wind className={dark ? 'text-teal-300' : 'text-teal-600'} size={28} />
           </div>
           <h3 className={cx('text-[16px] font-semibold', t.text)}>
-            Your board is calm and empty
+            {tr('board.emptyTitle')}
           </h3>
           <p className={cx('mt-1.5 max-w-sm text-[13.5px]', t.sub)}>
-            Add a ticker to follow its price, news and chatter.
+            {tr('board.emptySub')}
           </p>
           <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
             {SUGGESTED_TICKERS.map(s => (
@@ -388,7 +390,7 @@ export function Board({variant = 'markets'}: {variant?: 'markets' | 'watchlist'}
               t.text,
             )}
           >
-            {feedsOpen ? 'Hide news & discussion' : 'Show news & discussion'}
+            {feedsOpen ? tr('board.hideFeed') : tr('board.showFeed')}
           </button>
           {feedsOpen && (
             <div className="flex flex-wrap items-center gap-1.5">
@@ -406,7 +408,7 @@ export function Board({variant = 'markets'}: {variant?: 'markets' | 'watchlist'}
                         : cx('border hover:opacity-80', t.border, t.sub),
                     )}
                   >
-                    {tk ?? 'All'}
+                    {tk ?? tr('events.all')}
                   </button>
                 );
               })}
@@ -419,13 +421,13 @@ export function Board({variant = 'markets'}: {variant?: 'markets' | 'watchlist'}
       {!needLogin && feedsVisible && (
         <div className="grid gap-6 md:grid-cols-2">
         <FeedColumn
-          title="News"
+          title={tr('mod.news')}
           icon={Newspaper}
           feed={news}
           onRetry={loadNews}
           empty={{
-            label: 'No news yet',
-            sub: 'Headlines about the stocks you follow will land here.',
+            label: tr('mod.noNews'),
+            sub: tr('board.emptyNewsSub'),
             icon: Newspaper,
           }}
           render={(n, last) => (
@@ -438,13 +440,13 @@ export function Board({variant = 'markets'}: {variant?: 'markets' | 'watchlist'}
           )}
         />
         <FeedColumn
-          title="Discussion"
+          title={tr('mod.discussion')}
           icon={MessageSquare}
           feed={social}
           onRetry={loadSocial}
           empty={{
-            label: 'No chatter yet',
-            sub: 'Posts from StockTwits and Reddit will show up here.',
+            label: tr('mod.noChatter'),
+            sub: tr('board.emptyChatterSub'),
             icon: MessageSquare,
           }}
           render={(p, last) => (

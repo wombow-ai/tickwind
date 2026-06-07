@@ -3,6 +3,7 @@
 import {X} from 'lucide-react';
 import Link from 'next/link';
 import type {Quote, Security} from '@/lib/api';
+import {useT} from '@/lib/i18n';
 import {useDark} from '@/lib/theme';
 import {cx, marketCurrency, tok} from '@/lib/ui';
 import {
@@ -31,6 +32,7 @@ export function StockCard({
 }) {
   const dark = useDark();
   const t = tok(dark);
+  const tr = useT();
   const cur = marketCurrency(security.market);
 
   return (
@@ -92,7 +94,7 @@ export function StockCard({
           {quote ? (
             <SessionBadge session={quote.session} sm />
           ) : (
-            <span className={cx('text-[11px]', t.faint)}>Waiting for price…</span>
+            <span className={cx('text-[11px]', t.faint)}>{tr('stock.waiting')}</span>
           )}
         </div>
       </Link>

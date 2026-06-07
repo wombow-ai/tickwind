@@ -10,6 +10,7 @@ import {
   type Post,
 } from '@/lib/api';
 import {POPULAR_TICKERS} from '@/lib/config';
+import {useT} from '@/lib/i18n';
 import {useDark} from '@/lib/theme';
 import {cx, tok} from '@/lib/ui';
 import {TimelineItem} from '@/components/TimelineItem';
@@ -33,6 +34,7 @@ export function FeedPage({
 }) {
   const dark = useDark();
   const t = tok(dark);
+  const tr = useT();
   const isNews = kind === 'news';
   const filtered = isNews && !!topic;
   const [status, setStatus] = useState<Status>('loading');
@@ -66,20 +68,20 @@ export function FeedPage({
 
   const Icon = isNews ? Newspaper : MessageSquare;
   const title = filtered
-    ? topicLabel || 'Filtered news'
+    ? topicLabel || tr('feed.titleFiltered')
     : isNews
-      ? 'Market news'
-      : 'Discussion';
+      ? tr('feed.titleNews')
+      : tr('mod.discussion');
   const sub = filtered
-    ? `Latest headlines about “${topicLabel || topic}”.`
+    ? tr('feed.subFiltered').replace('{t}', topicLabel || topic || '')
     : isNews
-      ? 'The latest headlines across the most-watched US stocks.'
-      : 'What people are saying about the most-watched US stocks — StockTwits, Bluesky and more.';
+      ? tr('feed.subNews')
+      : tr('feed.subDiscussion');
   const empty = filtered
-    ? {label: 'No recent news for this topic', sub: 'Try another topic or see all news.'}
+    ? {label: tr('feed.emptyFiltered'), sub: tr('feed.emptyFilteredSub')}
     : isNews
-      ? {label: 'No news yet', sub: 'Headlines will appear here as they break.'}
-      : {label: 'No chatter yet', sub: 'Posts will show up here as they come in.'};
+      ? {label: tr('mod.noNews'), sub: tr('feed.emptyNewsSub')}
+      : {label: tr('mod.noChatter'), sub: tr('feed.emptyChatterSub')};
   const count = isNews ? news.length : posts.length;
 
   return (
@@ -100,7 +102,7 @@ export function FeedPage({
             href="/news"
             className={cx('mt-2 inline-block text-[12.5px] font-semibold', t.accentText)}
           >
-            ← All news
+            {tr('feed.allNews')}
           </Link>
         )}
       </header>
