@@ -124,6 +124,9 @@ func New(st store.Store, hub QuoteStream, enricher enrich.Enricher, verifier *au
 	mux.HandleFunc("GET /v1/notes", s.getNotes)
 	mux.HandleFunc("PATCH /v1/notes/{id}", s.patchNote)
 	mux.HandleFunc("DELETE /v1/notes/{id}", s.deleteNote)
+	mux.HandleFunc("GET /v1/alerts", s.getAlerts)
+	mux.HandleFunc("POST /v1/alerts", s.postAlert)
+	mux.HandleFunc("DELETE /v1/alerts/{id}", s.deleteAlert)
 	mux.HandleFunc("GET /v1/comments", s.getComments) // public read
 	mux.HandleFunc("POST /v1/comments", s.postComment)
 	mux.HandleFunc("DELETE /v1/comments/{id}", s.deleteComment)
@@ -444,6 +447,89 @@ func (s *Server) deleteNote(w http.ResponseWriter, r *http.Request) {
 	}
 	if !deleted {
 		writeJSON(w, http.StatusNotFound, errBody("note not found"))
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"deleted": true})
+}
+
+// ── Per-user: alerts ─────────────────────────────────────────────────────
+
+// validAlertKinds gates the alert types the evaluator (added next) understands.
+var validAlertKinds = map[string]bool{
+	"price_above": true, "price_below": true, "pct_move": true, "new_filing": true,
+}
+
+func (s *Server) postAlert(w http.ResponseWriter, r *http.Request) {
+	u, ok := s.requireUser(w, r)
+	if !ok {
+		return
+	}
+	var req struct {
+		Ticker    string  `json:"ticker"`
+		Kind      string  `json:"kind"`
+		Threshold float64 `json:"threshold"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 4<<10)).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, errBody("invalid request body"))
+		return
+	}
+	ticker := strings.ToUpper(strings.TrimSpace(req.Ticker))
+	if ticker == "" {
+		writeJSON(w, http.StatusBadRequest, errBody("a ticker is required"))
+		return
+	}
+	if !validAlertKinds[req.Kind] {
+		writeJSON(w, http.StatusBadRequest, errBody("invalid alert kind"))
+		return
+	}
+	if req.Kind != "new_filing" && req.Threshold <= 0 {
+		writeJSON(w, http.StatusBadRequest, errBody("threshold must be positive"))
+		return
+	}
+	a := store.Alert{
+		ID:        randHex(),
+		UserID:    u.ID,
+		Ticker:    ticker,
+		Kind:      req.Kind,
+		Threshold: req.Threshold,
+		Active:    true,
+		CreatedAt: time.Now().UTC(),
+	}
+	if err := s.store.SaveAlert(r.Context(), a); err != nil {
+		writeJSON(w, http.StatusInternalServerError, errBody(err.Error()))
+		return
+	}
+	writeJSON(w, http.StatusCreated, a)
+}
+
+func (s *Server) getAlerts(w http.ResponseWriter, r *http.Request) {
+	u, ok := s.requireUser(w, r)
+	if !ok {
+		return
+	}
+	alerts, err := s.store.ListAlerts(r.Context(), u.ID)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, errBody(err.Error()))
+		return
+	}
+	if alerts == nil {
+		alerts = []store.Alert{} // marshal as [] not null
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"count": len(alerts), "alerts": alerts})
+}
+
+func (s *Server) deleteAlert(w http.ResponseWriter, r *http.Request) {
+	u, ok := s.requireUser(w, r)
+	if !ok {
+		return
+	}
+	deleted, err := s.store.DeleteAlert(r.Context(), u.ID, r.PathValue("id"))
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, errBody(err.Error()))
+		return
+	}
+	if !deleted {
+		writeJSON(w, http.StatusNotFound, errBody("alert not found"))
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"deleted": true})

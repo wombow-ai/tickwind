@@ -72,6 +72,64 @@ func authed(t *testing.T, method, url, body string) *http.Response {
 	return resp
 }
 
+func TestAlertsAPI(t *testing.T) {
+	srv := newTestServer()
+	defer srv.Close()
+
+	// Unauthenticated read → 401.
+	if resp, err := http.Get(srv.URL + "/v1/alerts"); err != nil {
+		t.Fatal(err)
+	} else if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("GET /v1/alerts (no auth) = %d, want 401", resp.StatusCode)
+	}
+
+	// Create (ticker is upper-cased).
+	resp := authed(t, "POST", srv.URL+"/v1/alerts", `{"ticker":"aapl","kind":"price_above","threshold":200}`)
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("POST /v1/alerts = %d, want 201", resp.StatusCode)
+	}
+	var created struct {
+		ID     string `json:"id"`
+		Ticker string `json:"ticker"`
+		Active bool   `json:"active"`
+	}
+	_ = json.NewDecoder(resp.Body).Decode(&created)
+	resp.Body.Close()
+	if created.ID == "" || created.Ticker != "AAPL" || !created.Active {
+		t.Fatalf("created = %+v, want id + ticker AAPL + active", created)
+	}
+
+	// Invalid kind → 400.
+	if r := authed(t, "POST", srv.URL+"/v1/alerts", `{"ticker":"AAPL","kind":"nope","threshold":1}`); r.StatusCode != http.StatusBadRequest {
+		t.Errorf("POST invalid kind = %d, want 400", r.StatusCode)
+	}
+
+	// List → exactly the one created.
+	r := authed(t, "GET", srv.URL+"/v1/alerts", "")
+	var list struct {
+		Count int `json:"count"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&list)
+	r.Body.Close()
+	if list.Count != 1 {
+		t.Fatalf("list count = %d, want 1", list.Count)
+	}
+
+	// Delete → 200, then the list is empty.
+	if r := authed(t, "DELETE", srv.URL+"/v1/alerts/"+created.ID, ""); r.StatusCode != http.StatusOK {
+		t.Errorf("DELETE = %d, want 200", r.StatusCode)
+	}
+	r2 := authed(t, "GET", srv.URL+"/v1/alerts", "")
+	var list2 struct {
+		Count int `json:"count"`
+	}
+	_ = json.NewDecoder(r2.Body).Decode(&list2)
+	r2.Body.Close()
+	if list2.Count != 0 {
+		t.Errorf("after delete count = %d, want 0", list2.Count)
+	}
+}
+
 func TestHealthz(t *testing.T) {
 	srv := newTestServer()
 	defer srv.Close()
