@@ -212,6 +212,8 @@ Status: ✅ done · 🟡 in progress · ⬜ todo
   (zh 盘前/盘中/盘后/夜盘/休市) on every price tag; + the account-menu 'Signed in' fallback.
 - ✅ **HomeHub loading skeletons** — the 5 module previews showed their empty state during the
   initial fetch (landing page flashed "No data"); now per-module skeletons until each settles.
+- ✅ **a11y: More-menu Escape** — the More dropdown owned its own state so the global Escape
+  handler missed it (Esc did nothing); now closes + restores focus to its trigger.
 
 ### Future features — researched 2026-06 (see `docs/future-features-2026-06.md`)
 3 parallel research agents (competitor gaps · free data sources · AI/LLM). **Convergence: the
