@@ -1,5 +1,5 @@
 import type {Metadata} from 'next';
-import {getStock, type Security} from '@/lib/api';
+import {getFundamentals, getStock, type Fundamentals, type Security} from '@/lib/api';
 import {SITE_URL} from '@/lib/config';
 import {StockView} from '@/components/StockView';
 
@@ -20,6 +20,15 @@ async function fetchSecurity(t: string): Promise<Security | null> {
   }
 }
 
+/** Server-side fundamentals for the financials JSON-LD. Null for non-US / no data. */
+async function fetchFundamentals(t: string): Promise<Fundamentals | null> {
+  try {
+    return await getFundamentals(t, AbortSignal.timeout(5000));
+  } catch {
+    return null;
+  }
+}
+
 export async function generateMetadata({params}: Params): Promise<Metadata> {
   const {ticker} = await params;
   const t = decodeURIComponent(ticker).toUpperCase();
@@ -36,14 +45,12 @@ export async function generateMetadata({params}: Params): Promise<Metadata> {
 export default async function StockPage({params}: Params) {
   const {ticker} = await params;
   const t = decodeURIComponent(ticker).toUpperCase();
-  const sec = await fetchSecurity(t);
+  const [sec, fund] = await Promise.all([fetchSecurity(t), fetchFundamentals(t)]);
   const name = sec?.name || t;
   const stockUrl = `${SITE_URL}/stock/${encodeURIComponent(t)}`;
 
-  // Structured data — separate blocks per type (partial markup = zero rich-result
-  // lift, so we only emit fields we actually have). Corporation + BreadcrumbList
-  // are always valid from the ticker/name; richer FinancialProduct is deferred
-  // (needs server-fetched price/financials).
+  // Structured data — separate blocks per type; we only emit fields we actually
+  // have (partial markup = zero rich-result lift).
   const jsonLd: Record<string, unknown>[] = [
     {
       '@context': 'https://schema.org',
@@ -61,6 +68,32 @@ export default async function StockPage({params}: Params) {
       ],
     },
   ];
+
+  // Key financials as a Dataset — the schema.org-blessed shape for packaged
+  // financial data (better for AI/SERP than a strained FinancialProduct). Only
+  // the measures we actually have are included; the block is omitted if none.
+  const measures: Record<string, unknown>[] = [];
+  if (fund) {
+    if (fund.market_cap != null)
+      measures.push({'@type': 'PropertyValue', name: 'Market capitalization', value: Math.round(fund.market_cap), unitText: fund.currency});
+    if (fund.pe != null)
+      measures.push({'@type': 'PropertyValue', name: 'Price-to-earnings ratio (P/E)', value: Number(fund.pe.toFixed(2))});
+    if (fund.revenue)
+      measures.push({'@type': 'PropertyValue', name: `Revenue (${fund.period})`, value: Math.round(fund.revenue), unitText: fund.currency});
+    if (fund.net_income)
+      measures.push({'@type': 'PropertyValue', name: `Net income (${fund.period})`, value: Math.round(fund.net_income), unitText: fund.currency});
+  }
+  if (measures.length > 0) {
+    jsonLd.push({
+      '@context': 'https://schema.org',
+      '@type': 'Dataset',
+      name: `${name} key financials`,
+      description: `Market cap, P/E, revenue and net income for ${name}${fund?.period ? ` (${fund.period})` : ''}, derived from SEC filings.`,
+      url: stockUrl,
+      creator: {'@type': 'Organization', name: 'Tickwind'},
+      variableMeasured: measures,
+    });
+  }
 
   return (
     <>
