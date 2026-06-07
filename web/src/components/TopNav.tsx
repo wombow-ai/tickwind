@@ -1,6 +1,6 @@
 'use client';
 
-import {ChevronDown, LogOut, Moon, Search, Settings, Star, Sun} from 'lucide-react';
+import {ChevronDown, LogOut, Moon, Search, Settings, Star, StickyNote, Sun} from 'lucide-react';
 import Link from 'next/link';
 import {usePathname, useRouter} from 'next/navigation';
 import {useEffect, useRef, useState} from 'react';
@@ -102,50 +102,7 @@ export function TopNav() {
           >
             {tr('nav.news')}
           </Link>
-          <Link
-            href="/events"
-            aria-current={pathname === '/events' ? 'page' : undefined}
-            className={cx(
-              'rounded-full px-3 py-1.5 text-[13px] font-medium hover:opacity-80',
-              pathname === '/events' ? t.accentText : t.sub,
-            )}
-          >
-            {tr('nav.events')}
-          </Link>
-          <Link
-            href="/community"
-            aria-current={pathname === '/community' ? 'page' : undefined}
-            className={cx(
-              'rounded-full px-3 py-1.5 text-[13px] font-medium hover:opacity-80',
-              pathname === '/community' ? t.accentText : t.sub,
-            )}
-          >
-            {tr('nav.community')}
-          </Link>
-          {user && (
-            <Link
-              href="/watchlist"
-              aria-current={pathname === '/watchlist' ? 'page' : undefined}
-              className={cx(
-                'rounded-full px-3 py-1.5 text-[13px] font-medium hover:opacity-80',
-                pathname === '/watchlist' ? t.accentText : t.sub,
-              )}
-            >
-              {tr('nav.watchlist')}
-            </Link>
-          )}
-          {user && (
-            <Link
-              href="/notes"
-              aria-current={pathname === '/notes' ? 'page' : undefined}
-              className={cx(
-                'rounded-full px-3 py-1.5 text-[13px] font-medium hover:opacity-80',
-                pathname === '/notes' ? t.accentText : t.sub,
-              )}
-            >
-              {tr('nav.notes')}
-            </Link>
-          )}
+          <MoreMenu pathname={pathname} />
         </nav>
 
         <div className="ml-auto flex items-center gap-1.5 sm:gap-2">
@@ -246,6 +203,64 @@ export function TopNav() {
   );
 }
 
+/** Overflow nav dropdown for secondary public pages (keeps the bar uncluttered). */
+function MoreMenu({pathname}: {pathname: string}) {
+  const {dark} = useTheme();
+  const t = tok(dark);
+  const tr = useT();
+  const [open, setOpen] = useState(false);
+  const items = [
+    {href: '/events', label: tr('nav.events')},
+    {href: '/community', label: tr('nav.community')},
+  ];
+  const active = items.some(i => i.href === pathname);
+  return (
+    <div className="relative">
+      <button
+        onClick={() => setOpen(o => !o)}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        className={cx(
+          'inline-flex items-center gap-0.5 rounded-full px-3 py-1.5 text-[13px] font-medium hover:opacity-80',
+          active ? t.accentText : t.sub,
+        )}
+      >
+        {tr('nav.more')}
+        <ChevronDown size={13} />
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-30" onClick={() => setOpen(false)} />
+          <div
+            className={cx(
+              'absolute left-0 z-40 mt-2 w-44 rounded-2xl border p-1.5',
+              t.card,
+              t.border,
+              t.soft,
+            )}
+          >
+            {items.map(i => (
+              <Link
+                key={i.href}
+                href={i.href}
+                onClick={() => setOpen(false)}
+                aria-current={pathname === i.href ? 'page' : undefined}
+                className={cx(
+                  'block rounded-xl px-2.5 py-2 text-[13px]',
+                  pathname === i.href ? t.accentText : t.text,
+                  t.ghost,
+                )}
+              >
+                {i.label}
+              </Link>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 function AccountMenu({
   open,
   setOpen,
@@ -309,6 +324,17 @@ function AccountMenu({
               )}
             >
               <Star size={15} className={t.sub} /> {tr('nav.myWatchlist')}
+            </Link>
+            <Link
+              href="/notes"
+              onClick={() => setOpen(false)}
+              className={cx(
+                'flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-[13px]',
+                t.text,
+                t.ghost,
+              )}
+            >
+              <StickyNote size={15} className={t.sub} /> {tr('nav.notes')}
             </Link>
             <Link
               href="/settings"

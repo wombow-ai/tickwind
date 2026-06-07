@@ -1,8 +1,8 @@
 'use client';
 
-import {ChevronLeft, ChevronRight, Trash2} from 'lucide-react';
+import {CalendarClock, ChevronLeft, ChevronRight, Trash2} from 'lucide-react';
 import {useCallback, useEffect, useMemo, useState} from 'react';
-import {createNote, deleteNote, getNotes, type Note} from '@/lib/api';
+import {createNote, deleteNote, getEvents, getNotes, type EventItem, type Note} from '@/lib/api';
 import {useAuth} from '@/lib/auth';
 import {useT} from '@/lib/i18n';
 import {useDark} from '@/lib/theme';
@@ -29,6 +29,7 @@ export function NotesCalendar() {
     return new Date(n.getFullYear(), n.getMonth(), 1);
   });
   const [notes, setNotes] = useState<Note[]>([]);
+  const [events, setEvents] = useState<EventItem[]>([]);
   const [selected, setSelected] = useState('');
   const [draft, setDraft] = useState('');
 
@@ -47,6 +48,14 @@ export function NotesCalendar() {
     load();
   }, [load]);
 
+  // Major events (reused from the Events timeline) shown on the calendar by default.
+  useEffect(() => {
+    getEvents().then(
+      r => setEvents(r.events ?? []),
+      () => setEvents([]),
+    );
+  }, []);
+
   const byDay = useMemo(() => {
     const m = new Map<string, Note[]>();
     for (const n of notes) {
@@ -57,6 +66,17 @@ export function NotesCalendar() {
     }
     return m;
   }, [notes]);
+
+  const eventsByDay = useMemo(() => {
+    const m = new Map<string, EventItem[]>();
+    for (const e of events) {
+      const d = e.start.slice(0, 10);
+      const arr = m.get(d);
+      if (arr) arr.push(e);
+      else m.set(d, [e]);
+    }
+    return m;
+  }, [events]);
 
   const weekdays = useMemo(() => {
     const fmt = new Intl.DateTimeFormat(undefined, {weekday: 'short'});
@@ -97,6 +117,7 @@ export function NotesCalendar() {
 
   const today = ymd(new Date());
   const selectedNotes = selected ? byDay.get(selected) ?? [] : [];
+  const selectedEvents = selected ? eventsByDay.get(selected) ?? [] : [];
 
   return (
     <div className="tw-fade">
@@ -143,7 +164,16 @@ export function NotesCalendar() {
                 day === today && t.accentText,
               )}
             >
-              <span className={cx('tabular-nums', t.text)}>{Number(day.slice(8))}</span>
+              <span className="flex w-full items-center justify-between">
+                <span className={cx('tabular-nums', t.text)}>{Number(day.slice(8))}</span>
+                {eventsByDay.has(day) && (
+                  <span
+                    className="h-1.5 w-1.5 shrink-0 rounded-full"
+                    style={{background: dark ? '#fbbf24' : '#f59e0b'}}
+                    title="event"
+                  />
+                )}
+              </span>
               {byDay.has(day) && (
                 <span
                   className={cx(
@@ -162,6 +192,33 @@ export function NotesCalendar() {
       {selected && (
         <div className="mt-4">
           <div className={cx('mb-2 text-[13px] font-semibold', t.text)}>{selected}</div>
+          {selectedEvents.length > 0 && (
+            <div className="mb-3 space-y-1">
+              {selectedEvents.map(e => (
+                <div
+                  key={e.id}
+                  className={cx(
+                    'flex items-center gap-2 rounded-xl border px-3 py-1.5 text-[12px]',
+                    t.border,
+                    dark ? 'bg-amber-500/5' : 'bg-amber-50/60',
+                  )}
+                >
+                  <CalendarClock size={12} className={dark ? 'text-amber-300' : 'text-amber-600'} />
+                  <span className={cx('min-w-0 flex-1 truncate font-medium', t.text)}>{e.title}</span>
+                  {e.importance === 'high' && (
+                    <span
+                      className={cx(
+                        'shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-bold uppercase',
+                        dark ? 'bg-amber-500/15 text-amber-300' : 'bg-amber-100 text-amber-700',
+                      )}
+                    >
+                      {tr('events.high')}
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
           <div className={cx('mb-3 rounded-2xl border p-3', t.card, t.border, t.soft)}>
             <textarea
               value={draft}

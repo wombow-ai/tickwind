@@ -182,7 +182,14 @@ export function KLineChart({ticker}: {ticker: string}) {
     panes[2]?.setHeight(90);
     panes[3]?.setHeight(80);
 
-    chart.timeScale().fitContent();
+    // Default to the most recent ~130 sessions; the full history (~3y) is loaded,
+    // so panning/scrolling left reveals it with no round-trip.
+    const n = candles.length;
+    if (n > 130) {
+      chart.timeScale().setVisibleLogicalRange({from: n - 130, to: n - 1});
+    } else {
+      chart.timeScale().fitContent();
+    }
 
     return () => chart.remove();
   }, [status, candles, dark]);

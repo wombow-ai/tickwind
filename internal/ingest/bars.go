@@ -9,9 +9,10 @@ import (
 	"github.com/wombow-ai/tickwind/internal/store"
 )
 
-// candleDays is how many daily OHLC bars the K-line chart fetches — enough
-// history for RSI/EMA to converge (the StockCharts convention is ≥250).
-const candleDays = 260
+// candleDays is how many daily OHLC bars the K-line chart fetches — ~3 trading
+// years, so panning/scrolling left reveals plenty of history without a round
+// trip (and well past the ≥250 RSI/EMA convergence window).
+const candleDays = 750
 
 // BarCache serves recent daily closing prices for sparklines, caching each
 // ticker's series for a TTL so repeated page views don't re-hit Alpaca (daily
