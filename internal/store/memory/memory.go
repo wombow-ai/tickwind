@@ -26,6 +26,7 @@ type Store struct {
 	watchlist map[string][]string                // userID -> ordered tickers
 	clips     map[string]map[string]store.Clip   // userID -> clipID -> Clip
 	notes     map[string]map[string]store.Note   // userID -> noteID -> Note
+	alerts    map[string]map[string]store.Alert  // userID -> alertID -> Alert
 	comments  map[string]store.Comment           // commentID -> Comment (public)
 }
 
@@ -43,6 +44,7 @@ func New() *Store {
 		watchlist: make(map[string][]string),
 		clips:     make(map[string]map[string]store.Clip),
 		notes:     make(map[string]map[string]store.Note),
+		alerts:    make(map[string]map[string]store.Alert),
 		comments:  make(map[string]store.Comment),
 	}
 }
@@ -393,6 +395,39 @@ func (s *Store) DeleteNote(_ context.Context, userID, id string) (bool, error) {
 		return false, nil
 	}
 	delete(s.notes[userID], id)
+	return true, nil
+}
+
+func (s *Store) SaveAlert(_ context.Context, a store.Alert) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	m := s.alerts[a.UserID]
+	if m == nil {
+		m = make(map[string]store.Alert)
+		s.alerts[a.UserID] = m
+	}
+	m[a.ID] = a
+	return nil
+}
+
+func (s *Store) ListAlerts(_ context.Context, userID string) ([]store.Alert, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([]store.Alert, 0)
+	for _, a := range s.alerts[userID] {
+		out = append(out, a)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].CreatedAt.After(out[j].CreatedAt) })
+	return out, nil
+}
+
+func (s *Store) DeleteAlert(_ context.Context, userID, id string) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.alerts[userID][id]; !ok {
+		return false, nil
+	}
+	delete(s.alerts[userID], id)
 	return true, nil
 }
 

@@ -137,6 +137,14 @@ func (s Split) DeleteNote(ctx context.Context, userID, id string) (bool, error) 
 	return s.User.DeleteNote(ctx, userID, id)
 }
 
+func (s Split) SaveAlert(ctx context.Context, a Alert) error { return s.User.SaveAlert(ctx, a) }
+func (s Split) ListAlerts(ctx context.Context, userID string) ([]Alert, error) {
+	return s.User.ListAlerts(ctx, userID)
+}
+func (s Split) DeleteAlert(ctx context.Context, userID, id string) (bool, error) {
+	return s.User.DeleteAlert(ctx, userID, id)
+}
+
 // Comments are public, valuable community content → the durable Market store.
 
 func (s Split) SaveComment(ctx context.Context, c Comment) error {

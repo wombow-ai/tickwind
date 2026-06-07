@@ -676,6 +676,52 @@ func (s *Store) DeleteNote(ctx context.Context, userID, id string) (bool, error)
 	return tag.RowsAffected() == 1, nil
 }
 
+const alertCols = `id, user_id, ticker, kind, threshold, active, created_at`
+
+func scanAlert(row interface{ Scan(...any) error }) (store.Alert, error) {
+	var a store.Alert
+	err := row.Scan(&a.ID, &a.UserID, &a.Ticker, &a.Kind, &a.Threshold, &a.Active, &a.CreatedAt)
+	return a, err
+}
+
+func (s *Store) SaveAlert(ctx context.Context, a store.Alert) error {
+	const query = `
+INSERT INTO alerts (id, user_id, ticker, kind, threshold, active, created_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7)
+ON CONFLICT (id) DO UPDATE SET
+  ticker = EXCLUDED.ticker, kind = EXCLUDED.kind,
+  threshold = EXCLUDED.threshold, active = EXCLUDED.active`
+	if _, err := s.pool.Exec(ctx, query, a.ID, a.UserID, a.Ticker, a.Kind, a.Threshold, a.Active, a.CreatedAt); err != nil {
+		return fmt.Errorf("postgres: save alert: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) ListAlerts(ctx context.Context, userID string) ([]store.Alert, error) {
+	rows, err := s.pool.Query(ctx, `SELECT `+alertCols+` FROM alerts WHERE user_id = $1 ORDER BY created_at DESC`, userID)
+	if err != nil {
+		return nil, fmt.Errorf("postgres: list alerts: %w", err)
+	}
+	defer rows.Close()
+	var out []store.Alert
+	for rows.Next() {
+		a, err := scanAlert(rows)
+		if err != nil {
+			return nil, fmt.Errorf("postgres: scan alert: %w", err)
+		}
+		out = append(out, a)
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) DeleteAlert(ctx context.Context, userID, id string) (bool, error) {
+	tag, err := s.pool.Exec(ctx, `DELETE FROM alerts WHERE id = $1 AND user_id = $2`, id, userID)
+	if err != nil {
+		return false, fmt.Errorf("postgres: delete alert: %w", err)
+	}
+	return tag.RowsAffected() == 1, nil
+}
+
 // SaveComment inserts a public comment (empty ticker → NULL = global board).
 func (s *Store) SaveComment(ctx context.Context, c store.Comment) error {
 	const query = `

@@ -170,6 +170,19 @@ type NoteFilter struct {
 	Limit  int
 }
 
+// Alert is a per-user price/event alert on a ticker. Kind ∈ {price_above,
+// price_below, pct_move, new_filing}; Threshold is the price level or percent
+// (ignored for new_filing). Evaluated off the request path (see internal/ingest).
+type Alert struct {
+	ID        string    `json:"id"`
+	UserID    string    `json:"user_id"`
+	Ticker    string    `json:"ticker"`
+	Kind      string    `json:"kind"`
+	Threshold float64   `json:"threshold"`
+	Active    bool      `json:"active"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
 // Comment is a PUBLIC user comment on a stock (Ticker) or the global community
 // board (Ticker == ""). Unlike notes/clips it's visible to everyone, so it
 // carries a public Author display name. IP is captured for moderation but is
@@ -245,6 +258,11 @@ type Store interface {
 	ListNotes(ctx context.Context, f NoteFilter) ([]Note, error)
 	UpdateNote(ctx context.Context, userID, id string, body *string, pinned *bool) (Note, bool, error)
 	DeleteNote(ctx context.Context, userID, id string) (bool, error)
+
+	// Alerts are per-user ticker price/event alerts (routed to the User store).
+	SaveAlert(ctx context.Context, a Alert) error
+	ListAlerts(ctx context.Context, userID string) ([]Alert, error)
+	DeleteAlert(ctx context.Context, userID, id string) (bool, error)
 
 	// Comments are PUBLIC user posts on a stock (Ticker) or the global board
 	// (Ticker == ""). Durable (Market store). List excludes soft-deleted rows;

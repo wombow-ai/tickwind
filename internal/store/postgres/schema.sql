@@ -182,6 +182,18 @@ CREATE INDEX IF NOT EXISTS notes_user_date_idx
 CREATE INDEX IF NOT EXISTS notes_user_created_idx
     ON notes (user_id, created_at DESC);
 
+CREATE TABLE IF NOT EXISTS alerts (
+    id         text PRIMARY KEY,
+    user_id    uuid NOT NULL,
+    ticker     text NOT NULL,
+    kind       text NOT NULL,
+    threshold  double precision NOT NULL DEFAULT 0,
+    active     boolean NOT NULL DEFAULT true,
+    created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS alerts_user_created_idx
+    ON alerts (user_id, created_at DESC);
+
 -- Public user comments on a stock (ticker) or the global community board
 -- (ticker IS NULL). Durable (Market store). Soft-deleted (deleted=true) for
 -- moderation audit; ip + flagged/reports support takedown/abuse handling.

@@ -8,6 +8,31 @@ import (
 	"github.com/wombow-ai/tickwind/internal/store"
 )
 
+func TestAlertsCRUD(t *testing.T) {
+	s := New()
+	ctx := context.Background()
+	a := store.Alert{ID: "a1", UserID: "u1", Ticker: "AAPL", Kind: "price_above", Threshold: 200, Active: true, CreatedAt: time.Now()}
+	if err := s.SaveAlert(ctx, a); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := s.ListAlerts(ctx, "u2"); len(got) != 0 {
+		t.Errorf("u2 sees %d alerts, want 0 (scoped per user)", len(got))
+	}
+	got, err := s.ListAlerts(ctx, "u1")
+	if err != nil || len(got) != 1 || got[0].Ticker != "AAPL" || got[0].Threshold != 200 {
+		t.Fatalf("ListAlerts(u1) = %+v, err %v", got, err)
+	}
+	if ok, _ := s.DeleteAlert(ctx, "u2", "a1"); ok {
+		t.Error("u2 deleted u1's alert (ownership not enforced)")
+	}
+	if ok, _ := s.DeleteAlert(ctx, "u1", "a1"); !ok {
+		t.Error("owner delete returned false")
+	}
+	if got, _ := s.ListAlerts(ctx, "u1"); len(got) != 0 {
+		t.Errorf("after delete: %d alerts, want 0", len(got))
+	}
+}
+
 func TestWatchlist(t *testing.T) {
 	s := New()
 	ctx := context.Background()
