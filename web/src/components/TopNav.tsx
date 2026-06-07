@@ -102,7 +102,7 @@ export function TopNav() {
           >
             {tr('nav.news')}
           </Link>
-          <MoreMenu pathname={pathname} />
+          <MoreMenu pathname={pathname} authed={!!user} />
         </nav>
 
         <div className="ml-auto flex items-center gap-1.5 sm:gap-2">
@@ -204,7 +204,7 @@ export function TopNav() {
 }
 
 /** Overflow nav dropdown for secondary public pages (keeps the bar uncluttered). */
-function MoreMenu({pathname}: {pathname: string}) {
+function MoreMenu({pathname, authed}: {pathname: string; authed: boolean}) {
   const {dark} = useTheme();
   const t = tok(dark);
   const tr = useT();
@@ -212,6 +212,12 @@ function MoreMenu({pathname}: {pathname: string}) {
   const items = [
     {href: '/events', label: tr('nav.events')},
     {href: '/community', label: tr('nav.community')},
+    ...(authed
+      ? [
+          {href: '/watchlist', label: tr('nav.watchlist')},
+          {href: '/notes', label: tr('nav.notes')},
+        ]
+      : []),
   ];
   const active = items.some(i => i.href === pathname);
   return (

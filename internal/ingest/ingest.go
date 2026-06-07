@@ -278,6 +278,13 @@ func (s *Scheduler) ingestHotList(ctx context.Context) {
 		s.log.Warn("hotlist fetch failed", "source", s.hot.Name(), "err", err)
 		return
 	}
+	if len(raw) == 0 {
+		// Source returned no rows (transient empty / soft rate-limit). Keep the
+		// last good board instead of clobbering it with an empty snapshot — this
+		// is why Hot stocks intermittently went blank.
+		s.log.Warn("hotlist empty — keeping last good board", "source", s.hot.Name())
+		return
+	}
 	for board, stocks := range buildBoards(raw) {
 		if err := s.store.SaveHotList(ctx, board, stocks); err != nil {
 			s.log.Warn("save hotlist failed", "board", board, "err", err)
@@ -292,6 +299,10 @@ func (s *Scheduler) ingestHotList(ctx context.Context) {
 		wsb, err := wsbSrc.WallStreetBets(ctx, hotListSize)
 		if err != nil {
 			s.log.Warn("wsb fetch failed", "err", err)
+			return
+		}
+		if len(wsb) == 0 {
+			s.log.Warn("wsb empty — keeping last good board")
 			return
 		}
 		board := buildWSBBoard(wsb)
