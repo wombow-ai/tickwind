@@ -197,7 +197,21 @@ Status: ✅ done · 🟡 in progress · ⬜ todo
 - ✅ **Fix**: on-view single-flight collection (`$MU` all-empty bug); ~90s frontend poll.
 - ✅ **Commercialization risk audit** — `docs/feature-research-2026-06.md` (Alpaca/Yahoo quote
   redistribution = RED; fix before charging).
-- ⬜ Owner actions before wide launch: set `ADMIN_USER_IDS`; register a DMCA agent (~$6).
+- ⬜ Owner actions before wide launch: set `ADMIN_USER_IDS` (UUID **or login email**);
+  register a DMCA agent ($6/3yr, `dmca.copyright.gov/osp/`) + add on-site DMCA notice page.
+
+### Shipped 2026-06 (ops / UX polish)
+- ✅ **Mobile nav** (hamburger menu — bar had no nav links < md) + **Watchlist** top-level
+  pill (authed) + **Notes calendar** redesign (compact cells, 2-col on lg, Events overlay).
+- ✅ **Admin allowlist matches by UUID *or* email** (`Server.isAdmin`).
+- ✅ **CI** — `.github/workflows/ci.yml` (Go build/vet/gofmt/test + web lint/build), actions
+  @v6, green-verified. Surfaced + fixed a SearchBox combobox a11y gap.
+
+### Backlog (owner-approved, in `/loop` order)
+- ✅ ① CI.  ⬜ ② Opportunity seen-set persistence (no re-sweep on restart).  ⬜ ③ Bollinger
+  Bands (toggle).  ⬜ ④ K-line >3yr lazy history (`?before=`).  ⬜ ⑤ Notes/comments
+  enhancements (Markdown/edit/like).  ⬜ ⑥ Watchlist grouping/sorting.  ⬜ ⑦ Brazil B3
+  market.  ⬜ ⑧ Error monitoring/metrics.
 
 ---
 _Working agreement: each `/loop` iteration picks the next unchecked item(s),

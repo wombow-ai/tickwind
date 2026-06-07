@@ -340,8 +340,12 @@ feature-flagged plugin, never on the critical path. Web only.
 - Env (`web/.env.local`, gitignored): `NEXT_PUBLIC_API_BASE`,
   `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`.
 
-## Tests
+## Tests / CI
 - `make test` = `go test ./cmd/... ./internal/...` (scoped to skip `web/node_modules`).
+- **CI** ✅ `.github/workflows/ci.yml` (push + PR to `main`): job **go** (build · vet ·
+  gofmt-must-be-empty · `go test ./cmd/... ./internal/...`, `go-version-file: go.mod`)
+  + job **web** (`npm ci` · lint · build, placeholder `NEXT_PUBLIC_*`). Actions pinned
+  to **@v6** (Node24-ready). Watch a run: `gh run watch <id> --exit-status`. Green-verified.
 - Covered: memory store, clip title extraction, alpaca session classifier, API
   httptest flows (health, watchlist CRUD, clip→social), and the **bars endpoints**
   (`internal/api/bars_test.go`: `/v1/bars` dedupe + cap + nil-source→empty via a
@@ -356,7 +360,8 @@ feature-flagged plugin, never on the critical path. Web only.
   fetch from git when `go get`/`go mod tidy` fails with "unexpected EOF".
 - macOS dev box: **no `timeout`** command (BSD); use a background run + kill.
 - `go test ./...` descends into `web/node_modules` (a stray `flatted` Go pkg);
-  harmless, but prefer listing real packages or exclude when adding CI.
+  harmless, but list real packages (`./cmd/... ./internal/...`) — CI does this, and the
+  CI go job has no `node_modules` checked out anyway.
 
 ## Pointers
 - `ROADMAP.md` — phased plan + status (update each iteration).
