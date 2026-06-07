@@ -19,7 +19,7 @@ export default function NotesPage() {
   const [view, setView] = useState<'list' | 'calendar'>('list');
 
   return (
-    <div className="mx-auto max-w-2xl">
+    <div className={cx('mx-auto', user && view === 'calendar' ? 'max-w-4xl' : 'max-w-2xl')}>
       <header className="mb-5">
         <h1
           className={cx('flex items-center gap-2 text-[22px] font-bold tracking-tight', t.text)}

@@ -1,6 +1,6 @@
 'use client';
 
-import {ChevronDown, LogOut, Moon, Search, Settings, Star, StickyNote, Sun} from 'lucide-react';
+import {ChevronDown, LogOut, Menu, Moon, Search, Settings, Star, StickyNote, Sun, X} from 'lucide-react';
 import Link from 'next/link';
 import {usePathname, useRouter} from 'next/navigation';
 import {useEffect, useRef, useState} from 'react';
@@ -11,6 +11,9 @@ import {btnPrimary, cx, tok} from '@/lib/ui';
 import {Logo} from '@/components/ui/atoms';
 import {SearchBox} from '@/components/SearchBox';
 
+type Tokens = ReturnType<typeof tok>;
+type NavItem = {href: string; label: string};
+
 /** Two-letter initials for an email/name, for the avatar chip. */
 function initials(email: string | undefined): string {
   if (!email) return 'TW';
@@ -18,6 +21,23 @@ function initials(email: string | undefined): string {
   const parts = name.split(/[._-]+/).filter(Boolean);
   if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
   return name.slice(0, 2).toUpperCase();
+}
+
+/** A single desktop nav pill. */
+function NavPill({item, pathname, t}: {item: NavItem; pathname: string; t: Tokens}) {
+  const active = pathname === item.href;
+  return (
+    <Link
+      href={item.href}
+      aria-current={active ? 'page' : undefined}
+      className={cx(
+        'rounded-full px-3 py-1.5 text-[13px] font-medium hover:opacity-80',
+        active ? t.accentText : t.sub,
+      )}
+    >
+      {item.label}
+    </Link>
+  );
 }
 
 /** The sticky top navigation: brand, ticker search, theme, and account. */
@@ -29,22 +49,52 @@ export function TopNav() {
   const {lang, toggle: toggleLang} = useLang();
   const router = useRouter();
   const pathname = usePathname();
+  const authed = !!user;
   const [menu, setMenu] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
 
-  // Escape closes the account menu and the mobile search.
+  // Escape closes every transient surface; route changes close the mobile menu.
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.key === 'Escape') {
         setMenu(false);
         setSearchOpen(false);
+        setMobileOpen(false);
       }
     }
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
   }, []);
+  useEffect(() => {
+    setMobileOpen(false);
+    setSearchOpen(false);
+  }, [pathname]);
 
   const go = (ticker: string) => router.push(`/stock/${encodeURIComponent(ticker)}`);
+
+  // One source of truth for destinations, shared by desktop nav, the More
+  // dropdown, and the mobile menu.
+  const primary: NavItem[] = [
+    {href: '/opportunities', label: tr('nav.opportunities')},
+    {href: '/', label: tr('nav.markets')},
+    {href: '/hot', label: tr('nav.hot')},
+    {href: '/news', label: tr('nav.news')},
+  ];
+  const watchlist: NavItem = {href: '/watchlist', label: tr('nav.watchlist')};
+  const secondary: NavItem[] = [
+    {href: '/events', label: tr('nav.events')},
+    {href: '/community', label: tr('nav.community')},
+    ...(authed ? [{href: '/notes', label: tr('nav.notes')}] : []),
+  ];
+  const whatsnew: NavItem = {href: '/announcements', label: tr('nav.whatsnew')};
+  // The full ordered list for the mobile sheet.
+  const mobileItems: NavItem[] = [
+    ...primary,
+    ...(authed ? [watchlist] : []),
+    ...secondary,
+    whatsnew,
+  ];
 
   return (
     <div
@@ -54,64 +104,47 @@ export function TopNav() {
         dark ? 'bg-slate-950/70' : 'bg-white/70',
       )}
     >
-      <div className="mx-auto flex h-14 max-w-6xl items-center gap-3 px-4 sm:px-6">
+      <div className="mx-auto flex h-14 max-w-6xl items-center gap-2 px-4 sm:gap-3 sm:px-6">
+        <button
+          onClick={() => {
+            setMobileOpen(o => !o);
+            setSearchOpen(false);
+          }}
+          aria-label={tr('nav.menu')}
+          aria-expanded={mobileOpen}
+          className={cx(
+            'inline-flex h-9 w-9 items-center justify-center rounded-full border md:hidden',
+            t.border,
+            t.ghost,
+          )}
+        >
+          {mobileOpen ? <X size={17} /> : <Menu size={17} />}
+        </button>
+
         <Link href="/" aria-label="Tickwind home">
           <Logo size={28} />
         </Link>
 
-        <SearchBox onSelect={go} placeholder={tr('nav.search')} className="ml-1 hidden w-56 sm:block" />
+        <SearchBox onSelect={go} placeholder={tr('nav.search')} className="ml-1 hidden w-56 lg:block" />
 
         <nav className="hidden items-center gap-1 md:flex">
-          <Link
-            href="/opportunities"
-            aria-current={pathname === '/opportunities' ? 'page' : undefined}
-            className={cx(
-              'rounded-full px-3 py-1.5 text-[13px] font-medium hover:opacity-80',
-              pathname === '/opportunities' ? t.accentText : t.sub,
-            )}
-          >
-            {tr('nav.opportunities')}
-          </Link>
-          <Link
-            href="/"
-            aria-current={pathname === '/' ? 'page' : undefined}
-            className={cx(
-              'rounded-full px-3 py-1.5 text-[13px] font-medium hover:opacity-80',
-              pathname === '/' ? t.accentText : t.sub,
-            )}
-          >
-            {tr('nav.markets')}
-          </Link>
-          <Link
-            href="/hot"
-            aria-current={pathname === '/hot' ? 'page' : undefined}
-            className={cx(
-              'rounded-full px-3 py-1.5 text-[13px] font-medium hover:opacity-80',
-              pathname === '/hot' ? t.accentText : t.sub,
-            )}
-          >
-            {tr('nav.hot')}
-          </Link>
-          <Link
-            href="/news"
-            aria-current={pathname === '/news' ? 'page' : undefined}
-            className={cx(
-              'rounded-full px-3 py-1.5 text-[13px] font-medium hover:opacity-80',
-              pathname === '/news' ? t.accentText : t.sub,
-            )}
-          >
-            {tr('nav.news')}
-          </Link>
-          <MoreMenu pathname={pathname} authed={!!user} />
+          {primary.map(item => (
+            <NavPill key={item.href} item={item} pathname={pathname} t={t} />
+          ))}
+          {authed && <NavPill item={watchlist} pathname={pathname} t={t} />}
+          <MoreMenu pathname={pathname} items={secondary} />
         </nav>
 
         <div className="ml-auto flex items-center gap-1.5 sm:gap-2">
           <button
-            onClick={() => setSearchOpen(o => !o)}
+            onClick={() => {
+              setSearchOpen(o => !o);
+              setMobileOpen(false);
+            }}
             aria-label="Search a ticker"
             aria-expanded={searchOpen}
             className={cx(
-              'inline-flex h-9 w-9 items-center justify-center rounded-full border sm:hidden',
+              'inline-flex h-9 w-9 items-center justify-center rounded-full border lg:hidden',
               t.border,
               t.ghost,
             )}
@@ -122,7 +155,7 @@ export function TopNav() {
             href="/announcements"
             aria-current={pathname === '/announcements' ? 'page' : undefined}
             className={cx(
-              'hidden rounded-full px-3 py-1.5 text-[13px] font-medium sm:inline-flex',
+              'hidden rounded-full px-3 py-1.5 text-[13px] font-medium md:inline-flex',
               pathname === '/announcements' ? t.accentText : t.sub,
               'hover:opacity-80',
             )}
@@ -187,7 +220,7 @@ export function TopNav() {
       </div>
 
       {searchOpen && (
-        <div className={cx('border-t px-4 pb-3 pt-2 sm:hidden', t.border)}>
+        <div className={cx('border-t px-4 pb-3 pt-2 lg:hidden', t.border)}>
           <SearchBox
             onSelect={tk => {
               setSearchOpen(false);
@@ -199,26 +232,42 @@ export function TopNav() {
           />
         </div>
       )}
+
+      {mobileOpen && (
+        <>
+          <div className="fixed inset-x-0 bottom-0 top-14 z-20 md:hidden" onClick={() => setMobileOpen(false)} />
+          <nav className={cx('relative z-30 border-t px-3 py-2 md:hidden', t.border)}>
+            {mobileItems.map(item => {
+              const active = pathname === item.href;
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  onClick={() => setMobileOpen(false)}
+                  aria-current={active ? 'page' : undefined}
+                  className={cx(
+                    'block rounded-xl px-3 py-2.5 text-[14px] font-medium',
+                    active ? t.accentText : t.text,
+                    t.ghost,
+                  )}
+                >
+                  {item.label}
+                </Link>
+              );
+            })}
+          </nav>
+        </>
+      )}
     </div>
   );
 }
 
 /** Overflow nav dropdown for secondary public pages (keeps the bar uncluttered). */
-function MoreMenu({pathname, authed}: {pathname: string; authed: boolean}) {
+function MoreMenu({pathname, items}: {pathname: string; items: NavItem[]}) {
   const {dark} = useTheme();
   const t = tok(dark);
   const tr = useT();
   const [open, setOpen] = useState(false);
-  const items = [
-    {href: '/events', label: tr('nav.events')},
-    {href: '/community', label: tr('nav.community')},
-    ...(authed
-      ? [
-          {href: '/watchlist', label: tr('nav.watchlist')},
-          {href: '/notes', label: tr('nav.notes')},
-        ]
-      : []),
-  ];
   const active = items.some(i => i.href === pathname);
   return (
     <div className="relative">

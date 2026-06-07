@@ -16,8 +16,9 @@ function ymd(d: Date): string {
 /**
  * Month-grid calendar view of the user's dated notes (the "日历" surface). Fetches
  * the visible month via GET /v1/notes?from=&to= (no backend change); clicking a
- * day shows + adds notes for that date. Undated notes don't appear here (they
- * live in the List view).
+ * day shows + adds notes for that date. Major Events (reused from the Events
+ * timeline) are overlaid as dots. Compact cells + a side day-detail panel on wide
+ * screens keep the grid from feeling empty. Undated notes live in the List view.
  */
 export function NotesCalendar() {
   const {getToken} = useAuth();
@@ -30,7 +31,7 @@ export function NotesCalendar() {
   });
   const [notes, setNotes] = useState<Note[]>([]);
   const [events, setEvents] = useState<EventItem[]>([]);
-  const [selected, setSelected] = useState('');
+  const [selected, setSelected] = useState(() => ymd(new Date()));
   const [draft, setDraft] = useState('');
 
   const monthStart = ymd(new Date(cursor.getFullYear(), cursor.getMonth(), 1));
@@ -120,162 +121,181 @@ export function NotesCalendar() {
   const selectedEvents = selected ? eventsByDay.get(selected) ?? [] : [];
 
   return (
-    <div className="tw-fade">
-      <div className="mb-3 flex items-center justify-between">
-        <button
-          onClick={() => setCursor(c => new Date(c.getFullYear(), c.getMonth() - 1, 1))}
-          aria-label="Previous month"
-          className={cx('inline-flex h-8 w-8 items-center justify-center rounded-full border', t.border, t.ghost)}
-        >
-          <ChevronLeft size={16} />
-        </button>
-        <span className={cx('text-[14px] font-bold', t.text)}>
-          {cursor.toLocaleDateString(undefined, {year: 'numeric', month: 'long'})}
-        </span>
-        <button
-          onClick={() => setCursor(c => new Date(c.getFullYear(), c.getMonth() + 1, 1))}
-          aria-label="Next month"
-          className={cx('inline-flex h-8 w-8 items-center justify-center rounded-full border', t.border, t.ghost)}
-        >
-          <ChevronRight size={16} />
-        </button>
-      </div>
+    <div className="tw-fade lg:grid lg:grid-cols-[minmax(0,1fr)_300px] lg:items-start lg:gap-6">
+      {/* Calendar column */}
+      <div>
+        <div className="mb-3 flex items-center justify-between">
+          <button
+            onClick={() => setCursor(c => new Date(c.getFullYear(), c.getMonth() - 1, 1))}
+            aria-label="Previous month"
+            className={cx('inline-flex h-8 w-8 items-center justify-center rounded-full border', t.border, t.ghost)}
+          >
+            <ChevronLeft size={16} />
+          </button>
+          <span className={cx('text-[14px] font-bold', t.text)}>
+            {cursor.toLocaleDateString(undefined, {year: 'numeric', month: 'long'})}
+          </span>
+          <button
+            onClick={() => setCursor(c => new Date(c.getFullYear(), c.getMonth() + 1, 1))}
+            aria-label="Next month"
+            className={cx('inline-flex h-8 w-8 items-center justify-center rounded-full border', t.border, t.ghost)}
+          >
+            <ChevronRight size={16} />
+          </button>
+        </div>
 
-      <div className="grid grid-cols-7 gap-1">
-        {weekdays.map(w => (
-          <div key={w} className={cx('pb-1 text-center text-[10px] font-semibold uppercase', t.faint)}>
-            {w}
-          </div>
-        ))}
-        {cells.map((day, i) =>
-          day === null ? (
-            <div key={`b${i}`} />
-          ) : (
-            <button
-              key={day}
-              onClick={() => setSelected(day)}
-              className={cx(
-                'flex aspect-square flex-col items-center justify-start rounded-lg border p-1 text-[11px] transition',
-                day === selected
-                  ? dark
-                    ? 'border-teal-400/50 bg-teal-500/10'
-                    : 'border-teal-300 bg-teal-50'
-                  : cx(t.border, t.ghost),
-                day === today && t.accentText,
-              )}
-            >
-              <span className="flex w-full items-center justify-between">
-                <span className={cx('tabular-nums', t.text)}>{Number(day.slice(8))}</span>
-                {eventsByDay.has(day) && (
-                  <span
-                    className="h-1.5 w-1.5 shrink-0 rounded-full"
-                    style={{background: dark ? '#fbbf24' : '#f59e0b'}}
-                    title="event"
-                  />
-                )}
-              </span>
-              {byDay.has(day) && (
-                <span
-                  className={cx(
-                    'mt-0.5 rounded-full px-1 text-[9px] font-bold',
-                    dark ? 'bg-teal-500/20 text-teal-200' : 'bg-teal-100 text-teal-700',
-                  )}
-                >
-                  {byDay.get(day)!.length}
-                </span>
-              )}
-            </button>
-          ),
-        )}
-      </div>
-
-      {selected && (
-        <div className="mt-4">
-          <div className={cx('mb-2 text-[13px] font-semibold', t.text)}>{selected}</div>
-          {selectedEvents.length > 0 && (
-            <div className="mb-3 space-y-1">
-              {selectedEvents.map(e => (
-                <div
-                  key={e.id}
-                  className={cx(
-                    'flex items-center gap-2 rounded-xl border px-3 py-1.5 text-[12px]',
-                    t.border,
-                    dark ? 'bg-amber-500/5' : 'bg-amber-50/60',
-                  )}
-                >
-                  <CalendarClock size={12} className={dark ? 'text-amber-300' : 'text-amber-600'} />
-                  <span className={cx('min-w-0 flex-1 truncate font-medium', t.text)}>{e.title}</span>
-                  {e.importance === 'high' && (
-                    <span
-                      className={cx(
-                        'shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-bold uppercase',
-                        dark ? 'bg-amber-500/15 text-amber-300' : 'bg-amber-100 text-amber-700',
-                      )}
-                    >
-                      {tr('events.high')}
-                    </span>
-                  )}
-                </div>
-              ))}
+        <div className="grid grid-cols-7 gap-1">
+          {weekdays.map(w => (
+            <div key={w} className={cx('pb-1 text-center text-[10px] font-semibold uppercase', t.faint)}>
+              {w}
             </div>
-          )}
-          <div className={cx('mb-3 rounded-2xl border p-3', t.card, t.border, t.soft)}>
-            <textarea
-              value={draft}
-              onChange={e => setDraft(e.target.value)}
-              onKeyDown={e => {
-                if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') add();
-              }}
-              placeholder={tr('notes.dayNote')}
-              rows={2}
-              className={cx(
-                'w-full resize-none bg-transparent text-[13.5px] outline-none',
-                dark ? 'text-slate-100 placeholder:text-slate-500' : 'text-slate-900 placeholder:text-slate-400',
-              )}
-            />
-            <div className="mt-1 flex justify-end">
+          ))}
+          {cells.map((day, i) =>
+            day === null ? (
+              <div key={`b${i}`} />
+            ) : (
               <button
-                onClick={add}
-                disabled={!draft.trim()}
+                key={day}
+                onClick={() => setSelected(day)}
                 className={cx(
-                  'rounded-lg px-3.5 py-1.5 text-[12.5px] font-semibold transition disabled:opacity-50',
-                  btnPrimary(dark),
+                  'flex min-h-[3rem] flex-col items-center gap-0.5 rounded-lg border px-1 pt-1 pb-1.5 text-[11px] transition',
+                  day === selected
+                    ? dark
+                      ? 'border-teal-400/60 bg-teal-500/10'
+                      : 'border-teal-300 bg-teal-50'
+                    : cx(t.border, t.ghost),
                 )}
               >
-                {tr('notes.add')}
-              </button>
-            </div>
-          </div>
-          {selectedNotes.length === 0 ? (
-            <p className={cx('text-[12.5px]', t.faint)}>{tr('notes.dayEmpty')}</p>
-          ) : (
-            <div className="space-y-2">
-              {selectedNotes.map(n => (
-                <div
-                  key={n.id}
-                  className={cx('group flex items-start gap-2 rounded-2xl border p-3', t.card, t.border, t.soft)}
-                >
-                  {n.ticker && (
-                    <span className={cx('shrink-0 rounded-md px-1.5 py-0.5 text-[10.5px] font-bold', t.chip, t.accentText)}>
-                      {n.ticker}
-                    </span>
+                <span className="flex w-full items-center justify-between">
+                  <span className={cx('tabular-nums', day === today ? t.accentText : t.text)}>{Number(day.slice(8))}</span>
+                  {eventsByDay.has(day) && (
+                    <span
+                      className="h-1.5 w-1.5 shrink-0 rounded-full"
+                      style={{background: dark ? '#fbbf24' : '#f59e0b'}}
+                      title="event"
+                    />
                   )}
-                  <p className={cx('min-w-0 flex-1 whitespace-pre-wrap break-words text-[13.5px]', t.text)}>
-                    {n.body}
-                  </p>
-                  <button
-                    onClick={() => remove(n)}
-                    aria-label="Delete note"
-                    className={cx('shrink-0 opacity-0 transition group-hover:opacity-100', dark ? 'text-rose-400' : 'text-rose-500')}
+                </span>
+                {byDay.has(day) && (
+                  <span
+                    className={cx(
+                      'rounded-full px-1 text-[9px] font-bold',
+                      dark ? 'bg-teal-500/20 text-teal-200' : 'bg-teal-100 text-teal-700',
+                    )}
                   >
-                    <Trash2 size={13} />
-                  </button>
-                </div>
-              ))}
-            </div>
+                    {byDay.get(day)!.length}
+                  </span>
+                )}
+              </button>
+            ),
           )}
         </div>
-      )}
+
+        <div className={cx('mt-3 flex items-center gap-4 text-[10.5px]', t.faint)}>
+          <span className="inline-flex items-center gap-1.5">
+            <span className="h-1.5 w-1.5 rounded-full" style={{background: dark ? '#fbbf24' : '#f59e0b'}} />
+            {tr('notes.legendEvent')}
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <span className={cx('rounded-full px-1 text-[9px] font-bold', dark ? 'bg-teal-500/20 text-teal-200' : 'bg-teal-100 text-teal-700')}>
+              n
+            </span>
+            {tr('notes.legendNotes')}
+          </span>
+        </div>
+      </div>
+
+      {/* Day-detail column (side-by-side on lg, stacked below on small screens) */}
+      <div className="mt-5 lg:sticky lg:top-20 lg:mt-0">
+        <div className={cx('mb-2 text-[13px] font-semibold', t.text)}>
+          {selected || tr('notes.pickDay')}
+        </div>
+
+        {selectedEvents.length > 0 && (
+          <div className="mb-3 space-y-1">
+            {selectedEvents.map(e => (
+              <div
+                key={e.id}
+                className={cx(
+                  'flex items-center gap-2 rounded-xl border px-3 py-1.5 text-[12px]',
+                  t.border,
+                  dark ? 'bg-amber-500/5' : 'bg-amber-50/60',
+                )}
+              >
+                <CalendarClock size={12} className={dark ? 'text-amber-300' : 'text-amber-600'} />
+                <span className={cx('min-w-0 flex-1 truncate font-medium', t.text)}>{e.title}</span>
+                {e.importance === 'high' && (
+                  <span
+                    className={cx(
+                      'shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-bold uppercase',
+                      dark ? 'bg-amber-500/15 text-amber-300' : 'bg-amber-100 text-amber-700',
+                    )}
+                  >
+                    {tr('events.high')}
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div className={cx('mb-3 rounded-2xl border p-3', t.card, t.border, t.soft)}>
+          <textarea
+            value={draft}
+            onChange={e => setDraft(e.target.value)}
+            onKeyDown={e => {
+              if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') add();
+            }}
+            placeholder={tr('notes.dayNote')}
+            rows={3}
+            className={cx(
+              'w-full resize-none bg-transparent text-[13.5px] outline-none',
+              dark ? 'text-slate-100 placeholder:text-slate-500' : 'text-slate-900 placeholder:text-slate-400',
+            )}
+          />
+          <div className="mt-1 flex justify-end">
+            <button
+              onClick={add}
+              disabled={!draft.trim()}
+              className={cx(
+                'rounded-lg px-3.5 py-1.5 text-[12.5px] font-semibold transition disabled:opacity-50',
+                btnPrimary(dark),
+              )}
+            >
+              {tr('notes.add')}
+            </button>
+          </div>
+        </div>
+
+        {selectedNotes.length === 0 ? (
+          <p className={cx('text-[12.5px]', t.faint)}>{tr('notes.dayEmpty')}</p>
+        ) : (
+          <div className="space-y-2">
+            {selectedNotes.map(n => (
+              <div
+                key={n.id}
+                className={cx('group flex items-start gap-2 rounded-2xl border p-3', t.card, t.border, t.soft)}
+              >
+                {n.ticker && (
+                  <span className={cx('shrink-0 rounded-md px-1.5 py-0.5 text-[10.5px] font-bold', t.chip, t.accentText)}>
+                    {n.ticker}
+                  </span>
+                )}
+                <p className={cx('min-w-0 flex-1 whitespace-pre-wrap break-words text-[13.5px]', t.text)}>
+                  {n.body}
+                </p>
+                <button
+                  onClick={() => remove(n)}
+                  aria-label="Delete note"
+                  className={cx('shrink-0 opacity-0 transition group-hover:opacity-100', dark ? 'text-rose-400' : 'text-rose-500')}
+                >
+                  <Trash2 size={13} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

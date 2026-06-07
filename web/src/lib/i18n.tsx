@@ -83,6 +83,7 @@ const dict: Record<Lang, Record<string, string>> = {
     'nav.settings': 'Settings',
     'nav.signout': 'Sign out',
     'nav.account': 'Account menu',
+    'nav.menu': 'Menu',
     // home hub
     'home.title': 'Markets today',
     'home.subtitle':
@@ -274,6 +275,9 @@ const dict: Record<Lang, Record<string, string>> = {
     'notes.calendar': 'Calendar',
     'notes.dayNote': 'Note for this day…',
     'notes.dayEmpty': 'No notes for this day.',
+    'notes.pickDay': 'Pick a day',
+    'notes.legendEvent': 'Event',
+    'notes.legendNotes': 'Notes',
     'common.ago': 'ago',
   },
   zh: {
@@ -295,6 +299,7 @@ const dict: Record<Lang, Record<string, string>> = {
     'nav.settings': '设置',
     'nav.signout': '退出登录',
     'nav.account': '账户菜单',
+    'nav.menu': '菜单',
     // home hub
     'home.title': '今日市场',
     'home.subtitle': '实时价格，以及全市场的趋势、新闻与讨论 —— 一站式呈现。',
@@ -475,6 +480,9 @@ const dict: Record<Lang, Record<string, string>> = {
     'notes.calendar': '日历',
     'notes.dayNote': '当天的笔记…',
     'notes.dayEmpty': '当天还没有笔记。',
+    'notes.pickDay': '选择一天',
+    'notes.legendEvent': '事件',
+    'notes.legendNotes': '笔记',
     'common.ago': '前',
   },
 };
