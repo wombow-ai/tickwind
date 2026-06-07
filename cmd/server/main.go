@@ -154,6 +154,7 @@ func main() {
 	}
 
 	edgarClient := edgar.New(cfg.EDGARUserAgent)
+	fundCache := ingest.NewFundamentalsCache(edgarClient)
 	// Bulk numeric signals (buzz/sentiment): one call per source per cycle.
 	// ApeWisdom is keyless; Alpha Vantage self-disables without a key. The same
 	// ApeWisdom client also drives the market-wide trending hot list.
@@ -238,7 +239,7 @@ func main() {
 
 	srv := &http.Server{
 		Addr:              ":" + cfg.Port,
-		Handler:           api.New(st, hub, enricher, verifier, bars, topicCache, oppCache, guruCache, scheduler, symbolCache, eventsCache, cfg.AdminUserIDs, log),
+		Handler:           api.New(st, hub, enricher, verifier, bars, topicCache, oppCache, guruCache, scheduler, symbolCache, eventsCache, fundCache, cfg.AdminUserIDs, log),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 

@@ -24,6 +24,7 @@ import (
 
 	"github.com/wombow-ai/tickwind/internal/auth"
 	"github.com/wombow-ai/tickwind/internal/clip"
+	"github.com/wombow-ai/tickwind/internal/edgar"
 	"github.com/wombow-ai/tickwind/internal/enrich"
 	"github.com/wombow-ai/tickwind/internal/events"
 	"github.com/wombow-ai/tickwind/internal/guru"
@@ -84,31 +85,32 @@ type EventSource interface {
 }
 
 type Server struct {
-	store     store.Store
-	hub       QuoteStream
-	clip      *clip.Fetcher
-	enrich    enrich.Enricher
-	auth      *auth.Verifier
-	bars      BarSource
-	topics    TopicSource
-	opps      OpportunitySource
-	gurus     GuruSource
-	ingestor  TickerIngestor
-	symbols   SymbolSearcher
-	events    EventSource
-	admins    map[string]bool // user UUIDs and/or emails (lowercased) allowed to delete any comment
-	commentRL *rateLimiter    // per-user comment-post throttle
-	log       *slog.Logger
+	store        store.Store
+	hub          QuoteStream
+	clip         *clip.Fetcher
+	enrich       enrich.Enricher
+	auth         *auth.Verifier
+	bars         BarSource
+	topics       TopicSource
+	opps         OpportunitySource
+	gurus        GuruSource
+	ingestor     TickerIngestor
+	symbols      SymbolSearcher
+	events       EventSource
+	fundamentals FundamentalsSource
+	admins       map[string]bool // user UUIDs and/or emails (lowercased) allowed to delete any comment
+	commentRL    *rateLimiter    // per-user comment-post throttle
+	log          *slog.Logger
 }
 
-func New(st store.Store, hub QuoteStream, enricher enrich.Enricher, verifier *auth.Verifier, bars BarSource, topicSrc TopicSource, oppSrc OpportunitySource, guruSrc GuruSource, ingestor TickerIngestor, symbolSrc SymbolSearcher, eventSrc EventSource, adminIDs []string, log *slog.Logger) http.Handler {
+func New(st store.Store, hub QuoteStream, enricher enrich.Enricher, verifier *auth.Verifier, bars BarSource, topicSrc TopicSource, oppSrc OpportunitySource, guruSrc GuruSource, ingestor TickerIngestor, symbolSrc SymbolSearcher, eventSrc EventSource, fundSrc FundamentalsSource, adminIDs []string, log *slog.Logger) http.Handler {
 	admins := make(map[string]bool, len(adminIDs))
 	for _, id := range adminIDs {
 		if id = strings.ToLower(strings.TrimSpace(id)); id != "" {
 			admins[id] = true
 		}
 	}
-	s := &Server{store: st, hub: hub, clip: clip.NewFetcher(), enrich: enricher, auth: verifier, bars: bars, topics: topicSrc, opps: oppSrc, gurus: guruSrc, ingestor: ingestor, symbols: symbolSrc, events: eventSrc, admins: admins, commentRL: newRateLimiter(10, 10*time.Minute), log: log}
+	s := &Server{store: st, hub: hub, clip: clip.NewFetcher(), enrich: enricher, auth: verifier, bars: bars, topics: topicSrc, opps: oppSrc, gurus: guruSrc, ingestor: ingestor, symbols: symbolSrc, events: eventSrc, fundamentals: fundSrc, admins: admins, commentRL: newRateLimiter(10, 10*time.Minute), log: log}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", s.health)
 
@@ -133,6 +135,7 @@ func New(st store.Store, hub QuoteStream, enricher enrich.Enricher, verifier *au
 	mux.HandleFunc("GET /v1/stocks/{ticker}/quote", s.getQuote)
 	mux.HandleFunc("GET /v1/stocks/{ticker}/bars", s.getBars)
 	mux.HandleFunc("GET /v1/stocks/{ticker}/candles", s.getCandles)
+	mux.HandleFunc("GET /v1/stocks/{ticker}/fundamentals", s.getFundamentals)
 	mux.HandleFunc("GET /v1/stocks/{ticker}/news", s.getNews)
 	mux.HandleFunc("GET /v1/stocks/{ticker}/social", s.getSocial)
 	mux.HandleFunc("GET /v1/stocks/{ticker}/signals", s.getSignals)
@@ -678,6 +681,65 @@ func (s *Server) getFilings(w http.ResponseWriter, r *http.Request) {
 		"count":   len(filings),
 		"filings": filings,
 	})
+}
+
+// FundamentalsSource returns XBRL-derived fundamentals for a US ticker (cached).
+type FundamentalsSource interface {
+	Fundamentals(ctx context.Context, ticker string) (edgar.Fundamentals, error)
+}
+
+// fundamentalsResp embeds the reported XBRL figures and adds the price-derived
+// metrics, which are null when not computable (e.g. P/E for a loss-maker).
+type fundamentalsResp struct {
+	edgar.Fundamentals
+	Price     float64  `json:"price"`
+	MarketCap *float64 `json:"market_cap"`
+	PE        *float64 `json:"pe"`
+	PB        *float64 `json:"pb"`
+}
+
+// getFundamentals serves market cap + P/E + P/B (price-derived) alongside the
+// reported revenue / net income / EPS / shares from SEC XBRL. 404s for
+// non-US/unknown tickers or when no XBRL data exists, so the frontend hides the
+// card. Market data is free public-domain SEC data.
+func (s *Server) getFundamentals(w http.ResponseWriter, r *http.Request) {
+	if s.fundamentals == nil {
+		writeJSON(w, http.StatusNotFound, errBody("fundamentals unavailable"))
+		return
+	}
+	ticker := strings.ToUpper(strings.TrimSpace(r.PathValue("ticker")))
+	f, err := s.fundamentals.Fundamentals(r.Context(), ticker)
+	if err != nil || !f.HasData() {
+		writeJSON(w, http.StatusNotFound, errBody("no fundamentals for "+ticker))
+		return
+	}
+
+	resp := fundamentalsResp{Fundamentals: f}
+	// Price: the polled quote first, else an on-demand fetch (mirrors getQuote).
+	if q, ok, _ := s.store.GetQuote(r.Context(), ticker); ok && q.Price > 0 {
+		resp.Price = q.Price
+	} else if s.bars != nil {
+		if oq, found, qerr := s.bars.LatestQuote(r.Context(), ticker); qerr == nil && found {
+			resp.Price = oq.Price
+		}
+	}
+	if resp.Price > 0 {
+		if f.Shares > 0 {
+			mc := resp.Price * float64(f.Shares)
+			resp.MarketCap = &mc
+		}
+		if f.EPSDiluted > 0 { // P/E only meaningful for positive earnings
+			pe := resp.Price / f.EPSDiluted
+			resp.PE = &pe
+		}
+		if f.Equity > 0 && f.Shares > 0 {
+			if bvps := f.Equity / float64(f.Shares); bvps > 0 {
+				pb := resp.Price / bvps
+				resp.PB = &pb
+			}
+		}
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 func (s *Server) getQuote(w http.ResponseWriter, r *http.Request) {
