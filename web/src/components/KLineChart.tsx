@@ -7,6 +7,7 @@ import {
   HistogramSeries,
   LineSeries,
   LineStyle,
+  type LogicalRange,
   type Time,
 } from 'lightweight-charts';
 import {useEffect, useRef, useState} from 'react';
@@ -60,10 +61,14 @@ export function KLineChart({ticker}: {ticker: string}) {
   const [candles, setCandles] = useState<Candle[]>([]);
   const [showBoll, setShowBoll] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+  // Remembers the user's pan/zoom so a rebuild (dark or Bollinger toggle) doesn't
+  // snap the view back to the default window; reset on ticker change.
+  const rangeRef = useRef<LogicalRange | null>(null);
 
   useEffect(() => {
     const c = new AbortController();
     setStatus('loading');
+    rangeRef.current = null; // new stock → default to the most-recent window
     getCandles(ticker, c.signal).then(
       r => {
         const cs = r.candles ?? [];
@@ -205,14 +210,23 @@ export function KLineChart({ticker}: {ticker: string}) {
     panes[2]?.setHeight(90);
     panes[3]?.setHeight(80);
 
-    // Default to the most recent ~130 sessions; the full history (~3y) is loaded,
-    // so panning/scrolling left reveals it with no round-trip.
+    // Restore the user's prior view across rebuilds (dark/Bollinger toggle);
+    // otherwise default to the most recent ~130 sessions (full ~3y is loaded, so
+    // panning/scrolling left reveals it with no round-trip).
     const n = candles.length;
-    if (n > 130) {
-      chart.timeScale().setVisibleLogicalRange({from: n - 130, to: n - 1});
+    const ts = chart.timeScale();
+    const saved = rangeRef.current;
+    if (saved) {
+      ts.setVisibleLogicalRange(saved);
+    } else if (n > 130) {
+      ts.setVisibleLogicalRange({from: n - 130, to: n - 1});
     } else {
-      chart.timeScale().fitContent();
+      ts.fitContent();
     }
+    // Capture subsequent pans/zooms so the next rebuild restores them.
+    ts.subscribeVisibleLogicalRangeChange(r => {
+      if (r) rangeRef.current = r;
+    });
 
     return () => chart.remove();
   }, [status, candles, dark, showBoll]);
