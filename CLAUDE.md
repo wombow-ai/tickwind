@@ -11,9 +11,37 @@ feature-flagged plugin, never on the critical path. Web only.
 
 ## Owner / infra
 - GitHub: `wombow-ai/tickwind`. EDGAR User-Agent / contact email: `inverael@gmail.com`.
-- Domain `tickwind.com` (on Cloudflare). Frontend → **Cloudflare Pages**; API →
-  `api.tickwind.com` via **Cloudflare Tunnel**; backend on an **Oracle Always-Free**
-  ARM VM. **$0/month**, only the domain is exposed. See `DEPLOY.md`.
+- Domain `tickwind.com` (on Cloudflare). **Frontend → Vercel** (auto-deploys on push
+  to `main`, Root Directory `web/`). **Backend → RackNerd VPS `root@104.168.46.15`**,
+  reached at `api.tickwind.com` via a **Cloudflare Tunnel**. **$0/month.**
+- **Deploy flow** (backend): `rsync` the changed Go source (`internal/`, `cmd/`) to
+  `/root/tickwind/` using `ssh -i ~/.ssh/tickwind_deploy`, then
+  `ssh … 'cd /root/tickwind && docker compose up -d --build api'`. The VPS holds the
+  source via rsync (NOT git — note macOS `._*` artifacts) + a local Postgres + the
+  durable Supabase as `MARKET_DATABASE_URL` (split store). `.env` on the VPS is live —
+  never overwrite it (rsync excludes it). Verify via `https://api.tickwind.com/healthz`.
+
+## Owner habits & preferences (keep this current — context gets compacted)
+- **Workflow**: drives development via `/loop` (autonomous, self-paced). Each iteration =
+  one verified increment → commit (directly to `main`, solo dev) → deploy → schedule next.
+  Wants **parallel subagents** for research/dev ("不要你一个人干") — research/design agents
+  are reliable; for code, build it myself or fall back if a code agent socket-fails.
+- **Communicates in Chinese**; wants concise, scannable progress. **"你拍板" = trust my
+  judgment** on design/style/architecture — surface only genuine product decisions, decide the
+  rest. Don't over-ask.
+- **Verify before commit** (hard gate): `go build ./... && go vet ./... && gofmt -l .` (empty)
+  + relevant `go test`; frontend `npm run build`. Then deploy + live-verify.
+- **Quality bar**: "**精不在多**" — precision/correctness over quantity (e.g. ship few, correct
+  indicators). Engineering-first; LLM optional/off the critical path.
+- **Commercial intent**: $0 now, **considering paid AI + subscriptions later**. Mind
+  commercialization risk PROACTIVELY — esp. **market-quote redistribution** (Alpaca + Yahoo are
+  RED; see `docs/feature-research-2026-06.md`). Default to free/redistribution-safe sources, but
+  the owner **will explicitly override** for specific cases (e.g. HK gray Yahoo) — honor the
+  override + flag the risk.
+- **Security**: do NOT rotate secrets / VPS password / Supabase JWT — owner-driven before launch;
+  keys handed over are for staging/use. Never touch a funded brokerage account.
+- **Memory discipline**: update `CLAUDE.md` + `ROADMAP.md` + `docs/` every iteration so a
+  compacted/cold session resumes correctly.
 
 ## Stack
 - Backend: **Go 1.26**, stdlib-first. Module `github.com/wombow-ai/tickwind`.
