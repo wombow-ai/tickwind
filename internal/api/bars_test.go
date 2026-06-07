@@ -41,6 +41,10 @@ func (f *fakeBarSource) DailyCandles(_ context.Context, _ string) ([]store.Candl
 	return nil, nil
 }
 
+func (f *fakeBarSource) LatestQuote(_ context.Context, _ string) (store.Quote, bool, error) {
+	return store.Quote{}, false, nil
+}
+
 func (f *fakeBarSource) distinctCalls() int {
 	f.mu.Lock()
 	defer f.mu.Unlock()

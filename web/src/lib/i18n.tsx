@@ -206,6 +206,9 @@ const dict: Record<Lang, Record<string, string>> = {
     'stock.waiting': 'Waiting for price…',
     'stock.loginAdd': 'Log in to track {t} and save links',
     'stock.loginAddSub': 'Keep a watchlist and clip posts from anywhere — free.',
+    'stock.addWatch': 'Add to watchlist',
+    'stock.onWatchlist': 'On your watchlist',
+    'stock.waitingPrice': 'Waiting for a price…',
     // pulse bar (detail-page buzz + sentiment chips)
     'pulse.buzz': 'Reddit buzz',
     'pulse.mentions24h': 'mentions / 24h',
@@ -405,6 +408,9 @@ const dict: Record<Lang, Record<string, string>> = {
     'stock.waiting': '正在等待价格…',
     'stock.loginAdd': '登录以关注 {t} 并保存链接',
     'stock.loginAddSub': '随时随地维护自选股、收藏帖子 —— 免费。',
+    'stock.addWatch': '加入自选',
+    'stock.onWatchlist': '已在自选中',
+    'stock.waitingPrice': '正在等待价格…',
     // pulse bar
     'pulse.buzz': 'Reddit 热度',
     'pulse.mentions24h': '次提及 / 24h',

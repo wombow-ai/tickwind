@@ -324,37 +324,29 @@ export function StockView({ticker}: {ticker: string}) {
                   via {quote.source} · {timeAgo(quote.at)} ago
                 </span>
               ) : (
-                <span className={cx('text-[11px]', t.faint)}>Waiting for a price…</span>
+                <span className={cx('text-[11px]', t.faint)}>{tr('stock.waitingPrice')}</span>
               )}
             </div>
-            {bars.length >= 2 && (
-              <div className="mt-4">
-                <Sparkline
-                  values={bars}
-                  up={bars[bars.length - 1] >= bars[0]}
-                  w={320}
-                  h={56}
-                />
-              </div>
-            )}
           </div>
 
-          <div className="shrink-0">
+          {/* right column: watchlist action + the price-trend sparkline (fills
+              the space so the action button isn't left floating alone) */}
+          <div className="flex shrink-0 flex-col items-stretch gap-4 sm:items-end">
             {isAuthed ? (
               <button
                 onClick={addWatch}
                 className={cx(
-                  'inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-[13px] font-semibold',
+                  'inline-flex items-center justify-center gap-1.5 rounded-full px-4 py-2 text-[13px] font-semibold',
                   inList ? cx('border', t.border, t.sub) : btnPrimary(dark),
                 )}
               >
                 {inList ? (
                   <>
-                    <Check size={15} /> On your watchlist
+                    <Check size={15} /> {tr('stock.onWatchlist')}
                   </>
                 ) : (
                   <>
-                    <Plus size={15} /> Add to watchlist
+                    <Plus size={15} /> {tr('stock.addWatch')}
                   </>
                 )}
               </button>
@@ -362,12 +354,20 @@ export function StockView({ticker}: {ticker: string}) {
               <Link
                 href="/login"
                 className={cx(
-                  'inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-[13px] font-semibold',
+                  'inline-flex items-center justify-center gap-1.5 rounded-full px-4 py-2 text-[13px] font-semibold',
                   btnPrimary(dark),
                 )}
               >
-                <Plus size={15} /> Add to watchlist
+                <Plus size={15} /> {tr('stock.addWatch')}
               </Link>
+            )}
+            {bars.length >= 2 && (
+              <Sparkline
+                values={bars}
+                up={bars[bars.length - 1] >= bars[0]}
+                w={300}
+                h={56}
+              />
             )}
           </div>
         </div>

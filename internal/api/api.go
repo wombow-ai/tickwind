@@ -44,6 +44,9 @@ type QuoteStream interface {
 type BarSource interface {
 	DailyBars(ctx context.Context, ticker string) ([]float64, error)
 	DailyCandles(ctx context.Context, ticker string) ([]store.Candle, error)
+	// LatestQuote fetches an on-demand quote for a ticker the price poller doesn't
+	// cover (so a just-viewed stock shows a price, like its candles do).
+	LatestQuote(ctx context.Context, ticker string) (store.Quote, bool, error)
 }
 
 // TopicSource provides the latest trending-topics snapshot. nil disables the
@@ -663,16 +666,25 @@ func (s *Server) getFilings(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) getQuote(w http.ResponseWriter, r *http.Request) {
-	ticker := r.PathValue("ticker")
+	ticker := strings.ToUpper(strings.TrimSpace(r.PathValue("ticker")))
 	q, ok, err := s.store.GetQuote(r.Context(), ticker)
-	switch {
-	case err != nil:
+	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, errBody(err.Error()))
-	case !ok:
-		writeJSON(w, http.StatusNotFound, errBody("no quote yet: "+ticker))
-	default:
-		writeJSON(w, http.StatusOK, q)
+		return
 	}
+	if !ok && s.bars != nil {
+		// Not polled (a stock the user just navigated to): fetch a quote on demand
+		// so the price shows alongside the on-demand candles (fixes K-line present
+		// but price blank). Errors degrade to the 404 below.
+		if oq, found, qerr := s.bars.LatestQuote(r.Context(), ticker); qerr == nil && found {
+			q, ok = oq, true
+		}
+	}
+	if !ok {
+		writeJSON(w, http.StatusNotFound, errBody("no quote yet: "+ticker))
+		return
+	}
+	writeJSON(w, http.StatusOK, q)
 }
 
 // getBars returns recent daily closing prices for a sparkline. It degrades

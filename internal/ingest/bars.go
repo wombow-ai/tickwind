@@ -24,6 +24,7 @@ type BarCache struct {
 	mu      sync.Mutex
 	entries map[string]barEntry
 	candles map[string]candleEntry
+	quotes  map[string]quoteEntry
 }
 
 type barEntry struct {
@@ -36,6 +37,14 @@ type candleEntry struct {
 	at      time.Time
 }
 
+type quoteEntry struct {
+	q  store.Quote
+	at time.Time
+}
+
+// quoteTTL caps how often an on-demand (non-polled) quote re-hits Alpaca.
+const quoteTTL = 20 * time.Second
+
 // NewBarCache builds a cache fetching `limit` daily closes per ticker, holding
 // each series for ttl.
 func NewBarCache(client *alpaca.Client, limit int, ttl time.Duration) *BarCache {
@@ -45,6 +54,7 @@ func NewBarCache(client *alpaca.Client, limit int, ttl time.Duration) *BarCache 
 		ttl:     ttl,
 		entries: make(map[string]barEntry),
 		candles: make(map[string]candleEntry),
+		quotes:  make(map[string]quoteEntry),
 	}
 }
 
@@ -88,4 +98,29 @@ func (b *BarCache) DailyCandles(ctx context.Context, ticker string) ([]store.Can
 	b.candles[ticker] = candleEntry{candles: cs, at: time.Now()}
 	b.mu.Unlock()
 	return cs, nil
+}
+
+// LatestQuote returns an on-demand quote for a ticker the price poller doesn't
+// cover (e.g. a stock the user just navigated to). Cached briefly so repeated
+// views don't hammer Alpaca. ok=false when there's no price.
+func (b *BarCache) LatestQuote(ctx context.Context, ticker string) (store.Quote, bool, error) {
+	b.mu.Lock()
+	e, ok := b.quotes[ticker]
+	b.mu.Unlock()
+	if ok && time.Since(e.at) < quoteTTL {
+		return e.q, true, nil
+	}
+
+	q, err := b.client.LatestQuote(ctx, ticker)
+	if err != nil {
+		return store.Quote{}, false, err
+	}
+	if q.Price == 0 {
+		return store.Quote{}, false, nil
+	}
+
+	b.mu.Lock()
+	b.quotes[ticker] = quoteEntry{q: q, at: time.Now()}
+	b.mu.Unlock()
+	return q, true, nil
 }
