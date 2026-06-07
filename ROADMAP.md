@@ -206,6 +206,19 @@ Status: ✅ done · 🟡 in progress · ⬜ todo
 - ✅ **Admin allowlist matches by UUID *or* email** (`Server.isAdmin`).
 - ✅ **CI** — `.github/workflows/ci.yml` (Go build/vet/gofmt/test + web lint/build), actions
   @v6, green-verified. Surfaced + fixed a SearchBox combobox a11y gap.
+- ✅ **K-line preserves the user's view** across dark/Bollinger toggles (was resetting to the
+  last ~130 sessions on every rebuild).
+
+### Future features — researched 2026-06 (see `docs/future-features-2026-06.md`)
+3 parallel research agents (competitor gaps · free data sources · AI/LLM). **Convergence: the
+SEC/EDGAR backbone is the defensible, redistribution-safe lane.** Owner picks which to build:
+- **Top sequence (free/GREEN data):** ① Price/event **Alerts** (own data, #1 retention) · ②
+  **Fundamentals/Financials tab** (XBRL, GREEN) · ③ **AI filing summary+diff** (cacheable, low
+  risk; needs `LLM_API_KEY`) · ④ **Congress trading board** (gov public-domain, viral) · ⑤ **13F
+  institutional holdings** · ⑥ **FINRA short interest** (display-only; bulk redistribution gated).
+- Then: screener · earnings calendar · Treasury macro rail · Wikimedia attention · community
+  upgrade · paper-trading.  **RED:** earnings-call transcripts (paid feed), Google Trends,
+  CoinGecko free tier.  Standing RED unchanged: live quote redistribution (Alpaca/Yahoo).
 
 ### Backlog (owner-approved, in `/loop` order)
 - ✅ ① CI.  ✅ ② Opportunity seen-set persistence (was already built+live — `seen_form4`,
