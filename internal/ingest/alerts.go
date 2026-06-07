@@ -12,6 +12,7 @@ import (
 type AlertStore interface {
 	ListActiveAlerts(ctx context.Context) ([]store.Alert, error)
 	MarkAlertTriggered(ctx context.Context, id string, at time.Time) error
+	ListFilings(ctx context.Context, ticker string, limit int) ([]store.Filing, error)
 }
 
 // PriceLatest fetches the latest quote for a ticker (ingest.BarCache satisfies it).
@@ -50,6 +51,15 @@ func (e *AlertEvaluator) Run(ctx context.Context) {
 	}
 }
 
+// tickerData caches a ticker's latest quote + newest filing time for one
+// evaluate cycle (fetched lazily, once per ticker).
+type tickerData struct {
+	q          store.Quote
+	haveQuote  bool
+	lastFiling time.Time
+	haveFiling bool
+}
+
 func (e *AlertEvaluator) evaluate(ctx context.Context) {
 	alerts, err := e.store.ListActiveAlerts(ctx)
 	if err != nil {
@@ -59,18 +69,38 @@ func (e *AlertEvaluator) evaluate(ctx context.Context) {
 	if len(alerts) == 0 {
 		return
 	}
-	prices := make(map[string]float64) // ticker -> latest price (0 = unavailable); dedupes fetches this cycle
+	cache := make(map[string]*tickerData)
 	fired := 0
 	now := time.Now().UTC()
 	for _, a := range alerts {
-		px, seen := prices[a.Ticker]
-		if !seen {
-			if q, found, qerr := e.prices.LatestQuote(ctx, a.Ticker); qerr == nil && found {
-				px = q.Price
-			}
-			prices[a.Ticker] = px
+		d := cache[a.Ticker]
+		if d == nil {
+			d = &tickerData{}
+			cache[a.Ticker] = d
 		}
-		if px <= 0 || !alertHit(a, px) {
+		var hit bool
+		if a.Kind == "new_filing" {
+			if !d.haveFiling {
+				if fs, ferr := e.store.ListFilings(ctx, a.Ticker, 5); ferr == nil {
+					for _, f := range fs {
+						if f.FiledAt.After(d.lastFiling) {
+							d.lastFiling = f.FiledAt
+						}
+					}
+				}
+				d.haveFiling = true
+			}
+			hit = !d.lastFiling.IsZero() && d.lastFiling.After(a.CreatedAt)
+		} else {
+			if !d.haveQuote {
+				if q, found, qerr := e.prices.LatestQuote(ctx, a.Ticker); qerr == nil && found {
+					d.q = q
+				}
+				d.haveQuote = true
+			}
+			hit = d.q.Price > 0 && priceAlertHit(a, d.q)
+		}
+		if !hit {
 			continue
 		}
 		if err := e.store.MarkAlertTriggered(ctx, a.ID, now); err != nil {
@@ -84,14 +114,23 @@ func (e *AlertEvaluator) evaluate(ctx context.Context) {
 	}
 }
 
-// alertHit reports whether a price-based alert's condition is met. pct_move and
-// new_filing need prev-close / filings and are evaluated elsewhere (not here).
-func alertHit(a store.Alert, price float64) bool {
+// priceAlertHit reports whether a price-based alert (price_above / price_below /
+// pct_move) is met by the latest quote. new_filing is handled in evaluate.
+func priceAlertHit(a store.Alert, q store.Quote) bool {
 	switch a.Kind {
 	case "price_above":
-		return price >= a.Threshold
+		return q.Price >= a.Threshold
 	case "price_below":
-		return price <= a.Threshold
+		return q.Price <= a.Threshold
+	case "pct_move":
+		if q.PrevClose <= 0 {
+			return false
+		}
+		pct := (q.Price - q.PrevClose) / q.PrevClose * 100
+		if pct < 0 {
+			pct = -pct
+		}
+		return pct >= a.Threshold
 	default:
 		return false
 	}
