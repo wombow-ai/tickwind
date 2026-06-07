@@ -4,6 +4,7 @@ import {Flame, TrendingDown, TrendingUp} from 'lucide-react';
 import Link from 'next/link';
 import {useCallback, useEffect, useState} from 'react';
 import {getHot, type HotStock} from '@/lib/api';
+import {useT} from '@/lib/i18n';
 import {useDark} from '@/lib/theme';
 import {cx, tok} from '@/lib/ui';
 import {EmptyState, ErrorState, FeedSkeleton} from '@/components/ui/states';
@@ -12,16 +13,8 @@ type Tokens = ReturnType<typeof tok>;
 type Status = 'loading' | 'ready' | 'error';
 
 const BOARDS = [
-  {
-    key: 'hot',
-    label: 'Hot',
-    blurb: 'The most-discussed US stocks across Reddit right now — ranked by buzz and momentum.',
-  },
-  {
-    key: 'surging',
-    label: 'Surging',
-    blurb: "Stocks whose chatter is accelerating fastest — the biggest 24h jumps in mentions, not just the loudest.",
-  },
+  {key: 'hot', labelKey: 'nav.hot', blurbKey: 'hot.blurbHot'},
+  {key: 'surging', labelKey: 'hot.surging', blurbKey: 'hot.blurbSurging'},
 ] as const;
 
 /**
@@ -32,6 +25,7 @@ const BOARDS = [
 export function HotList({initialBoard = 'hot'}: {initialBoard?: string}) {
   const dark = useDark();
   const t = tok(dark);
+  const tr = useT();
   const [board, setBoard] = useState<string>(initialBoard);
   const [status, setStatus] = useState<Status>('loading');
   const [stocks, setStocks] = useState<HotStock[]>([]);
@@ -51,7 +45,7 @@ export function HotList({initialBoard = 'hot'}: {initialBoard?: string}) {
     load(board);
   }, [board, load]);
 
-  const blurb = BOARDS.find(b => b.key === board)?.blurb ?? '';
+  const blurb = tr(BOARDS.find(b => b.key === board)?.blurbKey ?? 'hot.blurbHot');
 
   return (
     <div className="mx-auto max-w-3xl">
@@ -63,7 +57,7 @@ export function HotList({initialBoard = 'hot'}: {initialBoard?: string}) {
           )}
         >
           <Flame size={22} className={dark ? 'text-amber-300' : 'text-amber-500'} />
-          Hot stocks
+          {tr('mod.hotStocks')}
         </h1>
         <p className={cx('mt-1 text-[13.5px]', t.sub)}>{blurb}</p>
       </header>
@@ -89,7 +83,7 @@ export function HotList({initialBoard = 'hot'}: {initialBoard?: string}) {
                   : t.sub,
               )}
             >
-              {b.label}
+              {tr(b.labelKey)}
             </button>
           ))}
         </div>
@@ -98,11 +92,7 @@ export function HotList({initialBoard = 'hot'}: {initialBoard?: string}) {
       {status === 'loading' && <FeedSkeleton />}
       {status === 'error' && <ErrorState onRetry={() => load(board)} />}
       {status === 'ready' && stocks.length === 0 && (
-        <EmptyState
-          label="No data yet"
-          sub="The leaderboard refreshes every few minutes — check back shortly."
-          icon={Flame}
-        />
+        <EmptyState label={tr('mod.noData')} sub={tr('hot.emptySub')} icon={Flame} />
       )}
       {status === 'ready' && stocks.length > 0 && (
         <div
@@ -125,9 +115,7 @@ export function HotList({initialBoard = 'hot'}: {initialBoard?: string}) {
         </div>
       )}
 
-      <p className={cx('mt-4 text-center text-[11px]', t.faint)}>
-        Buzz via ApeWisdom (Reddit mentions). Not investment advice.
-      </p>
+      <p className={cx('mt-4 text-center text-[11px]', t.faint)}>{tr('hot.footer')}</p>
     </div>
   );
 }
@@ -143,6 +131,7 @@ function HotRow({
   t: Tokens;
   last: boolean;
 }) {
+  const tr = useT();
   const up = s.change >= 0;
   const pct = Math.abs(s.change * 100);
   const surging = s.change >= 0.5; // a notable riser
@@ -185,7 +174,7 @@ function HotRow({
         <div className={cx('text-[13px] font-semibold tabular-nums', t.text)}>
           {s.mentions.toLocaleString()}
         </div>
-        <div className={cx('text-[11px]', t.faint)}>mentions</div>
+        <div className={cx('text-[11px]', t.faint)}>{tr('wsb.mentions')}</div>
       </div>
 
       <div

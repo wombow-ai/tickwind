@@ -2,6 +2,7 @@
 
 import {CloudOff, Inbox, RefreshCw} from 'lucide-react';
 import type {LucideIcon} from 'lucide-react';
+import {useT} from '@/lib/i18n';
 import {useDark} from '@/lib/theme';
 import {cx, tok} from '@/lib/ui';
 import {Skeleton} from './atoms';
@@ -106,6 +107,7 @@ export function EmptyState({
 export function ErrorState({onRetry}: {onRetry: () => void}) {
   const dark = useDark();
   const t = tok(dark);
+  const tr = useT();
   return (
     <div className="flex flex-col items-center px-6 py-12 text-center">
       <div
@@ -119,10 +121,10 @@ export function ErrorState({onRetry}: {onRetry: () => void}) {
         <CloudOff className={dark ? 'text-rose-400' : 'text-rose-500'} size={26} />
       </div>
       <p className={cx('text-[14px] font-semibold', t.text)}>
-        The wind dropped for a moment
+        {tr('states.errorTitle')}
       </p>
       <p className={cx('mt-1 max-w-[260px] text-[12.5px]', t.sub)}>
-        We couldn&apos;t load this feed. Check your connection and try again.
+        {tr('states.errorSub')}
       </p>
       <button
         onClick={onRetry}
@@ -132,7 +134,7 @@ export function ErrorState({onRetry}: {onRetry: () => void}) {
           t.ghost,
         )}
       >
-        <RefreshCw size={13} /> Retry
+        <RefreshCw size={13} /> {tr('states.retry')}
       </button>
     </div>
   );

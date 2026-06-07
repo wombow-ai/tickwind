@@ -4,6 +4,7 @@ import {Flame} from 'lucide-react';
 import Link from 'next/link';
 import {useEffect, useState} from 'react';
 import {getTopics, type HotTopic} from '@/lib/api';
+import {useT} from '@/lib/i18n';
 import {useDark} from '@/lib/theme';
 import {cx, tok} from '@/lib/ui';
 
@@ -15,6 +16,7 @@ import {cx, tok} from '@/lib/ui';
 export function TopicsStrip() {
   const dark = useDark();
   const t = tok(dark);
+  const tr = useT();
   const [topics, setTopics] = useState<HotTopic[]>([]);
 
   useEffect(() => {
@@ -33,7 +35,7 @@ export function TopicsStrip() {
       <div className="mb-2 flex items-center gap-1.5">
         <Flame size={14} className={dark ? 'text-amber-300' : 'text-amber-500'} />
         <span className={cx('text-[12px] font-semibold uppercase tracking-wide', t.sub)}>
-          Hot topics
+          {tr('topics.title')}
         </span>
       </div>
       <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1">

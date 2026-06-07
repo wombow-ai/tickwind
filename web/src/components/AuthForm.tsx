@@ -5,6 +5,7 @@ import {useRouter} from 'next/navigation';
 import {useState} from 'react';
 import {useAuth} from '@/lib/auth';
 import {GOOGLE_OAUTH_ENABLED} from '@/lib/config';
+import {useT} from '@/lib/i18n';
 import {useDark} from '@/lib/theme';
 import {btnPrimary, cx, tok} from '@/lib/ui';
 
@@ -14,6 +15,7 @@ export function AuthForm({mode}: {mode: 'login' | 'signup'}) {
   const router = useRouter();
   const dark = useDark();
   const t = tok(dark);
+  const tr = useT();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -28,7 +30,7 @@ export function AuthForm({mode}: {mode: 'login' | 'signup'}) {
     setError(null);
     setNotice(null);
     if (password.length < 6) {
-      setError('Password must be at least 6 characters.');
+      setError(tr('auth.pwTooShort'));
       return;
     }
     setBusy(true);
@@ -40,7 +42,7 @@ export function AuthForm({mode}: {mode: 'login' | 'signup'}) {
           router.push('/');
           router.refresh();
         } else {
-          setNotice('Check your email to confirm your account, then log in.');
+          setNotice(tr('auth.checkEmail'));
         }
       } else {
         const {error} = await supabase.auth.signInWithPassword({email, password});
@@ -49,7 +51,7 @@ export function AuthForm({mode}: {mode: 'login' | 'signup'}) {
         router.refresh();
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Something went wrong.');
+      setError(err instanceof Error ? err.message : tr('auth.genericError'));
     } finally {
       setBusy(false);
     }
@@ -77,12 +79,10 @@ export function AuthForm({mode}: {mode: 'login' | 'signup'}) {
   return (
     <div className={cx('w-full max-w-sm rounded-3xl border p-7', t.card, t.border, t.soft)}>
       <h1 className={cx('text-[20px] font-bold tracking-tight', t.text)}>
-        {isSignup ? 'Create your account' : 'Welcome back'}
+        {isSignup ? tr('auth.titleSignup') : tr('auth.titleLogin')}
       </h1>
       <p className={cx('mt-1 text-[13.5px]', t.sub)}>
-        {isSignup
-          ? 'Track your own watchlist and clip links — free.'
-          : 'Log in to your watchlist and saved links.'}
+        {isSignup ? tr('auth.subSignup') : tr('auth.subLogin')}
       </p>
 
       {GOOGLE_OAUTH_ENABLED && (
@@ -98,11 +98,11 @@ export function AuthForm({mode}: {mode: 'login' | 'signup'}) {
               t.text,
             )}
           >
-            <GoogleIcon /> Continue with Google
+            <GoogleIcon /> {tr('auth.google')}
           </button>
           <div className="mt-5 flex items-center gap-3">
             <span className={cx('h-px flex-1', dark ? 'bg-slate-800' : 'bg-slate-200')} />
-            <span className={cx('text-[11.5px] font-medium', t.faint)}>or</span>
+            <span className={cx('text-[11.5px] font-medium', t.faint)}>{tr('auth.or')}</span>
             <span className={cx('h-px flex-1', dark ? 'bg-slate-800' : 'bg-slate-200')} />
           </div>
         </div>
@@ -111,7 +111,7 @@ export function AuthForm({mode}: {mode: 'login' | 'signup'}) {
       <form onSubmit={submit} className="mt-6 space-y-3.5">
         <div>
           <label className={cx('mb-1.5 block text-[12.5px] font-medium', t.sub)}>
-            Email
+            {tr('auth.email')}
           </label>
           <input
             type="email"
@@ -125,7 +125,7 @@ export function AuthForm({mode}: {mode: 'login' | 'signup'}) {
         </div>
         <div>
           <label className={cx('mb-1.5 block text-[12.5px] font-medium', t.sub)}>
-            Password
+            {tr('auth.password')}
           </label>
           <input
             type="password"
@@ -157,17 +157,17 @@ export function AuthForm({mode}: {mode: 'login' | 'signup'}) {
             btnPrimary(dark),
           )}
         >
-          {busy ? 'One moment…' : isSignup ? 'Create account' : 'Log in'}
+          {busy ? tr('auth.busy') : isSignup ? tr('auth.createAccount') : tr('nav.login')}
         </button>
       </form>
 
       <p className={cx('mt-5 text-center text-[13px]', t.sub)}>
-        {isSignup ? 'Already have an account? ' : "Don't have an account? "}
+        {isSignup ? tr('auth.haveAccount') : tr('auth.noAccount')}{' '}
         <Link
           href={isSignup ? '/login' : '/signup'}
           className={cx('font-semibold', t.accentText)}
         >
-          {isSignup ? 'Log in' : 'Sign up'}
+          {isSignup ? tr('nav.login') : tr('nav.signup')}
         </Link>
       </p>
     </div>
