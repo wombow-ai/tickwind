@@ -291,8 +291,14 @@ type wsbSource interface {
 	WallStreetBets(ctx context.Context, limit int) ([]store.HotStock, error)
 }
 
-// buildWSBBoard ranks the WSB board by raw mention volume (what r/wallstreetbets
-// is most discussing now), setting Change so the UI can show a momentum arrow.
+// wsbMinMentions floors the WSB board to genuinely-discussed names.
+const wsbMinMentions = 15
+
+// buildWSBBoard ranks the WSB board by RISING buzz (24h mention momentum, shrunk
+// by volume) rather than raw volume — so the board surfaces what's *gaining*
+// traction on r/wallstreetbets (mostly up-trending) instead of perennially-loud,
+// cooling mega-caps. Declining names (growth floored at 0) sort to the bottom,
+// tie-broken by mentions. Change is set for the UI's momentum arrow.
 func buildWSBBoard(raw []store.HotStock) []store.HotStock {
 	now := time.Now().UTC()
 	for i := range raw {
@@ -301,7 +307,9 @@ func buildWSBBoard(raw []store.HotStock) []store.HotStock {
 		}
 		raw[i].UpdatedAt = now
 	}
-	return rankBoard(raw, "wsb", 0, func(h store.HotStock) float64 { return float64(h.Mentions) })
+	return rankBoard(raw, "wsb", wsbMinMentions, func(h store.HotStock) float64 {
+		return surgeScore(h.Mentions, h.MentionsPrev)
+	})
 }
 
 // buildBoards derives the leaderboards from raw ApeWisdom entries:

@@ -54,9 +54,10 @@ const maxIngestTickers = 200
 // MediaTek, Delta, Chunghwa Telecom, UMC.
 var taiwanSeed = []string{"2330.TW", "2317.TW", "2454.TW", "2308.TW", "2412.TW", "2303.TW"}
 
-// koreaSeed is a few KR large-caps (Samsung, SK Hynix, Hyundai Motor) ingested
-// only when Korea is enabled, so KR pages have data the moment the keys are set.
-var koreaSeed = []string{"005930.KS", "000660.KS", "005380.KS"}
+// koreaSeed is the two KR large-caps the owner follows — Samsung Electronics and
+// SK Hynix — ingested only when Korea is enabled, so their pages have data the
+// moment the (free) KRX key is set.
+var koreaSeed = []string{"005930.KS", "000660.KS"}
 
 func main() {
 	log := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))

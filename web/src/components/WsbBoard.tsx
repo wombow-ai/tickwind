@@ -8,29 +8,46 @@ import {useT} from '@/lib/i18n';
 import {useDark} from '@/lib/theme';
 import {cx, tok} from '@/lib/ui';
 
+type Tokens = ReturnType<typeof tok>;
+
+const ROWS = 8;
+
 /**
  * The "WSB Trending" mini-board: the tickers r/wallstreetbets is talking about
- * most right now (mention volume + 24h momentum), from ApeWisdom. It is
- * discussion buzz — not sentiment, and not a recommendation. Hidden until it has
- * data so it never shows an empty shell.
+ * most right now, ranked by *rising* 24h mention momentum (from ApeWisdom) so it
+ * surfaces buzz that's gaining traction rather than perennially-loud, cooling
+ * names. It is discussion buzz — not sentiment, and not a recommendation.
+ *
+ * The card (header + skeleton rows) renders from first paint and fills in on
+ * load, so it never "pops in" after the rest of the page; it collapses only if
+ * the feed comes back genuinely empty.
  */
 export function WsbBoard() {
   const dark = useDark();
   const t = tok(dark);
   const tr = useT();
   const [stocks, setStocks] = useState<HotStock[]>([]);
+  const [ready, setReady] = useState(false);
 
   const load = useCallback(() => {
-    getHot('wsb', 8).then(
-      r => setStocks(r.stocks ?? []),
-      () => setStocks([]),
+    getHot('wsb', ROWS).then(
+      r => {
+        setStocks(r.stocks ?? []);
+        setReady(true);
+      },
+      () => {
+        setStocks([]);
+        setReady(true);
+      },
     );
   }, []);
   useEffect(() => {
     load();
   }, [load]);
 
-  if (stocks.length === 0) return null;
+  // Only hide once we know the feed is genuinely empty; while loading we keep the
+  // card (with skeleton rows) so it reserves its space and never pops in.
+  if (ready && stocks.length === 0) return null;
 
   return (
     <section className={cx('rounded-2xl border p-4', t.card, t.border, t.soft)}>
@@ -47,37 +64,56 @@ export function WsbBoard() {
         </Link>
       </div>
       <div>
-        {stocks.map((s, i) => (
-          <Link
-            key={s.ticker}
-            href={`/stock/${encodeURIComponent(s.ticker)}`}
-            className={cx(
-              'flex items-center gap-2 py-1.5',
-              i < stocks.length - 1 && cx('border-b', t.hair),
-            )}
-          >
-            <span
-              className={cx(
-                'w-4 text-[12px] font-bold tabular-nums',
-                s.rank <= 3 ? (dark ? 'text-orange-300' : 'text-orange-500') : t.faint,
-              )}
-            >
-              {s.rank}
-            </span>
-            <span className={cx('flex-1 truncate text-[13px] font-bold', t.text)}>
-              {s.ticker}
-            </span>
-            <span className={cx('shrink-0 text-[11px] tabular-nums', t.faint)}>
-              {s.mentions} {tr('wsb.mentions')}
-            </span>
-            <Arrow change={s.change} dark={dark} />
-          </Link>
-        ))}
+        {ready
+          ? stocks.map((s, i) => (
+              <Link
+                key={s.ticker}
+                href={`/stock/${encodeURIComponent(s.ticker)}`}
+                className={cx(
+                  'flex items-center gap-2 py-1.5',
+                  i < stocks.length - 1 && cx('border-b', t.hair),
+                )}
+              >
+                <span
+                  className={cx(
+                    'w-4 text-[12px] font-bold tabular-nums',
+                    s.rank <= 3 ? (dark ? 'text-orange-300' : 'text-orange-500') : t.faint,
+                  )}
+                >
+                  {s.rank}
+                </span>
+                <span className={cx('flex-1 truncate text-[13px] font-bold', t.text)}>
+                  {s.ticker}
+                </span>
+                <span className={cx('shrink-0 text-[11px] tabular-nums', t.faint)}>
+                  {s.mentions} {tr('wsb.mentions')}
+                </span>
+                <Arrow change={s.change} dark={dark} />
+              </Link>
+            ))
+          : Array.from({length: ROWS}).map((_, i) => (
+              <SkeletonRow key={i} dark={dark} t={t} last={i === ROWS - 1} />
+            ))}
       </div>
-      <p className={cx('mt-2 text-[10.5px]', t.faint)}>
-        {tr('wsb.footer')}
-      </p>
+      <p className={cx('mt-2 text-[10.5px]', t.faint)}>{tr('wsb.footer')}</p>
     </section>
+  );
+}
+
+/** A shimmer placeholder row matching a loaded row's height, so the card doesn't jump. */
+function SkeletonRow({dark, t, last}: {dark: boolean; t: Tokens; last: boolean}) {
+  const bar = dark ? 'bg-slate-700/60' : 'bg-slate-200';
+  return (
+    <div
+      className={cx(
+        'flex animate-pulse items-center gap-2 py-1.5',
+        !last && cx('border-b', t.hair),
+      )}
+    >
+      <span className={cx('h-3 w-3 rounded', bar)} />
+      <span className={cx('h-3 w-14 rounded', bar)} />
+      <span className={cx('ml-auto h-3 w-20 rounded', bar)} />
+    </div>
   );
 }
 

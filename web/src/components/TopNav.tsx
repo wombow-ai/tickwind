@@ -63,6 +63,16 @@ export function TopNav() {
 
         <nav className="hidden items-center gap-1 md:flex">
           <Link
+            href="/opportunities"
+            aria-current={pathname === '/opportunities' ? 'page' : undefined}
+            className={cx(
+              'rounded-full px-3 py-1.5 text-[13px] font-medium hover:opacity-80',
+              pathname === '/opportunities' ? t.accentText : t.sub,
+            )}
+          >
+            {tr('nav.opportunities')}
+          </Link>
+          <Link
             href="/"
             aria-current={pathname === '/' ? 'page' : undefined}
             className={cx(
@@ -91,16 +101,6 @@ export function TopNav() {
             )}
           >
             {tr('nav.news')}
-          </Link>
-          <Link
-            href="/opportunities"
-            aria-current={pathname === '/opportunities' ? 'page' : undefined}
-            className={cx(
-              'rounded-full px-3 py-1.5 text-[13px] font-medium hover:opacity-80',
-              pathname === '/opportunities' ? t.accentText : t.sub,
-            )}
-          >
-            {tr('nav.opportunities')}
           </Link>
           <Link
             href="/events"
