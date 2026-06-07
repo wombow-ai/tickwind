@@ -54,7 +54,9 @@ func (s *SymbolIngestor) refresh(ctx context.Context) {
 		s.log.Warn("symbols: refresh failed", "err", err)
 		return // keep serving the last good index
 	}
-	idx := symbols.Build(syms)
+	// Merge the curated foreign (TW/HK) seed names so the markets we price are
+	// searchable alongside the US SEC directory.
+	idx := symbols.Build(append(syms, symbols.ForeignSeeds()...))
 	s.cache.Set(idx)
 	s.log.Info("symbols: loaded directory", "count", idx.Len())
 }

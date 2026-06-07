@@ -178,8 +178,11 @@ Status: ✅ done · 🟡 in progress · ⬜ todo
         setup documented in DEPLOY.md §5
 - ✅ TW market live (TWSE + TPEx EOD, keyless). HK **prices** live via Yahoo delayed
   quotes (owner-authorized "gray" source — Tencent `0700`, Zhipu `2513`, MiniMax `0100`).
-- ⬜ HK **filings** via HKEXnews title-search (`queryName=<code>` → JSON; verified
-  tractable — double-JSON-decode + HTML-strip the title) — next up.
+- ⬜ HK **filings** via HKEXnews — **deferred (blocked)**: titleSearchServlet returns
+  JSON but filters only by an internal `stockId` (NOT the stock code); `prefix.do`
+  (code→stockId) returns empty from here (likely datacenter-IP-gated, like Xueqiu/TPEx),
+  and the global feed is too sparse to filter by `STOCK_CODE`. Revisit from the VPS IP
+  or with a static stockId map for the 3 codes.
 - ⬜ KR (KRX prices + OpenDART filings): code-ready + inert; **DEFERRED** — owner's
   KRX-site access is blocked; they'll supply the free KRX key later (then one env var
   to go live).

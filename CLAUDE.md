@@ -30,8 +30,10 @@ feature-flagged plugin, never on the critical path. Web only.
   **HK prices live** via Yahoo delayed quotes — an **owner-authorized "gray" source**
   (HK exchange quotes are licence-gated; `internal/yahoo`, isolated + documented) for
   the 3 names the owner follows (Tencent `0700.HK`, Zhipu/"Knowledge Atlas" `2513.HK`,
-  MiniMax `0100.HK`); **HK filings via HKEXnews** title-search (`queryName=<code>`,
-  returns JSON — verified tractable) is the next add. **KR DEFERRED** (KRX prices +
+  MiniMax `0100.HK`); **HK filings via HKEXnews DEFERRED** — its titleSearchServlet
+  filters only by an internal `stockId` (not the code) and `prefix.do` (code→stockId)
+  is empty from here (datacenter-IP-gated); revisit from the VPS or a static stockId
+  map. **KR DEFERRED** (KRX prices +
   OpenDART filings code-ready + inert; owner's KRX-site access is blocked — they'll
   supply the free KRX key later).
 - **Never touch a funded brokerage account from code** — market-data only; if a broker
