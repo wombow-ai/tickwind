@@ -183,7 +183,11 @@ feature-flagged plugin, never on the critical path. Web only.
     `store.Note` + `/v1/notes` (POST/GET/PATCH/DELETE, requireUser, ownership in the
     query → 404 not 403) routed to the **User** store via Split; frontend `NotesPanel`
     (compose + pinned-first list + pin/delete) on a StockView "Notes" tab + a `/notes`
-    page. v1.1 deferred = month-grid calendar over the existing `?from=&to=`.
+    page. **Calendar view** ✅ (`NotesCalendar`): month grid over the existing
+    `?from=&to=`, **compact cells** + a **two-column layout on `lg`** (grid + a sticky
+    day-detail panel; defaults to today so the panel is never empty), with major
+    **Events overlaid** as dots (reuses `getEvents`). `/notes` widens to `max-w-4xl`
+    in calendar view.
   - **评论区 / Comments** ✅ — PUBLIC per-stock + global-board comments (§230 neutral
     host). `store.Comment` + `/v1/comments` (GET public; POST/DELETE/`{id}/report`
     auth) routed to the **Market** (durable) store; **safeguards**: per-user rate-limit
@@ -301,8 +305,14 @@ feature-flagged plugin, never on the critical path. Web only.
 - **Routes**: route groups — `(main)` = chrome (TopNav+Footer): `/`, `/stock/[ticker]`,
   `/settings`, `/announcements`; `(auth)` = centered: `/login`, `/signup`; `/designs/*`
   kept as references (self-contained). `/stock/[ticker]` is SSR with SEO metadata.
-- **Responsive**: mobile-first; TopNav collapses the ticker search to an icon →
-  dropdown row < `sm`; one-line nav at 375px; board/detail reflow to a single column.
+- **Responsive**: mobile-first; board/detail reflow to a single column. **TopNav**
+  (rebuilt 2026-06): nav destinations come from one shared `NavItem[]` source
+  (primary = Opportunities/Markets/Hot/News, `secondary` = Events/Community/+Notes-authed
+  in a `More▾` dropdown). **Watchlist** is a top-level pill **when signed in** (also in
+  the account menu). **< md** the desktop nav is replaced by a **hamburger → full
+  mobile menu** (all destinations incl. Watchlist/Notes when authed + What's new) — the
+  bar previously had NO nav links on mobile. Inline ticker search shows at **`lg`**
+  (icon→dropdown below lg). Login+Signup stay visible at all widths (fits at 375px).
 - **A11y**: global theme-aware keyboard focus ring in `globals.css` (`:focus-visible`
   + `--tw-focus`; element-type selectors outrank Tailwind `outline-none`, so it's
   keyboard-only). aria-current on active nav, aria-pressed + dynamic label on the
