@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import type {Clip, Filing, NewsItem, Post} from '@/lib/api';
+import {useT} from '@/lib/i18n';
 import {useDark} from '@/lib/theme';
 import {cx, timeAgo, tok} from '@/lib/ui';
 
@@ -75,6 +76,7 @@ export function TimelineItem({
     };
   };
 
+  const tr = useT();
   const when =
     entry.kind === 'news'
       ? timeAgo(entry.item.published)
@@ -159,7 +161,7 @@ export function TimelineItem({
           )}
           <span className={cx('ml-auto text-[11px] tabular-nums', t.faint)}>
             {when}
-            {showAgo ? ' ago' : ''}
+            {showAgo ? ' ' + tr('common.ago') : ''}
           </span>
         </div>
 
