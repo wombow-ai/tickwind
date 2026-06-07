@@ -208,6 +208,8 @@ Status: ✅ done · 🟡 in progress · ⬜ todo
   @v6, green-verified. Surfaced + fixed a SearchBox combobox a11y gap.
 - ✅ **K-line preserves the user's view** across dark/Bollinger toggles (was resetting to the
   last ~130 sessions on every rebuild).
+- ✅ **i18n session badges** — Pre-market/Regular/After-hours/Overnight/Closed now translate
+  (zh 盘前/盘中/盘后/夜盘/休市) on every price tag; + the account-menu 'Signed in' fallback.
 
 ### Future features — researched 2026-06 (see `docs/future-features-2026-06.md`)
 3 parallel research agents (competitor gaps · free data sources · AI/LLM). **Convergence: the
