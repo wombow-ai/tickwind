@@ -33,6 +33,29 @@ func TestAlertsCRUD(t *testing.T) {
 	}
 }
 
+func TestAlertsActiveAndTrigger(t *testing.T) {
+	s := New()
+	ctx := context.Background()
+	_ = s.SaveAlert(ctx, store.Alert{ID: "x1", UserID: "u1", Ticker: "AAPL", Kind: "price_above", Threshold: 200, Active: true, CreatedAt: time.Now()})
+	_ = s.SaveAlert(ctx, store.Alert{ID: "x2", UserID: "u2", Ticker: "MSTR", Kind: "price_below", Threshold: 100, Active: true, CreatedAt: time.Now()})
+
+	// ListActiveAlerts spans all users.
+	if active, err := s.ListActiveAlerts(ctx); err != nil || len(active) != 2 {
+		t.Fatalf("ListActiveAlerts = %d, %v; want 2", len(active), err)
+	}
+	// Triggering drops it from the active set + stamps TriggeredAt.
+	if err := s.MarkAlertTriggered(ctx, "x1", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	active, _ := s.ListActiveAlerts(ctx)
+	if len(active) != 1 || active[0].ID != "x2" {
+		t.Fatalf("after trigger, active = %+v; want only x2", active)
+	}
+	if got, _ := s.ListAlerts(ctx, "u1"); len(got) != 1 || got[0].TriggeredAt.IsZero() {
+		t.Errorf("x1 TriggeredAt not set: %+v", got)
+	}
+}
+
 func TestWatchlist(t *testing.T) {
 	s := New()
 	ctx := context.Background()

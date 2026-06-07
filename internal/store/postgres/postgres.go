@@ -676,12 +676,41 @@ func (s *Store) DeleteNote(ctx context.Context, userID, id string) (bool, error)
 	return tag.RowsAffected() == 1, nil
 }
 
-const alertCols = `id, user_id, ticker, kind, threshold, active, created_at`
+const alertCols = `id, user_id, ticker, kind, threshold, active, created_at, triggered_at`
 
 func scanAlert(row interface{ Scan(...any) error }) (store.Alert, error) {
 	var a store.Alert
-	err := row.Scan(&a.ID, &a.UserID, &a.Ticker, &a.Kind, &a.Threshold, &a.Active, &a.CreatedAt)
+	var trig *time.Time // triggered_at is NULL until fired
+	err := row.Scan(&a.ID, &a.UserID, &a.Ticker, &a.Kind, &a.Threshold, &a.Active, &a.CreatedAt, &trig)
+	if trig != nil {
+		a.TriggeredAt = *trig
+	}
 	return a, err
+}
+
+func (s *Store) ListActiveAlerts(ctx context.Context) ([]store.Alert, error) {
+	rows, err := s.pool.Query(ctx, `SELECT `+alertCols+` FROM alerts WHERE active AND triggered_at IS NULL ORDER BY created_at`)
+	if err != nil {
+		return nil, fmt.Errorf("postgres: list active alerts: %w", err)
+	}
+	defer rows.Close()
+	var out []store.Alert
+	for rows.Next() {
+		a, err := scanAlert(rows)
+		if err != nil {
+			return nil, fmt.Errorf("postgres: scan alert: %w", err)
+		}
+		out = append(out, a)
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) MarkAlertTriggered(ctx context.Context, id string, at time.Time) error {
+	_, err := s.pool.Exec(ctx, `UPDATE alerts SET triggered_at = $2 WHERE id = $1 AND triggered_at IS NULL`, id, at)
+	if err != nil {
+		return fmt.Errorf("postgres: mark alert triggered: %w", err)
+	}
+	return nil
 }
 
 func (s *Store) SaveAlert(ctx context.Context, a store.Alert) error {

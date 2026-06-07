@@ -174,13 +174,14 @@ type NoteFilter struct {
 // price_below, pct_move, new_filing}; Threshold is the price level or percent
 // (ignored for new_filing). Evaluated off the request path (see internal/ingest).
 type Alert struct {
-	ID        string    `json:"id"`
-	UserID    string    `json:"user_id"`
-	Ticker    string    `json:"ticker"`
-	Kind      string    `json:"kind"`
-	Threshold float64   `json:"threshold"`
-	Active    bool      `json:"active"`
-	CreatedAt time.Time `json:"created_at"`
+	ID          string    `json:"id"`
+	UserID      string    `json:"user_id"`
+	Ticker      string    `json:"ticker"`
+	Kind        string    `json:"kind"`
+	Threshold   float64   `json:"threshold"`
+	Active      bool      `json:"active"`
+	CreatedAt   time.Time `json:"created_at"`
+	TriggeredAt time.Time `json:"triggered_at,omitempty"` // zero = not yet triggered
 }
 
 // Comment is a PUBLIC user comment on a stock (Ticker) or the global community
@@ -263,6 +264,10 @@ type Store interface {
 	SaveAlert(ctx context.Context, a Alert) error
 	ListAlerts(ctx context.Context, userID string) ([]Alert, error)
 	DeleteAlert(ctx context.Context, userID, id string) (bool, error)
+	// ListActiveAlerts returns ALL users' active, not-yet-triggered alerts (for
+	// the evaluator goroutine); MarkAlertTriggered stamps one as fired.
+	ListActiveAlerts(ctx context.Context) ([]Alert, error)
+	MarkAlertTriggered(ctx context.Context, id string, at time.Time) error
 
 	// Comments are PUBLIC user posts on a stock (Ticker) or the global board
 	// (Ticker == ""). Durable (Market store). List excludes soft-deleted rows;

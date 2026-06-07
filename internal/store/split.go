@@ -144,6 +144,12 @@ func (s Split) ListAlerts(ctx context.Context, userID string) ([]Alert, error) {
 func (s Split) DeleteAlert(ctx context.Context, userID, id string) (bool, error) {
 	return s.User.DeleteAlert(ctx, userID, id)
 }
+func (s Split) ListActiveAlerts(ctx context.Context) ([]Alert, error) {
+	return s.User.ListActiveAlerts(ctx)
+}
+func (s Split) MarkAlertTriggered(ctx context.Context, id string, at time.Time) error {
+	return s.User.MarkAlertTriggered(ctx, id, at)
+}
 
 // Comments are public, valuable community content → the durable Market store.
 

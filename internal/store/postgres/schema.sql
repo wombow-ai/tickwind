@@ -189,10 +189,14 @@ CREATE TABLE IF NOT EXISTS alerts (
     kind       text NOT NULL,
     threshold  double precision NOT NULL DEFAULT 0,
     active     boolean NOT NULL DEFAULT true,
-    created_at timestamptz NOT NULL DEFAULT now()
+    created_at timestamptz NOT NULL DEFAULT now(),
+    triggered_at timestamptz
 );
+ALTER TABLE alerts ADD COLUMN IF NOT EXISTS triggered_at timestamptz;
 CREATE INDEX IF NOT EXISTS alerts_user_created_idx
     ON alerts (user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS alerts_active_idx
+    ON alerts (ticker) WHERE active AND triggered_at IS NULL;
 
 -- Public user comments on a stock (ticker) or the global community board
 -- (ticker IS NULL). Durable (Market store). Soft-deleted (deleted=true) for

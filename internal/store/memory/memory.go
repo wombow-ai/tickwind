@@ -431,6 +431,33 @@ func (s *Store) DeleteAlert(_ context.Context, userID, id string) (bool, error) 
 	return true, nil
 }
 
+func (s *Store) ListActiveAlerts(_ context.Context) ([]store.Alert, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([]store.Alert, 0)
+	for _, m := range s.alerts {
+		for _, a := range m {
+			if a.Active && a.TriggeredAt.IsZero() {
+				out = append(out, a)
+			}
+		}
+	}
+	return out, nil
+}
+
+func (s *Store) MarkAlertTriggered(_ context.Context, id string, at time.Time) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, m := range s.alerts {
+		if a, ok := m[id]; ok {
+			a.TriggeredAt = at
+			m[id] = a
+			return nil
+		}
+	}
+	return nil
+}
+
 func (s *Store) SaveComment(_ context.Context, c store.Comment) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
