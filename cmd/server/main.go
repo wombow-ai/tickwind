@@ -233,6 +233,10 @@ func main() {
 		oppIngestor := ingest.NewOpportunityIngestor(st, secClient, priceClient, oppCache, 2*time.Hour, cfg.OpportunityBackfillDays, log)
 		go oppIngestor.Run(ctx)
 		log.Info("opportunity board enabled (SEC insider buys)", "backfill_days", cfg.OpportunityBackfillDays)
+
+		// Alert evaluator: checks active user alerts against the latest price.
+		go ingest.NewAlertEvaluator(st, bars, 2*time.Minute, log).Run(ctx)
+		log.Info("alert evaluator enabled", "every", "2m")
 	} else {
 		log.Warn("ALPACA_API_KEY/SECRET not set — price polling + opportunity board disabled")
 	}
