@@ -49,6 +49,7 @@ import {TimelineItem} from '@/components/TimelineItem';
 import {PulseBar} from '@/components/PulseBar';
 import {NotesPanel} from '@/components/NotesPanel';
 import {KLineChart} from '@/components/KLineChart';
+import {FundamentalsCard} from '@/components/FundamentalsCard';
 import {CommentsPanel} from '@/components/CommentsPanel';
 
 type Status = 'loading' | 'ready' | 'error';
@@ -400,6 +401,9 @@ export function StockView({ticker}: {ticker: string}) {
 
       {/* pulse: Reddit buzz + news sentiment (renders nothing when empty) */}
       <PulseBar signals={signals} />
+
+      {/* fundamentals: market cap / P/E / revenue / net income (SEC XBRL; hides for non-US) */}
+      <FundamentalsCard ticker={norm} />
 
       {/* K-line candlestick chart + indicators (MA/MACD/RSI/Volume) */}
       <div className="mb-6">

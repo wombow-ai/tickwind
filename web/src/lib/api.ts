@@ -441,6 +441,35 @@ export function getCandles(
   );
 }
 
+/** Reported XBRL figures + price-derived metrics from `GET /v1/stocks/{t}/fundamentals`. */
+export interface Fundamentals {
+  ticker: string;
+  name?: string;
+  currency: string;
+  shares: number;
+  revenue: number;
+  net_income: number;
+  eps_diluted: number;
+  equity: number;
+  period: string; // e.g. "FY2025"
+  as_of: string;
+  price: number;
+  market_cap: number | null;
+  pe: number | null; // null for loss-makers
+  pb: number | null;
+}
+
+/** Fetches SEC-XBRL fundamentals (market cap, P/E, revenue, net income). Rejects (404) for non-US / no data. */
+export function getFundamentals(
+  ticker: string,
+  signal?: AbortSignal,
+): Promise<Fundamentals> {
+  return getJson<Fundamentals>(
+    `/v1/stocks/${encodeURIComponent(normalizeTicker(ticker))}/fundamentals`,
+    signal,
+  );
+}
+
 /** Envelope returned by `GET /v1/bars?tickers=...`. */
 export interface BarsBatchResponse {
   /** Map from ticker to its recent daily closes (oldest first). */

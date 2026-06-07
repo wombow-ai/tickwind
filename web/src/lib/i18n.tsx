@@ -91,6 +91,16 @@ const dict: Record<Lang, Record<string, string>> = {
     'session.post': 'After-hours',
     'session.overnight': 'Overnight',
     'session.closed': 'Closed',
+    // fundamentals card
+    'fund.title': 'Fundamentals',
+    'fund.marketCap': 'Market cap',
+    'fund.pe': 'P/E',
+    'fund.revenue': 'Revenue',
+    'fund.netIncome': 'Net income',
+    'fund.eps': 'EPS',
+    'fund.pb': 'P/B',
+    'fund.loss': 'Loss',
+    'fund.source': 'Source: SEC filings',
     // home hub
     'home.title': 'Markets today',
     'home.subtitle':
@@ -314,6 +324,16 @@ const dict: Record<Lang, Record<string, string>> = {
     'session.post': '盘后',
     'session.overnight': '夜盘',
     'session.closed': '休市',
+    // fundamentals card
+    'fund.title': '财务',
+    'fund.marketCap': '市值',
+    'fund.pe': '市盈率',
+    'fund.revenue': '营收',
+    'fund.netIncome': '净利润',
+    'fund.eps': '每股收益',
+    'fund.pb': '市净率',
+    'fund.loss': '亏损',
+    'fund.source': '数据来源：SEC 申报',
     // home hub
     'home.title': '今日市场',
     'home.subtitle': '实时价格，以及全市场的趋势、新闻与讨论 —— 一站式呈现。',
