@@ -96,7 +96,7 @@ type Server struct {
 	ingestor  TickerIngestor
 	symbols   SymbolSearcher
 	events    EventSource
-	admins    map[string]bool // user IDs allowed to delete any comment
+	admins    map[string]bool // user UUIDs and/or emails (lowercased) allowed to delete any comment
 	commentRL *rateLimiter    // per-user comment-post throttle
 	log       *slog.Logger
 }
@@ -104,7 +104,9 @@ type Server struct {
 func New(st store.Store, hub QuoteStream, enricher enrich.Enricher, verifier *auth.Verifier, bars BarSource, topicSrc TopicSource, oppSrc OpportunitySource, guruSrc GuruSource, ingestor TickerIngestor, symbolSrc SymbolSearcher, eventSrc EventSource, adminIDs []string, log *slog.Logger) http.Handler {
 	admins := make(map[string]bool, len(adminIDs))
 	for _, id := range adminIDs {
-		admins[id] = true
+		if id = strings.ToLower(strings.TrimSpace(id)); id != "" {
+			admins[id] = true
+		}
 	}
 	s := &Server{store: st, hub: hub, clip: clip.NewFetcher(), enrich: enricher, auth: verifier, bars: bars, topics: topicSrc, opps: oppSrc, gurus: guruSrc, ingestor: ingestor, symbols: symbolSrc, events: eventSrc, admins: admins, commentRL: newRateLimiter(10, 10*time.Minute), log: log}
 	mux := http.NewServeMux()
@@ -510,12 +512,25 @@ func (s *Server) postComment(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, c)
 }
 
+// isAdmin reports whether u is on the admin allowlist (ADMIN_USER_IDS), matched
+// by Supabase UUID or by email (case-insensitive) — so an operator can list
+// either form (e.g. just their login email).
+func (s *Server) isAdmin(u auth.User) bool {
+	if len(s.admins) == 0 {
+		return false
+	}
+	if u.ID != "" && s.admins[strings.ToLower(u.ID)] {
+		return true
+	}
+	return u.Email != "" && s.admins[strings.ToLower(u.Email)]
+}
+
 func (s *Server) deleteComment(w http.ResponseWriter, r *http.Request) {
 	u, ok := s.requireUser(w, r)
 	if !ok {
 		return
 	}
-	deleted, err := s.store.DeleteComment(r.Context(), r.PathValue("id"), u.ID, s.admins[u.ID])
+	deleted, err := s.store.DeleteComment(r.Context(), r.PathValue("id"), u.ID, s.isAdmin(u))
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, errBody(err.Error()))
 		return
