@@ -67,3 +67,21 @@ jobs:
           NEXT_PUBLIC_API_BASE: "https://api.tickwind.com"
           NEXT_PUBLIC_SUPABASE_URL: "https://placeholder.supabase.co"
           NEXT_PUBLIC_SUPABASE_ANON_KEY: "placeholder-anon-key"
+
+  security:
+    name: Security · govulncheck · gosec
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      # Call-graph-aware vuln scan — fails CI only on a vuln we actually reach.
+      - name: govulncheck
+        uses: golang/govulncheck-action@v1
+        with:
+          go-version-file: go.mod
+          repo-checkout: false
+      # Static security analysis — informational only (never blocks CI).
+      - name: gosec
+        uses: securego/gosec@master
+        with:
+          args: -no-fail ./...
+        continue-on-error: true
