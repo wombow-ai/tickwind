@@ -5,12 +5,14 @@ import {
   Clipboard,
   FileText,
   Link2,
+  Loader2,
   Lock,
   MessageSquare,
   Newspaper,
   Plus,
 } from 'lucide-react';
 import Link from 'next/link';
+import {useT} from '@/lib/i18n';
 import {useCallback, useEffect, useState} from 'react';
 import {
   addToWatchlist,
@@ -70,6 +72,7 @@ export function StockView({ticker}: {ticker: string}) {
   const {toast} = useToast();
   const dark = useDark();
   const t = tok(dark);
+  const tr = useT();
   const cur = marketCurrency(guessMarket(norm));
 
   const [security, setSecurity] = useState<Security>({
@@ -94,12 +97,39 @@ export function StockView({ticker}: {ticker: string}) {
   const [tab, setTab] = useState<string>('News');
   const [clipUrl, setClipUrl] = useState('');
   const [inList, setInList] = useState(false);
+  const [collecting, setCollecting] = useState(false);
+  const [reload, setReload] = useState(0);
 
-  // Resolve security metadata.
+  // Resolve security metadata. A brand-new ticker (never ingested) 404s until the
+  // on-add ingest lands (~seconds–1min); poll briefly, show a "collecting" state,
+  // and refresh the feeds once it resolves so the page fills in on its own.
   useEffect(() => {
     const c = new AbortController();
-    getStock(norm, c.signal).then(setSecurity, () => {});
-    return () => c.abort();
+    let tries = 0;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const resolve = () => {
+      getStock(norm, c.signal).then(
+        s => {
+          setSecurity(s);
+          setCollecting(false);
+          if (tries > 0) setReload(r => r + 1); // data just landed → refill feeds
+        },
+        () => {
+          tries++;
+          if (tries < 12) {
+            setCollecting(true);
+            timer = setTimeout(resolve, 5000); // poll while data is being collected
+          } else {
+            setCollecting(false); // give up after ~1min → show normal empty states
+          }
+        },
+      );
+    };
+    resolve();
+    return () => {
+      c.abort();
+      if (timer) clearTimeout(timer);
+    };
   }, [norm]);
 
   // Trend sparkline (recent daily closes); empty when unavailable.
@@ -150,7 +180,7 @@ export function StockView({ticker}: {ticker: string}) {
     loadNews();
     loadSocial();
     loadFilings();
-  }, [loadNews, loadSocial, loadFilings]);
+  }, [loadNews, loadSocial, loadFilings, reload]);
 
   // Private: clips + watchlist membership.
   const loadClips = useCallback(async () => {
@@ -330,6 +360,31 @@ export function StockView({ticker}: {ticker: string}) {
           </div>
         </div>
       </div>
+
+      {/* brand-new ticker: data is being collected on first add */}
+      {collecting && !quote && (
+        <div
+          className={cx(
+            'mb-6 flex items-center gap-3 rounded-2xl border p-4',
+            t.border,
+            dark ? 'bg-amber-500/5' : 'bg-amber-50/70',
+          )}
+        >
+          <span
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl"
+            style={{background: dark ? 'rgba(245,158,11,.14)' : '#FEF3C7'}}
+          >
+            <Loader2
+              size={18}
+              className={cx('animate-spin', dark ? 'text-amber-300' : 'text-amber-600')}
+            />
+          </span>
+          <div className="min-w-0">
+            <p className={cx('text-[13.5px] font-semibold', t.text)}>{tr('stock.collecting')}</p>
+            <p className={cx('text-[12px]', t.sub)}>{tr('stock.collectingSub')}</p>
+          </div>
+        </div>
+      )}
 
       {/* pulse: Reddit buzz + news sentiment (renders nothing when empty) */}
       <PulseBar signals={signals} />

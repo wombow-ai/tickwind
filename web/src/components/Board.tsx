@@ -59,10 +59,15 @@ export function Board({variant = 'markets'}: {variant?: 'markets' | 'watchlist'}
   const isAuthed = !!user;
   const watchlistMode = variant === 'watchlist';
 
-  const [tickers, setTickers] = useState<string[]>([...POPULAR_TICKERS]);
+  // Watchlist starts empty + loading (its tickers come from the API); markets
+  // starts with the popular set. This avoids flashing the home stocks / an empty
+  // strip on the watchlist page before the user's list resolves.
+  const [tickers, setTickers] = useState<string[]>(
+    watchlistMode ? [] : [...POPULAR_TICKERS],
+  );
   const [securities, setSecurities] = useState<Record<string, Security>>({});
   const [barsMap, setBarsMap] = useState<Record<string, number[]>>({});
-  const [listLoading, setListLoading] = useState(false);
+  const [listLoading, setListLoading] = useState(watchlistMode);
   // Watchlist page only: the feeds are optional and can be focused on one stock.
   const [feedsOpen, setFeedsOpen] = useState(true);
   const [focusTicker, setFocusTicker] = useState<string | null>(null);

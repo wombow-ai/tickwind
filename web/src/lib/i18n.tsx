@@ -137,6 +137,9 @@ const dict: Record<Lang, Record<string, string>> = {
     'topics.title': 'HOT TOPICS',
     'states.error': 'Something went wrong',
     'states.retry': 'Try again',
+    'stock.collecting': 'Collecting data for this stock…',
+    'stock.collectingSub':
+      "First time we've tracked it — price, news and filings arrive in about a minute. This page updates on its own.",
     'common.ago': 'ago',
   },
   zh: {
@@ -206,6 +209,8 @@ const dict: Record<Lang, Record<string, string>> = {
     'topics.title': '热点话题',
     'states.error': '出错了',
     'states.retry': '重试',
+    'stock.collecting': '正在收集这只股票的数据…',
+    'stock.collectingSub': '这是我们首次收录该股票 —— 价格、新闻与申报约一分钟内到位，页面会自动更新。',
     'common.ago': '前',
   },
 };
