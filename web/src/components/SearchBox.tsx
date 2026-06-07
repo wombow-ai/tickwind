@@ -1,7 +1,7 @@
 'use client';
 
 import {Search} from 'lucide-react';
-import {useCallback, useEffect, useRef, useState} from 'react';
+import {useCallback, useEffect, useId, useRef, useState} from 'react';
 import {searchSymbols, type SymbolMatch} from '@/lib/api';
 import {useDark} from '@/lib/theme';
 import {cx, tok} from '@/lib/ui';
@@ -36,6 +36,8 @@ export function SearchBox({
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
   const boxRef = useRef<HTMLDivElement>(null);
+  const listboxId = useId();
+  const listOpen = open && results.length > 0;
 
   // Debounced search; aborts the in-flight request when the query changes.
   useEffect(() => {
@@ -115,7 +117,9 @@ export function SearchBox({
           }}
           placeholder={placeholder}
           role="combobox"
-          aria-expanded={open}
+          aria-expanded={listOpen}
+          aria-controls={listboxId}
+          aria-activedescendant={listOpen ? `${listboxId}-opt-${active}` : undefined}
           aria-autocomplete="list"
           className={cx(
             'w-full flex-1 bg-transparent outline-none',
@@ -126,8 +130,9 @@ export function SearchBox({
         />
       </div>
 
-      {open && results.length > 0 && (
+      {listOpen && (
         <ul
+          id={listboxId}
           role="listbox"
           className={cx(
             'absolute z-50 mt-1.5 max-h-80 w-full min-w-[300px] overflow-auto rounded-2xl border p-1 shadow-lg',
@@ -139,6 +144,7 @@ export function SearchBox({
             <li key={`${r.ticker}:${r.country}`}>
               <button
                 type="button"
+                id={`${listboxId}-opt-${i}`}
                 // mousedown (not click) fires before the input blurs, so the
                 // dropdown is still open when we read the choice.
                 onMouseDown={e => {
