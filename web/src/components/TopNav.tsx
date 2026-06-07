@@ -268,10 +268,27 @@ function MoreMenu({pathname, items}: {pathname: string; items: NavItem[]}) {
   const t = tok(dark);
   const tr = useT();
   const [open, setOpen] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement>(null);
   const active = items.some(i => i.href === pathname);
+
+  // Escape closes the dropdown + restores focus to its trigger. The global TopNav
+  // Escape handler only covers the account/mobile menus (whose state it owns);
+  // MoreMenu owns its own open state, so it must handle Escape itself.
+  useEffect(() => {
+    if (!open) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') {
+        setOpen(false);
+        triggerRef.current?.focus();
+      }
+    }
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [open]);
   return (
     <div className="relative">
       <button
+        ref={triggerRef}
         onClick={() => setOpen(o => !o)}
         aria-haspopup="menu"
         aria-expanded={open}
