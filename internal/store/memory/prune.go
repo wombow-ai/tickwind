@@ -5,7 +5,12 @@ import (
 	"fmt"
 	"sort"
 	"time"
+
+	"github.com/wombow-ai/tickwind/internal/store"
 )
+
+// Compile-time guard: *memory.Store satisfies the optional Pruner capability.
+var _ store.Pruner = (*Store)(nil)
 
 // hotTickerSet returns the tickers currently on any hot board. The caller must
 // hold m.mu (read or write).

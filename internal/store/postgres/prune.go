@@ -4,7 +4,12 @@ import (
 	"context"
 	"fmt"
 	"time"
+
+	"github.com/wombow-ai/tickwind/internal/store"
 )
+
+// Compile-time guard: *postgres.Store satisfies the optional Pruner capability.
+var _ store.Pruner = (*Store)(nil)
 
 // PruneNews deletes news older than `before`, keeping hot-list tickers until the
 // (earlier) `hotBefore`. A row survives the cut if it's recent enough OR its
