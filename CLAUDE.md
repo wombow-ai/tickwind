@@ -26,7 +26,14 @@ feature-flagged plugin, never on the critical path. Web only.
 ## Key decisions (do not re-litigate)
 - v1 is **US-first**. Data only from **free, redistribution-safe / public** sources:
   SEC EDGAR (filings), Alpaca/Finnhub (US prices incl. overnight), Reddit/StockTwits
-  (social). HK (HKEXnews/Futu) + KR (DART/KIS) come later.
+  (social). **Multi-market** (2026-06): **TW live** (TWSE/TPEx EOD, keyless);
+  **HK prices live** via Yahoo delayed quotes — an **owner-authorized "gray" source**
+  (HK exchange quotes are licence-gated; `internal/yahoo`, isolated + documented) for
+  the 3 names the owner follows (Tencent `0700.HK`, Zhipu/"Knowledge Atlas" `2513.HK`,
+  MiniMax `0100.HK`); **HK filings via HKEXnews** title-search (`queryName=<code>`,
+  returns JSON — verified tractable) is the next add. **KR DEFERRED** (KRX prices +
+  OpenDART filings code-ready + inert; owner's KRX-site access is blocked — they'll
+  supply the free KRX key later).
 - **Never touch a funded brokerage account from code** — market-data only; if a broker
   API is ever needed, use an unfunded/paper key + isolation (user's explicit concern).
 - LLM stays optional / behind a flag.

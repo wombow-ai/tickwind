@@ -176,7 +176,14 @@ Status: ✅ done · 🟡 in progress · ⬜ todo
         `NEXT_PUBLIC_GOOGLE_OAUTH=1` (hidden by default); activate by enabling the
         Google provider in Supabase + setting the flag. Button render verified;
         setup documented in DEPLOY.md §5
-- ⬜ HK (HKEXnews) + KR (DART) filings (needs DART key); later Futu/KIS realtime
+- ✅ TW market live (TWSE + TPEx EOD, keyless). HK **prices** live via Yahoo delayed
+  quotes (owner-authorized "gray" source — Tencent `0700`, Zhipu `2513`, MiniMax `0100`).
+- ⬜ HK **filings** via HKEXnews title-search (`queryName=<code>` → JSON; verified
+  tractable — double-JSON-decode + HTML-strip the title) — next up.
+- ⬜ KR (KRX prices + OpenDART filings): code-ready + inert; **DEFERRED** — owner's
+  KRX-site access is blocked; they'll supply the free KRX key later (then one env var
+  to go live).
+- ⬜ Later: Futu/KIS realtime; add the foreign seed tickers (TW/HK) to symbol search.
 
 ---
 _Working agreement: each `/loop` iteration picks the next unchecked item(s),
