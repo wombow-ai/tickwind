@@ -1,6 +1,7 @@
 'use client';
 
 import {Activity, Flame, TrendingDown, TrendingUp} from 'lucide-react';
+import {useT} from '@/lib/i18n';
 import {useDark} from '@/lib/theme';
 import {cx, tok} from '@/lib/ui';
 import type {Signal} from '@/lib/api';
@@ -29,6 +30,7 @@ export function PulseBar({signals}: {signals: Signal[]}) {
 }
 
 function BuzzChip({s, dark, t}: {s: Signal; dark: boolean; t: Tokens}) {
+  const tr = useT();
   const mentions = s.mentions ?? 0;
   const prev = s.mentions_prev ?? 0;
   const delta = prev > 0 ? ((mentions - prev) / prev) * 100 : 0;
@@ -54,27 +56,31 @@ function BuzzChip({s, dark, t}: {s: Signal; dark: boolean; t: Tokens}) {
           <Flame size={16} className={dark ? 'text-amber-300' : 'text-amber-500'} />
         </span>
         <span className={cx('text-[12px] font-semibold uppercase tracking-wide', t.sub)}>
-          Reddit buzz
+          {tr('pulse.buzz')}
         </span>
       </div>
       <div className="flex items-baseline gap-2">
         <span className={cx('text-2xl font-bold tabular-nums', t.text)}>
           {mentions.toLocaleString()}
         </span>
-        <span className={cx('text-[12px]', t.faint)}>mentions / 24h</span>
+        <span className={cx('text-[12px]', t.faint)}>{tr('pulse.mentions24h')}</span>
       </div>
       <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px]">
         {s.rank ? (
-          <span className={cx('font-medium', t.sub)}>rank #{s.rank}</span>
+          <span className={cx('font-medium', t.sub)}>
+            {tr('pulse.rank').replace('{n}', String(s.rank))}
+          </span>
         ) : null}
         {prev > 0 && (
           <span className={cx('inline-flex items-center gap-1 font-semibold', deltaColor)}>
             {up ? <TrendingUp size={13} /> : <TrendingDown size={13} />}
-            {Math.abs(delta).toFixed(0)}% vs 24h ago
+            {Math.abs(delta).toFixed(0)}% {tr('pulse.vs24h')}
           </span>
         )}
         {s.upvotes ? (
-          <span className={t.faint}>{s.upvotes.toLocaleString()} upvotes</span>
+          <span className={t.faint}>
+            {s.upvotes.toLocaleString()} {tr('pulse.upvotes')}
+          </span>
         ) : null}
       </div>
     </div>
@@ -82,6 +88,7 @@ function BuzzChip({s, dark, t}: {s: Signal; dark: boolean; t: Tokens}) {
 }
 
 function SentimentChip({s, dark, t}: {s: Signal; dark: boolean; t: Tokens}) {
+  const tr = useT();
   const score = s.score ?? 0;
   const tone = score >= 0.15 ? 'pos' : score <= -0.15 ? 'neg' : 'neu';
   const color =
@@ -119,7 +126,7 @@ function SentimentChip({s, dark, t}: {s: Signal; dark: boolean; t: Tokens}) {
           <Activity size={16} className={color} />
         </span>
         <span className={cx('text-[12px] font-semibold uppercase tracking-wide', t.sub)}>
-          News sentiment
+          {tr('pulse.sentiment')}
         </span>
       </div>
       <div className="flex items-baseline gap-2">
@@ -131,7 +138,7 @@ function SentimentChip({s, dark, t}: {s: Signal; dark: boolean; t: Tokens}) {
       </div>
       <div className="mt-1.5 text-[12px]">
         <span className={t.faint}>
-          across {(s.sample_size ?? 0).toLocaleString()} recent articles
+          {tr('pulse.across').replace('{n}', (s.sample_size ?? 0).toLocaleString())}
         </span>
       </div>
     </div>
