@@ -25,6 +25,7 @@ import (
 	"github.com/wombow-ai/tickwind/internal/finnhub"
 	"github.com/wombow-ai/tickwind/internal/guru"
 	"github.com/wombow-ai/tickwind/internal/ingest"
+	"github.com/wombow-ai/tickwind/internal/market"
 	"github.com/wombow-ai/tickwind/internal/opportunity"
 	"github.com/wombow-ai/tickwind/internal/reddit"
 	"github.com/wombow-ai/tickwind/internal/sec"
@@ -37,12 +38,19 @@ import (
 	"github.com/wombow-ai/tickwind/internal/symbols"
 	"github.com/wombow-ai/tickwind/internal/tickertick"
 	"github.com/wombow-ai/tickwind/internal/topics"
+	"github.com/wombow-ai/tickwind/internal/tpex"
+	"github.com/wombow-ai/tickwind/internal/twse"
 	"github.com/wombow-ai/tickwind/internal/xueqiu"
 )
 
 // maxIngestTickers caps how many distinct tickers we ingest, to control cost as
 // the user base (and thus the union of watchlists) grows.
 const maxIngestTickers = 200
+
+// taiwanSeed is a small set of Taiwan large-caps (TWSE .TW codes) always
+// ingested, so TW stock pages have data out of the box — TSMC, Hon Hai,
+// MediaTek, Delta, Chunghwa Telecom, UMC.
+var taiwanSeed = []string{"2330.TW", "2317.TW", "2454.TW", "2308.TW", "2412.TW", "2303.TW"}
 
 func main() {
 	log := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
@@ -112,6 +120,9 @@ func main() {
 		for _, t := range cfg.Watchlist {
 			add(t)
 		}
+		for _, t := range taiwanSeed { // always-on TW large-caps
+			add(t)
+		}
 		if all, err := st.AllWatchlistTickers(ctx); err != nil {
 			log.Warn("all-watchlist read failed", "err", err)
 		} else {
@@ -135,7 +146,17 @@ func main() {
 	// shared with the API (lock-free reads).
 	topicCache := topics.NewCache()
 	scheduler := ingest.NewScheduler(st, edgarClient, newsClient, social, signals, apewisdomClient, topicCache, ingestTickers, cfg.IngestEvery, log)
+
+	// Taiwan market: keyless TWSE + TPEx EOD prices/names (Taiwan OGDL). The
+	// adapter routes only .TW/.TWO tickers; bare US tickers keep the EDGAR/Alpaca
+	// path untouched. Registered on the scheduler always, and on the price poller
+	// below when Alpaca is enabled.
+	marketAdapters := map[market.Market]ingest.MarketAdapter{
+		market.TW: ingest.NewTWAdapter(twse.New(), tpex.New()),
+	}
+	scheduler.SetAdapters(marketAdapters)
 	go scheduler.Run(ctx)
+	log.Info("taiwan market enabled (TWSE + TPEx EOD)", "seed", len(taiwanSeed))
 
 	// Guru-watch rail: curated finance-KOL newsletters (public RSS) → the tickers
 	// they mention. Needs no API key, so it always runs (independent of prices).
@@ -163,6 +184,7 @@ func main() {
 	if cfg.AlpacaKeyID != "" && cfg.AlpacaSecret != "" {
 		priceClient := alpaca.New(cfg.AlpacaKeyID, cfg.AlpacaSecret, cfg.AlpacaDataURL, cfg.AlpacaFeed)
 		poller := ingest.NewPricePoller(st, priceClient, ingestTickers, cfg.PricePollEvery, hub.Publish, log)
+		poller.SetAdapters(marketAdapters) // route .TW/.TWO to the TWSE/TPEx adapter
 		go poller.Run(ctx)
 		bars = ingest.NewBarCache(priceClient, 30, time.Hour)
 		log.Info("price polling enabled", "every", cfg.PricePollEvery.String(), "feed", cfg.AlpacaFeed)

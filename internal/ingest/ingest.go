@@ -13,6 +13,7 @@ import (
 
 	"github.com/wombow-ai/tickwind/internal/edgar"
 	"github.com/wombow-ai/tickwind/internal/finnhub"
+	"github.com/wombow-ai/tickwind/internal/market"
 	"github.com/wombow-ai/tickwind/internal/store"
 	"github.com/wombow-ai/tickwind/internal/topics"
 )
@@ -55,6 +56,7 @@ type Scheduler struct {
 	tickers    TickerSource
 	every      time.Duration
 	log        *slog.Logger
+	adapters   map[market.Market]MarketAdapter // per-market dispatch; US = none
 }
 
 // NewScheduler builds the filings+news+social+signals+hotlist+topics scheduler.
@@ -62,6 +64,10 @@ type Scheduler struct {
 func NewScheduler(st store.Store, ec *edgar.Client, fh *finnhub.Client, social []SocialSource, signals []SignalSource, hot HotSource, topicCache *topics.Cache, tickers TickerSource, every time.Duration, log *slog.Logger) *Scheduler {
 	return &Scheduler{store: st, edgar: ec, finnhub: fh, social: social, signals: signals, hot: hot, topicCache: topicCache, tickers: tickers, every: every, log: log}
 }
+
+// SetAdapters registers per-market data adapters keyed by Market. US has none,
+// so bare tickers keep the existing EDGAR/Finnhub path with no behaviour change.
+func (s *Scheduler) SetAdapters(a map[market.Market]MarketAdapter) { s.adapters = a }
 
 // Run blocks until ctx is cancelled, refreshing every `every`.
 func (s *Scheduler) Run(ctx context.Context) {
@@ -145,6 +151,21 @@ func (s *Scheduler) ingestTopics(ctx context.Context, tickers []string) {
 }
 
 func (s *Scheduler) ingestFilings(ctx context.Context, ticker string) {
+	if a := s.adapters[market.Of(ticker)]; a != nil { // non-US (e.g. .TW)
+		sec, filings, ok, err := a.Filings(ctx, ticker)
+		if err != nil {
+			s.log.Warn("intl filings failed", "ticker", ticker, "market", a.Market(), "err", err)
+			return
+		}
+		if ok {
+			_ = s.store.UpsertSecurity(ctx, sec)
+		}
+		if len(filings) > 0 {
+			_ = s.store.SaveFilings(ctx, ticker, filings)
+		}
+		return
+	}
+	// ── US / SEC EDGAR path (unchanged) ──
 	sec, filings, err := s.edgar.RecentFilings(ctx, ticker, 25)
 	if err != nil {
 		s.log.Warn("edgar fetch failed", "ticker", ticker, "err", err)
@@ -160,6 +181,17 @@ func (s *Scheduler) ingestFilings(ctx context.Context, ticker string) {
 const newsLookbackDays = 30
 
 func (s *Scheduler) ingestNews(ctx context.Context, ticker string) {
+	if a := s.adapters[market.Of(ticker)]; a != nil { // non-US
+		items, err := a.News(ctx, ticker)
+		if err != nil {
+			s.log.Warn("intl news failed", "ticker", ticker, "market", a.Market(), "err", err)
+			return
+		}
+		if len(items) > 0 {
+			_ = s.store.SaveNews(ctx, ticker, items)
+		}
+		return
+	}
 	if s.finnhub == nil {
 		return
 	}
