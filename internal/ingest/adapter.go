@@ -2,6 +2,7 @@ package ingest
 
 import (
 	"context"
+	"strings"
 	"sync"
 	"time"
 
@@ -12,6 +13,7 @@ import (
 	"github.com/wombow-ai/tickwind/internal/symbols"
 	"github.com/wombow-ai/tickwind/internal/tpex"
 	"github.com/wombow-ai/tickwind/internal/twse"
+	"github.com/wombow-ai/tickwind/internal/yahoo"
 )
 
 // MarketAdapter pulls per-market data for one suffixed ticker (e.g. "2330.TW").
@@ -199,3 +201,134 @@ func (a *KRAdapter) Filings(ctx context.Context, ticker string) (store.Security,
 
 // News is not wired for KR yet.
 func (a *KRAdapter) News(ctx context.Context, ticker string) ([]store.News, error) { return nil, nil }
+
+// yahooSource is the subset of the yahoo client the HK adapter needs.
+type yahooSource interface {
+	Quote(ctx context.Context, symbol string) (yahoo.Quote, bool, error)
+}
+
+// HKAdapter serves Hong Kong DELAYED prices + company names for a few .HK tickers
+// via Yahoo Finance. HK exchange quotes are vendor-licence-gated, so this is an
+// explicitly owner-authorized "gray" source (delayed, restrictive ToS) for the
+// handful of names the owner follows — not a redistribution-clean feed like the
+// US/TW data. Per-ticker quotes are cached briefly so the price poller doesn't
+// hammer Yahoo. Yahoo returns the company name in the same call, so Filings
+// surfaces the Security (name + market); HKEXnews filings are a future add.
+type HKAdapter struct {
+	yahoo yahooSource
+	ttl   time.Duration
+
+	mu    sync.Mutex
+	cache map[string]hkEntry
+}
+
+type hkEntry struct {
+	q    store.Quote
+	name string
+	at   time.Time
+}
+
+// NewHKAdapter builds the Hong Kong adapter from the Yahoo client.
+func NewHKAdapter(y *yahoo.Client) *HKAdapter {
+	return &HKAdapter{yahoo: y, ttl: time.Minute, cache: map[string]hkEntry{}}
+}
+
+// Market identifies this adapter's venue.
+func (a *HKAdapter) Market() market.Market { return market.HK }
+
+// fetch returns a cached entry for ticker, refreshing from Yahoo when stale and
+// falling back to the last good value on error.
+func (a *HKAdapter) fetch(ctx context.Context, ticker string) (hkEntry, bool) {
+	a.mu.Lock()
+	if e, ok := a.cache[ticker]; ok && time.Since(e.at) < a.ttl {
+		a.mu.Unlock()
+		return e, true
+	}
+	a.mu.Unlock()
+
+	yq, ok, err := a.yahoo.Quote(ctx, ticker) // network call outside the lock
+	if err != nil || !ok {
+		a.mu.Lock()
+		e, had := a.cache[ticker]
+		a.mu.Unlock()
+		return e, had // last good (if any)
+	}
+	sess, known := yahooSession(yq.MarketState)
+	if !known {
+		sess = hkClockSession(time.Now())
+	}
+	e := hkEntry{
+		q: store.Quote{
+			Ticker:    ticker,
+			Price:     yq.Price,
+			PrevClose: yq.PrevClose,
+			Session:   sess,
+			Source:    "yahoo",
+			At:        yq.At,
+		},
+		name: yq.Name,
+		at:   time.Now(),
+	}
+	a.mu.Lock()
+	a.cache[ticker] = e
+	a.mu.Unlock()
+	return e, true
+}
+
+// Quote returns the cached delayed quote for ticker (ok=false if unknown).
+func (a *HKAdapter) Quote(ctx context.Context, ticker string) (store.Quote, bool, error) {
+	e, ok := a.fetch(ctx, ticker)
+	if !ok || e.q.Price == 0 {
+		return store.Quote{}, false, nil
+	}
+	return e.q, true, nil
+}
+
+// Filings returns the Security (name + market) so the stock page shows the
+// company; HK per-symbol filings (HKEXnews) aren't wired yet.
+func (a *HKAdapter) Filings(ctx context.Context, ticker string) (store.Security, []store.Filing, bool, error) {
+	e, ok := a.fetch(ctx, ticker)
+	if !ok || e.name == "" {
+		return store.Security{}, nil, false, nil
+	}
+	return store.Security{Ticker: ticker, Name: e.name, Market: string(market.HK)}, nil, true, nil
+}
+
+// News is not wired for HK yet.
+func (a *HKAdapter) News(ctx context.Context, ticker string) ([]store.News, error) { return nil, nil }
+
+// yahooSession maps Yahoo's marketState to our session vocabulary; known=false
+// when Yahoo didn't report one (the caller then falls back to the HK clock).
+func yahooSession(state string) (session string, known bool) {
+	switch strings.ToUpper(strings.TrimSpace(state)) {
+	case "REGULAR":
+		return "regular", true
+	case "PRE", "PREPRE":
+		return "pre", true
+	case "POST", "POSTPOST":
+		return "post", true
+	case "CLOSED", "PRECLOSE", "POSTCLOSE":
+		return "closed", true
+	default:
+		return "", false
+	}
+}
+
+// hkClockSession approximates the HK session from the wall clock when Yahoo
+// omits a marketState. It ignores the lunch break and public holidays — the
+// badge is informational; the price and change are exact regardless.
+func hkClockSession(now time.Time) string {
+	loc, err := time.LoadLocation("Asia/Hong_Kong")
+	if err != nil {
+		return "closed"
+	}
+	t := now.In(loc)
+	if t.Weekday() == time.Saturday || t.Weekday() == time.Sunday {
+		return "closed"
+	}
+	mins := t.Hour()*60 + t.Minute()
+	if mins >= 9*60+30 && mins <= 16*60 {
+		return "regular"
+	}
+	return "closed"
+}

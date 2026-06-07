@@ -43,6 +43,7 @@ import (
 	"github.com/wombow-ai/tickwind/internal/tpex"
 	"github.com/wombow-ai/tickwind/internal/twse"
 	"github.com/wombow-ai/tickwind/internal/xueqiu"
+	"github.com/wombow-ai/tickwind/internal/yahoo"
 )
 
 // maxIngestTickers caps how many distinct tickers we ingest, to control cost as
@@ -53,6 +54,11 @@ const maxIngestTickers = 200
 // ingested, so TW stock pages have data out of the box — TSMC, Hon Hai,
 // MediaTek, Delta, Chunghwa Telecom, UMC.
 var taiwanSeed = []string{"2330.TW", "2317.TW", "2454.TW", "2308.TW", "2412.TW", "2303.TW"}
+
+// hongKongSeed is the HK names the owner follows — Tencent, Zhipu / Z.ai (listed
+// as "Knowledge Atlas") and MiniMax — always ingested via the owner-authorized
+// (gray, delayed) Yahoo quote adapter. Values are Yahoo 4-digit .HK codes.
+var hongKongSeed = []string{"0700.HK", "2513.HK", "0100.HK"}
 
 // koreaSeed is the two KR large-caps the owner follows — Samsung Electronics and
 // SK Hynix — ingested only when Korea is enabled, so their pages have data the
@@ -131,6 +137,9 @@ func main() {
 		for _, t := range taiwanSeed { // always-on TW large-caps
 			add(t)
 		}
+		for _, t := range hongKongSeed { // always-on HK names (Yahoo delayed quotes)
+			add(t)
+		}
 		for _, t := range koreaSeedActive { // KR large-caps when Korea is enabled
 			add(t)
 		}
@@ -164,6 +173,7 @@ func main() {
 	// below when Alpaca is enabled.
 	marketAdapters := map[market.Market]ingest.MarketAdapter{
 		market.TW: ingest.NewTWAdapter(twse.New(), tpex.New()),
+		market.HK: ingest.NewHKAdapter(yahoo.New()), // gray, owner-authorized Yahoo delayed quotes
 	}
 	// Korea is opt-in via a free KRX key (DART key adds filings); when set, the
 	// KR adapter + seed activate and KOSPI/KOSDAQ go live with no further change.
@@ -175,6 +185,7 @@ func main() {
 	scheduler.SetAdapters(marketAdapters)
 	go scheduler.Run(ctx)
 	log.Info("taiwan market enabled (TWSE + TPEx EOD)", "seed", len(taiwanSeed))
+	log.Info("hong kong market enabled (Yahoo delayed quotes — gray source)", "seed", len(hongKongSeed))
 
 	// Guru-watch rail: curated finance-KOL newsletters (public RSS) → the tickers
 	// they mention. Needs no API key, so it always runs (independent of prices).
