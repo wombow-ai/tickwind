@@ -19,12 +19,14 @@ import (
 	"github.com/wombow-ai/tickwind/internal/auth"
 	"github.com/wombow-ai/tickwind/internal/bluesky"
 	"github.com/wombow-ai/tickwind/internal/config"
+	"github.com/wombow-ai/tickwind/internal/dart"
 	"github.com/wombow-ai/tickwind/internal/edgar"
 	"github.com/wombow-ai/tickwind/internal/enrich"
 	"github.com/wombow-ai/tickwind/internal/events"
 	"github.com/wombow-ai/tickwind/internal/finnhub"
 	"github.com/wombow-ai/tickwind/internal/guru"
 	"github.com/wombow-ai/tickwind/internal/ingest"
+	"github.com/wombow-ai/tickwind/internal/krx"
 	"github.com/wombow-ai/tickwind/internal/market"
 	"github.com/wombow-ai/tickwind/internal/opportunity"
 	"github.com/wombow-ai/tickwind/internal/reddit"
@@ -51,6 +53,10 @@ const maxIngestTickers = 200
 // ingested, so TW stock pages have data out of the box — TSMC, Hon Hai,
 // MediaTek, Delta, Chunghwa Telecom, UMC.
 var taiwanSeed = []string{"2330.TW", "2317.TW", "2454.TW", "2308.TW", "2412.TW", "2303.TW"}
+
+// koreaSeed is a few KR large-caps (Samsung, SK Hynix, Hyundai Motor) ingested
+// only when Korea is enabled, so KR pages have data the moment the keys are set.
+var koreaSeed = []string{"005930.KS", "000660.KS", "005380.KS"}
 
 func main() {
 	log := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
@@ -104,6 +110,7 @@ func main() {
 
 	// Tickers to ingest = the default set (always available for public pages)
 	// ∪ every user's watchlist, deduped and capped.
+	var koreaSeedActive []string // populated below when Korea is enabled
 	ingestTickers := func(ctx context.Context) []string {
 		seen := make(map[string]struct{})
 		var out []string
@@ -121,6 +128,9 @@ func main() {
 			add(t)
 		}
 		for _, t := range taiwanSeed { // always-on TW large-caps
+			add(t)
+		}
+		for _, t := range koreaSeedActive { // KR large-caps when Korea is enabled
 			add(t)
 		}
 		if all, err := st.AllWatchlistTickers(ctx); err != nil {
@@ -153,6 +163,13 @@ func main() {
 	// below when Alpaca is enabled.
 	marketAdapters := map[market.Market]ingest.MarketAdapter{
 		market.TW: ingest.NewTWAdapter(twse.New(), tpex.New()),
+	}
+	// Korea is opt-in via a free KRX key (DART key adds filings); when set, the
+	// KR adapter + seed activate and KOSPI/KOSDAQ go live with no further change.
+	if krxClient := krx.New(cfg.KRXAPIKey); krxClient.Enabled() {
+		marketAdapters[market.KR] = ingest.NewKRAdapter(krxClient, dart.New(cfg.OpenDARTKey))
+		koreaSeedActive = koreaSeed
+		log.Info("korea market enabled (KRX + OpenDART)", "dart_filings", cfg.OpenDARTKey != "")
 	}
 	scheduler.SetAdapters(marketAdapters)
 	go scheduler.Run(ctx)

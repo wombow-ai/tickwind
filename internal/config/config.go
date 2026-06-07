@@ -47,6 +47,12 @@ type Config struct {
 	// 25 requests/day, so the client self-budgets + caches. Empty disables it.
 	AlphaVantageKey string
 
+	// Korea markets (optional). KRXAPIKey enables KOSPI/KOSDAQ EOD prices via the
+	// KRX Open API; OpenDARTKey adds KR filings. Both free; KRX is required for
+	// Korea, DART is an add-on. Empty → Korea disabled.
+	KRXAPIKey   string
+	OpenDARTKey string
+
 	// OpportunityBackfillDays seeds the Opportunity board with this many days of
 	// SEC Form-4 history on startup (it then accumulates forward to a 30d window).
 	// Higher = a fuller initial board but a longer startup sweep.
@@ -90,6 +96,8 @@ func Load() Config {
 		BlueskyHandle:           env("BLUESKY_HANDLE", ""),
 		BlueskyAppPassword:      env("BLUESKY_APP_PASSWORD", ""),
 		AlphaVantageKey:         env("ALPHAVANTAGE_API_KEY", ""),
+		KRXAPIKey:               env("KRX_API_KEY", ""),
+		OpenDARTKey:             env("OPENDART_API_KEY", ""),
 		OpportunityBackfillDays: envInt("OPPORTUNITY_BACKFILL_DAYS", 3),
 		LLMAPIKey:               env("LLM_API_KEY", ""),
 		LLMBaseURL:              env("LLM_BASE_URL", ""),

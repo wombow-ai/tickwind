@@ -5,6 +5,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/wombow-ai/tickwind/internal/dart"
+	"github.com/wombow-ai/tickwind/internal/krx"
 	"github.com/wombow-ai/tickwind/internal/market"
 	"github.com/wombow-ai/tickwind/internal/store"
 	"github.com/wombow-ai/tickwind/internal/symbols"
@@ -106,3 +108,94 @@ func (a *TWAdapter) Filings(ctx context.Context, ticker string) (store.Security,
 
 // News is not available for TW yet.
 func (a *TWAdapter) News(ctx context.Context, ticker string) ([]store.News, error) { return nil, nil }
+
+// krxClient / dartClient are the subsets of the KR clients the adapter needs.
+type krxClient interface {
+	EODQuotes(ctx context.Context) (map[string]store.Quote, error)
+	Companies(ctx context.Context) ([]symbols.Symbol, error)
+}
+type dartClient interface {
+	CorpCodeMap(ctx context.Context) (map[string]string, error)
+	RecentFilings(ctx context.Context, ticker, corpCode string, limit int) ([]store.Filing, error)
+}
+
+// KRAdapter serves Korea EOD prices + names (KRX) and filings (OpenDART) for
+// KOSPI (.KS) + KOSDAQ (.KQ). Quotes/names are cached hourly (one KRX call per
+// board prices the whole market); the corp-code map (ticker → DART id) is
+// fetched once (it changes rarely). Filings come from OpenDART when keyed.
+type KRAdapter struct {
+	krx  krxClient
+	dart dartClient
+	ttl  time.Duration
+
+	mu     sync.Mutex
+	quotes map[string]store.Quote
+	names  map[string]string
+	corp   map[string]string // 6-digit stock code → DART corp_code
+	at     time.Time
+}
+
+// NewKRAdapter builds the Korea adapter from the KRX + OpenDART clients.
+func NewKRAdapter(k *krx.Client, d *dart.Client) *KRAdapter {
+	return &KRAdapter{krx: k, dart: d, ttl: time.Hour}
+}
+
+// Market identifies this adapter's venue.
+func (a *KRAdapter) Market() market.Market { return market.KR }
+
+func (a *KRAdapter) ensureFresh(ctx context.Context) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if len(a.corp) == 0 { // corp codes change rarely → fetch once
+		if m, err := a.dart.CorpCodeMap(ctx); err == nil && len(m) > 0 {
+			a.corp = m
+		}
+	}
+	if len(a.quotes) > 0 && time.Since(a.at) < a.ttl {
+		return
+	}
+	quotes, err := a.krx.EODQuotes(ctx)
+	if err != nil || len(quotes) == 0 {
+		return // keep last good
+	}
+	names := make(map[string]string)
+	if cos, err := a.krx.Companies(ctx); err == nil {
+		for _, c := range cos {
+			names[c.Ticker] = c.Name
+		}
+	}
+	a.quotes, a.names, a.at = quotes, names, time.Now()
+}
+
+// Quote returns the cached EOD quote for ticker (ok=false if not listed).
+func (a *KRAdapter) Quote(ctx context.Context, ticker string) (store.Quote, bool, error) {
+	a.ensureFresh(ctx)
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	q, ok := a.quotes[ticker]
+	return q, ok, nil
+}
+
+// Filings returns the Security (name + market) and, when OpenDART is keyed and
+// the ticker maps to a corp_code, its recent disclosures.
+func (a *KRAdapter) Filings(ctx context.Context, ticker string) (store.Security, []store.Filing, bool, error) {
+	a.ensureFresh(ctx)
+	a.mu.Lock()
+	name := a.names[ticker]
+	corp := a.corp[market.Base(ticker)]
+	a.mu.Unlock()
+	if name == "" {
+		return store.Security{}, nil, false, nil
+	}
+	sec := store.Security{Ticker: ticker, Name: name, Market: string(market.KR)}
+	var filings []store.Filing
+	if corp != "" { // network call outside the lock
+		if f, err := a.dart.RecentFilings(ctx, ticker, corp, 25); err == nil {
+			filings = f
+		}
+	}
+	return sec, filings, true, nil
+}
+
+// News is not wired for KR yet.
+func (a *KRAdapter) News(ctx context.Context, ticker string) ([]store.News, error) { return nil, nil }
