@@ -131,6 +131,7 @@ const dict: Record<Lang, Record<string, string>> = {
     'events.empty': 'No upcoming events',
     'events.emptySub': 'Check back soon.',
     'events.high': 'High',
+    'events.all': 'All',
     'events.footer':
       'Sources: BLS, Federal Reserve + curated. Times in your local zone. Not investment advice.',
     // topics + shared states
@@ -204,6 +205,7 @@ const dict: Record<Lang, Record<string, string>> = {
     'events.empty': '暂无即将到来的事件',
     'events.emptySub': '稍后再来看看。',
     'events.high': '重要',
+    'events.all': '全部',
     'events.footer': '来源：BLS、美联储 + 精选。时间按你的本地时区显示。非投资建议。',
     // topics + shared states
     'topics.title': '热点话题',
