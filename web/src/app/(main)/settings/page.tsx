@@ -3,6 +3,7 @@
 import {LogOut, Moon, Sun} from 'lucide-react';
 import Link from 'next/link';
 import {useAuth} from '@/lib/auth';
+import {useT} from '@/lib/i18n';
 import {useTheme} from '@/lib/theme';
 import {btnPrimary, cx, tok} from '@/lib/ui';
 
@@ -11,6 +12,7 @@ export default function SettingsPage() {
   const {user, loading, signOut} = useAuth();
   const {dark, toggle} = useTheme();
   const t = tok(dark);
+  const tr = useT();
 
   if (loading) {
     return <div className={cx('h-40 rounded-3xl border', t.card, t.border, t.skel)} />;
@@ -26,10 +28,8 @@ export default function SettingsPage() {
           t.soft,
         )}
       >
-        <h1 className={cx('text-[18px] font-bold', t.text)}>Sign in to continue</h1>
-        <p className={cx('mt-1.5 text-[13.5px]', t.sub)}>
-          Your settings live with your account.
-        </p>
+        <h1 className={cx('text-[18px] font-bold', t.text)}>{tr('settings.signInTitle')}</h1>
+        <p className={cx('mt-1.5 text-[13.5px]', t.sub)}>{tr('settings.signInSub')}</p>
         <Link
           href="/login"
           className={cx(
@@ -37,7 +37,7 @@ export default function SettingsPage() {
             btnPrimary(dark),
           )}
         >
-          Log in
+          {tr('nav.login')}
         </Link>
       </div>
     );
@@ -46,12 +46,12 @@ export default function SettingsPage() {
   return (
     <div className="mx-auto max-w-xl">
       <h1 className={cx('mb-6 text-[26px] font-bold tracking-tight', t.text)}>
-        Settings
+        {tr('nav.settings')}
       </h1>
 
       <section className={cx('rounded-3xl border p-6', t.card, t.border, t.soft)}>
         <h2 className={cx('text-[13px] font-semibold uppercase tracking-wide', t.faint)}>
-          Account
+          {tr('footer.account')}
         </h2>
         <div className="mt-3 flex items-center gap-3">
           <span
@@ -64,20 +64,20 @@ export default function SettingsPage() {
             <p className={cx('truncate text-[14px] font-semibold', t.text)}>
               {user.email}
             </p>
-            <p className={cx('text-[12px]', t.faint)}>Signed in</p>
+            <p className={cx('text-[12px]', t.faint)}>{tr('settings.signedIn')}</p>
           </div>
         </div>
       </section>
 
       <section className={cx('mt-5 rounded-3xl border p-6', t.card, t.border, t.soft)}>
         <h2 className={cx('text-[13px] font-semibold uppercase tracking-wide', t.faint)}>
-          Appearance
+          {tr('settings.appearance')}
         </h2>
         <div className="mt-3 flex items-center justify-between">
           <div>
-            <p className={cx('text-[14px] font-semibold', t.text)}>Theme</p>
+            <p className={cx('text-[14px] font-semibold', t.text)}>{tr('settings.theme')}</p>
             <p className={cx('text-[12.5px]', t.sub)}>
-              {dark ? 'Dark' : 'Light'} — switch any time.
+              {dark ? tr('settings.themeDark') : tr('settings.themeLight')} {tr('settings.themeHint')}
             </p>
           </div>
           <button
@@ -89,7 +89,7 @@ export default function SettingsPage() {
             )}
           >
             {dark ? <Sun size={15} /> : <Moon size={15} />}
-            {dark ? 'Light' : 'Dark'}
+            {dark ? tr('settings.themeLight') : tr('settings.themeDark')}
           </button>
         </div>
       </section>
@@ -102,7 +102,7 @@ export default function SettingsPage() {
           dark ? 'text-rose-400 hover:bg-slate-800' : 'text-rose-500 hover:bg-rose-50',
         )}
       >
-        <LogOut size={15} /> Sign out
+        <LogOut size={15} /> {tr('nav.signout')}
       </button>
     </div>
   );
