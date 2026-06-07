@@ -27,6 +27,7 @@ import {
   type Security,
 } from '@/lib/api';
 import {POPULAR_TICKERS} from '@/lib/config';
+import {useT} from '@/lib/i18n';
 import {useDark} from '@/lib/theme';
 import {cx, timeAgo, tok} from '@/lib/ui';
 import {useQuotes} from '@/lib/useQuotes';
@@ -61,6 +62,7 @@ function money(v: number): string {
 export function HomeHub() {
   const dark = useDark();
   const t = tok(dark);
+  const tr = useT();
   const tickers = useMemo(() => [...POPULAR_TICKERS], []);
   const tickerKey = tickers.join(',');
 
@@ -106,11 +108,10 @@ export function HomeHub() {
     <div>
       <header className="mb-5">
         <h1 className={cx('text-[26px] font-bold tracking-tight', t.text)}>
-          Markets today
+          {tr('home.title')}
         </h1>
         <p className={cx('mt-1 text-[13.5px]', t.sub)}>
-          Live prices, then the trends, news and chatter across the market — all
-          in one place.
+          {tr('home.subtitle')}
         </p>
       </header>
 
@@ -133,13 +134,13 @@ export function HomeHub() {
       <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
         <ModuleCard
           t={t}
-          title="Hot stocks"
+          title={tr('mod.hotStocks')}
           href="/hot"
-          seeAll="Full board"
+          seeAll={tr('mod.fullBoard')}
           icon={<Flame size={15} className={dark ? 'text-amber-300' : 'text-amber-500'} />}
         >
           {hot.length === 0 ? (
-            <CardEmpty t={t} label="No data yet" />
+            <CardEmpty t={t} label={tr('mod.noData')} />
           ) : (
             hot.map((s, i) => (
               <Link
@@ -169,13 +170,13 @@ export function HomeHub() {
 
         <ModuleCard
           t={t}
-          title="Opportunity"
+          title={tr('mod.opportunity')}
           href="/opportunities"
-          seeAll="Full board"
+          seeAll={tr('mod.fullBoard')}
           icon={<Sparkles size={15} className={dark ? 'text-sky-300' : 'text-sky-600'} />}
         >
           {opps.length === 0 ? (
-            <CardEmpty t={t} label="No signals yet" />
+            <CardEmpty t={t} label={tr('mod.noSignals')} />
           ) : (
             opps.map((s, i) => (
               <Link
@@ -207,13 +208,13 @@ export function HomeHub() {
 
         <ModuleCard
           t={t}
-          title="Guru-watch"
+          title={tr('mod.guru')}
           href="/opportunities"
-          seeAll="See all"
+          seeAll={tr('mod.seeAll')}
           icon={<Mic size={15} className={dark ? 'text-violet-300' : 'text-violet-600'} />}
         >
           {gurus.length === 0 ? (
-            <CardEmpty t={t} label="No posts yet" />
+            <CardEmpty t={t} label={tr('mod.noPosts')} />
           ) : (
             gurus.map((g, i) => (
               <a
@@ -249,13 +250,13 @@ export function HomeHub() {
       <div className="mt-5 grid gap-5 sm:grid-cols-2">
         <ModuleCard
           t={t}
-          title="News"
+          title={tr('mod.news')}
           href="/news"
-          seeAll="More news"
+          seeAll={tr('mod.moreNews')}
           icon={<Newspaper size={15} className={dark ? 'text-teal-300' : 'text-teal-600'} />}
         >
           {news.length === 0 ? (
-            <CardEmpty t={t} label="No news yet" />
+            <CardEmpty t={t} label={tr('mod.noNews')} />
           ) : (
             news.map((n, i) => (
               <a
@@ -281,15 +282,15 @@ export function HomeHub() {
 
         <ModuleCard
           t={t}
-          title="Discussion"
+          title={tr('mod.discussion')}
           href="/discussion"
-          seeAll="Join in"
+          seeAll={tr('mod.joinIn')}
           icon={
             <MessageSquare size={15} className={dark ? 'text-teal-300' : 'text-teal-600'} />
           }
         >
           {posts.length === 0 ? (
-            <CardEmpty t={t} label="No chatter yet" />
+            <CardEmpty t={t} label={tr('mod.noChatter')} />
           ) : (
             posts.map((p, i) => (
               <div

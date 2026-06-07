@@ -5,6 +5,7 @@ import Link from 'next/link';
 import {usePathname, useRouter} from 'next/navigation';
 import {useEffect, useRef, useState} from 'react';
 import {useAuth} from '@/lib/auth';
+import {useLang, useT} from '@/lib/i18n';
 import {useTheme} from '@/lib/theme';
 import {btnPrimary, cx, tok} from '@/lib/ui';
 import {Logo} from '@/components/ui/atoms';
@@ -24,6 +25,8 @@ export function TopNav() {
   const {dark, toggle} = useTheme();
   const {user, signOut} = useAuth();
   const t = tok(dark);
+  const tr = useT();
+  const {lang, toggle: toggleLang} = useLang();
   const router = useRouter();
   const pathname = usePathname();
   const [menu, setMenu] = useState(false);
@@ -56,7 +59,7 @@ export function TopNav() {
           <Logo size={28} />
         </Link>
 
-        <SearchBox onSelect={go} className="ml-1 hidden w-56 sm:block" />
+        <SearchBox onSelect={go} placeholder={tr('nav.search')} className="ml-1 hidden w-56 sm:block" />
 
         <nav className="hidden items-center gap-1 md:flex">
           <Link
@@ -67,7 +70,7 @@ export function TopNav() {
               pathname === '/' ? t.accentText : t.sub,
             )}
           >
-            Markets
+            {tr('nav.markets')}
           </Link>
           <Link
             href="/hot"
@@ -77,7 +80,7 @@ export function TopNav() {
               pathname === '/hot' ? t.accentText : t.sub,
             )}
           >
-            Hot
+            {tr('nav.hot')}
           </Link>
           <Link
             href="/news"
@@ -87,7 +90,7 @@ export function TopNav() {
               pathname === '/news' ? t.accentText : t.sub,
             )}
           >
-            News
+            {tr('nav.news')}
           </Link>
           <Link
             href="/opportunities"
@@ -97,7 +100,7 @@ export function TopNav() {
               pathname === '/opportunities' ? t.accentText : t.sub,
             )}
           >
-            Opportunities
+            {tr('nav.opportunities')}
           </Link>
           <Link
             href="/events"
@@ -107,7 +110,7 @@ export function TopNav() {
               pathname === '/events' ? t.accentText : t.sub,
             )}
           >
-            Events
+            {tr('nav.events')}
           </Link>
           {user && (
             <Link
@@ -118,7 +121,7 @@ export function TopNav() {
                 pathname === '/watchlist' ? t.accentText : t.sub,
               )}
             >
-              Watchlist
+              {tr('nav.watchlist')}
             </Link>
           )}
         </nav>
@@ -145,9 +148,20 @@ export function TopNav() {
               'hover:opacity-80',
             )}
           >
-            What&apos;s new
+            {tr('nav.whatsnew')}
           </Link>
 
+          <button
+            onClick={toggleLang}
+            aria-label="Switch language / 切换语言"
+            className={cx(
+              'inline-flex h-9 min-w-9 items-center justify-center rounded-full border px-2 text-[12px] font-semibold',
+              t.border,
+              t.ghost,
+            )}
+          >
+            {lang === 'zh' ? 'EN' : '中'}
+          </button>
           <button
             onClick={toggle}
             aria-label={dark ? 'Switch to light theme' : 'Switch to dark theme'}
@@ -170,7 +184,7 @@ export function TopNav() {
                   t.ghost,
                 )}
               >
-                Log in
+                {tr('nav.login')}
               </Link>
               <Link
                 href="/signup"
@@ -179,7 +193,7 @@ export function TopNav() {
                   btnPrimary(dark),
                 )}
               >
-                Sign up
+                {tr('nav.signup')}
               </Link>
             </>
           ) : (
@@ -202,6 +216,7 @@ export function TopNav() {
             }}
             autoFocus
             size="md"
+            placeholder={tr('nav.search')}
           />
         </div>
       )}
@@ -222,6 +237,7 @@ function AccountMenu({
 }) {
   const {dark} = useTheme();
   const t = tok(dark);
+  const tr = useT();
   const ref = useRef<HTMLDivElement>(null);
 
   return (
@@ -270,7 +286,7 @@ function AccountMenu({
                 t.ghost,
               )}
             >
-              <Star size={15} className={t.sub} /> My watchlist
+              <Star size={15} className={t.sub} /> {tr('nav.myWatchlist')}
             </Link>
             <Link
               href="/settings"
@@ -281,7 +297,7 @@ function AccountMenu({
                 t.ghost,
               )}
             >
-              <Settings size={15} className={t.sub} /> Settings
+              <Settings size={15} className={t.sub} /> {tr('nav.settings')}
             </Link>
             <button
               onClick={() => {
@@ -295,7 +311,7 @@ function AccountMenu({
                   : 'text-rose-500 hover:bg-rose-50',
               )}
             >
-              <LogOut size={15} /> Sign out
+              <LogOut size={15} /> {tr('nav.signout')}
             </button>
           </div>
         </>

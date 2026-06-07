@@ -2,6 +2,7 @@ import type {Metadata} from 'next';
 import './globals.css';
 import {AuthProvider} from '@/lib/auth';
 import {APP_NAME, APP_TAGLINE, SITE_URL} from '@/lib/config';
+import {langNoFlashScript} from '@/lib/i18n';
 import {ThemeProvider, themeNoFlashScript} from '@/lib/theme';
 import {ToastProvider} from '@/components/ui/Toast';
 
@@ -37,8 +38,9 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
-        {/* Apply the persisted theme before paint to avoid a flash. */}
+        {/* Apply the persisted theme + language before paint to avoid a flash. */}
         <script dangerouslySetInnerHTML={{__html: themeNoFlashScript}} />
+        <script dangerouslySetInnerHTML={{__html: langNoFlashScript}} />
       </head>
       <body className="antialiased">
         <ThemeProvider>
