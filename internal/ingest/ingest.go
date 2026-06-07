@@ -291,25 +291,43 @@ type wsbSource interface {
 	WallStreetBets(ctx context.Context, limit int) ([]store.HotStock, error)
 }
 
-// wsbMinMentions floors the WSB board to genuinely-discussed names.
+// wsbMinMentions floors the WSB board to genuinely-discussed names before we rank
+// by rank-climb, so a thin micro-cap can't "trend" off one stray mention.
 const wsbMinMentions = 15
 
-// buildWSBBoard ranks the WSB board by RISING buzz (24h mention momentum, shrunk
-// by volume) rather than raw volume — so the board surfaces what's *gaining*
-// traction on r/wallstreetbets (mostly up-trending) instead of perennially-loud,
-// cooling mega-caps. Declining names (growth floored at 0) sort to the bottom,
-// tie-broken by mentions. Change is set for the UI's momentum arrow.
+// buildWSBBoard ranks the WSB board by how far each ticker has CLIMBED the
+// r/wallstreetbets leaderboard over 24h (rank_24h_ago − rank), not by mention
+// growth. ApeWisdom's absolute mention counts are an intraday accumulation
+// (day-so-far vs a full prior-day snapshot), so mention deltas read almost
+// uniformly negative — which made the board look "all declining". Leaderboard
+// rank is normalised, so its 24h movement is a real, mixed up/down signal.
+// Climbers sort first; flat flagships (no rank change) fall to the mentions
+// tie-break; sliders sort last. Change carries the relative rank improvement so
+// the UI arrow shows a true green/red mix instead of all-red.
 func buildWSBBoard(raw []store.HotStock) []store.HotStock {
 	now := time.Now().UTC()
 	for i := range raw {
-		if prev := raw[i].MentionsPrev; prev > 0 {
-			raw[i].Change = float64(raw[i].Mentions-prev) / float64(prev)
+		if rp := raw[i].RankPrev; rp > 0 && raw[i].Rank > 0 {
+			raw[i].Change = float64(rp-raw[i].Rank) / float64(rp)
+		} else {
+			raw[i].Change = 0 // new/unknown → neutral (no arrow)
 		}
 		raw[i].UpdatedAt = now
 	}
 	return rankBoard(raw, "wsb", wsbMinMentions, func(h store.HotStock) float64 {
-		return surgeScore(h.Mentions, h.MentionsPrev)
+		return rankClimb(h.Rank, h.RankPrev)
 	})
+}
+
+// rankClimb scores a ticker's 24h movement UP the source leaderboard: positive =
+// climbed (rank number got smaller), 0 = flat or new/unknown. Volume-independent,
+// so it surfaces names gaining attention regardless of the mention-count
+// accumulation artifact.
+func rankClimb(rank, rankPrev int) float64 {
+	if rankPrev <= 0 || rank <= 0 {
+		return 0
+	}
+	return float64(rankPrev - rank)
 }
 
 // buildBoards derives the leaderboards from raw ApeWisdom entries:

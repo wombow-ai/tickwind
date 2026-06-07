@@ -176,6 +176,8 @@ func (c *Client) WallStreetBets(ctx context.Context, limit int) ([]store.HotStoc
 		out = append(out, store.HotStock{
 			Ticker:       tk,
 			Name:         html.UnescapeString(r.Name),
+			Rank:         r.Rank,
+			RankPrev:     r.Rank24hAgo,
 			Mentions:     r.Mentions,
 			MentionsPrev: r.Mentions24hAgo,
 			Upvotes:      r.Upvotes,

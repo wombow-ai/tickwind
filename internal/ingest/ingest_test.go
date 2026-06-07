@@ -75,6 +75,38 @@ func TestRankBoardFloorAndOrder(t *testing.T) {
 	}
 }
 
+func TestBuildWSBBoardRanksByRankClimb(t *testing.T) {
+	// ApeWisdom mention counts are an intraday accumulation, so the WSB board
+	// ranks by leaderboard rank-climb, not mention growth. Climbers sort first,
+	// Change carries the relative rank improvement (drives the UI arrow), and the
+	// mention floor still applies.
+	raw := []store.HotStock{
+		{Ticker: "FLAT", Rank: 1, RankPrev: 1, Mentions: 85, MentionsPrev: 600}, // flagship, no climb
+		{Ticker: "UP", Rank: 12, RankPrev: 33, Mentions: 20, MentionsPrev: 30},  // climbed +21
+		{Ticker: "DN", Rank: 5, RankPrev: 4, Mentions: 50, MentionsPrev: 300},   // slid -1
+		{Ticker: "THIN", Rank: 40, RankPrev: 90, Mentions: 5, MentionsPrev: 1},  // big climb but below floor
+	}
+	board := buildWSBBoard(raw)
+
+	if len(board) != 3 { // THIN floored out
+		t.Fatalf("wsb len=%d want 3 (THIN floored out)", len(board))
+	}
+	for i, tk := range []string{"UP", "FLAT", "DN"} { // climber, then flat (mentions tie-break), then slider
+		if board[i].Ticker != tk || board[i].Rank != i+1 || board[i].Board != "wsb" {
+			t.Errorf("board[%d]=%+v want %s rank%d board=wsb", i, board[i], tk, i+1)
+		}
+	}
+	if !approx(board[0].Change, float64(33-12)/33) { // UP climbed → positive (green)
+		t.Errorf("UP change=%v want %v", board[0].Change, float64(33-12)/33)
+	}
+	if board[1].Change != 0 { // FLAT unchanged → no arrow
+		t.Errorf("FLAT change=%v want 0", board[1].Change)
+	}
+	if board[2].Change >= 0 { // DN slid → negative (red)
+		t.Errorf("DN change=%v want negative", board[2].Change)
+	}
+}
+
 func TestBuildBoards(t *testing.T) {
 	raw := []store.HotStock{
 		{Ticker: "AAA", Mentions: 100, MentionsPrev: 100},

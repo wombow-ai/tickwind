@@ -96,9 +96,10 @@ type HotStock struct {
 	Ticker       string    `json:"ticker"`
 	Name         string    `json:"name"`
 	Rank         int       `json:"rank"`          // 1 = top of this board
+	RankPrev     int       `json:"rank_prev"`     // source-board rank 24h earlier (0 = new/unknown); transient input for rank-climb
 	Mentions     int       `json:"mentions"`      // discussion volume in the window
 	MentionsPrev int       `json:"mentions_prev"` // same window, 24h earlier
-	Change       float64   `json:"change"`        // mention growth vs 24h ago (0.2 = +20%)
+	Change       float64   `json:"change"`        // momentum vs 24h ago: mention growth, or board rank-climb (WSB)
 	Upvotes      int       `json:"upvotes"`
 	Score        float64   `json:"score"` // this board's ranking score
 	UpdatedAt    time.Time `json:"updated_at"`
