@@ -39,6 +39,17 @@ type Quote struct {
 	At        time.Time `json:"at"`
 }
 
+// Candle is one daily OHLC bar (+ volume) for the candlestick chart. Time is the
+// bar's date (UTC midnight).
+type Candle struct {
+	Time   time.Time `json:"time"`
+	Open   float64   `json:"open"`
+	High   float64   `json:"high"`
+	Low    float64   `json:"low"`
+	Close  float64   `json:"close"`
+	Volume float64   `json:"volume"`
+}
+
 // News is a company-news article for a security.
 type News struct {
 	Ticker    string    `json:"ticker"`

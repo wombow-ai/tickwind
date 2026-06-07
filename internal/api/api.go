@@ -37,11 +37,12 @@ type QuoteStream interface {
 	Subscribe() (<-chan store.Quote, func())
 }
 
-// BarSource provides recent daily closing prices for a ticker's sparkline. It
-// may return a nil slice when no data is available; nil itself disables the
-// bars endpoint (returns an empty series).
+// BarSource provides recent daily closing prices for a ticker's sparkline and
+// full OHLC candles for the K-line chart. It may return a nil slice when no data
+// is available; a nil BarSource disables both endpoints (empty series).
 type BarSource interface {
 	DailyBars(ctx context.Context, ticker string) ([]float64, error)
+	DailyCandles(ctx context.Context, ticker string) ([]store.Candle, error)
 }
 
 // TopicSource provides the latest trending-topics snapshot. nil disables the
@@ -115,6 +116,7 @@ func New(st store.Store, hub QuoteStream, enricher enrich.Enricher, verifier *au
 	mux.HandleFunc("GET /v1/stocks/{ticker}/filings", s.getFilings)
 	mux.HandleFunc("GET /v1/stocks/{ticker}/quote", s.getQuote)
 	mux.HandleFunc("GET /v1/stocks/{ticker}/bars", s.getBars)
+	mux.HandleFunc("GET /v1/stocks/{ticker}/candles", s.getCandles)
 	mux.HandleFunc("GET /v1/stocks/{ticker}/news", s.getNews)
 	mux.HandleFunc("GET /v1/stocks/{ticker}/social", s.getSocial)
 	mux.HandleFunc("GET /v1/stocks/{ticker}/signals", s.getSignals)
@@ -509,6 +511,21 @@ func (s *Server) getBars(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ticker": ticker, "closes": closes})
+}
+
+// getCandles returns daily OHLC candles for the K-line chart. Degrades to an
+// empty series (HTTP 200) when bars are unavailable.
+func (s *Server) getCandles(w http.ResponseWriter, r *http.Request) {
+	ticker := strings.ToUpper(strings.TrimSpace(r.PathValue("ticker")))
+	candles := []store.Candle{}
+	if s.bars != nil {
+		if got, err := s.bars.DailyCandles(r.Context(), ticker); err != nil {
+			s.log.Debug("candles fetch failed", "ticker", ticker, "err", err)
+		} else if got != nil {
+			candles = got
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ticker": ticker, "candles": candles})
 }
 
 // maxBarsBatch caps how many tickers one batched request (bars/news/social)

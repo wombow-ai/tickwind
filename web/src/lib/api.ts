@@ -413,6 +413,34 @@ export function getBars(
   );
 }
 
+/** One daily OHLC candle (+ volume) for the K-line chart. */
+export interface Candle {
+  /** RFC3339 bar date. */
+  time: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+}
+
+/** Envelope returned by `GET /v1/stocks/{ticker}/candles`. */
+export interface CandlesResponse {
+  ticker: string;
+  candles: Candle[];
+}
+
+/** Fetches daily OHLC candles (~260 sessions) for the K-line chart. */
+export function getCandles(
+  ticker: string,
+  signal?: AbortSignal,
+): Promise<CandlesResponse> {
+  return getJson<CandlesResponse>(
+    `/v1/stocks/${encodeURIComponent(normalizeTicker(ticker))}/candles`,
+    signal,
+  );
+}
+
 /** Envelope returned by `GET /v1/bars?tickers=...`. */
 export interface BarsBatchResponse {
   /** Map from ticker to its recent daily closes (oldest first). */

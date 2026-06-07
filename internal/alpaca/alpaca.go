@@ -148,6 +148,62 @@ func (c *Client) DailyBars(ctx context.Context, ticker string, limit int) ([]flo
 	return closes, nil
 }
 
+// ohlcBar is a full daily bar (timestamp + OHLC + volume) for the candlestick chart.
+type ohlcBar struct {
+	Time   time.Time `json:"t"`
+	Open   float64   `json:"o"`
+	High   float64   `json:"h"`
+	Low    float64   `json:"l"`
+	Close  float64   `json:"c"`
+	Volume float64   `json:"v"`
+}
+
+type ohlcResp struct {
+	Bars []ohlcBar `json:"bars"`
+}
+
+// DailyOHLC returns up to limit recent daily OHLC bars (+ volume), oldest first,
+// for the K-line chart. Split-adjusted. Returns a nil slice (not an error) when
+// there's no data.
+func (c *Client) DailyOHLC(ctx context.Context, ticker string, limit int) ([]store.Candle, error) {
+	if limit <= 0 {
+		limit = 250
+	}
+	start := time.Now().In(c.loc).AddDate(0, 0, -(limit*2 + 30)).Format("2006-01-02")
+	url := fmt.Sprintf(
+		"%s/v2/stocks/%s/bars?timeframe=1Day&start=%s&limit=%d&sort=desc&adjustment=split&feed=%s",
+		c.dataURL, ticker, start, limit, c.feed,
+	)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("APCA-API-KEY-ID", c.keyID)
+	req.Header.Set("APCA-API-SECRET-KEY", c.secret)
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("alpaca: get ohlc %s: %w", ticker, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("alpaca: ohlc %s: %s", ticker, resp.Status)
+	}
+
+	var body ohlcResp
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		return nil, fmt.Errorf("alpaca: decode ohlc %s: %w", ticker, err)
+	}
+	out := make([]store.Candle, 0, len(body.Bars))
+	for i := len(body.Bars) - 1; i >= 0; i-- { // newest-first → oldest-first
+		b := body.Bars[i]
+		out = append(out, store.Candle{
+			Time: b.Time, Open: b.Open, High: b.High, Low: b.Low, Close: b.Close, Volume: b.Volume,
+		})
+	}
+	return out, nil
+}
+
 // Snapshots returns the latest price per symbol, fetched in bulk (the daily
 // bar's close, falling back to the previous daily bar off-hours, then the latest
 // trade). Symbols with no usable price are omitted. Batches at 100 symbols per

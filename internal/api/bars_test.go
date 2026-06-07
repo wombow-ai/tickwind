@@ -14,6 +14,7 @@ import (
 
 	"github.com/wombow-ai/tickwind/internal/auth"
 	"github.com/wombow-ai/tickwind/internal/enrich"
+	"github.com/wombow-ai/tickwind/internal/store"
 	"github.com/wombow-ai/tickwind/internal/store/memory"
 	"github.com/wombow-ai/tickwind/internal/stream"
 )
@@ -34,6 +35,10 @@ func (f *fakeBarSource) DailyBars(_ context.Context, ticker string) ([]float64, 
 	f.calls[ticker]++
 	f.mu.Unlock()
 	return f.data[ticker], nil // unknown ticker → nil, which the handler omits
+}
+
+func (f *fakeBarSource) DailyCandles(_ context.Context, _ string) ([]store.Candle, error) {
+	return nil, nil
 }
 
 func (f *fakeBarSource) distinctCalls() int {
