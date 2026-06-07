@@ -63,6 +63,13 @@ function guessMarket(ticker: string): string {
 
 const TABS_ANON = ['News', 'Discussion', 'Filings'] as const;
 const TABS_AUTH = ['News', 'Discussion', 'Saved links', 'Filings'] as const;
+// Tab keys stay English (they're the state values); only the display is translated.
+const TAB_LABELS: Record<string, string> = {
+  News: 'mod.news',
+  Discussion: 'mod.discussion',
+  'Saved links': 'stock.savedLinks',
+  Filings: 'stock.filings',
+};
 
 /** Full per-stock view: live header, add-to-watchlist, and source feeds. */
 export function StockView({ticker}: {ticker: string}) {
@@ -453,7 +460,7 @@ export function StockView({ticker}: {ticker: string}) {
                   : t.sub,
               )}
             >
-              {tb}
+              {tr(TAB_LABELS[tb] ?? tb)}
             </button>
           ))}
         </div>
@@ -465,8 +472,8 @@ export function StockView({ticker}: {ticker: string}) {
             feed={news}
             onRetry={loadNews}
             empty={{
-              label: 'No news yet',
-              sub: `When headlines about ${norm} appear, they'll land here first.`,
+              label: tr('mod.noNews'),
+              sub: tr('stock.noNewsSub'),
               icon: Newspaper,
             }}
             render={n => (
@@ -479,8 +486,8 @@ export function StockView({ticker}: {ticker: string}) {
             feed={social}
             onRetry={loadSocial}
             empty={{
-              label: 'No chatter right now',
-              sub: `Posts from StockTwits, Bluesky and more about ${norm} will show up here.`,
+              label: tr('mod.noChatter'),
+              sub: tr('stock.noChatterSub'),
               icon: MessageSquare,
             }}
             render={p => (
@@ -493,8 +500,8 @@ export function StockView({ticker}: {ticker: string}) {
             feed={filings}
             onRetry={loadFilings}
             empty={{
-              label: 'No recent filings',
-              sub: 'Filings appear here as soon as they hit SEC EDGAR.',
+              label: tr('stock.noFilings'),
+              sub: tr('stock.noFilingsSub'),
               icon: FileText,
             }}
             render={f => (
@@ -523,7 +530,7 @@ export function StockView({ticker}: {ticker: string}) {
               <input
                 value={clipUrl}
                 onChange={e => setClipUrl(e.target.value)}
-                placeholder="Paste an X / Xiaohongshu / TikTok link…"
+                placeholder={tr('stock.clipPlaceholder')}
                 className={cx(
                   'flex-1 bg-transparent text-[13.5px] outline-none',
                   dark
@@ -538,15 +545,15 @@ export function StockView({ticker}: {ticker: string}) {
                   btnPrimary(dark),
                 )}
               >
-                Save
+                {tr('stock.save')}
               </button>
             </form>
             <FeedList
               feed={clips}
               onRetry={loadClips}
               empty={{
-                label: 'No saved links yet',
-                sub: `Found something good elsewhere? Paste the link to clip it onto ${norm}.`,
+                label: tr('stock.noClips'),
+                sub: tr('stock.noClipsSub'),
                 icon: Link2,
               }}
               render={c => (
