@@ -220,8 +220,13 @@ Status: ✅ done · 🟡 in progress · ⬜ todo
 > work** (no pricing/payments/quote-licensing/paywalls/subscriptions). Strategy round-2's
 > monetization plan (`docs/strategy-research-2026-06.md`) is parked until the owner says go;
 > the rest of that doc (growth/SEO, positioning, engineering, legal) is in scope. Also:
-> **web-push deferred**; the dev loop runs at a **1-min cadence** (owner, 2026-06-08), is
-> **currently RUNNING**, and uses **parallel planning subagents** to scope each feature.
+> **web-push deferred**; the dev loop ran at a **1-min cadence** (owner, 2026-06-08) with parallel
+> planning subagents. **PAUSED 2026-06-09** — the owner's 9-idea batch is functionally complete (7
+> features fully live; #29 holdings UI fully live, its backend committed+tested but undeployed), and
+> the only remaining work (#29 backend rebuild, #23 FINRA) is blocked on a **VPS SSH data-transfer
+> outage** (rsync AND tar-over-ssh drop mid-stream; quick command-only SSH still works → #26 shipped
+> from already-present source). Needs an owner look at the box (load / fail2ban / sshd MaxStartups /
+> network). **Resume with `/loop`** once SSH transfer is healthy.
 
 3 parallel research agents (competitor gaps · free data sources · AI/LLM). **Convergence: the
 SEC/EDGAR backbone is the defensible, redistribution-safe lane.** Owner picks which to build:
@@ -279,8 +284,10 @@ scoped by 5 parallel planning agents (full plans in session). Priority = bugs/qu
    every data-bearing SSH transfer to the VPS (rsync AND tar-over-ssh) drops mid-stream; quick
    command-only SSH still works (that's how #26 deployed from already-present source). #29 source
    never reached the VPS.** **Frontend Holdings tab is LIVE** (commit `7a97930`, Vercel): per-stock
-   shares+avg_cost → live value & P/L; degrades to "—"/404 until the backend deploys. ⬜ left:
-   `/portfolio` page + TopNav link (frontend, can ship now); backend deploy retried each tick.
+   shares+avg_cost → live value & P/L; degrades to "—"/404 until the backend deploys. **Frontend
+   100% LIVE**: Holdings tab + `/portfolio` page & nav (commit `e6fa479`). **ONLY the backend
+   container rebuild remains — blocked on the VPS SSH transfer outage.** To finish once SSH recovers:
+   land `internal/` on the VPS → `docker compose up -d --build api` → `curl /v1/holdings` = 401.
 6. ✅ **Hot-topic → topic page** (#28) — LIVE (frontend, Option A). New `/topic/[key]` page reuses
    `/v1/topics` `related_tickers` for a stocks strip + batched topic-filtered news; `TopicsStrip`
    href flipped off `/news?topic=`. Optional later (Option B): a `GET /v1/topics/{key}` endpoint for
