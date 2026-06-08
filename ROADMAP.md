@@ -274,9 +274,13 @@ scoped by 5 parallel planning agents (full plans in session). Priority = bugs/qu
 4. ✅ **Search results page** (#27) — LIVE (frontend, Vercel). new `(main)/search/page.tsx`; gave `SearchBox` an `onSubmit` →
    `/search?q=` (replace the blind `choose(q)` Enter fallback); wire BOTH TopNav instances; render
    0/1/many states + a "Go to /stock/{Q} anyway →" escape hatch.
-5. ⬜ **Holdings/portfolio** (#29) — mirror Alerts (9 touchpoints). `store.Holding{shares,avg_cost}`
-   **upsert by (user,ticker)**, Split→User, `holdings` table; `/v1/holdings` CRUD; `HoldingsPanel`
-   on StockView + a `/portfolio` page computing value/P&L from live quotes (`useQuotes`).
+5. 🔧 **Holdings/portfolio** (#29) — **backend code done + tested + committed `cfadeea`** (store.Holding
+   upsert-by-(user,ticker), Split→User, `holdings` table, `/v1/holdings` CRUD) but **NOT deployed —
+   every data-bearing SSH transfer to the VPS (rsync AND tar-over-ssh) drops mid-stream; quick
+   command-only SSH still works (that's how #26 deployed from already-present source). #29 source
+   never reached the VPS.** **Frontend Holdings tab is LIVE** (commit `7a97930`, Vercel): per-stock
+   shares+avg_cost → live value & P/L; degrades to "—"/404 until the backend deploys. ⬜ left:
+   `/portfolio` page + TopNav link (frontend, can ship now); backend deploy retried each tick.
 6. ✅ **Hot-topic → topic page** (#28) — LIVE (frontend, Option A). New `/topic/[key]` page reuses
    `/v1/topics` `related_tickers` for a stocks strip + batched topic-filtered news; `TopicsStrip`
    href flipped off `/news?topic=`. Optional later (Option B): a `GET /v1/topics/{key}` endpoint for
