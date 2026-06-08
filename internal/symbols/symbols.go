@@ -65,6 +65,20 @@ func (idx *Index) Len() int {
 	return len(idx.all)
 }
 
+// USTickers returns every indexed US ticker (for the universe price sweep). nil-safe.
+func (idx *Index) USTickers() []string {
+	if idx == nil {
+		return nil
+	}
+	out := make([]string, 0, len(idx.all))
+	for _, s := range idx.all {
+		if s.Country == "US" {
+			out = append(out, s.Ticker)
+		}
+	}
+	return out
+}
+
 // Search returns up to limit symbols matching q, best first:
 //
 //	rank 0 exact ticker · 1 ticker prefix · 2 name-token prefix · 3 name substring

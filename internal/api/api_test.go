@@ -29,6 +29,7 @@ func newTestServer() *httptest.Server {
 		nil, // no bar source in tests
 		nil, // no topic source in tests
 		nil, // no opportunity source in tests
+		nil, // no universe source in tests
 		nil, // no guru source in tests
 		nil, // no ticker ingestor in tests
 		nil, // no symbol searcher in tests
@@ -204,7 +205,7 @@ func TestWatchlistAddTriggersIngest(t *testing.T) {
 	h := New(
 		memory.New(), stream.NewHub(), enrich.Noop{},
 		auth.NewVerifier(testSecret, ""),
-		nil, nil, nil, nil, // bars, topics, opps, gurus
+		nil, nil, nil, nil, nil, // bars, topics, opps, universe, gurus
 		ing,
 		nil, // no symbol searcher
 		nil, // no event source

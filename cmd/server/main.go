@@ -41,6 +41,7 @@ import (
 	"github.com/wombow-ai/tickwind/internal/topics"
 	"github.com/wombow-ai/tickwind/internal/tpex"
 	"github.com/wombow-ai/tickwind/internal/twse"
+	"github.com/wombow-ai/tickwind/internal/universe"
 	"github.com/wombow-ai/tickwind/internal/yahoo"
 )
 
@@ -213,6 +214,7 @@ func main() {
 	// Opportunity board (small-cap insider buys); shared cache, populated below
 	// when Alpaca prices are available (needed for market cap).
 	oppCache := opportunity.NewCache()
+	universeCache := universe.NewCache()
 
 	// bars feeds the sparkline endpoint; nil (disabled) without Alpaca creds.
 	var bars api.BarSource
@@ -228,6 +230,7 @@ func main() {
 		secClient := sec.New(cfg.EDGARUserAgent)
 		oppIngestor := ingest.NewOpportunityIngestor(st, secClient, priceClient, oppCache, 2*time.Hour, cfg.OpportunityBackfillDays, log)
 		go oppIngestor.Run(ctx)
+		go ingest.NewUniverseIngestor(priceClient, symbolCache, universeCache, cfg.UniverseSweepEvery, log).Run(ctx)
 		log.Info("opportunity board enabled (SEC insider buys)", "backfill_days", cfg.OpportunityBackfillDays)
 
 		// Alert evaluator: checks active user alerts against the latest price.
@@ -239,7 +242,7 @@ func main() {
 
 	srv := &http.Server{
 		Addr:              ":" + cfg.Port,
-		Handler:           api.New(st, hub, enricher, verifier, bars, topicCache, oppCache, guruCache, scheduler, symbolCache, eventsCache, fundCache, cfg.AdminUserIDs, log),
+		Handler:           api.New(st, hub, enricher, verifier, bars, topicCache, oppCache, universeCache, guruCache, scheduler, symbolCache, eventsCache, fundCache, cfg.AdminUserIDs, log),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 

@@ -303,6 +303,72 @@ func (c *Client) Snapshots(ctx context.Context, symbols []string) (map[string]fl
 	return out, nil
 }
 
+// SnapshotQuotes is like Snapshots but returns full quotes (price + prev-close +
+// session) per symbol — the change reference the universe price cache needs.
+// Symbols with no usable price are omitted; batches at 100/req.
+func (c *Client) SnapshotQuotes(ctx context.Context, symbols []string) (map[string]store.Quote, error) {
+	const batch = 100
+	out := make(map[string]store.Quote, len(symbols))
+	var lastErr error
+	for i := 0; i < len(symbols); i += batch {
+		end := i + batch
+		if end > len(symbols) {
+			end = len(symbols)
+		}
+		url := fmt.Sprintf("%s/v2/stocks/snapshots?symbols=%s&feed=%s",
+			c.dataURL, strings.Join(symbols[i:end], ","), c.feed)
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("APCA-API-KEY-ID", c.keyID)
+		req.Header.Set("APCA-API-SECRET-KEY", c.secret)
+
+		resp, err := c.http.Do(req)
+		if err != nil {
+			lastErr = fmt.Errorf("alpaca: get snapshot quotes: %w", err)
+			continue
+		}
+		if resp.StatusCode != http.StatusOK {
+			b, _ := io.ReadAll(io.LimitReader(resp.Body, 300))
+			resp.Body.Close()
+			lastErr = fmt.Errorf("alpaca: snapshot quotes %s: %s", resp.Status, strings.TrimSpace(string(b)))
+			continue
+		}
+		var body map[string]snapshotResp
+		err = json.NewDecoder(resp.Body).Decode(&body)
+		resp.Body.Close()
+		if err != nil {
+			lastErr = fmt.Errorf("alpaca: decode snapshot quotes: %w", err)
+			continue
+		}
+		for sym, snap := range body {
+			price := snap.DailyBar.Close
+			if price <= 0 {
+				price = snap.PrevDailyBar.Close
+			}
+			if price <= 0 {
+				price = snap.LatestTrade.Price
+			}
+			if price <= 0 {
+				continue
+			}
+			out[sym] = store.Quote{
+				Ticker:    sym,
+				Price:     price,
+				PrevClose: snap.PrevDailyBar.Close,
+				Session:   c.sessionAt(snap.LatestTrade.Timestamp),
+				Source:    "alpaca",
+				At:        snap.LatestTrade.Timestamp,
+			}
+		}
+	}
+	if len(out) == 0 && lastErr != nil {
+		return nil, lastErr
+	}
+	return out, nil
+}
+
 // sessionAt classifies a US-equity trading session for a timestamp, evaluated
 // in America/New_York. Holidays are not accounted for (best-effort, for display
 // only): pre 04:00–09:30, regular 09:30–16:00, post 16:00–20:00, otherwise

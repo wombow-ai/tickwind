@@ -62,6 +62,15 @@ type OpportunitySource interface {
 	Get() []opportunity.Stock
 }
 
+// UniverseSource is the whole-US-market quote cache (price + change reference per
+// ticker), nil-safe — powers the /v1/universe status (and later a cold-price fast
+// path + the screener).
+type UniverseSource interface {
+	Get(ticker string) (store.Quote, bool)
+	Len() int
+	UpdatedAt() time.Time
+}
+
 // GuruSource provides the latest Guru-watch rail (curated-KOL posts). nil →
 // empty list.
 type GuruSource interface {
@@ -94,6 +103,7 @@ type Server struct {
 	bars         BarSource
 	topics       TopicSource
 	opps         OpportunitySource
+	universe     UniverseSource
 	gurus        GuruSource
 	ingestor     TickerIngestor
 	symbols      SymbolSearcher
@@ -104,14 +114,14 @@ type Server struct {
 	log          *slog.Logger
 }
 
-func New(st store.Store, hub QuoteStream, enricher enrich.Enricher, verifier *auth.Verifier, bars BarSource, topicSrc TopicSource, oppSrc OpportunitySource, guruSrc GuruSource, ingestor TickerIngestor, symbolSrc SymbolSearcher, eventSrc EventSource, fundSrc FundamentalsSource, adminIDs []string, log *slog.Logger) http.Handler {
+func New(st store.Store, hub QuoteStream, enricher enrich.Enricher, verifier *auth.Verifier, bars BarSource, topicSrc TopicSource, oppSrc OpportunitySource, universeSrc UniverseSource, guruSrc GuruSource, ingestor TickerIngestor, symbolSrc SymbolSearcher, eventSrc EventSource, fundSrc FundamentalsSource, adminIDs []string, log *slog.Logger) http.Handler {
 	admins := make(map[string]bool, len(adminIDs))
 	for _, id := range adminIDs {
 		if id = strings.ToLower(strings.TrimSpace(id)); id != "" {
 			admins[id] = true
 		}
 	}
-	s := &Server{store: st, hub: hub, clip: clip.NewFetcher(), enrich: enricher, auth: verifier, bars: bars, topics: topicSrc, opps: oppSrc, gurus: guruSrc, ingestor: ingestor, symbols: symbolSrc, events: eventSrc, fundamentals: fundSrc, admins: admins, commentRL: newRateLimiter(10, 10*time.Minute), log: log}
+	s := &Server{store: st, hub: hub, clip: clip.NewFetcher(), enrich: enricher, auth: verifier, bars: bars, topics: topicSrc, opps: oppSrc, universe: universeSrc, gurus: guruSrc, ingestor: ingestor, symbols: symbolSrc, events: eventSrc, fundamentals: fundSrc, admins: admins, commentRL: newRateLimiter(10, 10*time.Minute), log: log}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", s.health)
 
@@ -153,6 +163,7 @@ func New(st store.Store, hub QuoteStream, enricher enrich.Enricher, verifier *au
 	mux.HandleFunc("GET /v1/hot", s.getHot)
 	mux.HandleFunc("GET /v1/topics", s.getTopics)
 	mux.HandleFunc("GET /v1/opportunities", s.getOpportunities)
+	mux.HandleFunc("GET /v1/universe", s.getUniverse)
 	mux.HandleFunc("GET /v1/gurus", s.getGurus)
 	mux.HandleFunc("GET /v1/search", s.getSearch)
 	mux.HandleFunc("GET /v1/events", s.getEvents)
@@ -971,6 +982,19 @@ func (s *Server) getCandles(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ticker": ticker, "candles": candles})
+}
+
+// getUniverse reports the universe price-cache status (count of pre-cached
+// tickers + last refresh); its per-stock data powers the screener. nil → count 0.
+func (s *Server) getUniverse(w http.ResponseWriter, r *http.Request) {
+	if s.universe == nil {
+		writeJSON(w, http.StatusOK, map[string]any{"count": 0})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"count":      s.universe.Len(),
+		"updated_at": s.universe.UpdatedAt(),
+	})
 }
 
 // maxBarsBatch caps how many tickers one batched request (bars/news/social)

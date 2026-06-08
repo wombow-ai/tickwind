@@ -35,7 +35,7 @@ func fundServer(t *testing.T, q store.Quote, f edgar.Fundamentals) *httptest.Ser
 	h := New(
 		st, stream.NewHub(), enrich.Noop{},
 		auth.NewVerifier(testSecret, ""),
-		nil, nil, nil, nil, nil, nil, nil, // bars, topics, opps, gurus, ingestor, symbols, events
+		nil, nil, nil, nil, nil, nil, nil, nil, // bars, topics, opps, universe, gurus, ingestor, symbols, events
 		fakeFundamentals{f: f},
 		nil, // admins
 		slog.New(slog.NewTextHandler(io.Discard, nil)),

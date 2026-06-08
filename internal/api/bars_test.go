@@ -68,6 +68,7 @@ func serverWithBars(bars BarSource) *httptest.Server {
 		bars,
 		nil, // no topic source in tests
 		nil, // no opportunity source in tests
+		nil, // no universe source in tests
 		nil, // no guru source in tests
 		nil, // no ticker ingestor in tests
 		nil, // no symbol searcher in tests

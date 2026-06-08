@@ -30,6 +30,8 @@ type Config struct {
 	AlpacaDataURL  string // default https://data.alpaca.markets
 	AlpacaFeed     string // iex (free) | sip | overnight
 	PricePollEvery time.Duration
+	// UniverseSweepEvery: how often the whole-US-universe price cache refreshes.
+	UniverseSweepEvery time.Duration
 
 	// Finnhub company news. Empty token disables news ingestion.
 	FinnhubToken string
@@ -115,6 +117,7 @@ func Load() Config {
 		AlpacaDataURL:           env("ALPACA_DATA_URL", ""),
 		AlpacaFeed:              env("ALPACA_FEED", "iex"),
 		PricePollEvery:          envDur("PRICE_POLL_EVERY", 10*time.Second),
+		UniverseSweepEvery:      envDur("UNIVERSE_SWEEP_EVERY", 5*time.Minute),
 		FinnhubToken:            env("FINNHUB_TOKEN", ""),
 		RedditClientID:          env("REDDIT_CLIENT_ID", ""),
 		RedditSecret:            env("REDDIT_CLIENT_SECRET", ""),
