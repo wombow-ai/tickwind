@@ -42,7 +42,7 @@ export function TopicsStrip() {
         {topics.map((tp, i) => (
           <Link
             key={tp.key}
-            href={`/news?topic=${encodeURIComponent(tp.key)}&label=${encodeURIComponent(tp.label)}`}
+            href={`/topic/${encodeURIComponent(tp.key)}?label=${encodeURIComponent(tp.label)}`}
             className={cx(
               'inline-flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-[12.5px] font-medium transition hover:opacity-80',
               t.border,
