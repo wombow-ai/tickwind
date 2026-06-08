@@ -276,9 +276,10 @@ scoped by 5 parallel planning agents (full plans in session). Priority = bugs/qu
 5. ⬜ **Holdings/portfolio** (#29) — mirror Alerts (9 touchpoints). `store.Holding{shares,avg_cost}`
    **upsert by (user,ticker)**, Split→User, `holdings` table; `/v1/holdings` CRUD; `HoldingsPanel`
    on StockView + a `/portfolio` page computing value/P&L from live quotes (`useQuotes`).
-6. ⬜ **Hot-topic → topic page** (#28) — topics already exist (`internal/topics`, `/v1/topics` w/
-   `related_tickers`). New `/topic/[key]` page; recommend a `GET /v1/topics/{key}` → {topic, stocks,
-   news} (reuse `topics.Match`); flip `TopicsStrip` href off `/news?topic=`.
+6. ✅ **Hot-topic → topic page** (#28) — LIVE (frontend, Option A). New `/topic/[key]` page reuses
+   `/v1/topics` `related_tickers` for a stocks strip + batched topic-filtered news; `TopicsStrip`
+   href flipped off `/news?topic=`. Optional later (Option B): a `GET /v1/topics/{key}` endpoint for
+   cold/deep-link topics + SEO (needs backend deploy).
 7. ✅ **Event-title i18n (zh)** (#30) — LIVE (frontend). events carry a stable `Subtype` enum
    (fomc/cpi/nfp/ppi/gdp/jobs/eci/election). New `web/src/lib/eventTitle.ts` subtype→{en,zh} map,
    wired at the `EventsTimeline.tsx` render site (fallback to the English title). No backend change.
