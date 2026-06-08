@@ -236,6 +236,13 @@ Status: ✅ done · 🟡 in progress · ⬜ todo
 > [34] → ⬜#4 Congress board (Senate-first) [35] → ⬜#5 screener (needs #2) [36] → ⬜#6 notes/comments
 > enhance [37] → ⬜#7 Brazil B3 (brapi, key in VPS .env) [38] → ⬜#8 FINRA squeeze radar [23].
 > Yahoo HK kept (gray but controllable while free; revisit at monetization). brapi key provided.
+> **◐#3 earnings: (a) `finnhub.EarningsCalendar` + `store.Earning` + parse test ✅ `ec45870`; next
+> (b) store CRUD + EarningsIngestor, (c) API + timeline render. ◐#6: notes inline-edit LIVE `d97db72`
+> (Vercel; rest of #6 = Markdown + comment edit/like).**
+> **⚠️ DEPLOY BACKLOG (SSH flaky again, ~5 single-attempt drops this session): `#2a` universe price
+> cache + `#3a` finnhub method are committed+tested but UNDEPLOYED — they land together on the next
+> successful GitHub-pull SSH (intermittent; live API stays healthy). Frontend (Vercel) unaffected.
+> If SSH stays down many ticks, owner may need to VNC-check the VPS (fail2ban/MaxStartups) as before.**
 
 3 parallel research agents (competitor gaps · free data sources · AI/LLM). **Convergence: the
 SEC/EDGAR backbone is the defensible, redistribution-safe lane.** Owner picks which to build:
