@@ -32,10 +32,12 @@ const MAS = [
 // band is SMA20 (already drawn as MA20), so only the upper/lower bands are shown.
 const BOLL_COLOR = '#6366f1';
 
-// Chart timeframes. 1Day = raw daily candles; W/M/Q/Y aggregate them client-side
-// (no refetch). Intraday (1D/5D) lands once the backend serves intraday bars.
-type TF = '1Day' | Timeframe;
+// Chart timeframes. 1D/5D = intraday (fetched per resolution); 1Day = raw daily
+// candles; W/M/Q/Y aggregate the daily series client-side (no refetch).
+type TF = '1D' | '5D' | '1Day' | Timeframe;
 const TFS: {id: TF; key: string}[] = [
+  {id: '1D', key: 'kline.tf.i'},
+  {id: '5D', key: 'kline.tf.5d'},
   {id: '1Day', key: 'kline.tf.d'},
   {id: 'W', key: 'kline.tf.w'},
   {id: 'M', key: 'kline.tf.m'},
@@ -43,17 +45,21 @@ const TFS: {id: TF; key: string}[] = [
   {id: 'Y', key: 'kline.tf.y'},
 ];
 
-/** Daily bar date → lightweight-charts business-day time. */
-function toTime(iso: string): Time {
-  return iso.slice(0, 10) as unknown as Time;
+/** Intraday Alpaca resolution for a timeframe ('' = daily/aggregated, no fetch). */
+function intradayRes(tf: TF): string {
+  return tf === '1D' ? '5Min' : tf === '5D' ? '15Min' : '';
 }
 
 /** {time,value}[] from an indicator Series, dropping null warmup points. */
-function lineData(times: string[], series: Series): {time: Time; value: number}[] {
+function lineData(
+  times: string[],
+  series: Series,
+  toT: (iso: string) => Time,
+): {time: Time; value: number}[] {
   const out: {time: Time; value: number}[] = [];
   for (let i = 0; i < series.length; i++) {
     const v = series[i];
-    if (v !== null) out.push({time: toTime(times[i]), value: v});
+    if (v !== null) out.push({time: toT(times[i]), value: v});
   }
   return out;
 }
@@ -73,6 +79,8 @@ export function KLineChart({ticker}: {ticker: string}) {
   const [candles, setCandles] = useState<Candle[]>([]);
   const [showBoll, setShowBoll] = useState(false);
   const [tf, setTf] = useState<TF>('1Day');
+  const [intraday, setIntraday] = useState<Record<string, Candle[]>>({});
+  const intradayReq = useRef<Set<string>>(new Set());
   const containerRef = useRef<HTMLDivElement>(null);
   // Remembers the user's pan/zoom so a rebuild (dark or Bollinger toggle) doesn't
   // snap the view back to the default window; reset on ticker change.
@@ -82,6 +90,8 @@ export function KLineChart({ticker}: {ticker: string}) {
     const c = new AbortController();
     setStatus('loading');
     rangeRef.current = null; // new stock → default to the most-recent window
+    setIntraday({});
+    intradayReq.current = new Set();
     getCandles(ticker, c.signal).then(
       r => {
         const cs = r.candles ?? [];
@@ -99,10 +109,37 @@ export function KLineChart({ticker}: {ticker: string}) {
     rangeRef.current = null;
   }, [tf]);
 
+  // Intraday timeframes (1D/5D) fetch their own bars per resolution, cached for
+  // the session (refetched per ticker). Daily/aggregated views need no fetch.
+  useEffect(() => {
+    const res = intradayRes(tf);
+    if (!res) return;
+    const k = ticker + '|' + res;
+    if (intradayReq.current.has(k)) return;
+    intradayReq.current.add(k);
+    const c = new AbortController();
+    getCandles(ticker, c.signal, res).then(
+      r => setIntraday(prev => ({...prev, [res]: r.candles ?? []})),
+      () => intradayReq.current.delete(k), // allow retry on failure
+    );
+    return () => c.abort();
+  }, [tf, ticker]);
+
   useEffect(() => {
     if (status !== 'ready' || !containerRef.current || candles.length === 0) return;
 
-    const view = tf === '1Day' ? candles : aggregate(candles, tf);
+    const isIntraday = tf === '1D' || tf === '5D';
+    const res = intradayRes(tf);
+    const view = isIntraday
+      ? (intraday[res] ?? [])
+      : tf === '1Day'
+        ? candles
+        : aggregate(candles, tf as Timeframe);
+    // lightweight-charts wants a unix timestamp for intraday, a date string for daily.
+    const toT = (iso: string): Time =>
+      isIntraday
+        ? (Math.floor(Date.parse(iso) / 1000) as unknown as Time)
+        : (iso.slice(0, 10) as unknown as Time);
     const closes = view.map(c => c.close);
     const times = view.map(c => c.time);
     const grid = dark ? '#1e293b' : '#eef2f7';
@@ -120,7 +157,7 @@ export function KLineChart({ticker}: {ticker: string}) {
       },
       grid: {vertLines: {color: grid}, horzLines: {color: grid}},
       rightPriceScale: {borderColor: grid},
-      timeScale: {borderColor: grid, rightOffset: 4},
+      timeScale: {borderColor: grid, rightOffset: 4, timeVisible: isIntraday, secondsVisible: false},
     });
 
     // Candles (pane 0).
@@ -134,7 +171,7 @@ export function KLineChart({ticker}: {ticker: string}) {
     });
     candleSeries.setData(
       view.map(c => ({
-        time: toTime(c.time),
+        time: toT(c.time),
         open: c.open,
         high: c.high,
         low: c.low,
@@ -151,7 +188,7 @@ export function KLineChart({ticker}: {ticker: string}) {
         lastValueVisible: false,
         crosshairMarkerVisible: false,
       });
-      s.setData(lineData(times, sma(closes, ma.period)));
+      s.setData(lineData(times, sma(closes, ma.period), toT));
     }
 
     // Bollinger Bands (20, 2σ) on pane 0 — upper + lower envelope, dashed.
@@ -167,7 +204,7 @@ export function KLineChart({ticker}: {ticker: string}) {
           lastValueVisible: false,
           crosshairMarkerVisible: false,
         });
-        s.setData(lineData(times, band));
+        s.setData(lineData(times, band, toT));
       }
     }
 
@@ -179,7 +216,7 @@ export function KLineChart({ticker}: {ticker: string}) {
     );
     vol.setData(
       view.map(c => ({
-        time: toTime(c.time),
+        time: toT(c.time),
         value: c.volume,
         color: c.close >= c.open ? `${up}55` : `${down}55`,
       })),
@@ -197,7 +234,7 @@ export function KLineChart({ticker}: {ticker: string}) {
         .map((tm, i) => ({i, v: m.histogram[i]}))
         .filter(x => x.v !== null)
         .map(x => ({
-          time: toTime(times[x.i]),
+          time: toT(times[x.i]),
           value: x.v as number,
           color: (x.v as number) >= 0 ? `${up}99` : `${down}99`,
         })),
@@ -207,13 +244,13 @@ export function KLineChart({ticker}: {ticker: string}) {
       {color: '#3b82f6', lineWidth: 1, priceLineVisible: false, lastValueVisible: false},
       2,
     );
-    macdLine.setData(lineData(times, m.macd));
+    macdLine.setData(lineData(times, m.macd, toT));
     const sigLine = chart.addSeries(
       LineSeries,
       {color: '#f59e0b', lineWidth: 1, priceLineVisible: false, lastValueVisible: false},
       2,
     );
-    sigLine.setData(lineData(times, m.signal));
+    sigLine.setData(lineData(times, m.signal, toT));
 
     // RSI (pane 3).
     const rsiLine = chart.addSeries(
@@ -221,7 +258,7 @@ export function KLineChart({ticker}: {ticker: string}) {
       {color: '#a855f7', lineWidth: 1, priceLineVisible: false, lastValueVisible: false},
       3,
     );
-    rsiLine.setData(lineData(times, rsi(closes)));
+    rsiLine.setData(lineData(times, rsi(closes), toT));
 
     // Pane heights: price dominant, indicator panes compact.
     const panes = chart.panes();
@@ -236,7 +273,9 @@ export function KLineChart({ticker}: {ticker: string}) {
     const n = view.length;
     const ts = chart.timeScale();
     const saved = rangeRef.current;
-    if (saved) {
+    if (isIntraday) {
+      ts.fitContent(); // show the whole 1D/5D session(s)
+    } else if (saved) {
       ts.setVisibleLogicalRange(saved);
     } else if (n > 130) {
       ts.setVisibleLogicalRange({from: n - 130, to: n - 1});
@@ -249,7 +288,7 @@ export function KLineChart({ticker}: {ticker: string}) {
     });
 
     return () => chart.remove();
-  }, [status, candles, dark, showBoll, tf]);
+  }, [status, candles, dark, showBoll, tf, intraday]);
 
   return (
     <section className={cx('rounded-2xl border p-4', t.card, t.border, t.soft)}>

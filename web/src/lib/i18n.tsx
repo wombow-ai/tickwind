@@ -292,6 +292,8 @@ const dict: Record<Lang, Record<string, string>> = {
     'pulse.across': 'across {n} recent articles',
     // k-line chart
     'kline.title': 'Price & indicators',
+    'kline.tf.i': '1D',
+    'kline.tf.5d': '5D',
     'kline.tf.d': 'D',
     'kline.tf.w': 'W',
     'kline.tf.m': 'M',
@@ -574,6 +576,8 @@ const dict: Record<Lang, Record<string, string>> = {
     'pulse.across': '基于 {n} 篇近期文章',
     // k-line chart
     'kline.title': 'K线与指标',
+    'kline.tf.i': '分时',
+    'kline.tf.5d': '5日',
     'kline.tf.d': '日',
     'kline.tf.w': '周',
     'kline.tf.m': '月',
