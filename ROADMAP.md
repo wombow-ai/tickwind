@@ -229,9 +229,10 @@ Status: ✅ done · 🟡 in progress · ⬜ todo
 > **▶ v2 plan IN PROGRESS (owner-confirmed 2026-06-09), 1-min `/loop`, this order:** ✅#0 remove gray
 > sources Reddit+Xueqiu (deployed, verified gone). → ✅#1 K-line **full timeframes LIVE**
 > (1D/5D/D/W/M/Q/Y): intraday endpoint + 5y daily history + client aggregation + 1D/5D buttons
-> (`bcf95da`) [task 32 done]. → ◐#2 cache all US stocks [33]: **(a) UniverseIngestor in-memory
-> price cache + `GET /v1/universe` — code done `f9efe70`, deploy pending**; next (b) market cap via
-> `sec.Shares()` frames, (c) loading-banner rescope. → ⬜#3 earnings calendar
+> (`bcf95da`) [task 32 done]. → ◐#2 cache all US stocks [33]: (a) UniverseIngestor in-memory price
+> cache + `GET /v1/universe` — code done `f9efe70`, **deploy pending (SSH drops)**; (b) bulk market
+> cap → **decided: fold into screener #5** (per-stock cap already served by `edgar.Fundamentals`; no
+> consumer yet for bulk-cap plumbing); (c) banner reworded ✅ `51f3e7c`. → ⬜#3 earnings calendar
 > [34] → ⬜#4 Congress board (Senate-first) [35] → ⬜#5 screener (needs #2) [36] → ⬜#6 notes/comments
 > enhance [37] → ⬜#7 Brazil B3 (brapi, key in VPS .env) [38] → ⬜#8 FINRA squeeze radar [23].
 > Yahoo HK kept (gray but controllable while free; revisit at monetization). brapi key provided.
