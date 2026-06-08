@@ -27,6 +27,19 @@ feature-flagged plugin, never on the critical path. Web only.
   2>&1 & echo started'` — then **verify via PUBLIC curl** (e.g. `/v1/search?q=DRAM`), no
   SSH needed. rsync is idempotent → just retry it on a drop; use single quick SSH commands
   and don't spin/reconnect rapidly (that worsens the throttle).
+- **MOST RESILIENT deploy (proven 2026-06-09, use when SSH transfers drop): the box pulls source
+  from the PUBLIC GitHub repo itself via ONE short SSH command** (no slow rsync stream from the Mac):
+  `ssh … 'cd /root/tickwind && curl -sL https://github.com/wombow-ai/tickwind/archive/refs/heads/main.tar.gz -o /tmp/tw.tgz && tar xzf /tmp/tw.tgz -C /tmp && cp -r /tmp/tickwind-main/internal/* internal/ && cp -r /tmp/tickwind-main/cmd/* cmd/ && cp /tmp/tickwind-main/go.{mod,sum} . && (nohup docker compose up -d --build api > /tmp/build.log 2>&1 &) && echo DEPLOY_KICKED'`
+  (commit+push first so GitHub has the code). Wrap in a small retry loop; verify via public
+  `curl /v1/holdings` (404→401) etc. **Never copies `.env`** (gitignored). The repo `wombow-ai/tickwind` is public.
+- **VPS infra (1GB RAM!) — root-caused 2026-06-09:** a `docker build` (Go compile) can exhaust RAM+
+  swap → the OOM killer kills NEW sshd sessions ("Accepted publickey … session opened" then the
+  client sees "Connection closed by remote host"), which also drops rsync/tar mid-stream and trips
+  **fail2ban** (it banned both the Mac's IP and the owner's → total SSH lockout; recover via the
+  panel's **VNC** console → `fail2ban-client unban --all`). **Fixes applied + persistent:** added a
+  **1G swapfile** (`/swapfile2`, in fstab; total swap ~4G → OOM gone, normal SSH stable again);
+  **whitelisted the deploy IP** `154.29.158.47` in `/etc/fail2ban/jail.d/tickwind-ignore.conf`;
+  `docker system prune -af` after builds to reclaim disk (a rebuild can push `/` from ~40%→90%).
 
 ## Owner habits & preferences (keep this current — context gets compacted)
 - **Workflow**: drives development via `/loop` (autonomous, self-paced). Each iteration =
