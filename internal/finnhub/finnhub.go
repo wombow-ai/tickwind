@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -74,6 +75,77 @@ func (c *Client) CompanyNews(ctx context.Context, ticker string, days int) ([]st
 			Source:    it.Source,
 			URL:       it.URL,
 			Published: time.Unix(it.Datetime, 0).UTC(),
+		})
+	}
+	return out, nil
+}
+
+type earningsResp struct {
+	EarningsCalendar []earningRow `json:"earningsCalendar"`
+}
+
+type earningRow struct {
+	Date            string   `json:"date"` // YYYY-MM-DD
+	Symbol          string   `json:"symbol"`
+	Hour            string   `json:"hour"` // bmo | amc | dmh | ""
+	EPSEstimate     *float64 `json:"epsEstimate"`
+	EPSActual       *float64 `json:"epsActual"`
+	RevenueEstimate *float64 `json:"revenueEstimate"`
+	RevenueActual   *float64 `json:"revenueActual"`
+}
+
+// EarningsCalendar returns scheduled/reported earnings between from and to
+// (inclusive). Used by the earnings-calendar feature.
+func (c *Client) EarningsCalendar(ctx context.Context, from, to time.Time) ([]store.Earning, error) {
+	q := url.Values{}
+	q.Set("from", from.Format("2006-01-02"))
+	q.Set("to", to.Format("2006-01-02"))
+	q.Set("token", c.token)
+	endpoint := baseURL + "/calendar/earnings?" + q.Encode()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("finnhub: earnings calendar: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("finnhub: earnings calendar: %s", resp.Status)
+	}
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("finnhub: read earnings: %w", err)
+	}
+	return parseEarningsCalendar(data)
+}
+
+// parseEarningsCalendar parses the Finnhub earnings-calendar payload, dropping
+// rows missing a symbol or a parseable date. Pure (testable without network).
+func parseEarningsCalendar(data []byte) ([]store.Earning, error) {
+	var body earningsResp
+	if err := json.Unmarshal(data, &body); err != nil {
+		return nil, fmt.Errorf("finnhub: decode earnings: %w", err)
+	}
+	out := make([]store.Earning, 0, len(body.EarningsCalendar))
+	for _, r := range body.EarningsCalendar {
+		if r.Symbol == "" || r.Date == "" {
+			continue
+		}
+		d, err := time.Parse("2006-01-02", r.Date)
+		if err != nil {
+			continue
+		}
+		out = append(out, store.Earning{
+			Ticker:          r.Symbol,
+			Date:            d,
+			Hour:            r.Hour,
+			EPSEstimate:     r.EPSEstimate,
+			EPSActual:       r.EPSActual,
+			RevenueEstimate: r.RevenueEstimate,
+			RevenueActual:   r.RevenueActual,
 		})
 	}
 	return out, nil

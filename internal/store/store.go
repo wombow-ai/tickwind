@@ -198,6 +198,19 @@ type Holding struct {
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
+// Earning is a scheduled/reported company earnings event (from the Finnhub
+// calendar). Hour ∈ {bmo (before open), amc (after close), dmh (during), ""}.
+// Estimate/actual fields are nil when not yet reported/forecast.
+type Earning struct {
+	Ticker          string    `json:"ticker"`
+	Date            time.Time `json:"date"`
+	Hour            string    `json:"hour,omitempty"`
+	EPSEstimate     *float64  `json:"eps_estimate,omitempty"`
+	EPSActual       *float64  `json:"eps_actual,omitempty"`
+	RevenueEstimate *float64  `json:"revenue_estimate,omitempty"`
+	RevenueActual   *float64  `json:"revenue_actual,omitempty"`
+}
+
 // Comment is a PUBLIC user comment on a stock (Ticker) or the global community
 // board (Ticker == ""). Unlike notes/clips it's visible to everyone, so it
 // carries a public Author display name. IP is captured for moderation but is
