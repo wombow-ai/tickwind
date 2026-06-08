@@ -256,10 +256,12 @@ scoped by 5 parallel planning agents (full plans in session). Priority = bugs/qu
    the detail page was add-only and the board's X was hover-only (invisible on touch). Fixed:
    detail-page Add button is now a toggle (the "On watchlist" pill reveals a rose "Remove" on hover)
    + the board card's X is always visible. Frontend-only, live.
-2. ⬜ **Homepage indices strip** (#24) — ETF proxies **SPY/DIA/QQQ** via the existing Alpaca path
-   (free IEX serves ETFs, not `^GSPC`; Yahoo stays HK-only). New `IndicesStrip.tsx` using
-   `useQuotes`+`ChangeLine`, above the Markets strip in `HomeHub`. Optional: add the 3 to
-   `ingestTickers` for live SSE. Caveat: QQQ tracks Nasdaq-100 (label honestly).
+2. ✅ **Homepage indices strip** (#24) — `IndicesStrip` above the Markets strip, ETF proxies
+   **SPY/DIA/QQQ** via the existing `useQuotes`/Alpaca path (free IEX serves ETFs, not `^GSPC`;
+   Yahoo stays HK-only). Honest design: **% change is the headline** (tracks the index), ETF
+   ticker+price on an attributed sub-line (so "SPY 745" isn't misread as the S&P level); QQQ =
+   "Nasdaq 100". Live-verified quotes (SPY/DIA/QQQ all return price+prev_close). i18n `home.indices`.
+   Prices are on-demand via `getQuote`→snapshot; optional later: add the 3 to `ingestTickers` for SSE.
 3. ⬜ **Search: index ETFs + OTC** (#26) — index is SEC-only (`company_tickers_exchange.json`).
    DRAM lives in **Nasdaq Trader `otherlisted.txt`** (keyless, pipe-delimited, ETF col; skip the
    `File Creation` trailer + Test-Issue rows) → new `internal/symbols/nasdaq.go` `FetchNasdaqTrader`,
