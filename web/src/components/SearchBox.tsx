@@ -9,6 +9,12 @@ import {cx, tok} from '@/lib/ui';
 interface Props {
   /** Called with the chosen ticker (uppercased). */
   onSelect: (ticker: string) => void;
+  /**
+   * Called with the raw trimmed query when Enter is pressed without a
+   * highlighted match. When provided it replaces the legacy "treat the raw
+   * entry as a ticker" behaviour — callers route to a search-results page.
+   */
+  onSubmit?: (query: string) => void;
   placeholder?: string;
   autoFocus?: boolean;
   size?: 'sm' | 'md';
@@ -19,11 +25,13 @@ interface Props {
 /**
  * A ticker/company search combobox: debounced calls to GET /v1/search render a
  * dropdown of matches (ticker + name + exchange); choosing one (click, Enter, or
- * arrow-keys) fires onSelect. Falls back to the raw uppercased entry on Enter
- * when there are no matches, so power users can still type an exact ticker.
+ * arrow-keys) fires onSelect. On Enter with no highlighted match it calls
+ * onSubmit (route to a search-results page) when provided, else falls back to
+ * treating the raw entry as a ticker.
  */
 export function SearchBox({
   onSelect,
+  onSubmit,
   placeholder = 'Search a stock…',
   autoFocus,
   size = 'sm',
@@ -94,8 +102,16 @@ export function SearchBox({
     } else if (e.key === 'Enter') {
       e.preventDefault();
       const pick = results[active];
-      if (pick) choose(pick.ticker);
-      else if (q.trim()) choose(q.trim()); // raw fallback
+      if (pick) {
+        choose(pick.ticker);
+      } else if (q.trim()) {
+        const raw = q.trim();
+        setQ('');
+        setResults([]);
+        setOpen(false);
+        if (onSubmit) onSubmit(raw);
+        else onSelect(raw.toUpperCase()); // legacy raw fallback
+      }
     } else if (e.key === 'Escape') {
       setOpen(false);
     }

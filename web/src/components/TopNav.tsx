@@ -72,6 +72,7 @@ export function TopNav() {
   }, [pathname]);
 
   const go = (ticker: string) => router.push(`/stock/${encodeURIComponent(ticker)}`);
+  const search = (q: string) => router.push(`/search?q=${encodeURIComponent(q)}`);
 
   // One source of truth for destinations, shared by desktop nav, the More
   // dropdown, and the mobile menu.
@@ -125,7 +126,12 @@ export function TopNav() {
           <Logo size={28} />
         </Link>
 
-        <SearchBox onSelect={go} placeholder={tr('nav.search')} className="ml-1 hidden w-56 lg:block" />
+        <SearchBox
+          onSelect={go}
+          onSubmit={search}
+          placeholder={tr('nav.search')}
+          className="ml-1 hidden w-56 lg:block"
+        />
 
         <nav className="hidden items-center gap-1 md:flex">
           {primary.map(item => (
@@ -225,6 +231,10 @@ export function TopNav() {
             onSelect={tk => {
               setSearchOpen(false);
               go(tk);
+            }}
+            onSubmit={q => {
+              setSearchOpen(false);
+              search(q);
             }}
             autoFocus
             size="md"
