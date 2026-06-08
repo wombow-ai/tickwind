@@ -31,6 +31,7 @@ import {useT} from '@/lib/i18n';
 import {useDark} from '@/lib/theme';
 import {cx, timeAgo, tok} from '@/lib/ui';
 import {useQuotes} from '@/lib/useQuotes';
+import {IndicesStrip} from '@/components/IndicesStrip';
 import {StockCard} from '@/components/StockCard';
 import {TopicsStrip} from '@/components/TopicsStrip';
 
@@ -122,6 +123,8 @@ export function HomeHub() {
       </header>
 
       <TopicsStrip />
+
+      <IndicesStrip />
 
       {/* Markets strip (hero) */}
       <div className="mb-8 flex gap-4 overflow-x-auto pb-2">

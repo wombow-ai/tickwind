@@ -120,6 +120,7 @@ const dict: Record<Lang, Record<string, string>> = {
     'home.title': 'Markets today',
     'home.subtitle':
       'Live prices, then the trends, news and chatter across the market — all in one place.',
+    'home.indices': 'Major indices',
     'home.hotTopics': 'Hot Topics',
     'mod.hotStocks': 'Hot stocks',
     'mod.opportunity': 'Opportunity',
@@ -368,6 +369,7 @@ const dict: Record<Lang, Record<string, string>> = {
     // home hub
     'home.title': '今日市场',
     'home.subtitle': '实时价格，以及全市场的趋势、新闻与讨论 —— 一站式呈现。',
+    'home.indices': '美股大盘',
     'home.hotTopics': '热点话题',
     'mod.hotStocks': '热门股票',
     'mod.opportunity': '机会榜',
