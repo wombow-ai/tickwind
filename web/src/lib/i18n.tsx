@@ -292,6 +292,11 @@ const dict: Record<Lang, Record<string, string>> = {
     'pulse.across': 'across {n} recent articles',
     // k-line chart
     'kline.title': 'Price & indicators',
+    'kline.tf.d': 'D',
+    'kline.tf.w': 'W',
+    'kline.tf.m': 'M',
+    'kline.tf.q': 'Q',
+    'kline.tf.y': 'Y',
     'kline.empty': 'No price history yet',
     'kline.footer': 'Daily OHLC · MA/MACD/RSI computed locally. Not investment advice.',
     // comments
@@ -569,6 +574,11 @@ const dict: Record<Lang, Record<string, string>> = {
     'pulse.across': '基于 {n} 篇近期文章',
     // k-line chart
     'kline.title': 'K线与指标',
+    'kline.tf.d': '日',
+    'kline.tf.w': '周',
+    'kline.tf.m': '月',
+    'kline.tf.q': '季',
+    'kline.tf.y': '年',
     'kline.empty': '暂无价格历史',
     'kline.footer': '日K线 · MA/MACD/RSI 本地计算。非投资建议。',
     // comments

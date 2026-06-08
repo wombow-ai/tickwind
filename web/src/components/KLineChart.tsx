@@ -11,6 +11,7 @@ import {
   type Time,
 } from 'lightweight-charts';
 import {useEffect, useRef, useState} from 'react';
+import {aggregate, type Timeframe} from '@/lib/aggregate';
 import {getCandles, type Candle} from '@/lib/api';
 import {bollinger, macd, rsi, sma, type Series} from '@/lib/indicators';
 import {useT} from '@/lib/i18n';
@@ -30,6 +31,17 @@ const MAS = [
 // Bollinger Bands (20, 2σ): a toggleable envelope on the price pane. The middle
 // band is SMA20 (already drawn as MA20), so only the upper/lower bands are shown.
 const BOLL_COLOR = '#6366f1';
+
+// Chart timeframes. 1Day = raw daily candles; W/M/Q/Y aggregate them client-side
+// (no refetch). Intraday (1D/5D) lands once the backend serves intraday bars.
+type TF = '1Day' | Timeframe;
+const TFS: {id: TF; key: string}[] = [
+  {id: '1Day', key: 'kline.tf.d'},
+  {id: 'W', key: 'kline.tf.w'},
+  {id: 'M', key: 'kline.tf.m'},
+  {id: 'Q', key: 'kline.tf.q'},
+  {id: 'Y', key: 'kline.tf.y'},
+];
 
 /** Daily bar date → lightweight-charts business-day time. */
 function toTime(iso: string): Time {
@@ -60,6 +72,7 @@ export function KLineChart({ticker}: {ticker: string}) {
   const [status, setStatus] = useState<Status>('loading');
   const [candles, setCandles] = useState<Candle[]>([]);
   const [showBoll, setShowBoll] = useState(false);
+  const [tf, setTf] = useState<TF>('1Day');
   const containerRef = useRef<HTMLDivElement>(null);
   // Remembers the user's pan/zoom so a rebuild (dark or Bollinger toggle) doesn't
   // snap the view back to the default window; reset on ticker change.
@@ -80,11 +93,18 @@ export function KLineChart({ticker}: {ticker: string}) {
     return () => c.abort();
   }, [ticker]);
 
+  // Switching timeframe re-buckets the series; a saved daily pan/zoom is
+  // meaningless on weekly/monthly, so reset to the default window.
+  useEffect(() => {
+    rangeRef.current = null;
+  }, [tf]);
+
   useEffect(() => {
     if (status !== 'ready' || !containerRef.current || candles.length === 0) return;
 
-    const closes = candles.map(c => c.close);
-    const times = candles.map(c => c.time);
+    const view = tf === '1Day' ? candles : aggregate(candles, tf);
+    const closes = view.map(c => c.close);
+    const times = view.map(c => c.time);
     const grid = dark ? '#1e293b' : '#eef2f7';
     const axis = dark ? '#94a3b8' : '#64748b';
     const up = '#16a34a';
@@ -113,7 +133,7 @@ export function KLineChart({ticker}: {ticker: string}) {
       wickDownColor: down,
     });
     candleSeries.setData(
-      candles.map(c => ({
+      view.map(c => ({
         time: toTime(c.time),
         open: c.open,
         high: c.high,
@@ -158,7 +178,7 @@ export function KLineChart({ticker}: {ticker: string}) {
       1,
     );
     vol.setData(
-      candles.map(c => ({
+      view.map(c => ({
         time: toTime(c.time),
         value: c.volume,
         color: c.close >= c.open ? `${up}55` : `${down}55`,
@@ -213,7 +233,7 @@ export function KLineChart({ticker}: {ticker: string}) {
     // Restore the user's prior view across rebuilds (dark/Bollinger toggle);
     // otherwise default to the most recent ~130 sessions (full ~3y is loaded, so
     // panning/scrolling left reveals it with no round-trip).
-    const n = candles.length;
+    const n = view.length;
     const ts = chart.timeScale();
     const saved = rangeRef.current;
     if (saved) {
@@ -229,12 +249,33 @@ export function KLineChart({ticker}: {ticker: string}) {
     });
 
     return () => chart.remove();
-  }, [status, candles, dark, showBoll]);
+  }, [status, candles, dark, showBoll, tf]);
 
   return (
     <section className={cx('rounded-2xl border p-4', t.card, t.border, t.soft)}>
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-        <h2 className={cx('text-[14px] font-bold', t.text)}>{tr('kline.title')}</h2>
+        <div className="flex flex-wrap items-center gap-2">
+          <h2 className={cx('text-[14px] font-bold', t.text)}>{tr('kline.title')}</h2>
+          <div className={cx('inline-flex items-center rounded-lg border p-0.5 text-[11px] font-semibold', t.border)}>
+            {TFS.map(f => (
+              <button
+                key={f.id}
+                onClick={() => setTf(f.id)}
+                aria-pressed={tf === f.id}
+                className={cx(
+                  'rounded-md px-2 py-0.5 transition',
+                  tf === f.id
+                    ? dark
+                      ? 'bg-slate-700 text-white'
+                      : 'bg-white text-slate-900 shadow-sm'
+                    : t.sub,
+                )}
+              >
+                {tr(f.key)}
+              </button>
+            ))}
+          </div>
+        </div>
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[10.5px] font-semibold">
           {MAS.map(ma => (
             <span key={ma.period} className="inline-flex items-center gap-1" style={{color: ma.color}}>
