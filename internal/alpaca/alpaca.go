@@ -204,6 +204,43 @@ func (c *Client) DailyOHLC(ctx context.Context, ticker string, limit int) ([]sto
 	return out, nil
 }
 
+// IntradayOHLC returns intraday OHLC bars (oldest first) for the given timeframe
+// (e.g. "5Min", "15Min", "1Hour") since start. Split-adjusted, IEX feed — for the
+// 1D/5D chart views. Returns a nil slice (not an error) when there's no data.
+func (c *Client) IntradayOHLC(ctx context.Context, ticker, timeframe string, start time.Time) ([]store.Candle, error) {
+	url := fmt.Sprintf(
+		"%s/v2/stocks/%s/bars?timeframe=%s&start=%s&limit=10000&adjustment=split&feed=%s&sort=asc",
+		c.dataURL, ticker, timeframe, start.UTC().Format(time.RFC3339), c.feed,
+	)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("APCA-API-KEY-ID", c.keyID)
+	req.Header.Set("APCA-API-SECRET-KEY", c.secret)
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("alpaca: get intraday %s: %w", ticker, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("alpaca: intraday %s: %s", ticker, resp.Status)
+	}
+
+	var body ohlcResp
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		return nil, fmt.Errorf("alpaca: decode intraday %s: %w", ticker, err)
+	}
+	out := make([]store.Candle, 0, len(body.Bars))
+	for _, b := range body.Bars { // sort=asc → already oldest-first
+		out = append(out, store.Candle{
+			Time: b.Time, Open: b.Open, High: b.High, Low: b.Low, Close: b.Close, Volume: b.Volume,
+		})
+	}
+	return out, nil
+}
+
 // Snapshots returns the latest price per symbol, fetched in bulk (the daily
 // bar's close, falling back to the previous daily bar off-hours, then the latest
 // trade). Symbols with no usable price are omitted. Batches at 100 symbols per

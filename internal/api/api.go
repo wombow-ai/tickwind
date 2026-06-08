@@ -45,6 +45,7 @@ type QuoteStream interface {
 type BarSource interface {
 	DailyBars(ctx context.Context, ticker string) ([]float64, error)
 	DailyCandles(ctx context.Context, ticker string) ([]store.Candle, error)
+	IntradayCandles(ctx context.Context, ticker, resolution string) ([]store.Candle, error)
 	// LatestQuote fetches an on-demand quote for a ticker the price poller doesn't
 	// cover (so a just-viewed stock shows a price, like its candles do).
 	LatestQuote(ctx context.Context, ticker string) (store.Quote, bool, error)
@@ -952,10 +953,19 @@ func (s *Server) getBars(w http.ResponseWriter, r *http.Request) {
 // empty series (HTTP 200) when bars are unavailable.
 func (s *Server) getCandles(w http.ResponseWriter, r *http.Request) {
 	ticker := strings.ToUpper(strings.TrimSpace(r.PathValue("ticker")))
+	resolution := r.URL.Query().Get("resolution")
 	candles := []store.Candle{}
 	if s.bars != nil {
-		if got, err := s.bars.DailyCandles(r.Context(), ticker); err != nil {
-			s.log.Debug("candles fetch failed", "ticker", ticker, "err", err)
+		var got []store.Candle
+		var err error
+		switch resolution {
+		case "5Min", "15Min", "1Hour":
+			got, err = s.bars.IntradayCandles(r.Context(), ticker, resolution)
+		default: // "", "1Day", or unknown → daily (backward-compatible)
+			got, err = s.bars.DailyCandles(r.Context(), ticker)
+		}
+		if err != nil {
+			s.log.Debug("candles fetch failed", "ticker", ticker, "resolution", resolution, "err", err)
 		} else if got != nil {
 			candles = got
 		}

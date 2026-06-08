@@ -430,13 +430,18 @@ export interface CandlesResponse {
   candles: Candle[];
 }
 
-/** Fetches daily OHLC candles (~260 sessions) for the K-line chart. */
+/**
+ * Fetches OHLC candles for the K-line chart. Default = ~5y of daily bars; pass a
+ * resolution (5Min/15Min/1Hour) for intraday (1D/5D) views.
+ */
 export function getCandles(
   ticker: string,
   signal?: AbortSignal,
+  resolution?: string,
 ): Promise<CandlesResponse> {
+  const path = `/v1/stocks/${encodeURIComponent(normalizeTicker(ticker))}/candles`;
   return getJson<CandlesResponse>(
-    `/v1/stocks/${encodeURIComponent(normalizeTicker(ticker))}/candles`,
+    resolution ? `${path}?resolution=${encodeURIComponent(resolution)}` : path,
     signal,
   );
 }

@@ -9,10 +9,10 @@ import (
 	"github.com/wombow-ai/tickwind/internal/store"
 )
 
-// candleDays is how many daily OHLC bars the K-line chart fetches — ~3 trading
-// years, so panning/scrolling left reveals plenty of history without a round
-// trip (and well past the ≥250 RSI/EMA convergence window).
-const candleDays = 750
+// candleDays is how many daily OHLC bars the K-line chart fetches — ~5 trading
+// years, so the Yearly timeframe has real bars and panning/scrolling left reveals
+// plenty of history without a round trip (well past the ≥250 RSI/EMA window).
+const candleDays = 1300
 
 // BarCache serves recent daily closing prices for sparklines, caching each
 // ticker's series for a TTL so repeated page views don't re-hit Alpaca (daily
@@ -22,10 +22,11 @@ type BarCache struct {
 	limit  int
 	ttl    time.Duration
 
-	mu      sync.Mutex
-	entries map[string]barEntry
-	candles map[string]candleEntry
-	quotes  map[string]quoteEntry
+	mu       sync.Mutex
+	entries  map[string]barEntry
+	candles  map[string]candleEntry
+	intraday map[string]candleEntry // key: ticker|resolution
+	quotes   map[string]quoteEntry
 }
 
 type barEntry struct {
@@ -50,12 +51,13 @@ const quoteTTL = 20 * time.Second
 // each series for ttl.
 func NewBarCache(client *alpaca.Client, limit int, ttl time.Duration) *BarCache {
 	return &BarCache{
-		client:  client,
-		limit:   limit,
-		ttl:     ttl,
-		entries: make(map[string]barEntry),
-		candles: make(map[string]candleEntry),
-		quotes:  make(map[string]quoteEntry),
+		client:   client,
+		limit:    limit,
+		ttl:      ttl,
+		entries:  make(map[string]barEntry),
+		candles:  make(map[string]candleEntry),
+		intraday: make(map[string]candleEntry),
+		quotes:   make(map[string]quoteEntry),
 	}
 }
 
@@ -97,6 +99,46 @@ func (b *BarCache) DailyCandles(ctx context.Context, ticker string) ([]store.Can
 
 	b.mu.Lock()
 	b.candles[ticker] = candleEntry{candles: cs, at: time.Now()}
+	b.mu.Unlock()
+	return cs, nil
+}
+
+// intradayCfg maps a chart resolution to the Alpaca timeframe + lookback window
+// (the chart's 1D view uses 5Min, 5D uses 15Min). Unknown → no data.
+var intradayCfg = map[string]struct {
+	tf   string
+	days int
+}{
+	"5Min":  {"5Min", 4},
+	"15Min": {"15Min", 8},
+	"1Hour": {"1Hour", 16},
+}
+
+// intradayTTL caps how often intraday bars re-hit Alpaca (they move constantly).
+const intradayTTL = 60 * time.Second
+
+// IntradayCandles returns intraday OHLC for a resolution (5Min/15Min/1Hour),
+// cached briefly. Unknown resolutions return a nil slice (no data).
+func (b *BarCache) IntradayCandles(ctx context.Context, ticker, resolution string) ([]store.Candle, error) {
+	cfg, ok := intradayCfg[resolution]
+	if !ok {
+		return nil, nil
+	}
+	key := ticker + "|" + resolution
+	b.mu.Lock()
+	e, ok := b.intraday[key]
+	b.mu.Unlock()
+	if ok && time.Since(e.at) < intradayTTL {
+		return e.candles, nil
+	}
+
+	cs, err := b.client.IntradayOHLC(ctx, ticker, cfg.tf, time.Now().AddDate(0, 0, -cfg.days))
+	if err != nil {
+		return nil, err
+	}
+
+	b.mu.Lock()
+	b.intraday[key] = candleEntry{candles: cs, at: time.Now()}
 	b.mu.Unlock()
 	return cs, nil
 }

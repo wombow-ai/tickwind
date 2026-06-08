@@ -41,6 +41,10 @@ func (f *fakeBarSource) DailyCandles(_ context.Context, _ string) ([]store.Candl
 	return nil, nil
 }
 
+func (f *fakeBarSource) IntradayCandles(_ context.Context, _, _ string) ([]store.Candle, error) {
+	return nil, nil
+}
+
 func (f *fakeBarSource) LatestQuote(_ context.Context, _ string) (store.Quote, bool, error) {
 	return store.Quote{}, false, nil
 }
