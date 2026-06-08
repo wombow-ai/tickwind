@@ -20,6 +20,13 @@ feature-flagged plugin, never on the critical path. Web only.
   source via rsync (NOT git — note macOS `._*` artifacts) + a local Postgres + the
   durable Supabase as `MARKET_DATABASE_URL` (split store). `.env` on the VPS is live —
   never overwrite it (rsync excludes it). Verify via `https://api.tickwind.com/healthz`.
+  **SSH from here can be flaky** (long rsync connections drop mid-transfer; rapid
+  reconnects trip sshd throttling → "Connection closed by remote host"). Mitigations,
+  proven 2026-06-08: run the rebuild **DETACHED** so a mid-build SSH drop can't kill it —
+  `ssh … 'cd /root/tickwind && nohup docker compose up -d --build api > /tmp/tw_build.log
+  2>&1 & echo started'` — then **verify via PUBLIC curl** (e.g. `/v1/search?q=DRAM`), no
+  SSH needed. rsync is idempotent → just retry it on a drop; use single quick SSH commands
+  and don't spin/reconnect rapidly (that worsens the throttle).
 
 ## Owner habits & preferences (keep this current — context gets compacted)
 - **Workflow**: drives development via `/loop` (autonomous, self-paced). Each iteration =

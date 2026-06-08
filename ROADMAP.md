@@ -262,10 +262,11 @@ scoped by 5 parallel planning agents (full plans in session). Priority = bugs/qu
    ticker+price on an attributed sub-line (so "SPY 745" isn't misread as the S&P level); QQQ =
    "Nasdaq 100". Live-verified quotes (SPY/DIA/QQQ all return price+prev_close). i18n `home.indices`.
    Prices are on-demand via `getQuote`→snapshot; optional later: add the 3 to `ingestTickers` for SSE.
-3. 🔧 **Search: index ETFs + OTC** (#26) — code + tests done, committed `2da9f14`, rsync'd to VPS;
-   **container rebuild DEFERRED — VPS sshd locked out my rapid reconnects (fail2ban/MaxStartups);
-   live API stays healthy. Deploy once SSH clears (detached `nohup` build).** Root cause: index is
-   SEC-only (`company_tickers_exchange.json`).
+3. ✅ **Search: index ETFs + OTC** (#26) — LIVE (verified: DRAM→Roundhill Memory ETF/Cboe BZX,
+   TQQQ→ProShares/Nasdaq now autocomplete). New `internal/symbols/nasdaq.go` `FetchNasdaqTrader`
+   (keyless Nasdaq Trader files) merged SEC-first in `ingest/symbols.go`. Deploy needed a
+   **detached `nohup` build** (SSH was dropping mid-build) — now recorded in CLAUDE.md. SIVEF-class
+   pink sheets remain unindexed (no free source) → reachable via #27's "go anyway" fallback.
    DRAM lives in **Nasdaq Trader `otherlisted.txt`** (keyless, pipe-delimited, ETF col; skip the
    `File Creation` trailer + Test-Issue rows) → new `internal/symbols/nasdaq.go` `FetchNasdaqTrader`,
    merge **SEC-first** in `ingest/symbols.go:~59` (~+5.7k symbols). SIVEF-class pink sheets are in NO
