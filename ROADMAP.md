@@ -262,12 +262,15 @@ scoped by 5 parallel planning agents (full plans in session). Priority = bugs/qu
    ticker+price on an attributed sub-line (so "SPY 745" isn't misread as the S&P level); QQQ =
    "Nasdaq 100". Live-verified quotes (SPY/DIA/QQQ all return price+prev_close). i18n `home.indices`.
    Prices are on-demand via `getQuote`→snapshot; optional later: add the 3 to `ingestTickers` for SSE.
-3. ⬜ **Search: index ETFs + OTC** (#26) — index is SEC-only (`company_tickers_exchange.json`).
+3. 🔧 **Search: index ETFs + OTC** (#26) — code + tests done, committed `2da9f14`, rsync'd to VPS;
+   **container rebuild DEFERRED — VPS sshd locked out my rapid reconnects (fail2ban/MaxStartups);
+   live API stays healthy. Deploy once SSH clears (detached `nohup` build).** Root cause: index is
+   SEC-only (`company_tickers_exchange.json`).
    DRAM lives in **Nasdaq Trader `otherlisted.txt`** (keyless, pipe-delimited, ETF col; skip the
    `File Creation` trailer + Test-Issue rows) → new `internal/symbols/nasdaq.go` `FetchNasdaqTrader`,
    merge **SEC-first** in `ingest/symbols.go:~59` (~+5.7k symbols). SIVEF-class pink sheets are in NO
    free keyless file → reachable via #27's "go anyway" fallback (don't pursue paid OTC data).
-4. ⬜ **Search results page** (#27) — new `(main)/search/page.tsx`; give `SearchBox` an `onSubmit` →
+4. ✅ **Search results page** (#27) — LIVE (frontend, Vercel). new `(main)/search/page.tsx`; gave `SearchBox` an `onSubmit` →
    `/search?q=` (replace the blind `choose(q)` Enter fallback); wire BOTH TopNav instances; render
    0/1/many states + a "Go to /stock/{Q} anyway →" escape hatch.
 5. ⬜ **Holdings/portfolio** (#29) — mirror Alerts (9 touchpoints). `store.Holding{shares,avg_cost}`
