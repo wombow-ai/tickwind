@@ -3,7 +3,8 @@
 import {CalendarClock, Globe, Landmark} from 'lucide-react';
 import {useCallback, useEffect, useMemo, useState} from 'react';
 import {getEvents, type EventItem} from '@/lib/api';
-import {useT} from '@/lib/i18n';
+import {eventTitle} from '@/lib/eventTitle';
+import {useLang, useT} from '@/lib/i18n';
 import {useDark} from '@/lib/theme';
 import {cx, tok} from '@/lib/ui';
 import {EmptyState, ErrorState, FeedSkeleton} from '@/components/ui/states';
@@ -182,6 +183,7 @@ function MonthChip({
 
 function Row({e, dark, t}: {e: EventItem; dark: boolean; t: Tokens}) {
   const tr = useT();
+  const {lang} = useLang();
   const d = new Date(e.start);
   const high = e.importance === 'high';
   const Icon = e.category === 'world' ? Globe : Landmark;
@@ -202,7 +204,9 @@ function Row({e, dark, t}: {e: EventItem; dark: boolean; t: Tokens}) {
             size={13}
             className={cx('shrink-0', high ? (dark ? 'text-amber-300' : 'text-amber-600') : t.sub)}
           />
-          <span className={cx('truncate text-[14px] font-semibold', t.text)}>{e.title}</span>
+          <span className={cx('truncate text-[14px] font-semibold', t.text)}>
+            {eventTitle(e.subtype, e.title, lang)}
+          </span>
           {high && (
             <span
               className={cx(

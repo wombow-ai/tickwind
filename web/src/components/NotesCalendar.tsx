@@ -4,7 +4,8 @@ import {CalendarClock, ChevronLeft, ChevronRight, Trash2} from 'lucide-react';
 import {useCallback, useEffect, useMemo, useState} from 'react';
 import {createNote, deleteNote, getEvents, getNotes, type EventItem, type Note} from '@/lib/api';
 import {useAuth} from '@/lib/auth';
-import {useT} from '@/lib/i18n';
+import {eventTitle} from '@/lib/eventTitle';
+import {useLang, useT} from '@/lib/i18n';
 import {useDark} from '@/lib/theme';
 import {btnPrimary, cx, tok} from '@/lib/ui';
 
@@ -25,6 +26,7 @@ export function NotesCalendar() {
   const dark = useDark();
   const t = tok(dark);
   const tr = useT();
+  const {lang} = useLang();
   const [cursor, setCursor] = useState(() => {
     const n = new Date();
     return new Date(n.getFullYear(), n.getMonth(), 1);
@@ -223,7 +225,9 @@ export function NotesCalendar() {
                 )}
               >
                 <CalendarClock size={12} className={dark ? 'text-amber-300' : 'text-amber-600'} />
-                <span className={cx('min-w-0 flex-1 truncate font-medium', t.text)}>{e.title}</span>
+                <span className={cx('min-w-0 flex-1 truncate font-medium', t.text)}>
+                  {eventTitle(e.subtype, e.title, lang)}
+                </span>
                 {e.importance === 'high' && (
                   <span
                     className={cx(
