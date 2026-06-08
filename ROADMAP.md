@@ -220,7 +220,8 @@ Status: ✅ done · 🟡 in progress · ⬜ todo
 > work** (no pricing/payments/quote-licensing/paywalls/subscriptions). Strategy round-2's
 > monetization plan (`docs/strategy-research-2026-06.md`) is parked until the owner says go;
 > the rest of that doc (growth/SEO, positioning, engineering, legal) is in scope. Also:
-> **web-push deferred**; the dev loop runs at a **5-min cadence** and is **currently RUNNING**.
+> **web-push deferred**; the dev loop runs at a **1-min cadence** (owner, 2026-06-08), is
+> **currently RUNNING**, and uses **parallel planning subagents** to scope each feature.
 
 3 parallel research agents (competitor gaps · free data sources · AI/LLM). **Convergence: the
 SEC/EDGAR backbone is the defensible, redistribution-safe lane.** Owner picks which to build:
@@ -248,9 +249,41 @@ SEC/EDGAR backbone is the defensible, redistribution-safe lane.** Owner picks wh
   badge. All store backends + tests; live. ⑤ web-push DEFERRED (owner; iOS needs a PWA; email alt
   needs SMTP creds).
 
-**🏗 Building now: FINRA short-interest "squeeze radar"** — per-stock short pressure, a free "follow
-the money" signal that's ticker-keyed (no CUSIP/entity mapping). Attribute "Source: FINRA";
-display-only (no bulk redistribution). **Fallback (SEC 13F) NOT needed — FINRA reachable.**
+**🏗 Owner feature batch (2026-06-08) — 9 ideas from real usage, built at 1-min `/loop` cadence;
+scoped by 5 parallel planning agents (full plans in session). Priority = bugs/quick-wins first:**
+
+1. ✅ **Watchlist remove** (#25) — remove was already wired backend→api.ts→board; the gaps were UX:
+   the detail page was add-only and the board's X was hover-only (invisible on touch). Fixed:
+   detail-page Add button is now a toggle (the "On watchlist" pill reveals a rose "Remove" on hover)
+   + the board card's X is always visible. Frontend-only, live.
+2. ⬜ **Homepage indices strip** (#24) — ETF proxies **SPY/DIA/QQQ** via the existing Alpaca path
+   (free IEX serves ETFs, not `^GSPC`; Yahoo stays HK-only). New `IndicesStrip.tsx` using
+   `useQuotes`+`ChangeLine`, above the Markets strip in `HomeHub`. Optional: add the 3 to
+   `ingestTickers` for live SSE. Caveat: QQQ tracks Nasdaq-100 (label honestly).
+3. ⬜ **Search: index ETFs + OTC** (#26) — index is SEC-only (`company_tickers_exchange.json`).
+   DRAM lives in **Nasdaq Trader `otherlisted.txt`** (keyless, pipe-delimited, ETF col; skip the
+   `File Creation` trailer + Test-Issue rows) → new `internal/symbols/nasdaq.go` `FetchNasdaqTrader`,
+   merge **SEC-first** in `ingest/symbols.go:~59` (~+5.7k symbols). SIVEF-class pink sheets are in NO
+   free keyless file → reachable via #27's "go anyway" fallback (don't pursue paid OTC data).
+4. ⬜ **Search results page** (#27) — new `(main)/search/page.tsx`; give `SearchBox` an `onSubmit` →
+   `/search?q=` (replace the blind `choose(q)` Enter fallback); wire BOTH TopNav instances; render
+   0/1/many states + a "Go to /stock/{Q} anyway →" escape hatch.
+5. ⬜ **Holdings/portfolio** (#29) — mirror Alerts (9 touchpoints). `store.Holding{shares,avg_cost}`
+   **upsert by (user,ticker)**, Split→User, `holdings` table; `/v1/holdings` CRUD; `HoldingsPanel`
+   on StockView + a `/portfolio` page computing value/P&L from live quotes (`useQuotes`).
+6. ⬜ **Hot-topic → topic page** (#28) — topics already exist (`internal/topics`, `/v1/topics` w/
+   `related_tickers`). New `/topic/[key]` page; recommend a `GET /v1/topics/{key}` → {topic, stocks,
+   news} (reuse `topics.Match`); flip `TopicsStrip` href off `/news?topic=`.
+7. ⬜ **Event-title i18n (zh)** (#30) — events carry a stable `Subtype` enum
+   (fomc/cpi/nfp/ppi/gdp/jobs/eci/election). New `web/src/lib/eventTitle.ts` subtype→{en,zh} map,
+   wired at the `EventsTimeline.tsx` render site (fallback to the English title). No backend change.
+8. ⬜ **Events restyle** (#31) — concrete Tailwind tweaks (rail gradient, category hue vs.
+   amber-for-importance, "this week/later" grouping, per-month empty, timeline-shaped skeleton) +
+   a paste-ready designer prompt (captured in session — surface to owner when #31 starts).
+
+**⏸ Paused (resume after the batch): FINRA short-interest "squeeze radar"** — per-stock short
+pressure, a free "follow the money" signal that's ticker-keyed (no CUSIP/entity mapping). Attribute
+"Source: FINRA"; display-only (no bulk redistribution). **Fallback (SEC 13F) NOT needed — reachable.**
 
 ✅ **Step ① data-access verified (2026-06-08), both sources keyless + reachable from local AND VPS:**
 - **Daily short volume** — `GET https://cdn.finra.org/equity/regsho/daily/CNMSshvol{YYYYMMDD}.txt`
