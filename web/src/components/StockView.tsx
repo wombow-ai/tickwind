@@ -51,6 +51,7 @@ import {TimelineItem} from '@/components/TimelineItem';
 import {PulseBar} from '@/components/PulseBar';
 import {NotesPanel} from '@/components/NotesPanel';
 import {AlertsPanel} from '@/components/AlertsPanel';
+import {HoldingsPanel} from '@/components/HoldingsPanel';
 import {KLineChart} from '@/components/KLineChart';
 import {FundamentalsCard} from '@/components/FundamentalsCard';
 import {CommentsPanel} from '@/components/CommentsPanel';
@@ -69,7 +70,7 @@ function guessMarket(ticker: string): string {
 }
 
 const TABS_ANON = ['News', 'Discussion', 'Comments', 'Filings'] as const;
-const TABS_AUTH = ['News', 'Discussion', 'Comments', 'Notes', 'Alerts', 'Saved links', 'Filings'] as const;
+const TABS_AUTH = ['News', 'Discussion', 'Comments', 'Notes', 'Alerts', 'Holdings', 'Saved links', 'Filings'] as const;
 // Tab keys stay English (they're the state values); only the display is translated.
 const TAB_LABELS: Record<string, string> = {
   News: 'mod.news',
@@ -77,6 +78,7 @@ const TAB_LABELS: Record<string, string> = {
   Comments: 'comments.tab',
   Notes: 'nav.notes',
   Alerts: 'alerts.title',
+  Holdings: 'holdings.title',
   'Saved links': 'stock.savedLinks',
   Filings: 'stock.filings',
 };
@@ -550,6 +552,7 @@ export function StockView({ticker}: {ticker: string}) {
         {tab === 'Comments' && <CommentsPanel ticker={norm} />}
         {tab === 'Notes' && isAuthed && <NotesPanel ticker={norm} />}
         {tab === 'Alerts' && isAuthed && <AlertsPanel ticker={norm} />}
+        {tab === 'Holdings' && isAuthed && <HoldingsPanel ticker={norm} quote={quote} cur={cur} />}
         {tab === 'Saved links' && isAuthed && (
           <div className="tw-fade">
             <form

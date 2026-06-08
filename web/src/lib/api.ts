@@ -914,6 +914,46 @@ export function deleteAlert(
   return deleteJson<{deleted: boolean}>(`/v1/alerts/${encodeURIComponent(id)}`, signal, token);
 }
 
+/** A user's position in a ticker (shares + average cost). */
+export interface Holding {
+  id: string;
+  user_id: string;
+  ticker: string;
+  shares: number;
+  avg_cost: number;
+  created_at: string;
+  updated_at: string;
+}
+
+/** Envelope returned by `GET /v1/holdings`. */
+export interface HoldingsResponse {
+  count: number;
+  holdings: Holding[];
+}
+
+/** Lists the caller's holdings. Requires authentication. */
+export function getHoldings(token: string | null, signal?: AbortSignal): Promise<HoldingsResponse> {
+  return getJson<HoldingsResponse>('/v1/holdings', signal, token);
+}
+
+/** Creates or updates (upsert by ticker) a holding. Requires authentication. */
+export function createHolding(
+  token: string | null,
+  input: {ticker: string; shares: number; avg_cost: number},
+  signal?: AbortSignal,
+): Promise<Holding> {
+  return postJson<Holding>('/v1/holdings', input, signal, token);
+}
+
+/** Deletes a holding. Requires authentication. */
+export function deleteHolding(
+  token: string | null,
+  id: string,
+  signal?: AbortSignal,
+): Promise<{deleted: boolean}> {
+  return deleteJson<{deleted: boolean}>(`/v1/holdings/${encodeURIComponent(id)}`, signal, token);
+}
+
 /** A public user comment on a stock or the global community board. */
 export interface Comment {
   id: string;
