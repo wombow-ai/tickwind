@@ -149,7 +149,7 @@ func exchRank(e string) int {
 	switch strings.ToLower(e) {
 	case "nasdaq", "nyse":
 		return 0
-	case "nyse arca", "nyse american", "cboe", "bats":
+	case "nyse arca", "nyse american", "cboe", "cboe bzx", "bats", "iex":
 		return 1
 	case "otc":
 		return 3

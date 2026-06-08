@@ -54,9 +54,18 @@ func (s *SymbolIngestor) refresh(ctx context.Context) {
 		s.log.Warn("symbols: refresh failed", "err", err)
 		return // keep serving the last good index
 	}
-	// Merge the curated foreign (TW/HK) seed names so the markets we price are
-	// searchable alongside the US SEC directory.
-	idx := symbols.Build(append(syms, symbols.ForeignSeeds()...))
+	// Add free Nasdaq Trader listings (NYSE/Arca/Cboe/IEX) so ETFs and other
+	// non-SEC-filer symbols (e.g. DRAM) are searchable too. Best-effort: on
+	// failure we still build from the SEC directory alone.
+	nt, err := symbols.FetchNasdaqTrader(ctx, s.http, s.userAgent)
+	if err != nil {
+		s.log.Warn("symbols: nasdaq trader fetch failed", "err", err)
+	}
+	// SEC first so its cleaner names/exchange win on ticker collisions; Nasdaq
+	// Trader and the curated TW/HK seeds only add symbols SEC is missing.
+	all := append(syms, nt...)
+	all = append(all, symbols.ForeignSeeds()...)
+	idx := symbols.Build(all)
 	s.cache.Set(idx)
-	s.log.Info("symbols: loaded directory", "count", idx.Len())
+	s.log.Info("symbols: loaded directory", "count", idx.Len(), "sec", len(syms), "nasdaq", len(nt))
 }
