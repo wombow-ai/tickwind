@@ -239,10 +239,14 @@ Status: ✅ done · 🟡 in progress · ⬜ todo
 > **◐#3 earnings: (a) `finnhub.EarningsCalendar` + `store.Earning` + parse test ✅ `ec45870`; next
 > (b) store CRUD + EarningsIngestor, (c) API + timeline render. ◐#6: notes inline-edit LIVE `d97db72`
 > (Vercel; rest of #6 = Markdown + comment edit/like).**
-> **⚠️ DEPLOY BACKLOG (SSH flaky again, ~5 single-attempt drops this session): `#2a` universe price
-> cache + `#3a` finnhub method are committed+tested but UNDEPLOYED — they land together on the next
-> successful GitHub-pull SSH (intermittent; live API stays healthy). Frontend (Vercel) unaffected.
-> If SSH stays down many ticks, owner may need to VNC-check the VPS (fail2ban/MaxStartups) as before.**
+> **⛔ LOOP PAUSED 2026-06-09 — SSH deploy pipeline persistently down (~6 consecutive single-attempt
+> drops; worked earlier in the session). Backend backlog UNDEPLOYED but committed+tested: `#2a`
+> universe price cache (`f9efe70`) + `#3a` finnhub earnings client (`ec45870`). Frontend shipped fine
+> via Vercel (#2c banner, #1 K-line, notes-edit `d97db72`). The whole remaining roadmap (#3b→#8) is
+> backend → blocked on deploy. live API healthy throughout. NEEDS owner to restore SSH (VNC or from a
+> working session: `fail2ban-client unban 154.29.158.47 && fail2ban-client set sshd addignoreip
+> 154.29.158.47 && systemctl restart ssh`; check `journalctl -u ssh -n 20` + `free -m`). Then re-run
+> `/loop`: one GitHub-pull deploys the whole backlog at once; resume at #3(b) earnings store+ingestor.**
 
 3 parallel research agents (competitor gaps · free data sources · AI/LLM). **Convergence: the
 SEC/EDGAR backbone is the defensible, redistribution-safe lane.** Owner picks which to build:
