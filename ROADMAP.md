@@ -279,12 +279,13 @@ scoped by 5 parallel planning agents (full plans in session). Priority = bugs/qu
 6. ⬜ **Hot-topic → topic page** (#28) — topics already exist (`internal/topics`, `/v1/topics` w/
    `related_tickers`). New `/topic/[key]` page; recommend a `GET /v1/topics/{key}` → {topic, stocks,
    news} (reuse `topics.Match`); flip `TopicsStrip` href off `/news?topic=`.
-7. ⬜ **Event-title i18n (zh)** (#30) — events carry a stable `Subtype` enum
+7. ✅ **Event-title i18n (zh)** (#30) — LIVE (frontend). events carry a stable `Subtype` enum
    (fomc/cpi/nfp/ppi/gdp/jobs/eci/election). New `web/src/lib/eventTitle.ts` subtype→{en,zh} map,
    wired at the `EventsTimeline.tsx` render site (fallback to the English title). No backend change.
-8. ⬜ **Events restyle** (#31) — concrete Tailwind tweaks (rail gradient, category hue vs.
-   amber-for-importance, "this week/later" grouping, per-month empty, timeline-shaped skeleton) +
-   a paste-ready designer prompt (captured in session — surface to owner when #31 starts).
+8. ✅ **Events restyle** (#31) — LIVE: shipped safe refinements (rail gradient fade, brighter
+   low-importance node, category hue macro=sky/world=violet with amber reserved for importance).
+   Deeper redesign (horizon grouping, timeline skeleton) handed to owner as a paste-ready **design
+   prompt** (presented in chat 2026-06-08) for a pro designer.
 
 **⏸ Paused (resume after the batch): FINRA short-interest "squeeze radar"** — per-stock short
 pressure, a free "follow the money" signal that's ticker-keyed (no CUSIP/entity mapping). Attribute
