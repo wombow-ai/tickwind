@@ -1,6 +1,6 @@
 'use client';
 
-import {Pin, StickyNote, Trash2} from 'lucide-react';
+import {Pencil, Pin, StickyNote, Trash2} from 'lucide-react';
 import Link from 'next/link';
 import {useCallback, useEffect, useState} from 'react';
 import {createNote, deleteNote, getNotes, updateNote, type Note} from '@/lib/api';
@@ -83,6 +83,17 @@ export function NotesPanel({ticker}: {ticker?: string}) {
     }
   }
 
+  async function editNote(n: Note, body: string) {
+    setNotes(prev => sortNotes(prev.map(x => (x.id === n.id ? {...x, body} : x)))); // optimistic
+    try {
+      const token = await getToken();
+      const updated = await updateNote(token, n.id, {body});
+      setNotes(prev => sortNotes(prev.map(x => (x.id === n.id ? updated : x))));
+    } catch {
+      load();
+    }
+  }
+
   return (
     <div className="tw-fade">
       <div className={cx('mb-4 rounded-2xl border p-3', t.card, t.border, t.soft)}>
@@ -135,6 +146,7 @@ export function NotesPanel({ticker}: {ticker?: string}) {
               showTicker={!ticker}
               onPin={() => togglePin(n)}
               onDelete={() => remove(n)}
+              onSave={body => editNote(n, body)}
             />
           ))}
         </div>
@@ -151,6 +163,7 @@ function NoteCard({
   showTicker,
   onPin,
   onDelete,
+  onSave,
 }: {
   n: Note;
   dark: boolean;
@@ -159,8 +172,21 @@ function NoteCard({
   showTicker: boolean;
   onPin: () => void;
   onDelete: () => void;
+  onSave: (body: string) => void;
 }) {
   const edited = n.updated_at !== n.created_at;
+  const [editing, setEditing] = useState(false);
+  const [editDraft, setEditDraft] = useState(n.body);
+  function doSave() {
+    const b = editDraft.trim();
+    if (!b) return;
+    onSave(b);
+    setEditing(false);
+  }
+  function cancel() {
+    setEditDraft(n.body);
+    setEditing(false);
+  }
   return (
     <div
       className={cx(
@@ -188,24 +214,67 @@ function NoteCard({
           {timeAgo(n.updated_at)} {tr('common.ago')}
         </span>
       </div>
-      <p className={cx('whitespace-pre-wrap break-words text-[13.5px]', t.text)}>{n.body}</p>
-      <div className="mt-2 flex items-center gap-3 opacity-0 transition group-hover:opacity-100">
-        <button
-          onClick={onPin}
-          className={cx('inline-flex items-center gap-1 text-[11.5px] font-medium hover:opacity-80', t.sub)}
-        >
-          <Pin size={12} /> {n.pinned ? tr('notes.unpin') : tr('notes.pin')}
-        </button>
-        <button
-          onClick={onDelete}
-          className={cx(
-            'inline-flex items-center gap-1 text-[11.5px] font-medium hover:opacity-80',
-            dark ? 'text-rose-400' : 'text-rose-500',
-          )}
-        >
-          <Trash2 size={12} /> {tr('notes.delete')}
-        </button>
-      </div>
+      {editing ? (
+        <div>
+          <textarea
+            value={editDraft}
+            onChange={e => setEditDraft(e.target.value)}
+            onKeyDown={e => {
+              if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') doSave();
+              else if (e.key === 'Escape') cancel();
+            }}
+            rows={3}
+            autoFocus
+            className={cx(
+              'w-full resize-none rounded-lg border bg-transparent p-2 text-[13.5px] outline-none',
+              t.border,
+              dark ? 'text-slate-100' : 'text-slate-900',
+            )}
+          />
+          <div className="mt-1.5 flex items-center justify-end gap-2">
+            <button onClick={cancel} className={cx('text-[11.5px] font-medium hover:opacity-80', t.sub)}>
+              {tr('notes.cancel')}
+            </button>
+            <button
+              onClick={doSave}
+              disabled={!editDraft.trim()}
+              className={cx('rounded-lg px-3 py-1 text-[11.5px] font-semibold transition disabled:opacity-50', btnPrimary(dark))}
+            >
+              {tr('notes.save')}
+            </button>
+          </div>
+        </div>
+      ) : (
+        <p className={cx('whitespace-pre-wrap break-words text-[13.5px]', t.text)}>{n.body}</p>
+      )}
+      {!editing && (
+        <div className="mt-2 flex items-center gap-3 opacity-0 transition group-hover:opacity-100">
+          <button
+            onClick={() => {
+              setEditDraft(n.body);
+              setEditing(true);
+            }}
+            className={cx('inline-flex items-center gap-1 text-[11.5px] font-medium hover:opacity-80', t.sub)}
+          >
+            <Pencil size={12} /> {tr('notes.edit')}
+          </button>
+          <button
+            onClick={onPin}
+            className={cx('inline-flex items-center gap-1 text-[11.5px] font-medium hover:opacity-80', t.sub)}
+          >
+            <Pin size={12} /> {n.pinned ? tr('notes.unpin') : tr('notes.pin')}
+          </button>
+          <button
+            onClick={onDelete}
+            className={cx(
+              'inline-flex items-center gap-1 text-[11.5px] font-medium hover:opacity-80',
+              dark ? 'text-rose-400' : 'text-rose-500',
+            )}
+          >
+            <Trash2 size={12} /> {tr('notes.delete')}
+          </button>
+        </div>
+      )}
     </div>
   );
 }
