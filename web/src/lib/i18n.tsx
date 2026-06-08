@@ -242,6 +242,7 @@ const dict: Record<Lang, Record<string, string>> = {
     'stock.loginAddSub': 'Keep a watchlist and clip posts from anywhere — free.',
     'stock.addWatch': 'Add to watchlist',
     'stock.onWatchlist': 'On your watchlist',
+    'stock.removeWatch': 'Remove from watchlist',
     'stock.waitingPrice': 'Waiting for a price…',
     // pulse bar (detail-page buzz + sentiment chips)
     'pulse.buzz': 'Reddit buzz',
@@ -481,6 +482,7 @@ const dict: Record<Lang, Record<string, string>> = {
     'stock.loginAddSub': '随时随地维护自选股、收藏帖子 —— 免费。',
     'stock.addWatch': '加入自选',
     'stock.onWatchlist': '已在自选中',
+    'stock.removeWatch': '移出自选',
     'stock.waitingPrice': '正在等待价格…',
     // pulse bar
     'pulse.buzz': 'Reddit 热度',

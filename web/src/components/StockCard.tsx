@@ -103,7 +103,7 @@ export function StockCard({
         <button
           onClick={onRemove}
           className={cx(
-            'absolute right-2.5 top-2.5 z-10 inline-flex h-7 w-7 items-center justify-center rounded-full opacity-0 transition hover:text-rose-500 group-hover:opacity-100',
+            'absolute right-2.5 top-2.5 z-10 inline-flex h-7 w-7 items-center justify-center rounded-full opacity-70 transition hover:text-rose-500 hover:opacity-100 group-hover:opacity-100',
             t.surf2,
             t.sub,
           )}

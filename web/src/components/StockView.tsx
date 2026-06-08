@@ -10,6 +10,7 @@ import {
   MessageSquare,
   Newspaper,
   Plus,
+  X,
 } from 'lucide-react';
 import Link from 'next/link';
 import {useT} from '@/lib/i18n';
@@ -25,6 +26,7 @@ import {
   getSocial,
   getStock,
   getWatchlist,
+  removeFromWatchlist,
   type Clip,
   type Filing,
   type NewsItem,
@@ -242,8 +244,19 @@ export function StockView({ticker}: {ticker: string}) {
     if (!tabs.includes(tab as never)) setTab('News');
   }, [tabs, tab]);
 
-  async function addWatch() {
-    if (inList) return;
+  async function toggleWatch() {
+    if (inList) {
+      setInList(false); // optimistic
+      try {
+        const token = await getToken();
+        await removeFromWatchlist(token, norm);
+        toast(`Removed ${norm} from your watchlist`, {tone: 'ok'});
+      } catch {
+        setInList(true);
+        toast(`Couldn't remove ${norm}`);
+      }
+      return;
+    }
     setInList(true); // optimistic
     try {
       const token = await getToken();
@@ -337,15 +350,23 @@ export function StockView({ticker}: {ticker: string}) {
           <div className="flex shrink-0 flex-col items-stretch gap-4 sm:items-end">
             {isAuthed ? (
               <button
-                onClick={addWatch}
+                onClick={toggleWatch}
+                aria-label={inList ? tr('stock.removeWatch') : tr('stock.addWatch')}
                 className={cx(
-                  'inline-flex items-center justify-center gap-1.5 rounded-full px-4 py-2 text-[13px] font-semibold',
-                  inList ? cx('border', t.border, t.sub) : btnPrimary(dark),
+                  'group inline-flex items-center justify-center gap-1.5 rounded-full px-4 py-2 text-[13px] font-semibold transition',
+                  inList
+                    ? cx('border hover:border-rose-300 hover:text-rose-500', t.border, t.sub)
+                    : btnPrimary(dark),
                 )}
               >
                 {inList ? (
                   <>
-                    <Check size={15} /> {tr('stock.onWatchlist')}
+                    <span className="inline-flex items-center gap-1.5 group-hover:hidden">
+                      <Check size={15} /> {tr('stock.onWatchlist')}
+                    </span>
+                    <span className="hidden items-center gap-1.5 group-hover:inline-flex">
+                      <X size={15} /> {tr('stock.removeWatch')}
+                    </span>
                   </>
                 ) : (
                   <>
