@@ -15,19 +15,20 @@ import (
 type Store struct {
 	mu        sync.RWMutex
 	secs      map[string]store.Security
-	filings   map[string]map[string]store.Filing // ticker -> accessionNo -> Filing
-	quotes    map[string]store.Quote             // ticker -> latest quote
-	news      map[string]map[string]store.News   // ticker -> id -> News
-	social    map[string]map[string]store.Post   // ticker -> id -> Post
-	signals   map[string]map[string]store.Signal // ticker -> source -> Signal
-	hot       map[string][]store.HotStock        // board -> ranked snapshot
-	insiders  map[string]store.InsiderBuy        // accession -> insider buy
-	seenF4    map[string]time.Time               // form-4 accession -> filed date
-	watchlist map[string][]string                // userID -> ordered tickers
-	clips     map[string]map[string]store.Clip   // userID -> clipID -> Clip
-	notes     map[string]map[string]store.Note   // userID -> noteID -> Note
-	alerts    map[string]map[string]store.Alert  // userID -> alertID -> Alert
-	comments  map[string]store.Comment           // commentID -> Comment (public)
+	filings   map[string]map[string]store.Filing  // ticker -> accessionNo -> Filing
+	quotes    map[string]store.Quote              // ticker -> latest quote
+	news      map[string]map[string]store.News    // ticker -> id -> News
+	social    map[string]map[string]store.Post    // ticker -> id -> Post
+	signals   map[string]map[string]store.Signal  // ticker -> source -> Signal
+	hot       map[string][]store.HotStock         // board -> ranked snapshot
+	insiders  map[string]store.InsiderBuy         // accession -> insider buy
+	seenF4    map[string]time.Time                // form-4 accession -> filed date
+	watchlist map[string][]string                 // userID -> ordered tickers
+	clips     map[string]map[string]store.Clip    // userID -> clipID -> Clip
+	notes     map[string]map[string]store.Note    // userID -> noteID -> Note
+	alerts    map[string]map[string]store.Alert   // userID -> alertID -> Alert
+	holdings  map[string]map[string]store.Holding // userID -> holdingID -> Holding
+	comments  map[string]store.Comment            // commentID -> Comment (public)
 }
 
 func New() *Store {
@@ -45,6 +46,7 @@ func New() *Store {
 		clips:     make(map[string]map[string]store.Clip),
 		notes:     make(map[string]map[string]store.Note),
 		alerts:    make(map[string]map[string]store.Alert),
+		holdings:  make(map[string]map[string]store.Holding),
 		comments:  make(map[string]store.Comment),
 	}
 }
@@ -428,6 +430,48 @@ func (s *Store) DeleteAlert(_ context.Context, userID, id string) (bool, error) 
 		return false, nil
 	}
 	delete(s.alerts[userID], id)
+	return true, nil
+}
+
+func (s *Store) SaveHolding(_ context.Context, h store.Holding) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	m := s.holdings[h.UserID]
+	if m == nil {
+		m = make(map[string]store.Holding)
+		s.holdings[h.UserID] = m
+	}
+	// Upsert by ticker: re-saving a held ticker overwrites it (keep id + created).
+	for id, existing := range m {
+		if existing.Ticker == h.Ticker {
+			h.ID = id
+			h.CreatedAt = existing.CreatedAt
+			m[id] = h
+			return nil
+		}
+	}
+	m[h.ID] = h
+	return nil
+}
+
+func (s *Store) ListHoldings(_ context.Context, userID string) ([]store.Holding, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([]store.Holding, 0)
+	for _, h := range s.holdings[userID] {
+		out = append(out, h)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Ticker < out[j].Ticker })
+	return out, nil
+}
+
+func (s *Store) DeleteHolding(_ context.Context, userID, id string) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.holdings[userID][id]; !ok {
+		return false, nil
+	}
+	delete(s.holdings[userID], id)
 	return true, nil
 }
 

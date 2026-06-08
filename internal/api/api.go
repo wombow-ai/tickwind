@@ -127,6 +127,9 @@ func New(st store.Store, hub QuoteStream, enricher enrich.Enricher, verifier *au
 	mux.HandleFunc("GET /v1/alerts", s.getAlerts)
 	mux.HandleFunc("POST /v1/alerts", s.postAlert)
 	mux.HandleFunc("DELETE /v1/alerts/{id}", s.deleteAlert)
+	mux.HandleFunc("GET /v1/holdings", s.getHoldings)
+	mux.HandleFunc("POST /v1/holdings", s.postHolding)
+	mux.HandleFunc("DELETE /v1/holdings/{id}", s.deleteHolding)
 	mux.HandleFunc("GET /v1/comments", s.getComments) // public read
 	mux.HandleFunc("POST /v1/comments", s.postComment)
 	mux.HandleFunc("DELETE /v1/comments/{id}", s.deleteComment)
@@ -530,6 +533,85 @@ func (s *Server) deleteAlert(w http.ResponseWriter, r *http.Request) {
 	}
 	if !deleted {
 		writeJSON(w, http.StatusNotFound, errBody("alert not found"))
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"deleted": true})
+}
+
+// ── Per-user: holdings ───────────────────────────────────────────────────
+
+func (s *Server) postHolding(w http.ResponseWriter, r *http.Request) {
+	u, ok := s.requireUser(w, r)
+	if !ok {
+		return
+	}
+	var req struct {
+		Ticker  string  `json:"ticker"`
+		Shares  float64 `json:"shares"`
+		AvgCost float64 `json:"avg_cost"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 4<<10)).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, errBody("invalid request body"))
+		return
+	}
+	ticker := strings.ToUpper(strings.TrimSpace(req.Ticker))
+	if ticker == "" {
+		writeJSON(w, http.StatusBadRequest, errBody("a ticker is required"))
+		return
+	}
+	if req.Shares <= 0 {
+		writeJSON(w, http.StatusBadRequest, errBody("shares must be positive"))
+		return
+	}
+	if req.AvgCost < 0 {
+		writeJSON(w, http.StatusBadRequest, errBody("avg_cost cannot be negative"))
+		return
+	}
+	now := time.Now().UTC()
+	h := store.Holding{
+		ID:        randHex(),
+		UserID:    u.ID,
+		Ticker:    ticker,
+		Shares:    req.Shares,
+		AvgCost:   req.AvgCost,
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+	if err := s.store.SaveHolding(r.Context(), h); err != nil {
+		writeJSON(w, http.StatusInternalServerError, errBody(err.Error()))
+		return
+	}
+	writeJSON(w, http.StatusCreated, h)
+}
+
+func (s *Server) getHoldings(w http.ResponseWriter, r *http.Request) {
+	u, ok := s.requireUser(w, r)
+	if !ok {
+		return
+	}
+	holdings, err := s.store.ListHoldings(r.Context(), u.ID)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, errBody(err.Error()))
+		return
+	}
+	if holdings == nil {
+		holdings = []store.Holding{} // marshal as [] not null
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"count": len(holdings), "holdings": holdings})
+}
+
+func (s *Server) deleteHolding(w http.ResponseWriter, r *http.Request) {
+	u, ok := s.requireUser(w, r)
+	if !ok {
+		return
+	}
+	deleted, err := s.store.DeleteHolding(r.Context(), u.ID, r.PathValue("id"))
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, errBody(err.Error()))
+		return
+	}
+	if !deleted {
+		writeJSON(w, http.StatusNotFound, errBody("holding not found"))
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"deleted": true})

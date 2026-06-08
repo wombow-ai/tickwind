@@ -198,6 +198,18 @@ CREATE INDEX IF NOT EXISTS alerts_user_created_idx
 CREATE INDEX IF NOT EXISTS alerts_active_idx
     ON alerts (ticker) WHERE active AND triggered_at IS NULL;
 
+CREATE TABLE IF NOT EXISTS holdings (
+    id         text PRIMARY KEY,
+    user_id    uuid NOT NULL,
+    ticker     text NOT NULL,
+    shares     double precision NOT NULL DEFAULT 0,
+    avg_cost   double precision NOT NULL DEFAULT 0,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now(),
+    UNIQUE (user_id, ticker)
+);
+CREATE INDEX IF NOT EXISTS holdings_user_idx ON holdings (user_id);
+
 -- Public user comments on a stock (ticker) or the global community board
 -- (ticker IS NULL). Durable (Market store). Soft-deleted (deleted=true) for
 -- moderation audit; ip + flagged/reports support takedown/abuse handling.

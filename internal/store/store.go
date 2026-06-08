@@ -184,6 +184,20 @@ type Alert struct {
 	TriggeredAt time.Time `json:"triggered_at,omitempty"` // zero = not yet triggered
 }
 
+// Holding is a user's position in a ticker: shares held + average cost per share.
+// Current value and gain/loss are derived from the live quote (shares × price) at
+// read time, never stored, so they track price moves. One row per (user, ticker) —
+// re-saving a held ticker overwrites it. Per-user → routed to the User store.
+type Holding struct {
+	ID        string    `json:"id"`
+	UserID    string    `json:"user_id"`
+	Ticker    string    `json:"ticker"`
+	Shares    float64   `json:"shares"`
+	AvgCost   float64   `json:"avg_cost"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
 // Comment is a PUBLIC user comment on a stock (Ticker) or the global community
 // board (Ticker == ""). Unlike notes/clips it's visible to everyone, so it
 // carries a public Author display name. IP is captured for moderation but is
@@ -268,6 +282,13 @@ type Store interface {
 	// the evaluator goroutine); MarkAlertTriggered stamps one as fired.
 	ListActiveAlerts(ctx context.Context) ([]Alert, error)
 	MarkAlertTriggered(ctx context.Context, id string, at time.Time) error
+
+	// Holdings are a user's portfolio positions (routed to the User store).
+	// SaveHolding upserts by (user, ticker); Delete takes userID so ownership is
+	// enforced in the query (returns found=false when the id isn't the user's).
+	SaveHolding(ctx context.Context, h Holding) error
+	ListHoldings(ctx context.Context, userID string) ([]Holding, error)
+	DeleteHolding(ctx context.Context, userID, id string) (bool, error)
 
 	// Comments are PUBLIC user posts on a stock (Ticker) or the global board
 	// (Ticker == ""). Durable (Market store). List excludes soft-deleted rows;

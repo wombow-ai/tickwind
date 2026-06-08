@@ -33,6 +33,46 @@ func TestAlertsCRUD(t *testing.T) {
 	}
 }
 
+func TestHoldingsCRUD(t *testing.T) {
+	s := New()
+	ctx := context.Background()
+	now := time.Now()
+	mk := func(id, ticker string, shares, cost float64) store.Holding {
+		return store.Holding{ID: id, UserID: "u1", Ticker: ticker, Shares: shares, AvgCost: cost, CreatedAt: now, UpdatedAt: now}
+	}
+	if err := s.SaveHolding(ctx, mk("h1", "AAPL", 10, 150)); err != nil {
+		t.Fatal(err)
+	}
+	// Re-saving the same ticker upserts (still one row, updated shares).
+	if err := s.SaveHolding(ctx, mk("h2", "AAPL", 25, 160)); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.ListHoldings(ctx, "u1")
+	if err != nil || len(got) != 1 || got[0].Shares != 25 || got[0].Ticker != "AAPL" {
+		t.Fatalf("after upsert ListHoldings = %+v (err %v), want 1 AAPL row w/ 25 shares", got, err)
+	}
+	aaplID := got[0].ID
+	// A different ticker is a separate row; scoping is per user.
+	if err := s.SaveHolding(ctx, mk("h3", "MSFT", 5, 400)); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := s.ListHoldings(ctx, "u1"); len(got) != 2 {
+		t.Fatalf("after MSFT: %d rows, want 2", len(got))
+	}
+	if got, _ := s.ListHoldings(ctx, "u2"); len(got) != 0 {
+		t.Errorf("u2 sees %d holdings, want 0 (per-user)", len(got))
+	}
+	if ok, _ := s.DeleteHolding(ctx, "u2", aaplID); ok {
+		t.Error("u2 deleted u1's holding (ownership not enforced)")
+	}
+	if ok, _ := s.DeleteHolding(ctx, "u1", aaplID); !ok {
+		t.Error("owner delete returned false")
+	}
+	if got, _ := s.ListHoldings(ctx, "u1"); len(got) != 1 {
+		t.Errorf("after delete: %d rows, want 1", len(got))
+	}
+}
+
 func TestAlertsActiveAndTrigger(t *testing.T) {
 	s := New()
 	ctx := context.Background()

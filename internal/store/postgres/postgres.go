@@ -751,6 +751,51 @@ func (s *Store) DeleteAlert(ctx context.Context, userID, id string) (bool, error
 	return tag.RowsAffected() == 1, nil
 }
 
+const holdingCols = `id, user_id, ticker, shares, avg_cost, created_at, updated_at`
+
+func scanHolding(row interface{ Scan(...any) error }) (store.Holding, error) {
+	var h store.Holding
+	err := row.Scan(&h.ID, &h.UserID, &h.Ticker, &h.Shares, &h.AvgCost, &h.CreatedAt, &h.UpdatedAt)
+	return h, err
+}
+
+func (s *Store) SaveHolding(ctx context.Context, h store.Holding) error {
+	const query = `
+INSERT INTO holdings (id, user_id, ticker, shares, avg_cost, created_at, updated_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7)
+ON CONFLICT (user_id, ticker) DO UPDATE SET
+  shares = EXCLUDED.shares, avg_cost = EXCLUDED.avg_cost, updated_at = EXCLUDED.updated_at`
+	if _, err := s.pool.Exec(ctx, query, h.ID, h.UserID, h.Ticker, h.Shares, h.AvgCost, h.CreatedAt, h.UpdatedAt); err != nil {
+		return fmt.Errorf("postgres: save holding: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) ListHoldings(ctx context.Context, userID string) ([]store.Holding, error) {
+	rows, err := s.pool.Query(ctx, `SELECT `+holdingCols+` FROM holdings WHERE user_id = $1 ORDER BY ticker`, userID)
+	if err != nil {
+		return nil, fmt.Errorf("postgres: list holdings: %w", err)
+	}
+	defer rows.Close()
+	var out []store.Holding
+	for rows.Next() {
+		h, err := scanHolding(rows)
+		if err != nil {
+			return nil, fmt.Errorf("postgres: scan holding: %w", err)
+		}
+		out = append(out, h)
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) DeleteHolding(ctx context.Context, userID, id string) (bool, error) {
+	tag, err := s.pool.Exec(ctx, `DELETE FROM holdings WHERE id = $1 AND user_id = $2`, id, userID)
+	if err != nil {
+		return false, fmt.Errorf("postgres: delete holding: %w", err)
+	}
+	return tag.RowsAffected() == 1, nil
+}
+
 // SaveComment inserts a public comment (empty ticker → NULL = global board).
 func (s *Store) SaveComment(ctx context.Context, c store.Comment) error {
 	const query = `

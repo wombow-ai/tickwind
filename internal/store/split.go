@@ -151,6 +151,14 @@ func (s Split) MarkAlertTriggered(ctx context.Context, id string, at time.Time) 
 	return s.User.MarkAlertTriggered(ctx, id, at)
 }
 
+func (s Split) SaveHolding(ctx context.Context, h Holding) error { return s.User.SaveHolding(ctx, h) }
+func (s Split) ListHoldings(ctx context.Context, userID string) ([]Holding, error) {
+	return s.User.ListHoldings(ctx, userID)
+}
+func (s Split) DeleteHolding(ctx context.Context, userID, id string) (bool, error) {
+	return s.User.DeleteHolding(ctx, userID, id)
+}
+
 // Comments are public, valuable community content → the durable Market store.
 
 func (s Split) SaveComment(ctx context.Context, c Comment) error {

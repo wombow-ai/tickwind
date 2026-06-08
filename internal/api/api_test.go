@@ -130,6 +130,56 @@ func TestAlertsAPI(t *testing.T) {
 	}
 }
 
+func TestHoldingsAPI(t *testing.T) {
+	srv := newTestServer()
+	defer srv.Close()
+
+	// Unauthenticated read → 401.
+	if resp, err := http.Get(srv.URL + "/v1/holdings"); err != nil {
+		t.Fatal(err)
+	} else if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("GET /v1/holdings (no auth) = %d, want 401", resp.StatusCode)
+	}
+
+	// Create (ticker upper-cased).
+	resp := authed(t, "POST", srv.URL+"/v1/holdings", `{"ticker":"aapl","shares":10,"avg_cost":150}`)
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("POST /v1/holdings = %d, want 201", resp.StatusCode)
+	}
+	var created struct {
+		ID     string  `json:"id"`
+		Ticker string  `json:"ticker"`
+		Shares float64 `json:"shares"`
+	}
+	_ = json.NewDecoder(resp.Body).Decode(&created)
+	resp.Body.Close()
+	if created.ID == "" || created.Ticker != "AAPL" || created.Shares != 10 {
+		t.Fatalf("created = %+v, want id + AAPL + 10 shares", created)
+	}
+
+	// Non-positive shares → 400.
+	if r := authed(t, "POST", srv.URL+"/v1/holdings", `{"ticker":"AAPL","shares":0,"avg_cost":1}`); r.StatusCode != http.StatusBadRequest {
+		t.Errorf("POST shares=0 = %d, want 400", r.StatusCode)
+	}
+
+	// Re-saving AAPL upserts → still one row.
+	authed(t, "POST", srv.URL+"/v1/holdings", `{"ticker":"AAPL","shares":20,"avg_cost":160}`).Body.Close()
+	r := authed(t, "GET", srv.URL+"/v1/holdings", "")
+	var list struct {
+		Count int `json:"count"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&list)
+	r.Body.Close()
+	if list.Count != 1 {
+		t.Fatalf("list count = %d, want 1 (upsert by ticker)", list.Count)
+	}
+
+	// Delete → 200.
+	if r := authed(t, "DELETE", srv.URL+"/v1/holdings/"+created.ID, ""); r.StatusCode != http.StatusOK {
+		t.Errorf("DELETE = %d, want 200", r.StatusCode)
+	}
+}
+
 func TestHealthz(t *testing.T) {
 	srv := newTestServer()
 	defer srv.Close()
