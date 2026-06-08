@@ -43,7 +43,7 @@ function nodeStyle(importance: string, dark: boolean): {size: string; dot: strin
     case 'med':
       return {size: 'h-2.5 w-2.5', dot: dark ? 'bg-sky-400' : 'bg-sky-500', ring: ''};
     default:
-      return {size: 'h-2 w-2', dot: dark ? 'bg-slate-600' : 'bg-slate-300', ring: ''};
+      return {size: 'h-2 w-2', dot: dark ? 'bg-slate-600' : 'bg-slate-400', ring: ''};
   }
 }
 
@@ -135,8 +135,10 @@ export function EventsTimeline() {
           <span
             aria-hidden
             className={cx(
-              'absolute left-[6px] top-2 bottom-3 w-0.5 rounded',
-              dark ? 'bg-slate-700' : 'bg-slate-200',
+              'absolute left-[6px] top-2 bottom-3 w-0.5 rounded bg-gradient-to-b',
+              dark
+                ? 'from-slate-700/0 via-slate-700 to-slate-700/0'
+                : 'from-slate-200/0 via-slate-300 to-slate-200/0',
             )}
           />
           {shown.map((e, i) => (
@@ -202,7 +204,20 @@ function Row({e, dark, t}: {e: EventItem; dark: boolean; t: Tokens}) {
           </span>
           <Icon
             size={13}
-            className={cx('shrink-0', high ? (dark ? 'text-amber-300' : 'text-amber-600') : t.sub)}
+            className={cx(
+              'shrink-0',
+              high
+                ? dark
+                  ? 'text-amber-300'
+                  : 'text-amber-600'
+                : e.category === 'world'
+                  ? dark
+                    ? 'text-violet-300'
+                    : 'text-violet-500'
+                  : dark
+                    ? 'text-sky-400'
+                    : 'text-sky-600',
+            )}
           />
           <span className={cx('truncate text-[14px] font-semibold', t.text)}>
             {eventTitle(e.subtype, e.title, lang)}
