@@ -1,6 +1,6 @@
 'use client';
 
-import {ChevronDown, LogOut, Menu, Moon, Search, Settings, Star, StickyNote, Sun, X} from 'lucide-react';
+import {ChevronDown, LogOut, Menu, Moon, Search, Settings, Star, StickyNote, Sun, Wallet, X} from 'lucide-react';
 import Link from 'next/link';
 import {usePathname, useRouter} from 'next/navigation';
 import {useEffect, useRef, useState} from 'react';
@@ -87,6 +87,7 @@ export function TopNav() {
     {href: '/events', label: tr('nav.events')},
     {href: '/community', label: tr('nav.community')},
     ...(authed ? [{href: '/notes', label: tr('nav.notes')}] : []),
+    ...(authed ? [{href: '/portfolio', label: tr('nav.portfolio')}] : []),
   ];
   const whatsnew: NavItem = {href: '/announcements', label: tr('nav.whatsnew')};
   // The full ordered list for the mobile sheet.
@@ -417,6 +418,17 @@ function AccountMenu({
               )}
             >
               <StickyNote size={15} className={t.sub} /> {tr('nav.notes')}
+            </Link>
+            <Link
+              href="/portfolio"
+              onClick={() => setOpen(false)}
+              className={cx(
+                'flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-[13px]',
+                t.text,
+                t.ghost,
+              )}
+            >
+              <Wallet size={15} className={t.sub} /> {tr('nav.portfolio')}
             </Link>
             <Link
               href="/settings"
