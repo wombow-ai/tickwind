@@ -29,7 +29,6 @@ import (
 	"github.com/wombow-ai/tickwind/internal/krx"
 	"github.com/wombow-ai/tickwind/internal/market"
 	"github.com/wombow-ai/tickwind/internal/opportunity"
-	"github.com/wombow-ai/tickwind/internal/reddit"
 	"github.com/wombow-ai/tickwind/internal/sec"
 	"github.com/wombow-ai/tickwind/internal/stocktwits"
 	"github.com/wombow-ai/tickwind/internal/store"
@@ -42,7 +41,6 @@ import (
 	"github.com/wombow-ai/tickwind/internal/topics"
 	"github.com/wombow-ai/tickwind/internal/tpex"
 	"github.com/wombow-ai/tickwind/internal/twse"
-	"github.com/wombow-ai/tickwind/internal/xueqiu"
 	"github.com/wombow-ai/tickwind/internal/yahoo"
 )
 
@@ -109,9 +107,7 @@ func main() {
 
 	social := []ingest.SocialSource{
 		stocktwits.New(),
-		reddit.New(cfg.RedditClientID, cfg.RedditSecret, cfg.RedditUsername, cfg.RedditPassword),
 		bluesky.New(cfg.BlueskyHandle, cfg.BlueskyAppPassword),
-		xueqiu.New(),
 		tickertick.New(),
 	}
 
