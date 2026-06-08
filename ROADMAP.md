@@ -224,8 +224,14 @@ Status: ✅ done · 🟡 in progress · ⬜ todo
 > planning subagents. **The 9-idea batch is 100% SHIPPED** (2026-06-09): #24-#31 all live (incl. #29
 > holdings front+back; #26 ETF search — SIVEF-class pink sheets remain unindexed by design). A ~1h
 > VPS SSH outage (1GB-RAM OOM + fail2ban) that blocked deploys is **RESOLVED** (swap added, deploy IP
-> whitelisted, GitHub-pull deploy method — see CLAUDE.md). **Loop idle, ready to resume with `/loop`**;
-> next queued = **#23 FINRA squeeze radar** (data source already verified).
+> whitelisted, GitHub-pull deploy method — see CLAUDE.md).
+>
+> **▶ v2 plan IN PROGRESS (owner-confirmed 2026-06-09), 1-min `/loop`, this order:** ✅#0 remove gray
+> sources Reddit+Xueqiu (committed `0f2c25a`; deploy pending) → ⬜#1 K-line full timeframes (1D/5D
+> intraday + W/M/Q/Y) [task 32] → ⬜#2 cache all US stocks (price+cap) [33] → ⬜#3 earnings calendar
+> [34] → ⬜#4 Congress board (Senate-first) [35] → ⬜#5 screener (needs #2) [36] → ⬜#6 notes/comments
+> enhance [37] → ⬜#7 Brazil B3 (brapi, key in VPS .env) [38] → ⬜#8 FINRA squeeze radar [23].
+> Yahoo HK kept (gray but controllable while free; revisit at monetization). brapi key provided.
 
 3 parallel research agents (competitor gaps · free data sources · AI/LLM). **Convergence: the
 SEC/EDGAR backbone is the defensible, redistribution-safe lane.** Owner picks which to build:

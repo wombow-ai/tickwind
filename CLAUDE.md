@@ -40,6 +40,12 @@ feature-flagged plugin, never on the critical path. Web only.
   **1G swapfile** (`/swapfile2`, in fstab; total swap ~4G → OOM gone, normal SSH stable again);
   **whitelisted the deploy IP** `154.29.158.47` in `/etc/fail2ban/jail.d/tickwind-ignore.conf`;
   `docker system prune -af` after builds to reclaim disk (a rebuild can push `/` from ~40%→90%).
+  **SSH still drops intermittently — use SINGLE, SPACED attempts; do NOT rapid-retry in a tight loop**
+  (a burst of reconnects re-trips sshd MaxStartups / fail2ban → "Connection closed by remote host"). One
+  attempt per `/loop` tick (spaced ~60s) is the reliable pattern; if a deploy attempt drops, defer to the
+  next tick rather than hammering. If fully locked out again, owner unbans via the panel **VNC** console.
+- **brapi.dev API key** (Brazil B3, feature #38) provided by owner 2026-06-09, stored in the **VPS `.env`**
+  as `BRAPI_API_KEY` (NOT in git — repo is public). Read it from the VPS env when building the BR adapter.
 
 ## Owner habits & preferences (keep this current — context gets compacted)
 - **Workflow**: drives development via `/loop` (autonomous, self-paced). Each iteration =
