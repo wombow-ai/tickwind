@@ -21,8 +21,9 @@ type OwnershipRef struct {
 	CIK       int    `json:"cik"`
 	Company   string `json:"company"`
 	Accession string `json:"accession"`
-	FiledDate string `json:"filed_date"` // as listed in the index (YYYY-MM-DD)
-	Activist  bool   `json:"activist"`   // true for 13D (and 13D/A); false for 13G
+	FiledDate string `json:"filed_date"`      // as listed in the index (YYYYMMDD)
+	Activist  bool   `json:"activist"`        // true for 13D (and 13D/A); false for 13G
+	Filer     string `json:"filer,omitempty"` // the reporting institution (from the filing header)
 }
 
 // DailyBeneficialOwnership returns the Schedule 13D/13G filings in the SEC daily
@@ -38,6 +39,41 @@ func (c *Client) DailyBeneficialOwnership(ctx context.Context, date time.Time) (
 		return nil, err
 	}
 	return parseOwnershipIndex(body), nil
+}
+
+// FetchFiler resolves the reporting institution (the "FILED BY" party) for a
+// 13D/13G ref by reading just the SGML header of the full submission. Returns ""
+// (no error) when the filer can't be determined.
+func (c *Client) FetchFiler(ctx context.Context, ref OwnershipRef) (string, error) {
+	url := fmt.Sprintf("%s/Archives/edgar/data/%d/%s.txt", c.archiveBase, ref.CIK, ref.Accession)
+	body, err := c.getLimited(ctx, url, 64<<10) // header lives at the top
+	if err != nil {
+		return "", err
+	}
+	return parseFiler(body), nil
+}
+
+// parseFiler extracts the reporting institution from an EDGAR full-submission
+// SGML header: the first "COMPANY CONFORMED NAME:" appearing after a "FILED BY:"
+// marker. Pure — unit-tested.
+func parseFiler(header []byte) string {
+	sc := bufio.NewScanner(bytes.NewReader(header))
+	sc.Buffer(make([]byte, 0, 64*1024), 256*1024)
+	filedBy := false
+	for sc.Scan() {
+		line := sc.Text()
+		if strings.Contains(line, "FILED BY:") {
+			filedBy = true
+			continue
+		}
+		if filedBy {
+			if i := strings.Index(line, "COMPANY CONFORMED NAME:"); i >= 0 {
+				name := strings.TrimSpace(line[i+len("COMPANY CONFORMED NAME:"):])
+				return name
+			}
+		}
+	}
+	return ""
 }
 
 // ownershipForms maps the daily-index form token (the field after "SC") to

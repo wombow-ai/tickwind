@@ -2,6 +2,28 @@ package sec
 
 import "testing"
 
+func TestParseFiler(t *testing.T) {
+	// EDGAR full-submission SGML header: SUBJECT COMPANY block first (the issuer),
+	// then FILED BY (the reporting institution). parseFiler must return the latter.
+	header := []byte("<SEC-HEADER>\n" +
+		"ACCESSION NUMBER:\t\t0001104659-26-071337\n" +
+		"SUBJECT COMPANY:\t\n" +
+		"\tCOMPANY DATA:\t\n" +
+		"\t\tCOMPANY CONFORMED NAME:\t\t\tGENCO SHIPPING & TRADING LTD\n" +
+		"\t\tCENTRAL INDEX KEY:\t\t\t0001326200\n" +
+		"FILED BY:\t\n" +
+		"\tCOMPANY DATA:\t\n" +
+		"\t\tCOMPANY CONFORMED NAME:\t\t\tCENTERBRIDGE PARTNERS LP\n" +
+		"\t\tCENTRAL INDEX KEY:\t\t\t0001234567\n")
+	if got := parseFiler(header); got != "CENTERBRIDGE PARTNERS LP" {
+		t.Errorf("parseFiler = %q, want CENTERBRIDGE PARTNERS LP", got)
+	}
+	// No FILED BY block → empty.
+	if got := parseFiler([]byte("SUBJECT COMPANY:\n\tCOMPANY CONFORMED NAME:\tACME\n")); got != "" {
+		t.Errorf("parseFiler(no filed-by) = %q, want empty", got)
+	}
+}
+
 func TestParseOwnershipIndex(t *testing.T) {
 	// A daily form.idx slice (whitespace-aligned), mixing 13D/13G/amendments, a
 	// Form 4 (must be ignored), and header/separator lines.

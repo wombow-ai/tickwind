@@ -10,10 +10,11 @@ import (
 	"github.com/wombow-ai/tickwind/internal/sec"
 )
 
-// OwnershipFetcher fetches Schedule 13D/13G filings for a day (satisfied by
-// *sec.Client).
+// OwnershipFetcher fetches Schedule 13D/13G filings for a day and resolves the
+// reporting institution for a filing (satisfied by *sec.Client).
 type OwnershipFetcher interface {
 	DailyBeneficialOwnership(ctx context.Context, date time.Time) ([]sec.OwnershipRef, error)
+	FetchFiler(ctx context.Context, ref sec.OwnershipRef) (string, error)
 }
 
 // InstitutionalIngestor refreshes the in-memory cache of recent Schedule 13D/13G
@@ -75,6 +76,17 @@ func (i *InstitutionalIngestor) refresh(ctx context.Context) {
 	sort.SliceStable(all, func(x, y int) bool { return all[x].FiledDate > all[y].FiledDate })
 	if len(all) > i.max {
 		all = all[:i.max]
+	}
+	// Enrich the newest filings with the reporting institution (the "FILED BY"
+	// party), bounded to keep SEC fetches modest. Failures leave Filer empty.
+	const maxFiler = 60
+	for k := range all {
+		if k >= maxFiler {
+			break
+		}
+		if filer, err := i.sec.FetchFiler(ctx, all[k]); err == nil && filer != "" {
+			all[k].Filer = filer
+		}
 	}
 	i.cache.Set(all)
 	i.log.Info("institutional: refreshed", "filings", len(all))

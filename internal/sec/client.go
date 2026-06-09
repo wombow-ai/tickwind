@@ -59,8 +59,14 @@ func (c *Client) throttle(ctx context.Context) {
 }
 
 // get performs a rate-limited GET with the SEC User-Agent and returns the body
-// (Go transparently negotiates + decompresses gzip).
+// (Go transparently negotiates + decompresses gzip), capped at maxBody.
 func (c *Client) get(ctx context.Context, url string) ([]byte, error) {
+	return c.getLimited(ctx, url, maxBody)
+}
+
+// getLimited is get but reads at most n bytes, then closes the body (aborting the
+// rest of the transfer) — used to grab only the SGML header of a large filing.
+func (c *Client) getLimited(ctx context.Context, url string, n int64) ([]byte, error) {
 	c.throttle(ctx)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
@@ -76,7 +82,7 @@ func (c *Client) get(ctx context.Context, url string) ([]byte, error) {
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("sec: get %s: %s", url, resp.Status)
 	}
-	return io.ReadAll(io.LimitReader(resp.Body, maxBody))
+	return io.ReadAll(io.LimitReader(resp.Body, n))
 }
 
 // Shares returns common shares outstanding per CIK from the dei XBRL frame for

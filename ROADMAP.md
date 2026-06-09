@@ -295,7 +295,10 @@ Status: ✅ done · 🟡 in progress · ⬜ todo
 > 返回真实 13D/13G（例：`SC 13D/A · GENCO SHIPPING & TRADING LTD · 20260608 · activist:true`，healthz 200）——**确认 SEC 实时取数在 VPS
 > 端到端工作**。注：本合成 2026 环境 13D/13G 数据稀疏(count=1)，真实生产会有几十条；索引日期是 `YYYYMMDD` 格式(前端需格式化)。
 > **#3c 下一步：申报人(institution)解析** —— filing `.txt` SGML header 的 "FILED BY:" → "COMPANY CONFORMED NAME:" 抠出机构名，丰富
-> `OwnershipRef.Filer`（sec 加 FetchFiler，ingestor 每条调用，限流+capped）；这是 owner 想看的核心("贝莱德加仓了谁")。#3d：前端 `/institutional`
+> `OwnershipRef.Filer`（sec 加 FetchFiler，ingestor 每条调用，限流+capped）；这是 owner 想看的核心("贝莱德加仓了谁")。**#3c ✅ 本 tick**：
+> `OwnershipRef.Filer` + `sec.FetchFiler`(读 filing `.txt` 头前 64KB via 新 `getLimited`) + `parseFiler`(取 "FILED BY:" 后首个
+> "COMPANY CONFORMED NAME:"，单测 GENCO/CENTERBRIDGE) + ingestor 对最新 60 条填充 Filer（OwnershipFetcher 接口加 FetchFiler）。go 全绿，
+> **待部署+验证 `/v1/institutional` filings[].filer 非空**。#3d：前端 `/institutional`
 > 榜单页（申报人+标的+13D活跃/13G被动标签+日期+SEC链接，非投资建议）+ 导航。#7/#8 暂停；#2a WS 实时待开盘验证（本环境市场锚定 6/9，演示不了）。**
 > **▶ RESUMED 2026-06-09 — owner restored SSH; the #2a+#3a backlog deployed + verified (universe
 > ~6.5k stocks; #3a is dead code until #3b wires it). KEY DEPLOY FIX: background the ENTIRE deploy
