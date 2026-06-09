@@ -86,6 +86,7 @@ export function TopNav() {
   const secondary: NavItem[] = [
     {href: '/screen', label: tr('nav.screen')},
     {href: '/congress', label: tr('nav.congress')},
+    {href: '/institutional', label: tr('nav.institutional')},
     {href: '/events', label: tr('nav.events')},
     {href: '/community', label: tr('nav.community')},
     ...(authed ? [{href: '/notes', label: tr('nav.notes')}] : []),

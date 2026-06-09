@@ -298,7 +298,10 @@ Status: ✅ done · 🟡 in progress · ⬜ todo
 > `OwnershipRef.Filer`（sec 加 FetchFiler，ingestor 每条调用，限流+capped）；这是 owner 想看的核心("贝莱德加仓了谁")。**#3c ✅ 本 tick**：
 > `OwnershipRef.Filer` + `sec.FetchFiler`(读 filing `.txt` 头前 64KB via 新 `getLimited`) + `parseFiler`(取 "FILED BY:" 后首个
 > "COMPANY CONFORMED NAME:"，单测 GENCO/CENTERBRIDGE) + ingestor 对最新 60 条填充 Filer（OwnershipFetcher 接口加 FetchFiler）。go 全绿，
-> **待部署+验证 `/v1/institutional` filings[].filer 非空**。#3d：前端 `/institutional`
+> ✅ LIVE 验证：`/v1/institutional` filer 已填充（真实例：**DIANA SHIPPING INC. → GENCO 的 SC 13D/A 主动举牌**）。**#3d ✅ 本 tick**：
+> 前端 `/institutional` 榜单页（`InstitutionalBoard`：申报人→标的+13D活跃/13G被动标签+申报日期(YYYYMMDD格式化)+SEC文件夹链接；全部/13D/13G 过滤切换；
+> 诚实标注 13D 主动 vs 13G 被动；空/错/骨架态）+ `api.ts getInstitutional` + 导航(secondary)`机构举牌`/Institutions + zh/en i18n inst.*。web build+lint 绿。
+> **→ v3 三想法全部交付：①价格卡盘前盘后(LIVE) ②实时 WebSocket(部署，实时待开盘) ③机构/举牌榜(LIVE)。** 旧 #3d：前端 `/institutional`
 > 榜单页（申报人+标的+13D活跃/13G被动标签+日期+SEC链接，非投资建议）+ 导航。#7/#8 暂停；#2a WS 实时待开盘验证（本环境市场锚定 6/9，演示不了）。**
 > **▶ RESUMED 2026-06-09 — owner restored SSH; the #2a+#3a backlog deployed + verified (universe
 > ~6.5k stocks; #3a is dead code until #3b wires it). KEY DEPLOY FIX: background the ENTIRE deploy

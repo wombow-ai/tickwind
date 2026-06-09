@@ -851,6 +851,38 @@ export function getCongress(limit = 60, signal?: AbortSignal): Promise<CongressR
   return getJson<CongressResponse>(`/v1/congress${q}`, signal);
 }
 
+/** A SEC Schedule 13D/13G beneficial-ownership filing (institutional/activist stake). */
+export interface InstitutionalFiling {
+  form_type: string; // "SC 13D" | "SC 13D/A" | "SC 13G" | "SC 13G/A"
+  cik: number;
+  company: string; // subject issuer
+  accession: string;
+  filed_date: string; // YYYYMMDD
+  activist: boolean; // true = 13D (active stake), false = 13G (passive)
+  filer?: string; // the reporting institution
+}
+
+/** Envelope returned by `GET /v1/institutional`. */
+export interface InstitutionalResponse {
+  count: number;
+  filings: InstitutionalFiling[];
+}
+
+/**
+ * Fetches recent SEC 13D/13G beneficial-ownership filings, newest first. `type`
+ * filters to activist 13D or passive 13G; `limit` caps rows. Public endpoint.
+ */
+export function getInstitutional(
+  opts: {type?: '13d' | '13g'; limit?: number} = {},
+  signal?: AbortSignal,
+): Promise<InstitutionalResponse> {
+  const p = new URLSearchParams();
+  if (opts.type) p.set('type', opts.type);
+  if (opts.limit != null) p.set('limit', String(opts.limit));
+  const q = p.toString();
+  return getJson<InstitutionalResponse>(`/v1/institutional${q ? `?${q}` : ''}`, signal);
+}
+
 /** One screener match from `GET /v1/screen`. change_pct is null when unknown. */
 export interface ScreenResult {
   ticker: string;
