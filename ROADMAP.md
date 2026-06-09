@@ -236,10 +236,13 @@ Status: ✅ done · 🟡 in progress · ⬜ todo
 > [34] → ⬜#4 Congress board (Senate-first) [35] → ⬜#5 screener (needs #2) [36] → ⬜#6 notes/comments
 > enhance [37] → ⬜#7 Brazil B3 (brapi, key in VPS .env) [38] → ⬜#8 FINRA squeeze radar [23].
 > Yahoo HK kept (gray but controllable while free; revisit at monetization). brapi key provided.
-> **◐#3 earnings: (a) `finnhub.EarningsCalendar` + `store.Earning` + parse test ✅ `ec45870`; next
-> (b) store CRUD + EarningsIngestor ✅ `21c47bd` (committed+tested, **deploy pending — SSH dropped
-> 2× this tick, intermittent**), (c) API `/v1/earnings` + timeline render next. ◐#6: notes inline-edit LIVE `d97db72`
-> (Vercel; rest of #6 = Markdown + comment edit/like).**
+> **◐#3 earnings: (a) `finnhub.EarningsCalendar` + `store.Earning` + parse test ✅ `ec45870` (deployed);
+> (b) store CRUD + EarningsIngestor ✅ `21c47bd`; (c) API `GET /v1/earnings?from=&to=` + `GET /v1/stocks/{t}/earnings`
+> (`EarningsSource` iface in api.New, 5 call sites synced) + `api.ts` `Earning`/`getEarnings`/`getStockEarnings`
+> ✅ `27dc91f` — go+web all green. **(b)+(c) backend deploy PENDING — SSH dropped 3× across last 2 ticks,
+> intermittent; deploys on next successful single attempt.** api.ts (frontend) auto-deploys via Vercel now.
+> Next: (d) StockView "下次财报" chip (getStockEarnings → nearest future row, date+bmo/amc) + optional timeline merge.
+> ◐#6: notes inline-edit LIVE `d97db72` (Vercel; rest of #6 = Markdown + comment edit/like).**
 > **▶ RESUMED 2026-06-09 — owner restored SSH; the #2a+#3a backlog deployed + verified (universe
 > ~6.5k stocks; #3a is dead code until #3b wires it). KEY DEPLOY FIX: background the ENTIRE deploy
 > script via `nohup` so the SSH command returns sub-second (the flaky link drops connections held open
