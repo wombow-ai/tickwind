@@ -8,6 +8,7 @@ import {useAuth} from '@/lib/auth';
 import {useT} from '@/lib/i18n';
 import {useDark} from '@/lib/theme';
 import {btnPrimary, cx, timeAgo, tok} from '@/lib/ui';
+import {Markdown} from '@/components/Markdown';
 
 type Tokens = ReturnType<typeof tok>;
 
@@ -245,7 +246,7 @@ function NoteCard({
           </div>
         </div>
       ) : (
-        <p className={cx('whitespace-pre-wrap break-words text-[13.5px]', t.text)}>{n.body}</p>
+        <Markdown>{n.body}</Markdown>
       )}
       {!editing && (
         <div className="mt-2 flex items-center gap-3 opacity-0 transition group-hover:opacity-100">

@@ -15,6 +15,7 @@ import {useT} from '@/lib/i18n';
 import {useDark} from '@/lib/theme';
 import {btnPrimary, cx, timeAgo, tok} from '@/lib/ui';
 import {useToast} from '@/components/ui/Toast';
+import {Markdown} from '@/components/Markdown';
 
 type Tokens = ReturnType<typeof tok>;
 
@@ -180,7 +181,7 @@ function CommentCard({
           {timeAgo(c.created_at)} {tr('common.ago')}
         </span>
       </div>
-      <p className={cx('whitespace-pre-wrap break-words text-[13.5px]', t.text)}>{c.body}</p>
+      <Markdown>{c.body}</Markdown>
       <div className="mt-2 flex items-center gap-3 opacity-0 transition group-hover:opacity-100">
         <button
           onClick={onReport}

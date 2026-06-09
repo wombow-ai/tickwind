@@ -261,7 +261,10 @@ Status: ✅ done · 🟡 in progress · ⬜ todo
 > guard: change outside [-95%,+300%] marked unknown** (still in price screens, excluded from change rank) ✅ `76a1e9b` — RE-VERIFIED
 > (top gainers now CHAI +300/AZI +191/RGNT +151, sane). Next: (b) market-cap filter (needs SEC `Shares()` whole-market cache,
 > 3 req/day → ticker→shares; cap=price×shares) [separate tick]; (c) frontend `/screen` page (filter controls + results table).
-> ◐#6: notes inline-edit LIVE `d97db72` (rest = Markdown render + comment edit/like).**
+> ◐#6 notes/comments (37): notes inline-edit LIVE `d97db72`; (a) **Markdown rendering — `Markdown.tsx` wraps react-markdown
+> (10.1.0; NO raw HTML → XSS-safe; images stripped; links →_blank/noopener; `.tw-md` compact CSS) rendering note + comment
+> bodies** (NotesPanel/CommentsPanel). web build+lint green. Rest: comment edit (store.UpdateComment+PATCH, backend/SSH),
+> comment like (per-user dedup table).**
 > **▶ RESUMED 2026-06-09 — owner restored SSH; the #2a+#3a backlog deployed + verified (universe
 > ~6.5k stocks; #3a is dead code until #3b wires it). KEY DEPLOY FIX: background the ENTIRE deploy
 > script via `nohup` so the SSH command returns sub-second (the flaky link drops connections held open

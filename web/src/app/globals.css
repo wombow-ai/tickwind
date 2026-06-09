@@ -232,3 +232,21 @@ summary:focus-visible,
   border: 2px solid transparent;
   background-clip: content-box;
 }
+
+/* Compact Markdown typography for user notes/comments (react-markdown wrapper). */
+.tw-md > :first-child { margin-top: 0; }
+.tw-md > :last-child { margin-bottom: 0; }
+.tw-md p { margin: 0.35em 0; }
+.tw-md ul { margin: 0.35em 0; padding-left: 1.25rem; list-style: disc; }
+.tw-md ol { margin: 0.35em 0; padding-left: 1.25rem; list-style: decimal; }
+.tw-md li { margin: 0.15em 0; }
+.tw-md h1, .tw-md h2, .tw-md h3 { margin: 0.5em 0 0.25em; font-weight: 700; line-height: 1.3; }
+.tw-md h1 { font-size: 1.05em; }
+.tw-md h2 { font-size: 1.02em; }
+.tw-md h3 { font-size: 1em; }
+.tw-md code { font-size: 0.85em; padding: 0.05em 0.3em; border-radius: 4px; background: rgba(148, 163, 184, 0.18); }
+.tw-md pre { margin: 0.4em 0; padding: 0.6em 0.8em; border-radius: 8px; overflow-x: auto; background: rgba(148, 163, 184, 0.14); }
+.tw-md pre code { background: transparent; padding: 0; }
+.tw-md blockquote { margin: 0.4em 0; padding-left: 0.75rem; border-left: 2px solid rgba(148, 163, 184, 0.4); opacity: 0.85; }
+.tw-md strong { font-weight: 700; }
+.tw-md em { font-style: italic; }
