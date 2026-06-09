@@ -243,12 +243,14 @@ Status: ✅ done · 🟡 in progress · ⬜ todo
 > `/v1/stocks/{t}/earnings` valid, healthz 200, universe 6683.** DEPLOY LESSON: the flaky SSH eventually gets through
 > — one single spaced attempt per tick (NO spinning) drains the backlog; 4 drops then success, no fail2ban trip.
 > ◐#4 Congress trading board (35): **data source verified + chosen = official House Clerk FD (disclosures-clerk.house.gov,
-> public-domain, keyless; Stock-Watcher S3 dumps now 403/acquired).** `internal/congress` client ✅ (this tick): downloads
-> the annual `{year}FD.ZIP`, unzips in-memory, parses the XML index, keeps FilingType "P" = Periodic Transaction Reports
-> (515 in 2025), builds the official PTR PDF link (`/public_disc/ptr-pdfs/{yr}/{docid}.pdf`, verified 200) — parse unit-tested
-> (BOM-stripped, state/district split, date M/D/YYYY). Next: `store.CongressTrade`/Filing + ingestor + `/v1/congress` API + board page.
-> (Ticker-level detail = PTR PDF parsing, deferred; v1 links to the official PDF.) ◐#6: notes inline-edit LIVE `d97db72`
-> (rest = Markdown render + comment edit/like).**
+> public-domain, keyless; Stock-Watcher S3 dumps now 403/acquired).** (a) `internal/congress` client+parser+test `9e34450`
+> (downloads annual `{year}FD.ZIP`, unzips in-memory, parses XML index, keeps FilingType "P" = Periodic Transaction Reports,
+> builds official PTR PDF link `/public_disc/ptr-pdfs/{yr}/{docid}.pdf`); (b) **cache + `CongressIngestor` (8h, keyless,
+> unconditional) + nil-safe `CongressSource` in api.New (5 call sites) + `GET /v1/congress?limit=` ✅ `2f6ec00` — DEPLOYED
+> + LIVE-VERIFIED (clean first SSH attempt, ~30s): real PTRs (Shreve IN-06, Allen GA-12, 2026 dates, working PDF links),
+> count 60, healthz 200.** Next (c, frontend Vercel): `/congress` board page (member·state·date·"official PDF" link) + nav +
+> `api.ts getCongress` + i18n. (Ticker-level detail = PTR PDF parsing, deferred; v1 links to the official PDF.)
+> ◐#6: notes inline-edit LIVE `d97db72` (rest = Markdown render + comment edit/like).**
 > **▶ RESUMED 2026-06-09 — owner restored SSH; the #2a+#3a backlog deployed + verified (universe
 > ~6.5k stocks; #3a is dead code until #3b wires it). KEY DEPLOY FIX: background the ENTIRE deploy
 > script via `nohup` so the SSH command returns sub-second (the flaky link drops connections held open
