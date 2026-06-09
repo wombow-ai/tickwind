@@ -94,6 +94,14 @@ type EventSource interface {
 	Get() []events.Event
 }
 
+// EarningsSource provides the company earnings calendar — date-windowed and
+// per-ticker. nil-safe (a nil source yields empty lists). store.Store satisfies
+// it directly (ListEarnings / ListEarningsForTicker), so main.go passes the store.
+type EarningsSource interface {
+	ListEarnings(ctx context.Context, from, to time.Time) ([]store.Earning, error)
+	ListEarningsForTicker(ctx context.Context, ticker string, limit int) ([]store.Earning, error)
+}
+
 type Server struct {
 	store        store.Store
 	hub          QuoteStream
@@ -109,19 +117,20 @@ type Server struct {
 	symbols      SymbolSearcher
 	events       EventSource
 	fundamentals FundamentalsSource
+	earnings     EarningsSource
 	admins       map[string]bool // user UUIDs and/or emails (lowercased) allowed to delete any comment
 	commentRL    *rateLimiter    // per-user comment-post throttle
 	log          *slog.Logger
 }
 
-func New(st store.Store, hub QuoteStream, enricher enrich.Enricher, verifier *auth.Verifier, bars BarSource, topicSrc TopicSource, oppSrc OpportunitySource, universeSrc UniverseSource, guruSrc GuruSource, ingestor TickerIngestor, symbolSrc SymbolSearcher, eventSrc EventSource, fundSrc FundamentalsSource, adminIDs []string, log *slog.Logger) http.Handler {
+func New(st store.Store, hub QuoteStream, enricher enrich.Enricher, verifier *auth.Verifier, bars BarSource, topicSrc TopicSource, oppSrc OpportunitySource, universeSrc UniverseSource, guruSrc GuruSource, ingestor TickerIngestor, symbolSrc SymbolSearcher, eventSrc EventSource, fundSrc FundamentalsSource, earningsSrc EarningsSource, adminIDs []string, log *slog.Logger) http.Handler {
 	admins := make(map[string]bool, len(adminIDs))
 	for _, id := range adminIDs {
 		if id = strings.ToLower(strings.TrimSpace(id)); id != "" {
 			admins[id] = true
 		}
 	}
-	s := &Server{store: st, hub: hub, clip: clip.NewFetcher(), enrich: enricher, auth: verifier, bars: bars, topics: topicSrc, opps: oppSrc, universe: universeSrc, gurus: guruSrc, ingestor: ingestor, symbols: symbolSrc, events: eventSrc, fundamentals: fundSrc, admins: admins, commentRL: newRateLimiter(10, 10*time.Minute), log: log}
+	s := &Server{store: st, hub: hub, clip: clip.NewFetcher(), enrich: enricher, auth: verifier, bars: bars, topics: topicSrc, opps: oppSrc, universe: universeSrc, gurus: guruSrc, ingestor: ingestor, symbols: symbolSrc, events: eventSrc, fundamentals: fundSrc, earnings: earningsSrc, admins: admins, commentRL: newRateLimiter(10, 10*time.Minute), log: log}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", s.health)
 
@@ -156,6 +165,7 @@ func New(st store.Store, hub QuoteStream, enricher enrich.Enricher, verifier *au
 	mux.HandleFunc("GET /v1/stocks/{ticker}/news", s.getNews)
 	mux.HandleFunc("GET /v1/stocks/{ticker}/social", s.getSocial)
 	mux.HandleFunc("GET /v1/stocks/{ticker}/signals", s.getSignals)
+	mux.HandleFunc("GET /v1/stocks/{ticker}/earnings", s.getStockEarnings)
 	mux.HandleFunc("GET /v1/stocks/{ticker}/summary", s.getSummary)
 	mux.HandleFunc("GET /v1/bars", s.getBarsBatch)
 	mux.HandleFunc("GET /v1/news", s.getNewsBatch)
@@ -167,6 +177,7 @@ func New(st store.Store, hub QuoteStream, enricher enrich.Enricher, verifier *au
 	mux.HandleFunc("GET /v1/gurus", s.getGurus)
 	mux.HandleFunc("GET /v1/search", s.getSearch)
 	mux.HandleFunc("GET /v1/events", s.getEvents)
+	mux.HandleFunc("GET /v1/earnings", s.getEarnings)
 	mux.HandleFunc("GET /v1/stream", s.getStream)
 
 	// auth.Middleware attaches the user when a valid bearer token is present;
@@ -1156,6 +1167,50 @@ func (s *Server) getEvents(w http.ResponseWriter, r *http.Request) {
 		out = out[:lim]
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"count": len(out), "events": out})
+}
+
+// getEarnings returns the company earnings calendar within a [from, to] window
+// (YYYY-MM-DD; defaults to today .. +30d). Always 200 with a (possibly empty)
+// list — never null. nil source → empty.
+func (s *Server) getEarnings(w http.ResponseWriter, r *http.Request) {
+	earnings := []store.Earning{}
+	if s.earnings != nil {
+		q := r.URL.Query()
+		from := time.Now().UTC().Truncate(24 * time.Hour)
+		to := from.AddDate(0, 0, 30)
+		if v := strings.TrimSpace(q.Get("from")); v != "" {
+			if t, err := time.Parse("2006-01-02", v); err == nil {
+				from = t
+			}
+		}
+		if v := strings.TrimSpace(q.Get("to")); v != "" {
+			if t, err := time.Parse("2006-01-02", v); err == nil {
+				to = t
+			}
+		}
+		if got, err := s.earnings.ListEarnings(r.Context(), from, to); err != nil {
+			s.log.Debug("earnings list failed", "err", err)
+		} else if got != nil {
+			earnings = got
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"count": len(earnings), "earnings": earnings})
+}
+
+// getStockEarnings returns the recent/upcoming earnings rows for one ticker
+// (ascending by date), capped by ?limit= (default 8). Always 200 with a
+// (possibly empty) list — never null. nil source → empty.
+func (s *Server) getStockEarnings(w http.ResponseWriter, r *http.Request) {
+	ticker := strings.ToUpper(strings.TrimSpace(r.PathValue("ticker")))
+	earnings := []store.Earning{}
+	if s.earnings != nil {
+		if got, err := s.earnings.ListEarningsForTicker(r.Context(), ticker, queryLimit(r, 8)); err != nil {
+			s.log.Debug("ticker earnings list failed", "ticker", ticker, "err", err)
+		} else if got != nil {
+			earnings = got
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ticker": ticker, "count": len(earnings), "earnings": earnings})
 }
 
 // getTopics returns the trending-topics snapshot (empty when disabled).

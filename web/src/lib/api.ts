@@ -762,6 +762,62 @@ export function getEvents(limit = 0, signal?: AbortSignal): Promise<EventsRespon
   return getJson<EventsResponse>(`/v1/events${q}`, signal);
 }
 
+/** A scheduled/reported company earnings event (Finnhub calendar). */
+export interface Earning {
+  ticker: string;
+  /** ISO-8601 (the earnings date). */
+  date: string;
+  /** Reporting time: "bmo" (before open) | "amc" (after close) | "dmh" | "". */
+  hour?: string;
+  eps_estimate?: number;
+  eps_actual?: number;
+  revenue_estimate?: number;
+  revenue_actual?: number;
+}
+
+/** Envelope returned by `GET /v1/earnings`. */
+export interface EarningsResponse {
+  count: number;
+  earnings: Earning[];
+}
+
+/** Envelope returned by `GET /v1/stocks/{ticker}/earnings`. */
+export interface StockEarningsResponse {
+  ticker: string;
+  count: number;
+  earnings: Earning[];
+}
+
+/**
+ * Fetches the company earnings calendar within [from, to] (YYYY-MM-DD; both
+ * optional — the server defaults to today .. +30d). Public endpoint.
+ */
+export function getEarnings(
+  from?: string,
+  to?: string,
+  signal?: AbortSignal,
+): Promise<EarningsResponse> {
+  const p = new URLSearchParams();
+  if (from) p.set('from', from);
+  if (to) p.set('to', to);
+  const q = p.toString();
+  return getJson<EarningsResponse>(`/v1/earnings${q ? `?${q}` : ''}`, signal);
+}
+
+/**
+ * Fetches recent/upcoming earnings rows for one ticker (ascending by date),
+ * capped by `limit` (default 8). Public endpoint.
+ */
+export function getStockEarnings(
+  ticker: string,
+  limit = 8,
+  signal?: AbortSignal,
+): Promise<StockEarningsResponse> {
+  const path = `/v1/stocks/${encodeURIComponent(normalizeTicker(ticker))}/earnings`;
+  const q = limit > 0 ? `?limit=${encodeURIComponent(String(limit))}` : '';
+  return getJson<StockEarningsResponse>(`${path}${q}`, signal);
+}
+
 /** A link a user saved to a ticker (private, per-user). */
 export interface Clip {
   id: string;
