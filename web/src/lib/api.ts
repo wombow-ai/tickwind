@@ -818,6 +818,35 @@ export function getStockEarnings(
   return getJson<StockEarningsResponse>(`${path}${q}`, signal);
 }
 
+/** A U.S. House Periodic Transaction Report filing (official Clerk disclosure). */
+export interface CongressFiling {
+  name: string; // "Richard W. Allen"
+  last: string;
+  first: string;
+  state: string; // "GA"
+  district: string; // "12"
+  filing_type: string; // "P" (periodic transaction report)
+  year: number;
+  filed_date: string; // ISO-8601
+  doc_id: string;
+  pdf_url: string; // official filing PDF
+}
+
+/** Envelope returned by `GET /v1/congress`. */
+export interface CongressResponse {
+  count: number;
+  filings: CongressFiling[];
+}
+
+/**
+ * Fetches the latest congressional stock-trade disclosures (House Clerk Periodic
+ * Transaction Reports), newest first. Public endpoint; `limit` caps rows.
+ */
+export function getCongress(limit = 60, signal?: AbortSignal): Promise<CongressResponse> {
+  const q = limit > 0 ? `?limit=${encodeURIComponent(String(limit))}` : '';
+  return getJson<CongressResponse>(`/v1/congress${q}`, signal);
+}
+
 /** A link a user saved to a ticker (private, per-user). */
 export interface Clip {
   id: string;

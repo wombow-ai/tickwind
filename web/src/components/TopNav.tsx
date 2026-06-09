@@ -84,6 +84,7 @@ export function TopNav() {
   ];
   const watchlist: NavItem = {href: '/watchlist', label: tr('nav.watchlist')};
   const secondary: NavItem[] = [
+    {href: '/congress', label: tr('nav.congress')},
     {href: '/events', label: tr('nav.events')},
     {href: '/community', label: tr('nav.community')},
     ...(authed ? [{href: '/notes', label: tr('nav.notes')}] : []),

@@ -71,6 +71,7 @@ const dict: Record<Lang, Record<string, string>> = {
     'nav.news': 'News',
     'nav.opportunities': 'Opportunities',
     'nav.events': 'Events',
+    'nav.congress': 'Congress',
     'nav.watchlist': 'Watchlist',
     'nav.notes': 'Notes',
     'nav.community': 'Community',
@@ -190,6 +191,16 @@ const dict: Record<Lang, Record<string, string>> = {
     'opp.smallCap': 'Small cap',
     'opp.viewFiling': 'View SEC filing',
     'opp.footer': 'Insider data from public SEC EDGAR filings. Not investment advice.',
+    // congress
+    'congress.title': 'Congress trading',
+    'congress.subtitle': 'Latest U.S. House stock-trade disclosures (Periodic Transaction Reports).',
+    'congress.disclaimer':
+      'Official U.S. House financial disclosures (public-domain Clerk data). Reflects when a filing was made, not real-time trades. Not investment advice.',
+    'congress.filed': 'Filed',
+    'congress.viewFiling': 'View official filing',
+    'congress.empty': 'No recent filings',
+    'congress.emptySub': 'Periodic Transaction Reports will appear here as they are filed.',
+    'congress.footer': 'Source: U.S. House Clerk financial disclosures (public domain). Not investment advice.',
     // guru rail
     'guru.title': 'Guru-watch',
     'guru.subtitle':
@@ -374,6 +385,7 @@ const dict: Record<Lang, Record<string, string>> = {
     'nav.news': '新闻',
     'nav.opportunities': '机会',
     'nav.events': '大事件',
+    'nav.congress': '国会交易',
     'nav.watchlist': '自选',
     'nav.notes': '笔记',
     'nav.community': '社区',
@@ -490,6 +502,16 @@ const dict: Record<Lang, Record<string, string>> = {
     'opp.smallCap': '小盘股',
     'opp.viewFiling': '查看 SEC 申报',
     'opp.footer': '内部人数据来自公开的 SEC EDGAR 申报。非投资建议。',
+    // congress
+    'congress.title': '国会交易',
+    'congress.subtitle': '美国众议院议员最新股票交易披露（定期交易报告 PTR）。',
+    'congress.disclaimer':
+      '美国众议院官方金融披露（众议院书记官公开数据）。反映披露申报时间，非实时交易。非投资建议。',
+    'congress.filed': '申报于',
+    'congress.viewFiling': '查看官方文件',
+    'congress.empty': '暂无最新披露',
+    'congress.emptySub': '议员定期交易报告（PTR）申报后将在此显示。',
+    'congress.footer': '数据来源：美国众议院书记官金融披露（公有领域）。非投资建议。',
     // guru rail
     'guru.title': '大V观点',
     'guru.subtitle': '独立财经作者在写什么 —— 以及他们提到的股票。观点仅供参考，附原文链接。',
