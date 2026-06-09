@@ -121,6 +121,18 @@ CREATE TABLE IF NOT EXISTS insider_buys (
 
 CREATE INDEX IF NOT EXISTS insider_buys_filed_idx ON insider_buys (filed_date DESC);
 
+CREATE TABLE IF NOT EXISTS earnings (
+    ticker           text NOT NULL,
+    edate            date NOT NULL,
+    hour             text NOT NULL DEFAULT '',
+    eps_estimate     double precision,
+    eps_actual       double precision,
+    revenue_estimate double precision,
+    revenue_actual   double precision,
+    PRIMARY KEY (ticker, edate)
+);
+CREATE INDEX IF NOT EXISTS earnings_date_idx ON earnings (edate);
+
 -- Form-4 accessions already fetched (a buy or not), so a restart skips
 -- re-fetching them instead of re-sweeping the SEC index. Public-domain metadata.
 CREATE TABLE IF NOT EXISTS seen_form4 (

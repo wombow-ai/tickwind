@@ -73,6 +73,39 @@ func TestHoldingsCRUD(t *testing.T) {
 	}
 }
 
+func TestEarningsCRUD(t *testing.T) {
+	s := New()
+	ctx := context.Background()
+	d := func(v string) time.Time { tm, _ := time.Parse("2006-01-02", v); return tm }
+	if err := s.SaveEarnings(ctx, []store.Earning{
+		{Ticker: "AAPL", Date: d("2026-06-12"), Hour: "amc"},
+		{Ticker: "MSFT", Date: d("2026-06-20"), Hour: "bmo"},
+		{Ticker: "AAPL", Date: d("2026-09-15"), Hour: "amc"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// Upsert by (ticker,date): re-saving AAPL 06-12 updates, not duplicates.
+	if err := s.SaveEarnings(ctx, []store.Earning{{Ticker: "AAPL", Date: d("2026-06-12"), Hour: "bmo"}}); err != nil {
+		t.Fatal(err)
+	}
+	jun, _ := s.ListEarnings(ctx, d("2026-06-01"), d("2026-06-30"))
+	if len(jun) != 2 { // AAPL 06-12 + MSFT 06-20 (09-15 out of range)
+		t.Fatalf("ListEarnings(June) = %d, want 2: %+v", len(jun), jun)
+	}
+	if jun[0].Date.After(jun[1].Date) {
+		t.Error("ListEarnings should be ascending by date")
+	}
+	for _, e := range jun {
+		if e.Ticker == "AAPL" && e.Hour != "bmo" {
+			t.Errorf("AAPL hour = %q, want bmo (upsert applied)", e.Hour)
+		}
+	}
+	aapl, _ := s.ListEarningsForTicker(ctx, "aapl", 10)
+	if len(aapl) != 2 { // 06-12 + 09-15
+		t.Fatalf("AAPL earnings = %d, want 2", len(aapl))
+	}
+}
+
 func TestAlertsActiveAndTrigger(t *testing.T) {
 	s := New()
 	ctx := context.Background()

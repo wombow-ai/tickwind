@@ -450,6 +450,75 @@ FROM insider_buys WHERE filed_date >= $1 ORDER BY filed_date DESC`
 	return out, nil
 }
 
+const earningCols = `ticker, edate, hour, eps_estimate, eps_actual, revenue_estimate, revenue_actual`
+
+func scanEarning(row interface{ Scan(...any) error }) (store.Earning, error) {
+	var e store.Earning
+	err := row.Scan(&e.Ticker, &e.Date, &e.Hour, &e.EPSEstimate, &e.EPSActual, &e.RevenueEstimate, &e.RevenueActual)
+	return e, err
+}
+
+func (s *Store) SaveEarnings(ctx context.Context, es []store.Earning) error {
+	if len(es) == 0 {
+		return nil
+	}
+	const q = `
+INSERT INTO earnings (ticker, edate, hour, eps_estimate, eps_actual, revenue_estimate, revenue_actual)
+VALUES ($1, $2, $3, $4, $5, $6, $7)
+ON CONFLICT (ticker, edate) DO UPDATE SET
+  hour = EXCLUDED.hour, eps_estimate = EXCLUDED.eps_estimate, eps_actual = EXCLUDED.eps_actual,
+  revenue_estimate = EXCLUDED.revenue_estimate, revenue_actual = EXCLUDED.revenue_actual`
+	batch := &pgx.Batch{}
+	for _, e := range es {
+		batch.Queue(q, e.Ticker, e.Date, e.Hour, e.EPSEstimate, e.EPSActual, e.RevenueEstimate, e.RevenueActual)
+	}
+	br := s.pool.SendBatch(ctx, batch)
+	defer br.Close()
+	for range es {
+		if _, err := br.Exec(); err != nil {
+			return fmt.Errorf("postgres: save earnings: %w", err)
+		}
+	}
+	return nil
+}
+
+func (s *Store) ListEarnings(ctx context.Context, from, to time.Time) ([]store.Earning, error) {
+	rows, err := s.pool.Query(ctx, `SELECT `+earningCols+` FROM earnings WHERE edate >= $1 AND edate <= $2 ORDER BY edate`, from, to)
+	if err != nil {
+		return nil, fmt.Errorf("postgres: list earnings: %w", err)
+	}
+	defer rows.Close()
+	var out []store.Earning
+	for rows.Next() {
+		e, err := scanEarning(rows)
+		if err != nil {
+			return nil, fmt.Errorf("postgres: scan earning: %w", err)
+		}
+		out = append(out, e)
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) ListEarningsForTicker(ctx context.Context, ticker string, limit int) ([]store.Earning, error) {
+	if limit <= 0 {
+		limit = 12
+	}
+	rows, err := s.pool.Query(ctx, `SELECT `+earningCols+` FROM earnings WHERE ticker = $1 ORDER BY edate LIMIT $2`, ticker, limit)
+	if err != nil {
+		return nil, fmt.Errorf("postgres: list earnings for ticker: %w", err)
+	}
+	defer rows.Close()
+	var out []store.Earning
+	for rows.Next() {
+		e, err := scanEarning(rows)
+		if err != nil {
+			return nil, fmt.Errorf("postgres: scan earning: %w", err)
+		}
+		out = append(out, e)
+	}
+	return out, rows.Err()
+}
+
 // MarkForm4Seen records Form-4 accessions as already fetched, deduped on
 // accession (existing rows keep their original filed_date).
 func (s *Store) MarkForm4Seen(ctx context.Context, accessions []string, filedDate time.Time) error {

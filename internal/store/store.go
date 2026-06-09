@@ -260,6 +260,12 @@ type Store interface {
 	SaveInsiderBuys(ctx context.Context, buys []InsiderBuy) error
 	RecentInsiderBuys(ctx context.Context, since time.Time) ([]InsiderBuy, error)
 
+	// Earnings is the upcoming/just-reported company earnings calendar (Finnhub).
+	// SaveEarnings upserts by (ticker, date); routed to the durable Market store.
+	SaveEarnings(ctx context.Context, es []Earning) error
+	ListEarnings(ctx context.Context, from, to time.Time) ([]Earning, error)
+	ListEarningsForTicker(ctx context.Context, ticker string, limit int) ([]Earning, error)
+
 	// SeenForm4 records which Form-4 accessions have already been fetched (a
 	// buy or not), so a restart skips re-fetching them instead of re-sweeping
 	// the whole SEC index. MarkForm4Seen upserts; SeenForm4Since returns the

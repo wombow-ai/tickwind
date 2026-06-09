@@ -89,6 +89,16 @@ func (s Split) RecentInsiderBuys(ctx context.Context, since time.Time) ([]Inside
 	return s.Market.RecentInsiderBuys(ctx, since)
 }
 
+func (s Split) SaveEarnings(ctx context.Context, es []Earning) error {
+	return s.Market.SaveEarnings(ctx, es)
+}
+func (s Split) ListEarnings(ctx context.Context, from, to time.Time) ([]Earning, error) {
+	return s.Market.ListEarnings(ctx, from, to)
+}
+func (s Split) ListEarningsForTicker(ctx context.Context, ticker string, limit int) ([]Earning, error) {
+	return s.Market.ListEarningsForTicker(ctx, ticker, limit)
+}
+
 func (s Split) MarkForm4Seen(ctx context.Context, accessions []string, filedDate time.Time) error {
 	return s.Market.MarkForm4Seen(ctx, accessions, filedDate)
 }

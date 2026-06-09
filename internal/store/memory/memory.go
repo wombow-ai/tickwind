@@ -22,6 +22,7 @@ type Store struct {
 	signals   map[string]map[string]store.Signal  // ticker -> source -> Signal
 	hot       map[string][]store.HotStock         // board -> ranked snapshot
 	insiders  map[string]store.InsiderBuy         // accession -> insider buy
+	earnings  map[string]store.Earning            // "TICKER|YYYY-MM-DD" -> Earning
 	seenF4    map[string]time.Time                // form-4 accession -> filed date
 	watchlist map[string][]string                 // userID -> ordered tickers
 	clips     map[string]map[string]store.Clip    // userID -> clipID -> Clip
@@ -41,6 +42,7 @@ func New() *Store {
 		signals:   make(map[string]map[string]store.Signal),
 		hot:       make(map[string][]store.HotStock),
 		insiders:  make(map[string]store.InsiderBuy),
+		earnings:  make(map[string]store.Earning),
 		seenF4:    make(map[string]time.Time),
 		watchlist: make(map[string][]string),
 		clips:     make(map[string]map[string]store.Clip),
@@ -230,6 +232,49 @@ func (s *Store) RecentInsiderBuys(_ context.Context, since time.Time) ([]store.I
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].FiledDate.After(out[j].FiledDate) })
 	return out, nil
+}
+
+func earningsKey(ticker string, d time.Time) string {
+	return key(ticker) + "|" + d.Format("2006-01-02")
+}
+
+func (s *Store) SaveEarnings(_ context.Context, es []store.Earning) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, e := range es {
+		if e.Ticker == "" || e.Date.IsZero() {
+			continue
+		}
+		s.earnings[earningsKey(e.Ticker, e.Date)] = e // upsert by (ticker, date)
+	}
+	return nil
+}
+
+func (s *Store) ListEarnings(_ context.Context, from, to time.Time) ([]store.Earning, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([]store.Earning, 0)
+	for _, e := range s.earnings {
+		if !e.Date.Before(from) && !e.Date.After(to) {
+			out = append(out, e)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Date.Before(out[j].Date) })
+	return out, nil
+}
+
+func (s *Store) ListEarningsForTicker(_ context.Context, ticker string, limit int) ([]store.Earning, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	tk := key(ticker)
+	out := make([]store.Earning, 0)
+	for _, e := range s.earnings {
+		if key(e.Ticker) == tk {
+			out = append(out, e)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Date.Before(out[j].Date) })
+	return limited(out, limit), nil
 }
 
 func (s *Store) MarkForm4Seen(_ context.Context, accessions []string, filedDate time.Time) error {

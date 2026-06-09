@@ -202,6 +202,12 @@ func main() {
 	eventsCache := events.NewCache()
 	go ingest.NewEventsIngestor(eventsCache, 12*time.Hour, log).Run(ctx)
 
+	// Earnings calendar (Finnhub) → store, refreshed every 6h. Needs a token.
+	if newsClient != nil {
+		go ingest.NewEarningsIngestor(st, newsClient, 6*time.Hour, log).Run(ctx)
+		log.Info("earnings calendar ingestor enabled")
+	}
+
 	// Retention pruner: bounds the durable market tables off the request path —
 	// evicts old non-key data, but keeps hot-list tickers and the 大V / Serenity
 	// "substack" rail on longer/indefinite windows. Disabled only if the store
