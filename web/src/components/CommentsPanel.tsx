@@ -1,13 +1,15 @@
 'use client';
 
-import {Flag, MessageSquare, Trash2} from 'lucide-react';
+import {Flag, Heart, MessageSquare, Pencil, Trash2} from 'lucide-react';
 import Link from 'next/link';
 import {useCallback, useEffect, useState} from 'react';
 import {
   deleteComment,
   getComments,
+  likeComment,
   postComment,
   reportComment,
+  updateComment,
   type Comment,
 } from '@/lib/api';
 import {useAuth} from '@/lib/auth';
@@ -22,9 +24,10 @@ type Tokens = ReturnType<typeof tok>;
 /**
  * Public comments surface, reused by the stock detail "Comments" tab (pass
  * `ticker`) and the standalone /community page (no `ticker` → the global board,
- * with ticker chips deep-linking to each stock). Reading is public; posting
- * requires sign-in. §230 neutral-host safeguards (disclaimer, report, delete-own)
- * live here; rate-limiting + moderation are enforced server-side.
+ * with ticker chips deep-linking to each stock). Reading is public; posting,
+ * editing (own), and liking require sign-in. §230 neutral-host safeguards
+ * (disclaimer, report, delete-own) live here; rate-limiting + moderation are
+ * enforced server-side. Bodies render as safe Markdown.
  */
 export function CommentsPanel({ticker}: {ticker?: string}) {
   const {user, getToken} = useAuth();
@@ -82,6 +85,14 @@ export function CommentsPanel({ticker}: {ticker?: string}) {
     }
   }
 
+  // Persist an edit into the list so it survives re-renders.
+  function applyEdit(updated: Comment) {
+    setComments(prev => prev.map(x => (x.id === updated.id ? {...x, ...updated} : x)));
+  }
+  function applyLike(id: string, likes: number) {
+    setComments(prev => prev.map(x => (x.id === id ? {...x, likes} : x)));
+  }
+
   return (
     <div className="tw-fade">
       <p className={cx('mb-3 rounded-xl border px-3 py-2 text-[11.5px]', t.border, t.faint)}>
@@ -103,7 +114,8 @@ export function CommentsPanel({ticker}: {ticker?: string}) {
               dark ? 'text-slate-100 placeholder:text-slate-500' : 'text-slate-900 placeholder:text-slate-400',
             )}
           />
-          <div className="mt-1 flex justify-end">
+          <div className="mt-1 flex items-center justify-between">
+            <span className={cx('text-[11px]', t.faint)}>{tr('comments.mdHint')}</span>
             <button
               onClick={add}
               disabled={!draft.trim() || busy}
@@ -136,8 +148,13 @@ export function CommentsPanel({ticker}: {ticker?: string}) {
               tr={tr}
               showTicker={!ticker}
               own={!!user && c.user_id === user.id}
+              canInteract={!!user}
+              getToken={getToken}
+              toast={toast}
               onReport={() => report(c)}
               onDelete={() => remove(c)}
+              onEdited={applyEdit}
+              onLiked={applyLike}
             />
           ))}
         </div>
@@ -153,8 +170,13 @@ function CommentCard({
   tr,
   showTicker,
   own,
+  canInteract,
+  getToken,
+  toast,
   onReport,
   onDelete,
+  onEdited,
+  onLiked,
 }: {
   c: Comment;
   dark: boolean;
@@ -162,9 +184,51 @@ function CommentCard({
   tr: (k: string) => string;
   showTicker: boolean;
   own: boolean;
+  canInteract: boolean;
+  getToken: () => Promise<string | null>;
+  toast: (m: string) => void;
   onReport: () => void;
   onDelete: () => void;
+  onEdited: (updated: Comment) => void;
+  onLiked: (id: string, likes: number) => void;
 }) {
+  const [editing, setEditing] = useState(false);
+  const [editDraft, setEditDraft] = useState(c.body);
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [liked, setLiked] = useState(false); // server doesn't return per-user state in the list
+  const [likeBusy, setLikeBusy] = useState(false);
+
+  async function saveEdit() {
+    const body = editDraft.trim();
+    if (!body || savingEdit) return;
+    setSavingEdit(true);
+    try {
+      const token = await getToken();
+      const updated = await updateComment(token, c.id, body);
+      onEdited(updated);
+      setEditing(false);
+    } catch (e) {
+      toast(e instanceof Error ? e.message : 'Failed to save');
+    } finally {
+      setSavingEdit(false);
+    }
+  }
+
+  async function toggleLike() {
+    if (!canInteract || likeBusy) return;
+    setLikeBusy(true);
+    try {
+      const token = await getToken();
+      const r = await likeComment(token, c.id);
+      setLiked(r.liked);
+      onLiked(c.id, r.likes);
+    } catch {
+      // best-effort
+    } finally {
+      setLikeBusy(false);
+    }
+  }
+
   return (
     <div className={cx('group rounded-2xl border p-3.5', t.card, t.border, t.soft)}>
       <div className="mb-1 flex flex-wrap items-center gap-2">
@@ -178,27 +242,89 @@ function CommentCard({
           </Link>
         )}
         <span className={cx('ml-auto text-[11px]', t.faint)}>
+          {c.edited_at ? `${tr('comments.edited')} · ` : ''}
           {timeAgo(c.created_at)} {tr('common.ago')}
         </span>
       </div>
-      <Markdown>{c.body}</Markdown>
-      <div className="mt-2 flex items-center gap-3 opacity-0 transition group-hover:opacity-100">
-        <button
-          onClick={onReport}
-          className={cx('inline-flex items-center gap-1 text-[11px] font-medium hover:opacity-80', t.faint)}
-        >
-          <Flag size={11} /> {tr('comments.report')}
-        </button>
-        {own && (
-          <button
-            onClick={onDelete}
+
+      {editing ? (
+        <div>
+          <textarea
+            value={editDraft}
+            onChange={e => setEditDraft(e.target.value)}
+            rows={3}
             className={cx(
-              'inline-flex items-center gap-1 text-[11px] font-medium hover:opacity-80',
-              dark ? 'text-rose-400' : 'text-rose-500',
+              'w-full resize-none rounded-lg border bg-transparent p-2 text-[13.5px] outline-none',
+              t.border,
+              dark ? 'text-slate-100' : 'text-slate-900',
             )}
-          >
-            <Trash2 size={11} /> {tr('notes.delete')}
-          </button>
+          />
+          <div className="mt-1.5 flex items-center gap-2">
+            <button
+              onClick={saveEdit}
+              disabled={!editDraft.trim() || savingEdit}
+              className={cx('rounded-lg px-3 py-1 text-[12px] font-semibold transition disabled:opacity-50', btnPrimary(dark))}
+            >
+              {tr('comments.save')}
+            </button>
+            <button
+              onClick={() => {
+                setEditDraft(c.body);
+                setEditing(false);
+              }}
+              className={cx('text-[12px] font-medium hover:opacity-80', t.sub)}
+            >
+              {tr('comments.cancel')}
+            </button>
+          </div>
+        </div>
+      ) : (
+        <Markdown>{c.body}</Markdown>
+      )}
+
+      <div className="mt-2 flex items-center gap-3">
+        <button
+          onClick={toggleLike}
+          disabled={!canInteract || likeBusy}
+          aria-pressed={liked}
+          className={cx(
+            'inline-flex items-center gap-1 text-[11.5px] font-medium transition hover:opacity-80 disabled:opacity-50',
+            liked ? (dark ? 'text-rose-400' : 'text-rose-500') : t.faint,
+          )}
+        >
+          <Heart size={12} fill={liked ? 'currentColor' : 'none'} /> {c.likes > 0 ? c.likes : ''}
+        </button>
+        {!editing && (
+          <div className="flex items-center gap-3 opacity-0 transition group-hover:opacity-100">
+            {own && (
+              <button
+                onClick={() => {
+                  setEditDraft(c.body);
+                  setEditing(true);
+                }}
+                className={cx('inline-flex items-center gap-1 text-[11px] font-medium hover:opacity-80', t.faint)}
+              >
+                <Pencil size={11} /> {tr('comments.edit')}
+              </button>
+            )}
+            <button
+              onClick={onReport}
+              className={cx('inline-flex items-center gap-1 text-[11px] font-medium hover:opacity-80', t.faint)}
+            >
+              <Flag size={11} /> {tr('comments.report')}
+            </button>
+            {own && (
+              <button
+                onClick={onDelete}
+                className={cx(
+                  'inline-flex items-center gap-1 text-[11px] font-medium hover:opacity-80',
+                  dark ? 'text-rose-400' : 'text-rose-500',
+                )}
+              >
+                <Trash2 size={11} /> {tr('notes.delete')}
+              </button>
+            )}
+          </div>
         )}
       </div>
     </div>

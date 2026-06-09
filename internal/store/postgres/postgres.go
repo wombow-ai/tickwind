@@ -881,10 +881,12 @@ VALUES ($1, $2, $3, NULLIF($4,''), $5, NULLIF($6,''), $7)`
 func (s *Store) ListComments(ctx context.Context, ticker string, limit int) ([]store.Comment, error) {
 	var query string
 	var args []any
+	const cols = `id, user_id, author, COALESCE(ticker,''), body, created_at, edited_at,
+		(SELECT count(*) FROM comment_likes cl WHERE cl.comment_id = comments.id) AS likes`
 	if ticker == "" {
-		query = `SELECT id, user_id, author, COALESCE(ticker,''), body, created_at, edited_at FROM comments WHERE ticker IS NULL AND NOT deleted ORDER BY created_at DESC`
+		query = `SELECT ` + cols + ` FROM comments WHERE ticker IS NULL AND NOT deleted ORDER BY created_at DESC`
 	} else {
-		query = `SELECT id, user_id, author, COALESCE(ticker,''), body, created_at, edited_at FROM comments WHERE ticker = $1 AND NOT deleted ORDER BY created_at DESC`
+		query = `SELECT ` + cols + ` FROM comments WHERE ticker = $1 AND NOT deleted ORDER BY created_at DESC`
 		args = append(args, ticker)
 	}
 	if limit > 0 {
@@ -899,7 +901,7 @@ func (s *Store) ListComments(ctx context.Context, ticker string, limit int) ([]s
 	var out []store.Comment
 	for rows.Next() {
 		var c store.Comment
-		if err := rows.Scan(&c.ID, &c.UserID, &c.Author, &c.Ticker, &c.Body, &c.CreatedAt, &c.EditedAt); err != nil {
+		if err := rows.Scan(&c.ID, &c.UserID, &c.Author, &c.Ticker, &c.Body, &c.CreatedAt, &c.EditedAt, &c.Likes); err != nil {
 			return nil, fmt.Errorf("postgres: scan comment: %w", err)
 		}
 		out = append(out, c)
@@ -936,6 +938,46 @@ func (s *Store) UpdateComment(ctx context.Context, id, userID, body string) (sto
 		return store.Comment{}, false, fmt.Errorf("postgres: update comment: %w", err)
 	}
 	return c, true, nil
+}
+
+// LikeComment toggles userID's like on a comment (one like per user), returning
+// the new liked state for the user and the total like count. ok=false when the
+// comment is unknown or deleted.
+func (s *Store) LikeComment(ctx context.Context, id, userID string) (bool, int, bool, error) {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return false, 0, false, fmt.Errorf("postgres: like comment begin: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	var exists bool
+	if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM comments WHERE id = $1 AND NOT deleted)`, id).Scan(&exists); err != nil {
+		return false, 0, false, fmt.Errorf("postgres: like comment exists: %w", err)
+	}
+	if !exists {
+		return false, 0, false, nil
+	}
+	var alreadyLiked bool
+	if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM comment_likes WHERE comment_id = $1 AND user_id = $2)`, id, userID).Scan(&alreadyLiked); err != nil {
+		return false, 0, false, fmt.Errorf("postgres: like comment check: %w", err)
+	}
+	liked := !alreadyLiked
+	if liked {
+		_, err = tx.Exec(ctx, `INSERT INTO comment_likes (comment_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`, id, userID)
+	} else {
+		_, err = tx.Exec(ctx, `DELETE FROM comment_likes WHERE comment_id = $1 AND user_id = $2`, id, userID)
+	}
+	if err != nil {
+		return false, 0, false, fmt.Errorf("postgres: like comment toggle: %w", err)
+	}
+	var likes int
+	if err := tx.QueryRow(ctx, `SELECT count(*) FROM comment_likes WHERE comment_id = $1`, id).Scan(&likes); err != nil {
+		return false, 0, false, fmt.Errorf("postgres: like comment count: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return false, 0, false, fmt.Errorf("postgres: like comment commit: %w", err)
+	}
+	return liked, likes, true, nil
 }
 
 // ReportComment flags a comment for moderation (increments its report count).

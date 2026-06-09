@@ -223,6 +223,7 @@ type Comment struct {
 	Body      string     `json:"body"`
 	CreatedAt time.Time  `json:"created_at"`
 	EditedAt  *time.Time `json:"edited_at,omitempty"` // set when the author edits; nil if never edited
+	Likes     int        `json:"likes"`               // total like count (per-user deduped)
 	IP        string     `json:"-"`
 }
 
@@ -322,4 +323,8 @@ type Store interface {
 	// edit; returns ok=false if the comment doesn't exist or isn't theirs. Sets
 	// EditedAt to now.
 	UpdateComment(ctx context.Context, id, userID, body string) (Comment, bool, error)
+	// LikeComment toggles a user's like on a comment (one per user). Returns the
+	// new liked state for this user and the total like count; ok=false when the
+	// comment doesn't exist or is deleted.
+	LikeComment(ctx context.Context, id, userID string) (liked bool, likes int, ok bool, err error)
 }

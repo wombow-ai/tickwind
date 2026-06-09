@@ -164,6 +164,7 @@ func New(st store.Store, hub QuoteStream, enricher enrich.Enricher, verifier *au
 	mux.HandleFunc("PATCH /v1/comments/{id}", s.patchComment)
 	mux.HandleFunc("DELETE /v1/comments/{id}", s.deleteComment)
 	mux.HandleFunc("POST /v1/comments/{id}/report", s.reportComment)
+	mux.HandleFunc("POST /v1/comments/{id}/like", s.likeComment)
 
 	// Public (market data — open for SEO / shareable stock pages)
 	mux.HandleFunc("GET /v1/stocks/{ticker}", s.getStock)
@@ -782,6 +783,25 @@ func (s *Server) patchComment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, c)
+}
+
+// likeComment toggles the caller's like on a comment, returning the new state +
+// total count. 404 if the comment doesn't exist (or is deleted).
+func (s *Server) likeComment(w http.ResponseWriter, r *http.Request) {
+	u, ok := s.requireUser(w, r)
+	if !ok {
+		return
+	}
+	liked, likes, ok2, err := s.store.LikeComment(r.Context(), r.PathValue("id"), u.ID)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, errBody(err.Error()))
+		return
+	}
+	if !ok2 {
+		writeJSON(w, http.StatusNotFound, errBody("comment not found"))
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"liked": liked, "likes": likes})
 }
 
 func (s *Server) reportComment(w http.ResponseWriter, r *http.Request) {

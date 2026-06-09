@@ -328,3 +328,33 @@ func TestUpdateComment(t *testing.T) {
 		t.Fatalf("after edits, list=%+v", list)
 	}
 }
+
+func TestLikeComment(t *testing.T) {
+	s := New()
+	ctx := context.Background()
+	if err := s.SaveComment(ctx, store.Comment{ID: "c1", UserID: "u1", Ticker: "AAPL", Body: "hi", CreatedAt: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	// u2 likes → liked, count 1.
+	liked, n, ok, _ := s.LikeComment(ctx, "c1", "u2")
+	if !ok || !liked || n != 1 {
+		t.Fatalf("like: ok=%v liked=%v n=%d, want true/true/1", ok, liked, n)
+	}
+	// u3 likes → count 2.
+	if _, n, _, _ := s.LikeComment(ctx, "c1", "u3"); n != 2 {
+		t.Fatalf("second like count=%d, want 2", n)
+	}
+	// u2 toggles off → liked=false, count 1.
+	if liked, n, _, _ := s.LikeComment(ctx, "c1", "u2"); liked || n != 1 {
+		t.Fatalf("toggle off: liked=%v n=%d, want false/1", liked, n)
+	}
+	// Count surfaces in ListComments.
+	list, _ := s.ListComments(ctx, "AAPL", 10)
+	if len(list) != 1 || list[0].Likes != 1 {
+		t.Fatalf("list likes=%d, want 1", list[0].Likes)
+	}
+	// Unknown comment → ok=false.
+	if _, _, ok, _ := s.LikeComment(ctx, "nope", "u2"); ok {
+		t.Error("like unknown comment should be ok=false")
+	}
+}

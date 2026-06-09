@@ -30,6 +30,7 @@ type Store struct {
 	alerts    map[string]map[string]store.Alert   // userID -> alertID -> Alert
 	holdings  map[string]map[string]store.Holding // userID -> holdingID -> Holding
 	comments  map[string]store.Comment            // commentID -> Comment (public)
+	cmtLikes  map[string]map[string]bool          // commentID -> set of userIDs who liked
 }
 
 func New() *Store {
@@ -50,6 +51,7 @@ func New() *Store {
 		alerts:    make(map[string]map[string]store.Alert),
 		holdings:  make(map[string]map[string]store.Holding),
 		comments:  make(map[string]store.Comment),
+		cmtLikes:  make(map[string]map[string]bool),
 	}
 }
 
@@ -561,6 +563,7 @@ func (s *Store) ListComments(_ context.Context, ticker string, limit int) ([]sto
 	out := make([]store.Comment, 0)
 	for _, c := range s.comments {
 		if key(c.Ticker) == tk {
+			c.Likes = len(s.cmtLikes[c.ID])
 			out = append(out, c)
 		}
 	}
@@ -598,6 +601,26 @@ func (s *Store) UpdateComment(_ context.Context, id, userID, body string) (store
 	c.EditedAt = &now
 	s.comments[id] = c
 	return c, true, nil
+}
+
+func (s *Store) LikeComment(_ context.Context, id, userID string) (bool, int, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.comments[id]; !ok {
+		return false, 0, false, nil
+	}
+	set := s.cmtLikes[id]
+	if set == nil {
+		set = make(map[string]bool)
+		s.cmtLikes[id] = set
+	}
+	liked := !set[userID]
+	if liked {
+		set[userID] = true // toggle on
+	} else {
+		delete(set, userID) // toggle off
+	}
+	return liked, len(set), true, nil
 }
 
 // limited returns the first limit elements (limit <= 0 means all).

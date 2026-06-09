@@ -245,3 +245,12 @@ CREATE INDEX IF NOT EXISTS comments_ticker_created_idx
     ON comments (ticker, created_at DESC) WHERE NOT deleted;
 CREATE INDEX IF NOT EXISTS comments_global_created_idx
     ON comments (created_at DESC) WHERE ticker IS NULL AND NOT deleted;
+
+-- One like per (comment, user); toggled by LikeComment. Count is derived.
+CREATE TABLE IF NOT EXISTS comment_likes (
+    comment_id text NOT NULL,
+    user_id    uuid NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (comment_id, user_id)
+);
+CREATE INDEX IF NOT EXISTS comment_likes_comment_idx ON comment_likes (comment_id);

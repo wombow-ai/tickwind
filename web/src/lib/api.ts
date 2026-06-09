@@ -1098,6 +1098,10 @@ export interface Comment {
   ticker?: string;
   body: string;
   created_at: string;
+  /** Set when the author has edited the comment. */
+  edited_at?: string;
+  /** Total like count (per-user deduped). */
+  likes: number;
 }
 
 /** Envelope returned by `GET /v1/comments`. */
@@ -1136,6 +1140,30 @@ export function deleteComment(
 ): Promise<{deleted: boolean}> {
   return deleteJson<{deleted: boolean}>(
     `/v1/comments/${encodeURIComponent(id)}`,
+    signal,
+    token,
+  );
+}
+
+/** Edits the caller's own comment (body only). Requires authentication. */
+export function updateComment(
+  token: string | null,
+  id: string,
+  body: string,
+  signal?: AbortSignal,
+): Promise<Comment> {
+  return patchJson<Comment>(`/v1/comments/${encodeURIComponent(id)}`, {body}, signal, token);
+}
+
+/** Toggles the caller's like on a comment, returning the new state + count. Requires auth. */
+export function likeComment(
+  token: string | null,
+  id: string,
+  signal?: AbortSignal,
+): Promise<{liked: boolean; likes: number}> {
+  return postJson<{liked: boolean; likes: number}>(
+    `/v1/comments/${encodeURIComponent(id)}/like`,
+    {},
     signal,
     token,
   );

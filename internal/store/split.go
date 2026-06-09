@@ -190,3 +190,7 @@ func (s Split) ReportComment(ctx context.Context, id string) (bool, error) {
 func (s Split) UpdateComment(ctx context.Context, id, userID, body string) (Comment, bool, error) {
 	return s.Market.UpdateComment(ctx, id, userID, body)
 }
+
+func (s Split) LikeComment(ctx context.Context, id, userID string) (bool, int, bool, error) {
+	return s.Market.LikeComment(ctx, id, userID)
+}

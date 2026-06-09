@@ -252,24 +252,23 @@ Status: ✅ done · 🟡 in progress · ⬜ todo
 > framing + disclaimer) + `CongressBoard` + nav (secondary/More▾) + `api.ts getCongress` + zh/en i18n ✅ `f3b22bf` —
 > **LIVE-VERIFIED on Vercel (`/congress` 200, title rendered, ~20s).** (Ticker-level detail = PTR PDF parsing, deferred; v1 links to the official PDF.)
 > ◐#5 Stock screener (36): (c) `/screen` frontend page (filter controls + results table) + `Screener` + nav + `api.ts getScreen`
-> + zh/en i18n ✅ `19325ed`. **⚠️ NOT LIVE — VERCEL FRONTEND DEPLOYS STUCK since `f3b22bf` (congress, the last good deploy):
-> `/screen` + #6a Markdown both 404/absent after 15+ min & multiple pushes, while `/congress` (older) + home still 200.
-> DIAGNOSED: code is sound — a full clean replication of Vercel's build locally (`npm ci` from lockfile → `next build`) SUCCEEDS
-> and emits `/screen`. So it's VERCEL-SIDE, not code. Most likely the Hobby ~100 deploys/day quota exhausted by this loop's
-> push frequency (or a Git-integration hiccup). Date rolled to 2026-06-10 UTC → quota may have reset; a fresh push should re-trigger.
-> ACTION NEEDED FROM OWNER: check the Vercel dashboard (build logs / usage limits). MITIGATION going forward: ONE commit/push per tick.**
+> + zh/en i18n ✅ `19325ed` — **LIVE** (`/screen` 200, verified). **Vercel had stalled (too-frequent pushes exhausted the Hobby
+> deploy quota — owner-confirmed); owner manually redeployed main 2026-06-10 → frontend back. FIX ADDED: `web/vercel.json`
+> `ignoreCommand: git diff --quiet HEAD^ HEAD .` so only `web/` changes trigger a Vercel build (backend/docs pushes no longer
+> consume the quota; fails safe to "build" if CWD/HEAD^ ambiguous). Plus: fewer pushes (one batched commit/tick).**
 > (a) **`GET /v1/screen` over the universe cache (~6.6k) — price/%-change/session filters,
 > sortable, capped — reusing the wired `universe` field via `Snapshot()` (no api.New change); pure `screenQuotes` unit-tested**
 > ✅ `b509589` + DEPLOYED. LIVE-VERIFY caught delayed-IEX prev_close split artifacts (bogus +4010% gainers) → **data-hygiene
 > guard: change outside [-95%,+300%] marked unknown** (still in price screens, excluded from change rank) ✅ `76a1e9b` — RE-VERIFIED
 > (top gainers now CHAI +300/AZI +191/RGNT +151, sane). Next: (b) market-cap filter (needs SEC `Shares()` whole-market cache,
 > 3 req/day → ticker→shares; cap=price×shares) [separate tick]; (c) frontend `/screen` page (filter controls + results table).
-> ◐#6 notes/comments (37): notes inline-edit LIVE `d97db72`; (a) **Markdown rendering** — `Markdown.tsx` wraps react-markdown
-> (10.1.0; NO raw HTML → XSS-safe; images stripped; links →_blank/noopener; `.tw-md` compact CSS) rendering note + comment
-> bodies (build+lint green; **frontend blocked by the Vercel issue above**); (b) **comment EDIT backend** — `store.UpdateComment`
-> (author-only, sets `edited_at`) across iface/memory/postgres(+`edited_at` col, idempotent ALTER; ListComments returns it)/split
-> + `PATCH /v1/comments/{id}` (validates body, 404 if not author) + memory test ✅ (this tick, deploys via SSH).
-> Rest: comment-edit frontend UI (Vercel), comment like (per-user dedup table).**
+> ✅#6 notes/comments (37) — **COMPLETE 2026-06-10:** notes inline-edit `d97db72`; (a) **Markdown** — `Markdown.tsx` wraps
+> react-markdown (10.1.0; NO raw HTML→XSS-safe; images stripped; links→_blank/noopener; `.tw-md` CSS) rendering note + comment
+> bodies; (b) **comment EDIT** — `store.UpdateComment` (author-only, `edited_at`) across iface/memory/postgres(+col,idempotent
+> ALTER)/split + `PATCH /v1/comments/{id}` + CommentsPanel inline-edit UI (Pencil → textarea → save, "edited" badge);
+> (c) **comment LIKE** — `store.LikeComment` toggle (per-user dedup via `comment_likes` table; ListComments returns count) +
+> `POST /v1/comments/{id}/like` + Heart button (optimistic, count) + memory tests. "Markdown supported" compose hint; i18n zh/en.
+> Owner paused #7 (Brazil) + #8 (FINRA) — NOT starting those.**
 > **▶ RESUMED 2026-06-09 — owner restored SSH; the #2a+#3a backlog deployed + verified (universe
 > ~6.5k stocks; #3a is dead code until #3b wires it). KEY DEPLOY FIX: background the ENTIRE deploy
 > script via `nohup` so the SSH command returns sub-second (the flaky link drops connections held open
