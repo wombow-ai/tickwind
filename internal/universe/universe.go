@@ -46,6 +46,17 @@ func (c *Cache) Get(ticker string) (store.Quote, bool) {
 	return q, ok
 }
 
+// Snapshot returns the full ticker→quote map (the screener iterates it). The map
+// is swapped wholesale by the ingestor and never mutated in place, so the
+// returned reference is safe for concurrent reads. Returns an empty (non-nil) map
+// when never swept.
+func (c *Cache) Snapshot() map[string]store.Quote {
+	if s := c.snap(); s != nil && s.Quotes != nil {
+		return s.Quotes
+	}
+	return map[string]store.Quote{}
+}
+
 // Len is the number of pre-cached tickers (0 for an empty cache).
 func (c *Cache) Len() int {
 	if s := c.snap(); s != nil {

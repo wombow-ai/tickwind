@@ -64,10 +64,11 @@ type OpportunitySource interface {
 }
 
 // UniverseSource is the whole-US-market quote cache (price + change reference per
-// ticker), nil-safe — powers the /v1/universe status (and later a cold-price fast
-// path + the screener).
+// ticker), nil-safe — powers the /v1/universe status, a cold-price fast path, and
+// the /v1/screen screener (which iterates Snapshot()).
 type UniverseSource interface {
 	Get(ticker string) (store.Quote, bool)
+	Snapshot() map[string]store.Quote
 	Len() int
 	UpdatedAt() time.Time
 }
@@ -182,6 +183,7 @@ func New(st store.Store, hub QuoteStream, enricher enrich.Enricher, verifier *au
 	mux.HandleFunc("GET /v1/topics", s.getTopics)
 	mux.HandleFunc("GET /v1/opportunities", s.getOpportunities)
 	mux.HandleFunc("GET /v1/universe", s.getUniverse)
+	mux.HandleFunc("GET /v1/screen", s.getScreen)
 	mux.HandleFunc("GET /v1/gurus", s.getGurus)
 	mux.HandleFunc("GET /v1/search", s.getSearch)
 	mux.HandleFunc("GET /v1/events", s.getEvents)
@@ -1015,6 +1017,140 @@ func (s *Server) getUniverse(w http.ResponseWriter, r *http.Request) {
 		"count":      s.universe.Len(),
 		"updated_at": s.universe.UpdatedAt(),
 	})
+}
+
+// screenCriteria captures the /v1/screen filters. Price bounds of 0 mean
+// unbounded; change bounds use explicit has* flags (0% is a valid bound, and a
+// change filter excludes rows whose change can't be computed).
+type screenCriteria struct {
+	minPrice, maxPrice   float64
+	minChange, maxChange float64
+	hasMinChange         bool
+	hasMaxChange         bool
+	session              string
+	sort                 string
+	limit                int
+}
+
+// screenResult is one matched stock in a screener response.
+type screenResult struct {
+	Ticker    string   `json:"ticker"`
+	Price     float64  `json:"price"`
+	PrevClose float64  `json:"prev_close,omitempty"`
+	ChangePct *float64 `json:"change_pct"` // null when prev close is unknown
+	Session   string   `json:"session"`
+}
+
+// screenQuotes filters a universe snapshot by the criteria, then sorts + caps it.
+// Pure (no I/O) so it is directly unit-tested.
+func screenQuotes(quotes map[string]store.Quote, c screenCriteria) []screenResult {
+	out := make([]screenResult, 0)
+	for tk, q := range quotes {
+		if q.Price <= 0 {
+			continue // no usable price
+		}
+		if c.minPrice > 0 && q.Price < c.minPrice {
+			continue
+		}
+		if c.maxPrice > 0 && q.Price > c.maxPrice {
+			continue
+		}
+		var chg *float64
+		if q.PrevClose > 0 {
+			v := (q.Price - q.PrevClose) / q.PrevClose * 100
+			chg = &v
+		}
+		if c.hasMinChange && (chg == nil || *chg < c.minChange) {
+			continue
+		}
+		if c.hasMaxChange && (chg == nil || *chg > c.maxChange) {
+			continue
+		}
+		if c.session != "" && !strings.EqualFold(q.Session, c.session) {
+			continue
+		}
+		out = append(out, screenResult{Ticker: tk, Price: q.Price, PrevClose: q.PrevClose, ChangePct: chg, Session: q.Session})
+	}
+	sortScreen(out, c.sort)
+	if c.limit > 0 && len(out) > c.limit {
+		out = out[:c.limit]
+	}
+	return out
+}
+
+// cmpChange orders by change%, with rows lacking a change (nil) always sorted
+// last and ties broken by ticker for stable output.
+func cmpChange(a, b screenResult, desc bool) bool {
+	an, bn := a.ChangePct == nil, b.ChangePct == nil
+	if an || bn {
+		if an != bn {
+			return bn // a non-nil sorts before a nil
+		}
+		return a.Ticker < b.Ticker
+	}
+	if desc {
+		return *a.ChangePct > *b.ChangePct
+	}
+	return *a.ChangePct < *b.ChangePct
+}
+
+func sortScreen(rows []screenResult, mode string) {
+	switch mode {
+	case "price_desc":
+		sort.SliceStable(rows, func(i, j int) bool { return rows[i].Price > rows[j].Price })
+	case "price_asc":
+		sort.SliceStable(rows, func(i, j int) bool { return rows[i].Price < rows[j].Price })
+	case "change_asc":
+		sort.SliceStable(rows, func(i, j int) bool { return cmpChange(rows[i], rows[j], false) })
+	default: // change_desc (also the empty-string default)
+		sort.SliceStable(rows, func(i, j int) bool { return cmpChange(rows[i], rows[j], true) })
+	}
+}
+
+// parseFloat parses a query float, reporting ok=false for blank/invalid input.
+func parseFloat(s string) (float64, bool) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return 0, false
+	}
+	v, err := strconv.ParseFloat(s, 64)
+	if err != nil {
+		return 0, false
+	}
+	return v, true
+}
+
+// getScreen filters the whole-US universe quote cache by price / daily %-change /
+// session and returns the (sorted, capped) matches. Always 200 with a (possibly
+// empty) list — never null. nil universe → empty. Market-cap/volume filters are a
+// later enhancement (need a shares cache). Quotes are delayed (Alpaca IEX).
+func (s *Server) getScreen(w http.ResponseWriter, r *http.Request) {
+	results := []screenResult{}
+	if s.universe != nil {
+		q := r.URL.Query()
+		c := screenCriteria{
+			session: strings.ToLower(strings.TrimSpace(q.Get("session"))),
+			sort:    strings.TrimSpace(q.Get("sort")),
+			limit:   queryLimit(r, 50),
+		}
+		if v, ok := parseFloat(q.Get("min_price")); ok {
+			c.minPrice = v
+		}
+		if v, ok := parseFloat(q.Get("max_price")); ok {
+			c.maxPrice = v
+		}
+		if v, ok := parseFloat(q.Get("min_change")); ok {
+			c.minChange, c.hasMinChange = v, true
+		}
+		if v, ok := parseFloat(q.Get("max_change")); ok {
+			c.maxChange, c.hasMaxChange = v, true
+		}
+		if c.limit > 200 {
+			c.limit = 200
+		}
+		results = screenQuotes(s.universe.Snapshot(), c)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"count": len(results), "results": results})
 }
 
 // maxBarsBatch caps how many tickers one batched request (bars/news/social)
