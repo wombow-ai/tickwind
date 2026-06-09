@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/wombow-ai/tickwind/internal/alpaca"
+	"github.com/wombow-ai/tickwind/internal/alpacaws"
 	"github.com/wombow-ai/tickwind/internal/alphavantage"
 	"github.com/wombow-ai/tickwind/internal/apewisdom"
 	"github.com/wombow-ai/tickwind/internal/api"
@@ -49,6 +50,30 @@ import (
 // maxIngestTickers caps how many distinct tickers we ingest, to control cost as
 // the user base (and thus the union of watchlists) grows.
 const maxIngestTickers = 200
+
+// usSymbols keeps only US tickers (drops foreign-suffixed ones like .HK/.TW/.KS),
+// since the Alpaca IEX WebSocket streams US equities only.
+func usSymbols(tickers []string) []string {
+	foreign := []string{".HK", ".TW", ".TWO", ".KS", ".KQ"}
+	out := make([]string, 0, len(tickers))
+	for _, t := range tickers {
+		u := strings.ToUpper(strings.TrimSpace(t))
+		if u == "" {
+			continue
+		}
+		skip := false
+		for _, sfx := range foreign {
+			if strings.HasSuffix(u, sfx) {
+				skip = true
+				break
+			}
+		}
+		if !skip {
+			out = append(out, u)
+		}
+	}
+	return out
+}
 
 // taiwanSeed is a small set of Taiwan large-caps (TWSE .TW codes) always
 // ingested, so TW stock pages have data out of the box — TSMC, Hon Hai,
@@ -238,6 +263,16 @@ func main() {
 		go poller.Run(ctx)
 		bars = ingest.NewBarCache(priceClient, 30, time.Hour)
 		log.Info("price polling enabled", "every", cfg.PricePollEvery.String(), "feed", cfg.AlpacaFeed)
+
+		// Real-time WS stream (free IEX): sub-second live prices for the hot/
+		// watchlist US set (≤30, free-tier cap); the REST poller covers breadth +
+		// seeds prev/regular-close. Quotes flow to the same SSE hub + store.
+		if cfg.AlpacaWSEnabled {
+			wsSyms := usSymbols(ingestTickers(ctx))
+			go alpacaws.New(cfg.AlpacaWSURL, cfg.AlpacaKeyID, cfg.AlpacaSecret, wsSyms,
+				priceClient, priceClient.SessionAt, hub.Publish, st, log).Run(ctx)
+			log.Info("alpaca WS real-time enabled", "symbols", min(len(wsSyms), alpacaws.MaxSymbols))
+		}
 
 		// Opportunity board: SEC Form-4 insider buys + market cap (needs prices).
 		secClient := sec.New(cfg.EDGARUserAgent)

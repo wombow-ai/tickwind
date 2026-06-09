@@ -30,6 +30,10 @@ type Config struct {
 	AlpacaDataURL  string // default https://data.alpaca.markets
 	AlpacaFeed     string // iex (free) | sip | overnight
 	PricePollEvery time.Duration
+	// AlpacaWSURL is the real-time trade WebSocket endpoint (free IEX feed);
+	// AlpacaWSEnabled gates the live streamer (default on when keys are present).
+	AlpacaWSURL     string
+	AlpacaWSEnabled bool
 	// UniverseSweepEvery: how often the whole-US-universe price cache refreshes.
 	UniverseSweepEvery time.Duration
 	// CongressSweepEvery: how often the congressional-PTR cache refreshes (House
@@ -119,6 +123,8 @@ func Load() Config {
 		AlpacaSecret:            env("ALPACA_API_SECRET", ""),
 		AlpacaDataURL:           env("ALPACA_DATA_URL", ""),
 		AlpacaFeed:              env("ALPACA_FEED", "iex"),
+		AlpacaWSURL:             env("ALPACA_WS_URL", "wss://stream.data.alpaca.markets/v2/iex"),
+		AlpacaWSEnabled:         envBool("ALPACA_WS_ENABLED", true),
 		PricePollEvery:          envDur("PRICE_POLL_EVERY", 10*time.Second),
 		UniverseSweepEvery:      envDur("UNIVERSE_SWEEP_EVERY", 5*time.Minute),
 		CongressSweepEvery:      envDur("CONGRESS_SWEEP_EVERY", 8*time.Hour),
@@ -173,6 +179,16 @@ func env(key, def string) string {
 		return v
 	}
 	return def
+}
+
+// envBool reads a boolean env var; "0"/"false"/"no"/"off" (case-insensitive) are
+// false, any other non-empty value is true, and unset uses def.
+func envBool(key string, def bool) bool {
+	v := strings.ToLower(strings.TrimSpace(os.Getenv(key)))
+	if v == "" {
+		return def
+	}
+	return v != "0" && v != "false" && v != "no" && v != "off"
 }
 
 func envInt(key string, def int) int {

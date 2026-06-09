@@ -381,6 +381,10 @@ func (c *Client) SnapshotQuotes(ctx context.Context, symbols []string) (map[stri
 	return out, nil
 }
 
+// SessionAt is the exported session classifier (used by the WS streamer to
+// label real-time trades the same way snapshots are labeled).
+func (c *Client) SessionAt(t time.Time) string { return c.sessionAt(t) }
+
 // sessionAt classifies a US-equity trading session for a timestamp, evaluated
 // in America/New_York. Holidays are not accounted for (best-effort, for display
 // only): pre 04:00–09:30, regular 09:30–16:00, post 16:00–20:00, otherwise

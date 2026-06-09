@@ -274,7 +274,13 @@ Status: ✅ done · 🟡 in progress · ⬜ todo
 > #7/#8 仍暂停。 ◐①价格卡(39): (a) 后端 `Quote.RegularClose`（=Alpaca dailyBar.c，盘前缺失则回退 prevClose；LatestQuote+
 > SnapshotQuotes+postgres quotes 加 regular_close 列幂等 ALTER+UpsertQuote/GetQuote；poller 走 LatestQuote 自动带上）+ (b) 前端
 > StockView 头部两行（主行=正常盘价+当日涨跌 vs 昨收；盘前/盘后/夜盘副行=延伸价+涨跌 vs 正常盘收盘；非美股/旧报价 regular_close
-> 缺失则优雅回退原样）✅ 本 tick，go+web 全绿。 ②实时(40, WebSocket)、③机构榜(41) 待做。**
+> 缺失则优雅回退原样）✅ `9bf3b31` LIVE 验证。 ◐②价格实时(40, WebSocket): #2a `internal/alpacaws`——Alpaca 免费 IEX
+> WS（`wss://stream.data.alpaca.markets/v2/iex`，dep `github.com/coder/websocket` v1.8.14，零依赖纯 Go）：auth→subscribe trades→
+> 读循环解析 trade（修了一个 JSON 大小写坑：head 只含 "T" 时 "t" 时间戳会污染 Type→改用同时含 T/t 字段的行结构）→ merge 到
+> seeded quote（prev/regular_close 来自 REST snapshot 种子，盘中 regular_close 跟随实时价）→ 推 SSE hub + 限流 UpsertQuote；
+> 30s ping 保活 + 指数退避重连；订阅集=watchlist∪POPULAR 的**美股**（剔除 .HK/.TW/.KS）上限 30，其余仍靠 REST poller。
+> config `ALPACA_WS_URL`/`ALPACA_WS_ENABLED`(默认开)；main 有 key 时与 poller 并存启动；trade 解析 + 30 上限单测。本 tick go 全绿，
+> **待部署+公网验证**（看热门票 quote `at` 是否近实时刷新）。注意 VPS docker build 要能拉到 coder/websocket。 ③机构榜(41) 待做。#7/#8 暂停。**
 > **▶ RESUMED 2026-06-09 — owner restored SSH; the #2a+#3a backlog deployed + verified (universe
 > ~6.5k stocks; #3a is dead code until #3b wires it). KEY DEPLOY FIX: background the ENTIRE deploy
 > script via `nohup` so the SSH command returns sub-second (the flaky link drops connections held open
