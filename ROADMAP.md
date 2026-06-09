@@ -251,7 +251,11 @@ Status: ✅ done · 🟡 in progress · ⬜ todo
 > count 60, healthz 200.** (c) `/congress` board page (member·state-district·filed date·"official PDF" link, sourced-facts
 > framing + disclaimer) + `CongressBoard` + nav (secondary/More▾) + `api.ts getCongress` + zh/en i18n ✅ `f3b22bf` —
 > **LIVE-VERIFIED on Vercel (`/congress` 200, title rendered, ~20s).** (Ticker-level detail = PTR PDF parsing, deferred; v1 links to the official PDF.)
-> ◐#5 Stock screener (36): (a) **`GET /v1/screen` over the universe cache (~6.6k) — price/%-change/session filters,
+> ◐#5 Stock screener (36): (c) `/screen` frontend page (filter controls + results table) + `Screener` + nav + `api.ts getScreen`
+> + zh/en i18n ✅ `19325ed` (web build+lint green; local route manifest confirms `/screen`). **LIVE-VERIFY PENDING — Vercel
+> deploy queued/slow (~8min, `/screen` still 404 while older `/congress` 200; likely a push-burst backlog on Hobby tier — each
+> tick pushed feature+ROADMAP = 2 builds). Code is sound; re-verify next tick. MITIGATION: batch feature+ROADMAP into ONE
+> commit/push per tick to halve Vercel rebuilds.** (a) **`GET /v1/screen` over the universe cache (~6.6k) — price/%-change/session filters,
 > sortable, capped — reusing the wired `universe` field via `Snapshot()` (no api.New change); pure `screenQuotes` unit-tested**
 > ✅ `b509589` + DEPLOYED. LIVE-VERIFY caught delayed-IEX prev_close split artifacts (bogus +4010% gainers) → **data-hygiene
 > guard: change outside [-95%,+300%] marked unknown** (still in price screens, excluded from change rank) ✅ `76a1e9b` — RE-VERIFIED
