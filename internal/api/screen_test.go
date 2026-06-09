@@ -14,6 +14,7 @@ func screenFixture() map[string]store.Quote {
 		"CCC": {Ticker: "CCC", Price: 50, PrevClose: 50, Session: "post"},      // 0%
 		"DDD": {Ticker: "DDD", Price: 5, PrevClose: 0, Session: "regular"},     // change uncomputable
 		"ZZZ": {Ticker: "ZZZ", Price: 0, PrevClose: 1, Session: "regular"},     // no price → excluded
+		"SPL": {Ticker: "SPL", Price: 40, PrevClose: 1, Session: "regular"},    // +3900% → split artifact, change marked unknown
 	}
 }
 
@@ -37,24 +38,28 @@ func TestScreenQuotes_MinChange(t *testing.T) {
 
 func TestScreenQuotes_PriceRange(t *testing.T) {
 	got := screenQuotes(screenFixture(), screenCriteria{minPrice: 10, maxPrice: 60, sort: "price_asc"})
-	if tickerList(got) != "AAA,CCC" {
-		t.Fatalf("price[10,60] asc → %q, want AAA,CCC", tickerList(got))
+	// AAA(10), SPL(40), CCC(50) in [10,60]; SPL's change is guarded to unknown but
+	// its price still qualifies.
+	if tickerList(got) != "AAA,SPL,CCC" {
+		t.Fatalf("price[10,60] asc → %q, want AAA,SPL,CCC", tickerList(got))
 	}
 }
 
 func TestScreenQuotes_SortChangeDescNilLast(t *testing.T) {
-	// Default sort (change_desc); ZZZ (price 0) excluded, DDD (no change) sorts last.
+	// Default sort (change_desc); ZZZ (price 0) excluded; DDD (no prev) and SPL
+	// (artifact-guarded) have unknown change → sorted last by ticker.
 	got := screenQuotes(screenFixture(), screenCriteria{})
-	if tickerList(got) != "AAA,CCC,BBB,DDD" {
-		t.Fatalf("change_desc → %q, want AAA,CCC,BBB,DDD", tickerList(got))
+	if tickerList(got) != "AAA,CCC,BBB,DDD,SPL" {
+		t.Fatalf("change_desc → %q, want AAA,CCC,BBB,DDD,SPL", tickerList(got))
 	}
 }
 
 func TestScreenQuotes_SessionAndLimit(t *testing.T) {
 	got := screenQuotes(screenFixture(), screenCriteria{session: "regular", sort: "change_desc"})
-	// regular + price>0: AAA, BBB, DDD (CCC is post, ZZZ no price).
-	if tickerList(got) != "AAA,BBB,DDD" {
-		t.Fatalf("session=regular → %q, want AAA,BBB,DDD", tickerList(got))
+	// regular + price>0: AAA(+25), BBB(-9), then unknown-change DDD, SPL last by
+	// ticker (CCC is post, ZZZ no price).
+	if tickerList(got) != "AAA,BBB,DDD,SPL" {
+		t.Fatalf("session=regular → %q, want AAA,BBB,DDD,SPL", tickerList(got))
 	}
 	lim := screenQuotes(screenFixture(), screenCriteria{sort: "change_desc", limit: 2})
 	if tickerList(lim) != "AAA,CCC" {

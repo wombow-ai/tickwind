@@ -1041,6 +1041,16 @@ type screenResult struct {
 	Session   string   `json:"session"`
 }
 
+const (
+	// A computed daily %-change outside this band is treated as a data artifact
+	// (typically a reverse-split prev_close mismatch in delayed IEX data — e.g. a
+	// $43 stock showing a $1 prev close → +4000%) and the change is marked unknown
+	// rather than served as a bogus top gainer. A stock can't fall more than 100%,
+	// and a genuine one-day listed-equity gain above ~300% is vanishingly rare.
+	maxSaneChangePct = 300.0
+	minSaneChangePct = -95.0
+)
+
 // screenQuotes filters a universe snapshot by the criteria, then sorts + caps it.
 // Pure (no I/O) so it is directly unit-tested.
 func screenQuotes(quotes map[string]store.Quote, c screenCriteria) []screenResult {
@@ -1057,8 +1067,9 @@ func screenQuotes(quotes map[string]store.Quote, c screenCriteria) []screenResul
 		}
 		var chg *float64
 		if q.PrevClose > 0 {
-			v := (q.Price - q.PrevClose) / q.PrevClose * 100
-			chg = &v
+			if v := (q.Price - q.PrevClose) / q.PrevClose * 100; v <= maxSaneChangePct && v >= minSaneChangePct {
+				chg = &v // else: implausible → leave change unknown (artifact guard)
+			}
 		}
 		if c.hasMinChange && (chg == nil || *chg < c.minChange) {
 			continue
