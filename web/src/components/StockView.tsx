@@ -54,6 +54,7 @@ import {AlertsPanel} from '@/components/AlertsPanel';
 import {HoldingsPanel} from '@/components/HoldingsPanel';
 import {KLineChart} from '@/components/KLineChart';
 import {FundamentalsCard} from '@/components/FundamentalsCard';
+import {EarningsChip} from '@/components/EarningsChip';
 import {CommentsPanel} from '@/components/CommentsPanel';
 
 type Status = 'loading' | 'ready' | 'error';
@@ -426,6 +427,9 @@ export function StockView({ticker}: {ticker: string}) {
 
       {/* pulse: Reddit buzz + news sentiment (renders nothing when empty) */}
       <PulseBar signals={signals} />
+
+      {/* next earnings date (Finnhub calendar; hides when none upcoming) */}
+      <EarningsChip ticker={norm} />
 
       {/* fundamentals: market cap / P/E / revenue / net income (SEC XBRL; hides for non-US) */}
       <FundamentalsCard ticker={norm} />

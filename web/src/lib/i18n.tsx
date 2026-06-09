@@ -101,6 +101,12 @@ const dict: Record<Lang, Record<string, string>> = {
     'fund.pb': 'P/B',
     'fund.loss': 'Loss',
     'fund.source': 'Source: SEC filings',
+    // earnings
+    'earnings.next': 'Next earnings',
+    'earnings.estEps': 'Est. EPS',
+    'earnings.bmo': 'Pre-market',
+    'earnings.amc': 'After-hours',
+    'earnings.dmh': 'During hours',
     // alerts
     'alerts.title': 'Alerts',
     'alerts.kind': 'Condition',
@@ -398,6 +404,12 @@ const dict: Record<Lang, Record<string, string>> = {
     'fund.pb': '市净率',
     'fund.loss': '亏损',
     'fund.source': '数据来源：SEC 申报',
+    // earnings
+    'earnings.next': '下次财报',
+    'earnings.estEps': '预期EPS',
+    'earnings.bmo': '盘前',
+    'earnings.amc': '盘后',
+    'earnings.dmh': '盘中',
     // alerts
     'alerts.title': '提醒',
     'alerts.kind': '条件',
