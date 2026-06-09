@@ -847,6 +847,52 @@ export function getCongress(limit = 60, signal?: AbortSignal): Promise<CongressR
   return getJson<CongressResponse>(`/v1/congress${q}`, signal);
 }
 
+/** One screener match from `GET /v1/screen`. change_pct is null when unknown. */
+export interface ScreenResult {
+  ticker: string;
+  price: number;
+  prev_close?: number;
+  change_pct: number | null;
+  session: string;
+}
+
+/** Envelope returned by `GET /v1/screen`. */
+export interface ScreenResponse {
+  count: number;
+  results: ScreenResult[];
+}
+
+/** Filters accepted by the screener (all optional; blanks are omitted). */
+export interface ScreenParams {
+  minPrice?: number;
+  maxPrice?: number;
+  minChange?: number;
+  maxChange?: number;
+  session?: string;
+  sort?: string;
+  limit?: number;
+}
+
+/**
+ * Runs the stock screener over the whole-US universe quote cache (delayed IEX
+ * prices). Only non-empty filters are sent. Public endpoint.
+ */
+export function getScreen(
+  params: ScreenParams = {},
+  signal?: AbortSignal,
+): Promise<ScreenResponse> {
+  const p = new URLSearchParams();
+  if (params.minPrice != null) p.set('min_price', String(params.minPrice));
+  if (params.maxPrice != null) p.set('max_price', String(params.maxPrice));
+  if (params.minChange != null) p.set('min_change', String(params.minChange));
+  if (params.maxChange != null) p.set('max_change', String(params.maxChange));
+  if (params.session) p.set('session', params.session);
+  if (params.sort) p.set('sort', params.sort);
+  if (params.limit != null) p.set('limit', String(params.limit));
+  const q = p.toString();
+  return getJson<ScreenResponse>(`/v1/screen${q ? `?${q}` : ''}`, signal);
+}
+
 /** A link a user saved to a ticker (private, per-user). */
 export interface Clip {
   id: string;
