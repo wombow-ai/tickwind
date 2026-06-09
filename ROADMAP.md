@@ -236,16 +236,19 @@ Status: ✅ done · 🟡 in progress · ⬜ todo
 > [34] → ⬜#4 Congress board (Senate-first) [35] → ⬜#5 screener (needs #2) [36] → ⬜#6 notes/comments
 > enhance [37] → ⬜#7 Brazil B3 (brapi, key in VPS .env) [38] → ⬜#8 FINRA squeeze radar [23].
 > Yahoo HK kept (gray but controllable while free; revisit at monetization). brapi key provided.
-> **◐#3 earnings: (a) `finnhub.EarningsCalendar` + `store.Earning` + parse test ✅ `ec45870` (deployed);
-> (b) store CRUD + EarningsIngestor ✅ `21c47bd`; (c) API `GET /v1/earnings?from=&to=` + `GET /v1/stocks/{t}/earnings`
-> (`EarningsSource` iface in api.New, 5 call sites synced) + `api.ts` `Earning`/`getEarnings`/`getStockEarnings`
-> ✅ `27dc91f` — go+web all green; (d) StockView `EarningsChip` ("下次财报" — nearest upcoming date + bmo/amc/dmh
-> label + est-EPS, hide-on-empty; i18n earnings.*) ✅ `32914da` (frontend LIVE via Vercel, gracefully hidden
-> until backend lands). **(b)+(c) backend deploy STILL PENDING — SSH dropped 4× across last 3 ticks (handshake
-> "closed by remote host"; API itself healthy: universe 200 + healthz 200). One single attempt per tick; if it
-> keeps failing several more ticks may need owner VNC (check fail2ban/sshd MaxStartups).** Once backend lands,
-> #3 fully lights up (chip shows real dates, /v1/earnings populates). Optional later: merge earnings into events timeline.
-> ◐#6: notes inline-edit LIVE `d97db72` (Vercel; rest of #6 = Markdown + comment edit/like).**
+> **✅#3 earnings — FULLY LIVE 2026-06-09:** (a) `finnhub.EarningsCalendar`+`store.Earning` `ec45870`; (b) store CRUD
+> + EarningsIngestor `21c47bd`; (c) API `GET /v1/earnings?from=&to=` + `GET /v1/stocks/{t}/earnings` (`EarningsSource`
+> in api.New, 5 call sites) + `api.ts` client `27dc91f`; (d) StockView `EarningsChip` ("下次财报", hide-on-empty, i18n)
+> `32914da`. **Backend deployed on the 5th SSH attempt — `/v1/earnings` verified `{count:332,…}` (real EPS est/act),
+> `/v1/stocks/{t}/earnings` valid, healthz 200, universe 6683.** DEPLOY LESSON: the flaky SSH eventually gets through
+> — one single spaced attempt per tick (NO spinning) drains the backlog; 4 drops then success, no fail2ban trip.
+> ◐#4 Congress trading board (35): **data source verified + chosen = official House Clerk FD (disclosures-clerk.house.gov,
+> public-domain, keyless; Stock-Watcher S3 dumps now 403/acquired).** `internal/congress` client ✅ (this tick): downloads
+> the annual `{year}FD.ZIP`, unzips in-memory, parses the XML index, keeps FilingType "P" = Periodic Transaction Reports
+> (515 in 2025), builds the official PTR PDF link (`/public_disc/ptr-pdfs/{yr}/{docid}.pdf`, verified 200) — parse unit-tested
+> (BOM-stripped, state/district split, date M/D/YYYY). Next: `store.CongressTrade`/Filing + ingestor + `/v1/congress` API + board page.
+> (Ticker-level detail = PTR PDF parsing, deferred; v1 links to the official PDF.) ◐#6: notes inline-edit LIVE `d97db72`
+> (rest = Markdown render + comment edit/like).**
 > **▶ RESUMED 2026-06-09 — owner restored SSH; the #2a+#3a backlog deployed + verified (universe
 > ~6.5k stocks; #3a is dead code until #3b wires it). KEY DEPLOY FIX: background the ENTIRE deploy
 > script via `nohup` so the SSH command returns sub-second (the flaky link drops connections held open
