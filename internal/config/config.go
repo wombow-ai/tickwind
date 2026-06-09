@@ -39,6 +39,9 @@ type Config struct {
 	// CongressSweepEvery: how often the congressional-PTR cache refreshes (House
 	// Clerk public-domain disclosures; the index updates roughly daily).
 	CongressSweepEvery time.Duration
+	// InstitutionalSweepEvery: how often the SEC 13D/13G beneficial-ownership
+	// cache refreshes (daily index; disseminates next business day).
+	InstitutionalSweepEvery time.Duration
 
 	// Finnhub company news. Empty token disables news ingestion.
 	FinnhubToken string
@@ -128,6 +131,7 @@ func Load() Config {
 		PricePollEvery:          envDur("PRICE_POLL_EVERY", 10*time.Second),
 		UniverseSweepEvery:      envDur("UNIVERSE_SWEEP_EVERY", 5*time.Minute),
 		CongressSweepEvery:      envDur("CONGRESS_SWEEP_EVERY", 8*time.Hour),
+		InstitutionalSweepEvery: envDur("INSTITUTIONAL_SWEEP_EVERY", 8*time.Hour),
 		FinnhubToken:            env("FINNHUB_TOKEN", ""),
 		RedditClientID:          env("REDDIT_CLIENT_ID", ""),
 		RedditSecret:            env("REDDIT_CLIENT_SECRET", ""),

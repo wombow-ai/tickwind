@@ -1,0 +1,81 @@
+package ingest
+
+import (
+	"context"
+	"log/slog"
+	"sort"
+	"time"
+
+	"github.com/wombow-ai/tickwind/internal/institutional"
+	"github.com/wombow-ai/tickwind/internal/sec"
+)
+
+// OwnershipFetcher fetches Schedule 13D/13G filings for a day (satisfied by
+// *sec.Client).
+type OwnershipFetcher interface {
+	DailyBeneficialOwnership(ctx context.Context, date time.Time) ([]sec.OwnershipRef, error)
+}
+
+// InstitutionalIngestor refreshes the in-memory cache of recent Schedule 13D/13G
+// beneficial-ownership filings from the SEC daily index, scanning the last few
+// days and deduping by accession. Own goroutine, off the request path;
+// memory-only + rebuildable (no DB writes), keyless (public SEC data).
+type InstitutionalIngestor struct {
+	sec   OwnershipFetcher
+	cache *institutional.Cache
+	every time.Duration
+	max   int
+	log   *slog.Logger
+}
+
+// NewInstitutionalIngestor builds the ingestor; every is the refresh cadence.
+func NewInstitutionalIngestor(secClient OwnershipFetcher, cache *institutional.Cache, every time.Duration, log *slog.Logger) *InstitutionalIngestor {
+	return &InstitutionalIngestor{sec: secClient, cache: cache, every: every, max: 150, log: log}
+}
+
+// Run refreshes once on startup, then on the cadence, until ctx is cancelled.
+func (i *InstitutionalIngestor) Run(ctx context.Context) {
+	i.refresh(ctx)
+	t := time.NewTicker(i.every)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			i.refresh(ctx)
+		}
+	}
+}
+
+func (i *InstitutionalIngestor) refresh(ctx context.Context) {
+	now := time.Now().UTC()
+	seen := make(map[string]struct{})
+	var all []sec.OwnershipRef
+	// Filings disseminate the next business day; scan the last few calendar days
+	// (weekend/holiday days simply return nothing) and dedupe by accession.
+	for d := 0; d <= 3; d++ {
+		refs, err := i.sec.DailyBeneficialOwnership(ctx, now.AddDate(0, 0, -d))
+		if err != nil {
+			i.log.Warn("institutional: fetch failed", "day_offset", -d, "err", err)
+			continue
+		}
+		for _, r := range refs {
+			if _, ok := seen[r.Accession]; ok {
+				continue
+			}
+			seen[r.Accession] = struct{}{}
+			all = append(all, r)
+		}
+	}
+	if len(all) == 0 {
+		return
+	}
+	// Newest filing date first (FiledDate is YYYY-MM-DD, lexically sortable).
+	sort.SliceStable(all, func(x, y int) bool { return all[x].FiledDate > all[y].FiledDate })
+	if len(all) > i.max {
+		all = all[:i.max]
+	}
+	i.cache.Set(all)
+	i.log.Info("institutional: refreshed", "filings", len(all))
+}

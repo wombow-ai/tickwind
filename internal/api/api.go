@@ -30,6 +30,7 @@ import (
 	"github.com/wombow-ai/tickwind/internal/events"
 	"github.com/wombow-ai/tickwind/internal/guru"
 	"github.com/wombow-ai/tickwind/internal/opportunity"
+	"github.com/wombow-ai/tickwind/internal/sec"
 	"github.com/wombow-ai/tickwind/internal/store"
 	"github.com/wombow-ai/tickwind/internal/symbols"
 	"github.com/wombow-ai/tickwind/internal/topics"
@@ -110,36 +111,43 @@ type CongressSource interface {
 	Get() []congress.Filing
 }
 
-type Server struct {
-	store        store.Store
-	hub          QuoteStream
-	clip         *clip.Fetcher
-	enrich       enrich.Enricher
-	auth         *auth.Verifier
-	bars         BarSource
-	topics       TopicSource
-	opps         OpportunitySource
-	universe     UniverseSource
-	gurus        GuruSource
-	ingestor     TickerIngestor
-	symbols      SymbolSearcher
-	events       EventSource
-	fundamentals FundamentalsSource
-	earnings     EarningsSource
-	congress     CongressSource
-	admins       map[string]bool // user UUIDs and/or emails (lowercased) allowed to delete any comment
-	commentRL    *rateLimiter    // per-user comment-post throttle
-	log          *slog.Logger
+// InstitutionalSource provides the latest snapshot of SEC Schedule 13D/13G
+// beneficial-ownership filings (institutional / activist stakes). nil → empty.
+type InstitutionalSource interface {
+	Get() []sec.OwnershipRef
 }
 
-func New(st store.Store, hub QuoteStream, enricher enrich.Enricher, verifier *auth.Verifier, bars BarSource, topicSrc TopicSource, oppSrc OpportunitySource, universeSrc UniverseSource, guruSrc GuruSource, ingestor TickerIngestor, symbolSrc SymbolSearcher, eventSrc EventSource, fundSrc FundamentalsSource, earningsSrc EarningsSource, congressSrc CongressSource, adminIDs []string, log *slog.Logger) http.Handler {
+type Server struct {
+	store         store.Store
+	hub           QuoteStream
+	clip          *clip.Fetcher
+	enrich        enrich.Enricher
+	auth          *auth.Verifier
+	bars          BarSource
+	topics        TopicSource
+	opps          OpportunitySource
+	universe      UniverseSource
+	gurus         GuruSource
+	ingestor      TickerIngestor
+	symbols       SymbolSearcher
+	events        EventSource
+	fundamentals  FundamentalsSource
+	earnings      EarningsSource
+	congress      CongressSource
+	institutional InstitutionalSource
+	admins        map[string]bool // user UUIDs and/or emails (lowercased) allowed to delete any comment
+	commentRL     *rateLimiter    // per-user comment-post throttle
+	log           *slog.Logger
+}
+
+func New(st store.Store, hub QuoteStream, enricher enrich.Enricher, verifier *auth.Verifier, bars BarSource, topicSrc TopicSource, oppSrc OpportunitySource, universeSrc UniverseSource, guruSrc GuruSource, ingestor TickerIngestor, symbolSrc SymbolSearcher, eventSrc EventSource, fundSrc FundamentalsSource, earningsSrc EarningsSource, congressSrc CongressSource, institutionalSrc InstitutionalSource, adminIDs []string, log *slog.Logger) http.Handler {
 	admins := make(map[string]bool, len(adminIDs))
 	for _, id := range adminIDs {
 		if id = strings.ToLower(strings.TrimSpace(id)); id != "" {
 			admins[id] = true
 		}
 	}
-	s := &Server{store: st, hub: hub, clip: clip.NewFetcher(), enrich: enricher, auth: verifier, bars: bars, topics: topicSrc, opps: oppSrc, universe: universeSrc, gurus: guruSrc, ingestor: ingestor, symbols: symbolSrc, events: eventSrc, fundamentals: fundSrc, earnings: earningsSrc, congress: congressSrc, admins: admins, commentRL: newRateLimiter(10, 10*time.Minute), log: log}
+	s := &Server{store: st, hub: hub, clip: clip.NewFetcher(), enrich: enricher, auth: verifier, bars: bars, topics: topicSrc, opps: oppSrc, universe: universeSrc, gurus: guruSrc, ingestor: ingestor, symbols: symbolSrc, events: eventSrc, fundamentals: fundSrc, earnings: earningsSrc, congress: congressSrc, institutional: institutionalSrc, admins: admins, commentRL: newRateLimiter(10, 10*time.Minute), log: log}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", s.health)
 
@@ -191,6 +199,7 @@ func New(st store.Store, hub QuoteStream, enricher enrich.Enricher, verifier *au
 	mux.HandleFunc("GET /v1/events", s.getEvents)
 	mux.HandleFunc("GET /v1/earnings", s.getEarnings)
 	mux.HandleFunc("GET /v1/congress", s.getCongress)
+	mux.HandleFunc("GET /v1/institutional", s.getInstitutional)
 	mux.HandleFunc("GET /v1/stream", s.getStream)
 
 	// auth.Middleware attaches the user when a valid bearer token is present;
@@ -1441,6 +1450,41 @@ func (s *Server) getCongress(w http.ResponseWriter, r *http.Request) {
 		filings = filings[:lim]
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"count": len(filings), "filings": filings})
+}
+
+// getInstitutional returns recent SEC Schedule 13D/13G beneficial-ownership
+// filings (13D = active/activist stake, higher signal; 13G = passive, e.g. the
+// index giants), newest first. ?type=13d|13g filters by activist flag; ?limit=
+// caps (default 60). Always 200 with a (possibly empty) list. nil source → empty.
+func (s *Server) getInstitutional(w http.ResponseWriter, r *http.Request) {
+	var filings []sec.OwnershipRef
+	if s.institutional != nil {
+		filings = s.institutional.Get()
+	}
+	switch strings.ToLower(strings.TrimSpace(r.URL.Query().Get("type"))) {
+	case "13d":
+		filings = filterOwnership(filings, true)
+	case "13g":
+		filings = filterOwnership(filings, false)
+	}
+	if filings == nil {
+		filings = []sec.OwnershipRef{}
+	}
+	if lim := queryLimit(r, 60); lim > 0 && len(filings) > lim {
+		filings = filings[:lim]
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"count": len(filings), "filings": filings})
+}
+
+// filterOwnership keeps only filings matching the activist flag (13D vs 13G).
+func filterOwnership(in []sec.OwnershipRef, activist bool) []sec.OwnershipRef {
+	out := make([]sec.OwnershipRef, 0, len(in))
+	for _, f := range in {
+		if f.Activist == activist {
+			out = append(out, f)
+		}
+	}
+	return out
 }
 
 // getTopics returns the trending-topics snapshot (empty when disabled).

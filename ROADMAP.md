@@ -289,7 +289,10 @@ Status: ✅ done · 🟡 in progress · ⬜ todo
 > `parseOwnershipIndex`(提取 "SC 13D/13D-A/13G/13G-A" 行；13D=活跃举牌 Activist=true，13G=被动；Company=标的issuer) + 单测 ✅ 本 tick
 > （go 全绿；未接服务=dead code，无需部署）。**下一步 #3b**：cache + ingestor（仿 congress，扫近 2-3 天去重）→ 部署验证 SEC 实时取数返回真实 13D/13G
 > → API `/v1/institutional` → 前端榜单页（13D/13G 标签区分；申报人(BlackRock 等)从 filing header 解析，可作 #3c 增强）。
-> 注：被动三巨头 13G 信号弱，UI 诚实区分。#7/#8 暂停；#2a WS 实时待开盘验证。**
+> 注：被动三巨头 13G 信号弱，UI 诚实区分。 #3b：`internal/institutional` Cache + `ingest/institutional.go`(InstitutionalIngestor，
+> 扫近 4 天去重，每 8h) + nil-safe `InstitutionalSource` 接口(api.New 5 处调用点同步) + `GET /v1/institutional`(`?type=13d|13g`,`?limit=`) +
+> main 无条件起 ingestor（sec.New，公开数据）+ config `INSTITUTIONAL_SWEEP_EVERY` ✅ 本 tick go 全绿，**待部署+公网验证 `/v1/institutional` count>0**。
+> #3c 后续：申报人(institution)从 filing header 解析 + 前端 `/institutional` 榜单页。#7/#8 暂停；#2a WS 实时待开盘验证（本环境市场数据锚定 6/9，可能演示不了）。**
 > **▶ RESUMED 2026-06-09 — owner restored SSH; the #2a+#3a backlog deployed + verified (universe
 > ~6.5k stocks; #3a is dead code until #3b wires it). KEY DEPLOY FIX: background the ENTIRE deploy
 > script via `nohup` so the SSH command returns sub-second (the flaky link drops connections held open
