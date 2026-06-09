@@ -29,9 +29,13 @@ feature-flagged plugin, never on the critical path. Web only.
   and don't spin/reconnect rapidly (that worsens the throttle).
 - **MOST RESILIENT deploy (proven 2026-06-09, use when SSH transfers drop): the box pulls source
   from the PUBLIC GitHub repo itself via ONE short SSH command** (no slow rsync stream from the Mac):
-  `ssh … 'cd /root/tickwind && curl -sL https://github.com/wombow-ai/tickwind/archive/refs/heads/main.tar.gz -o /tmp/tw.tgz && tar xzf /tmp/tw.tgz -C /tmp && cp -r /tmp/tickwind-main/internal/* internal/ && cp -r /tmp/tickwind-main/cmd/* cmd/ && cp /tmp/tickwind-main/go.{mod,sum} . && (nohup docker compose up -d --build api > /tmp/build.log 2>&1 &) && echo DEPLOY_KICKED'`
-  (commit+push first so GitHub has the code). Wrap in a small retry loop; verify via public
-  `curl /v1/holdings` (404→401) etc. **Never copies `.env`** (gitignored). The repo `wombow-ai/tickwind` is public.
+  `ssh -o IPQoS=none … root@VPS 'cd /root/tickwind && nohup sh -c "curl -sL https://github.com/wombow-ai/tickwind/archive/refs/heads/main.tar.gz -o /tmp/tw.tgz && tar xzf /tmp/tw.tgz -C /tmp && cp -r /tmp/tickwind-main/internal/* internal/ && cp -r /tmp/tickwind-main/cmd/* cmd/ && cp /tmp/tickwind-main/go.{mod,sum} . && docker compose up -d --build api" > /tmp/deploy.log 2>&1 & echo DEPLOY_LAUNCHED'`
+  **CRITICAL (proven 2026-06-09): background the ENTIRE script via `nohup sh -c "…" & echo` so the SSH
+  command returns SUB-SECOND.** The flaky link drops connections held open more than a few seconds
+  (e.g. during the remote curl/tar/cp), so the older form that ran curl+tar+cp inline (backgrounding
+  only the build) got dropped; a sub-second launch survives. `IPQoS=none` also helps on some paths.
+  (commit+push first so GitHub has the code.) Verify via PUBLIC curl (`/v1/universe` count, `/healthz`,
+  `/v1/holdings`→401). **Never copies `.env`** (gitignored). Repo `wombow-ai/tickwind` is public.
 - **VPS infra (1GB RAM!) — root-caused 2026-06-09:** a `docker build` (Go compile) can exhaust RAM+
   swap → the OOM killer kills NEW sshd sessions ("Accepted publickey … session opened" then the
   client sees "Connection closed by remote host"), which also drops rsync/tar mid-stream and trips

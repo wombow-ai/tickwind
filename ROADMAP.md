@@ -229,8 +229,8 @@ Status: ✅ done · 🟡 in progress · ⬜ todo
 > **▶ v2 plan IN PROGRESS (owner-confirmed 2026-06-09), 1-min `/loop`, this order:** ✅#0 remove gray
 > sources Reddit+Xueqiu (deployed, verified gone). → ✅#1 K-line **full timeframes LIVE**
 > (1D/5D/D/W/M/Q/Y): intraday endpoint + 5y daily history + client aggregation + 1D/5D buttons
-> (`bcf95da`) [task 32 done]. → ◐#2 cache all US stocks [33]: (a) UniverseIngestor in-memory price
-> cache + `GET /v1/universe` — code done `f9efe70`, **deploy pending (SSH drops)**; (b) bulk market
+> (`bcf95da`) [task 32 done]. → ✅#2 cache all US stocks [33]: (a) universe price cache via
+> UniverseIngestor + `GET /v1/universe` **LIVE `f9efe70` — ~6.5k US stocks pre-cached, verified**; (b) bulk market
 > cap → **decided: fold into screener #5** (per-stock cap already served by `edgar.Fundamentals`; no
 > consumer yet for bulk-cap plumbing); (c) banner reworded ✅ `51f3e7c`. → ⬜#3 earnings calendar
 > [34] → ⬜#4 Congress board (Senate-first) [35] → ⬜#5 screener (needs #2) [36] → ⬜#6 notes/comments
@@ -239,14 +239,11 @@ Status: ✅ done · 🟡 in progress · ⬜ todo
 > **◐#3 earnings: (a) `finnhub.EarningsCalendar` + `store.Earning` + parse test ✅ `ec45870`; next
 > (b) store CRUD + EarningsIngestor, (c) API + timeline render. ◐#6: notes inline-edit LIVE `d97db72`
 > (Vercel; rest of #6 = Markdown + comment edit/like).**
-> **⛔ LOOP PAUSED 2026-06-09 — SSH deploy pipeline persistently down (~6 consecutive single-attempt
-> drops; worked earlier in the session). Backend backlog UNDEPLOYED but committed+tested: `#2a`
-> universe price cache (`f9efe70`) + `#3a` finnhub earnings client (`ec45870`). Frontend shipped fine
-> via Vercel (#2c banner, #1 K-line, notes-edit `d97db72`). The whole remaining roadmap (#3b→#8) is
-> backend → blocked on deploy. live API healthy throughout. NEEDS owner to restore SSH (VNC or from a
-> working session: `fail2ban-client unban 154.29.158.47 && fail2ban-client set sshd addignoreip
-> 154.29.158.47 && systemctl restart ssh`; check `journalctl -u ssh -n 20` + `free -m`). Then re-run
-> `/loop`: one GitHub-pull deploys the whole backlog at once; resume at #3(b) earnings store+ingestor.**
+> **▶ RESUMED 2026-06-09 — owner restored SSH; the #2a+#3a backlog deployed + verified (universe
+> ~6.5k stocks; #3a is dead code until #3b wires it). KEY DEPLOY FIX: background the ENTIRE deploy
+> script via `nohup` so the SSH command returns sub-second (the flaky link drops connections held open
+> >~a few seconds — e.g. during the remote curl/tar — but a sub-second launch survives). Verify via
+> public curl. See CLAUDE.md. Loop continues at #3(b) earnings store+ingestor.**
 
 3 parallel research agents (competitor gaps · free data sources · AI/LLM). **Convergence: the
 SEC/EDGAR backbone is the defensible, redistribution-safe lane.** Owner picks which to build:
