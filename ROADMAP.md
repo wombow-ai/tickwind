@@ -279,8 +279,11 @@ Status: ✅ done · 🟡 in progress · ⬜ todo
 > 读循环解析 trade（修了一个 JSON 大小写坑：head 只含 "T" 时 "t" 时间戳会污染 Type→改用同时含 T/t 字段的行结构）→ merge 到
 > seeded quote（prev/regular_close 来自 REST snapshot 种子，盘中 regular_close 跟随实时价）→ 推 SSE hub + 限流 UpsertQuote；
 > 30s ping 保活 + 指数退避重连；订阅集=watchlist∪POPULAR 的**美股**（剔除 .HK/.TW/.KS）上限 30，其余仍靠 REST poller。
-> config `ALPACA_WS_URL`/`ALPACA_WS_ENABLED`(默认开)；main 有 key 时与 poller 并存启动；trade 解析 + 30 上限单测。本 tick go 全绿，
-> **待部署+公网验证**（看热门票 quote `at` 是否近实时刷新）。注意 VPS docker build 要能拉到 coder/websocket。 ③机构榜(41) 待做。#7/#8 暂停。**
+> config `ALPACA_WS_URL`/`ALPACA_WS_ENABLED`(默认开)；main 有 key 时与 poller 并存启动；trade 解析 + 30 上限单测。
+> ✅ `349953c` **已部署**（VPS 成功拉到 coder/websocket + healthz 200 + universe 6685）。**实时效果待开盘验证**：当前为休市/盘前
+> 极薄（quote `at` 仍是 6/9 收盘前的最后成交，无实时成交可推流）；WS 连通日志核对 SSH 掉线未成——开盘后看热门票 `at` 是否秒级刷新
+> + docker logs 看 "connected + subscribed"。WS 出错会优雅退回 poller（无害）。**#2b 动态按浏览订阅 = 可选增强，暂缓**（30 上限够覆盖热门/自选）。
+> ◐③ 机构/13D举牌榜(41) ← 下一步（可立即构建+验证，不依赖开盘）。#7/#8 暂停。**
 > **▶ RESUMED 2026-06-09 — owner restored SSH; the #2a+#3a backlog deployed + verified (universe
 > ~6.5k stocks; #3a is dead code until #3b wires it). KEY DEPLOY FIX: background the ENTIRE deploy
 > script via `nohup` so the SSH command returns sub-second (the flaky link drops connections held open
