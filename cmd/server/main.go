@@ -19,6 +19,7 @@ import (
 	"github.com/wombow-ai/tickwind/internal/auth"
 	"github.com/wombow-ai/tickwind/internal/bluesky"
 	"github.com/wombow-ai/tickwind/internal/config"
+	"github.com/wombow-ai/tickwind/internal/congress"
 	"github.com/wombow-ai/tickwind/internal/dart"
 	"github.com/wombow-ai/tickwind/internal/edgar"
 	"github.com/wombow-ai/tickwind/internal/enrich"
@@ -221,6 +222,12 @@ func main() {
 	// when Alpaca prices are available (needed for market cap).
 	oppCache := opportunity.NewCache()
 	universeCache := universe.NewCache()
+	congressCache := congress.NewCache()
+
+	// Congress trading board: official House Clerk PTR disclosures (public domain,
+	// keyless, no Alpaca dependency) refreshed into an in-memory cache on a slow
+	// cadence. Runs unconditionally in its own goroutine, off the request path.
+	go ingest.NewCongressIngestor(congress.New(), congressCache, cfg.CongressSweepEvery, log).Run(ctx)
 
 	// bars feeds the sparkline endpoint; nil (disabled) without Alpaca creds.
 	var bars api.BarSource
@@ -248,7 +255,7 @@ func main() {
 
 	srv := &http.Server{
 		Addr:              ":" + cfg.Port,
-		Handler:           api.New(st, hub, enricher, verifier, bars, topicCache, oppCache, universeCache, guruCache, scheduler, symbolCache, eventsCache, fundCache, st, cfg.AdminUserIDs, log),
+		Handler:           api.New(st, hub, enricher, verifier, bars, topicCache, oppCache, universeCache, guruCache, scheduler, symbolCache, eventsCache, fundCache, st, congressCache, cfg.AdminUserIDs, log),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 

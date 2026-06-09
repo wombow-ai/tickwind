@@ -24,6 +24,7 @@ import (
 
 	"github.com/wombow-ai/tickwind/internal/auth"
 	"github.com/wombow-ai/tickwind/internal/clip"
+	"github.com/wombow-ai/tickwind/internal/congress"
 	"github.com/wombow-ai/tickwind/internal/edgar"
 	"github.com/wombow-ai/tickwind/internal/enrich"
 	"github.com/wombow-ai/tickwind/internal/events"
@@ -102,6 +103,12 @@ type EarningsSource interface {
 	ListEarningsForTicker(ctx context.Context, ticker string, limit int) ([]store.Earning, error)
 }
 
+// CongressSource provides the latest snapshot of congressional Periodic
+// Transaction Reports (House Clerk public-domain filings). nil → empty list.
+type CongressSource interface {
+	Get() []congress.Filing
+}
+
 type Server struct {
 	store        store.Store
 	hub          QuoteStream
@@ -118,19 +125,20 @@ type Server struct {
 	events       EventSource
 	fundamentals FundamentalsSource
 	earnings     EarningsSource
+	congress     CongressSource
 	admins       map[string]bool // user UUIDs and/or emails (lowercased) allowed to delete any comment
 	commentRL    *rateLimiter    // per-user comment-post throttle
 	log          *slog.Logger
 }
 
-func New(st store.Store, hub QuoteStream, enricher enrich.Enricher, verifier *auth.Verifier, bars BarSource, topicSrc TopicSource, oppSrc OpportunitySource, universeSrc UniverseSource, guruSrc GuruSource, ingestor TickerIngestor, symbolSrc SymbolSearcher, eventSrc EventSource, fundSrc FundamentalsSource, earningsSrc EarningsSource, adminIDs []string, log *slog.Logger) http.Handler {
+func New(st store.Store, hub QuoteStream, enricher enrich.Enricher, verifier *auth.Verifier, bars BarSource, topicSrc TopicSource, oppSrc OpportunitySource, universeSrc UniverseSource, guruSrc GuruSource, ingestor TickerIngestor, symbolSrc SymbolSearcher, eventSrc EventSource, fundSrc FundamentalsSource, earningsSrc EarningsSource, congressSrc CongressSource, adminIDs []string, log *slog.Logger) http.Handler {
 	admins := make(map[string]bool, len(adminIDs))
 	for _, id := range adminIDs {
 		if id = strings.ToLower(strings.TrimSpace(id)); id != "" {
 			admins[id] = true
 		}
 	}
-	s := &Server{store: st, hub: hub, clip: clip.NewFetcher(), enrich: enricher, auth: verifier, bars: bars, topics: topicSrc, opps: oppSrc, universe: universeSrc, gurus: guruSrc, ingestor: ingestor, symbols: symbolSrc, events: eventSrc, fundamentals: fundSrc, earnings: earningsSrc, admins: admins, commentRL: newRateLimiter(10, 10*time.Minute), log: log}
+	s := &Server{store: st, hub: hub, clip: clip.NewFetcher(), enrich: enricher, auth: verifier, bars: bars, topics: topicSrc, opps: oppSrc, universe: universeSrc, gurus: guruSrc, ingestor: ingestor, symbols: symbolSrc, events: eventSrc, fundamentals: fundSrc, earnings: earningsSrc, congress: congressSrc, admins: admins, commentRL: newRateLimiter(10, 10*time.Minute), log: log}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", s.health)
 
@@ -178,6 +186,7 @@ func New(st store.Store, hub QuoteStream, enricher enrich.Enricher, verifier *au
 	mux.HandleFunc("GET /v1/search", s.getSearch)
 	mux.HandleFunc("GET /v1/events", s.getEvents)
 	mux.HandleFunc("GET /v1/earnings", s.getEarnings)
+	mux.HandleFunc("GET /v1/congress", s.getCongress)
 	mux.HandleFunc("GET /v1/stream", s.getStream)
 
 	// auth.Middleware attaches the user when a valid bearer token is present;
@@ -1211,6 +1220,23 @@ func (s *Server) getStockEarnings(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ticker": ticker, "count": len(earnings), "earnings": earnings})
+}
+
+// getCongress returns the latest congressional Periodic Transaction Report
+// filings (House Clerk public-domain disclosures), newest first. Always 200 with
+// a (possibly empty) list — never null. nil source → empty. ?limit= caps rows.
+func (s *Server) getCongress(w http.ResponseWriter, r *http.Request) {
+	var filings []congress.Filing
+	if s.congress != nil {
+		filings = s.congress.Get()
+	}
+	if filings == nil {
+		filings = []congress.Filing{}
+	}
+	if lim := queryLimit(r, 60); lim > 0 && len(filings) > lim {
+		filings = filings[:lim]
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"count": len(filings), "filings": filings})
 }
 
 // getTopics returns the trending-topics snapshot (empty when disabled).

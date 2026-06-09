@@ -38,6 +38,7 @@ func fundServer(t *testing.T, q store.Quote, f edgar.Fundamentals) *httptest.Ser
 		nil, nil, nil, nil, nil, nil, nil, nil, // bars, topics, opps, universe, gurus, ingestor, symbols, events
 		fakeFundamentals{f: f},
 		nil, // no earnings source
+		nil, // no congress source
 		nil, // admins
 		slog.New(slog.NewTextHandler(io.Discard, nil)),
 	)
