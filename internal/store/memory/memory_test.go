@@ -296,3 +296,35 @@ func equal(a, b []string) bool {
 	}
 	return true
 }
+
+func TestUpdateComment(t *testing.T) {
+	s := New()
+	ctx := context.Background()
+	c := store.Comment{ID: "c1", UserID: "u1", Author: "alice", Ticker: "AAPL", Body: "first", CreatedAt: time.Now()}
+	if err := s.SaveComment(ctx, c); err != nil {
+		t.Fatal(err)
+	}
+
+	// Author edits → ok, body updated, EditedAt set.
+	got, ok, err := s.UpdateComment(ctx, "c1", "u1", "edited body")
+	if err != nil || !ok {
+		t.Fatalf("UpdateComment author: ok=%v err=%v", ok, err)
+	}
+	if got.Body != "edited body" || got.EditedAt == nil {
+		t.Fatalf("got body=%q editedAt=%v, want edited + non-nil", got.Body, got.EditedAt)
+	}
+
+	// Non-author cannot edit.
+	if _, ok, _ := s.UpdateComment(ctx, "c1", "u2", "hijack"); ok {
+		t.Error("non-author edit should fail")
+	}
+	// Unknown id.
+	if _, ok, _ := s.UpdateComment(ctx, "nope", "u1", "x"); ok {
+		t.Error("unknown id edit should fail")
+	}
+	// The non-author attempt must not have changed the body.
+	list, _ := s.ListComments(ctx, "AAPL", 10)
+	if len(list) != 1 || list[0].Body != "edited body" {
+		t.Fatalf("after edits, list=%+v", list)
+	}
+}

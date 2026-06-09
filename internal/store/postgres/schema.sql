@@ -235,8 +235,11 @@ CREATE TABLE IF NOT EXISTS comments (
     flagged    boolean NOT NULL DEFAULT false,
     reports    integer NOT NULL DEFAULT 0,
     deleted    boolean NOT NULL DEFAULT false,
-    created_at timestamptz NOT NULL DEFAULT now()
+    created_at timestamptz NOT NULL DEFAULT now(),
+    edited_at  timestamptz
 );
+-- Idempotent add for existing deployments (CREATE TABLE IF NOT EXISTS won't alter).
+ALTER TABLE comments ADD COLUMN IF NOT EXISTS edited_at timestamptz;
 
 CREATE INDEX IF NOT EXISTS comments_ticker_created_idx
     ON comments (ticker, created_at DESC) WHERE NOT deleted;

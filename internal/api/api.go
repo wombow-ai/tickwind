@@ -161,6 +161,7 @@ func New(st store.Store, hub QuoteStream, enricher enrich.Enricher, verifier *au
 	mux.HandleFunc("DELETE /v1/holdings/{id}", s.deleteHolding)
 	mux.HandleFunc("GET /v1/comments", s.getComments) // public read
 	mux.HandleFunc("POST /v1/comments", s.postComment)
+	mux.HandleFunc("PATCH /v1/comments/{id}", s.patchComment)
 	mux.HandleFunc("DELETE /v1/comments/{id}", s.deleteComment)
 	mux.HandleFunc("POST /v1/comments/{id}/report", s.reportComment)
 
@@ -745,6 +746,42 @@ func (s *Server) deleteComment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"deleted": true})
+}
+
+// patchComment edits the caller's own comment (body only). Same validation as
+// posting; the store enforces author-only editing → 404 if not found or not the
+// author's.
+func (s *Server) patchComment(w http.ResponseWriter, r *http.Request) {
+	u, ok := s.requireUser(w, r)
+	if !ok {
+		return
+	}
+	var req struct {
+		Body string `json:"body"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 8<<10)).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, errBody("invalid request body"))
+		return
+	}
+	body := strings.TrimSpace(req.Body)
+	if body == "" {
+		writeJSON(w, http.StatusBadRequest, errBody("a comment body is required"))
+		return
+	}
+	if len([]rune(body)) > 2000 {
+		writeJSON(w, http.StatusBadRequest, errBody("comment too long (2000 chars max)"))
+		return
+	}
+	c, ok2, err := s.store.UpdateComment(r.Context(), r.PathValue("id"), u.ID, body)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, errBody(err.Error()))
+		return
+	}
+	if !ok2 {
+		writeJSON(w, http.StatusNotFound, errBody("comment not found"))
+		return
+	}
+	writeJSON(w, http.StatusOK, c)
 }
 
 func (s *Server) reportComment(w http.ResponseWriter, r *http.Request) {

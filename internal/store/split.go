@@ -186,3 +186,7 @@ func (s Split) DeleteComment(ctx context.Context, id, userID string, admin bool)
 func (s Split) ReportComment(ctx context.Context, id string) (bool, error) {
 	return s.Market.ReportComment(ctx, id)
 }
+
+func (s Split) UpdateComment(ctx context.Context, id, userID, body string) (Comment, bool, error) {
+	return s.Market.UpdateComment(ctx, id, userID, body)
+}

@@ -216,13 +216,14 @@ type Earning struct {
 // carries a public Author display name. IP is captured for moderation but is
 // never serialized to clients (json:"-").
 type Comment struct {
-	ID        string    `json:"id"`
-	UserID    string    `json:"user_id"`
-	Author    string    `json:"author"`
-	Ticker    string    `json:"ticker,omitempty"`
-	Body      string    `json:"body"`
-	CreatedAt time.Time `json:"created_at"`
-	IP        string    `json:"-"`
+	ID        string     `json:"id"`
+	UserID    string     `json:"user_id"`
+	Author    string     `json:"author"`
+	Ticker    string     `json:"ticker,omitempty"`
+	Body      string     `json:"body"`
+	CreatedAt time.Time  `json:"created_at"`
+	EditedAt  *time.Time `json:"edited_at,omitempty"` // set when the author edits; nil if never edited
+	IP        string     `json:"-"`
 }
 
 // Store is the persistence boundary. Every backend (memory, postgres)
@@ -317,4 +318,8 @@ type Store interface {
 	ListComments(ctx context.Context, ticker string, limit int) ([]Comment, error)
 	DeleteComment(ctx context.Context, id, userID string, admin bool) (bool, error)
 	ReportComment(ctx context.Context, id string) (bool, error)
+	// UpdateComment edits a comment's body. Only the author (userID match) may
+	// edit; returns ok=false if the comment doesn't exist or isn't theirs. Sets
+	// EditedAt to now.
+	UpdateComment(ctx context.Context, id, userID, body string) (Comment, bool, error)
 }

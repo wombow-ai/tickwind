@@ -882,9 +882,9 @@ func (s *Store) ListComments(ctx context.Context, ticker string, limit int) ([]s
 	var query string
 	var args []any
 	if ticker == "" {
-		query = `SELECT id, user_id, author, COALESCE(ticker,''), body, created_at FROM comments WHERE ticker IS NULL AND NOT deleted ORDER BY created_at DESC`
+		query = `SELECT id, user_id, author, COALESCE(ticker,''), body, created_at, edited_at FROM comments WHERE ticker IS NULL AND NOT deleted ORDER BY created_at DESC`
 	} else {
-		query = `SELECT id, user_id, author, COALESCE(ticker,''), body, created_at FROM comments WHERE ticker = $1 AND NOT deleted ORDER BY created_at DESC`
+		query = `SELECT id, user_id, author, COALESCE(ticker,''), body, created_at, edited_at FROM comments WHERE ticker = $1 AND NOT deleted ORDER BY created_at DESC`
 		args = append(args, ticker)
 	}
 	if limit > 0 {
@@ -899,7 +899,7 @@ func (s *Store) ListComments(ctx context.Context, ticker string, limit int) ([]s
 	var out []store.Comment
 	for rows.Next() {
 		var c store.Comment
-		if err := rows.Scan(&c.ID, &c.UserID, &c.Author, &c.Ticker, &c.Body, &c.CreatedAt); err != nil {
+		if err := rows.Scan(&c.ID, &c.UserID, &c.Author, &c.Ticker, &c.Body, &c.CreatedAt, &c.EditedAt); err != nil {
 			return nil, fmt.Errorf("postgres: scan comment: %w", err)
 		}
 		out = append(out, c)
@@ -918,6 +918,24 @@ func (s *Store) DeleteComment(ctx context.Context, id, userID string, admin bool
 		return false, fmt.Errorf("postgres: delete comment: %w", err)
 	}
 	return tag.RowsAffected() == 1, nil
+}
+
+// UpdateComment edits a comment's body. Only the author may edit (user_id match);
+// sets edited_at. ok=false when the id is unknown, deleted, or not the author's.
+func (s *Store) UpdateComment(ctx context.Context, id, userID, body string) (store.Comment, bool, error) {
+	var c store.Comment
+	err := s.pool.QueryRow(ctx,
+		`UPDATE comments SET body = $3, edited_at = now() WHERE id = $1 AND user_id = $2 AND NOT deleted
+		 RETURNING id, user_id, author, COALESCE(ticker,''), body, created_at, edited_at`,
+		id, userID, body).
+		Scan(&c.ID, &c.UserID, &c.Author, &c.Ticker, &c.Body, &c.CreatedAt, &c.EditedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return store.Comment{}, false, nil
+	}
+	if err != nil {
+		return store.Comment{}, false, fmt.Errorf("postgres: update comment: %w", err)
+	}
+	return c, true, nil
 }
 
 // ReportComment flags a comment for moderation (increments its report count).

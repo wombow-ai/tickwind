@@ -586,6 +586,20 @@ func (s *Store) ReportComment(_ context.Context, id string) (bool, error) {
 	return ok, nil
 }
 
+func (s *Store) UpdateComment(_ context.Context, id, userID, body string) (store.Comment, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	c, ok := s.comments[id]
+	if !ok || c.UserID != userID { // only the author may edit
+		return store.Comment{}, false, nil
+	}
+	now := time.Now().UTC()
+	c.Body = body
+	c.EditedAt = &now
+	s.comments[id] = c
+	return c, true, nil
+}
+
 // limited returns the first limit elements (limit <= 0 means all).
 func limited[T any](s []T, limit int) []T {
 	if limit > 0 && len(s) > limit {

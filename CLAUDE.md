@@ -14,6 +14,15 @@ feature-flagged plugin, never on the critical path. Web only.
 - Domain `tickwind.com` (on Cloudflare). **Frontend → Vercel** (auto-deploys on push
   to `main`, Root Directory `web/`). **Backend → RackNerd VPS `root@104.168.46.15`**,
   reached at `api.tickwind.com` via a **Cloudflare Tunnel**. **$0/month.**
+- **⚠️ Vercel Hobby limits (learned 2026-06-09/10): ~100 deploys/day.** A fast `/loop`
+  that pushes 1–2 commits/tick can EXHAUST it → new pushes stop deploying (site keeps
+  serving the last good deploy; new routes 404) with no obvious error. Symptom seen: a
+  new page 404 for 15+ min while older pages stay 200. **Diagnosis that proves it's
+  Vercel-side, not code:** `cd web && npm ci && npm run build` (clean, == Vercel) — if it
+  succeeds and emits the route, the code is fine and the owner must check the Vercel
+  dashboard (usage/build logs). **Mitigations:** ONE commit/push per tick (batch
+  feature+ROADMAP); avoid ROADMAP-only pushes that still trigger a rebuild; quota resets
+  at UTC midnight. Backend (SSH) deploys are independent of this.
 - **Deploy flow** (backend): `rsync` the changed Go source (`internal/`, `cmd/`) to
   `/root/tickwind/` using `ssh -i ~/.ssh/tickwind_deploy`, then
   `ssh … 'cd /root/tickwind && docker compose up -d --build api'`. The VPS holds the
