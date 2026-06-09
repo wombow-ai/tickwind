@@ -237,7 +237,8 @@ Status: ✅ done · 🟡 in progress · ⬜ todo
 > enhance [37] → ⬜#7 Brazil B3 (brapi, key in VPS .env) [38] → ⬜#8 FINRA squeeze radar [23].
 > Yahoo HK kept (gray but controllable while free; revisit at monetization). brapi key provided.
 > **◐#3 earnings: (a) `finnhub.EarningsCalendar` + `store.Earning` + parse test ✅ `ec45870`; next
-> (b) store CRUD + EarningsIngestor, (c) API + timeline render. ◐#6: notes inline-edit LIVE `d97db72`
+> (b) store CRUD + EarningsIngestor ✅ `21c47bd` (committed+tested, **deploy pending — SSH dropped
+> 2× this tick, intermittent**), (c) API `/v1/earnings` + timeline render next. ◐#6: notes inline-edit LIVE `d97db72`
 > (Vercel; rest of #6 = Markdown + comment edit/like).**
 > **▶ RESUMED 2026-06-09 — owner restored SSH; the #2a+#3a backlog deployed + verified (universe
 > ~6.5k stocks; #3a is dead code until #3b wires it). KEY DEPLOY FIX: background the ENTIRE deploy
