@@ -291,8 +291,12 @@ Status: ✅ done · 🟡 in progress · ⬜ todo
 > → API `/v1/institutional` → 前端榜单页（13D/13G 标签区分；申报人(BlackRock 等)从 filing header 解析，可作 #3c 增强）。
 > 注：被动三巨头 13G 信号弱，UI 诚实区分。 #3b：`internal/institutional` Cache + `ingest/institutional.go`(InstitutionalIngestor，
 > 扫近 4 天去重，每 8h) + nil-safe `InstitutionalSource` 接口(api.New 5 处调用点同步) + `GET /v1/institutional`(`?type=13d|13g`,`?limit=`) +
-> main 无条件起 ingestor（sec.New，公开数据）+ config `INSTITUTIONAL_SWEEP_EVERY` ✅ 本 tick go 全绿，**待部署+公网验证 `/v1/institutional` count>0**。
-> #3c 后续：申报人(institution)从 filing header 解析 + 前端 `/institutional` 榜单页。#7/#8 暂停；#2a WS 实时待开盘验证（本环境市场数据锚定 6/9，可能演示不了）。**
+> main 无条件起 ingestor（sec.New，公开数据）+ config `INSTITUTIONAL_SWEEP_EVERY` ✅ `46a7a34` **已部署+LIVE 验证**：`/v1/institutional`
+> 返回真实 13D/13G（例：`SC 13D/A · GENCO SHIPPING & TRADING LTD · 20260608 · activist:true`，healthz 200）——**确认 SEC 实时取数在 VPS
+> 端到端工作**。注：本合成 2026 环境 13D/13G 数据稀疏(count=1)，真实生产会有几十条；索引日期是 `YYYYMMDD` 格式(前端需格式化)。
+> **#3c 下一步：申报人(institution)解析** —— filing `.txt` SGML header 的 "FILED BY:" → "COMPANY CONFORMED NAME:" 抠出机构名，丰富
+> `OwnershipRef.Filer`（sec 加 FetchFiler，ingestor 每条调用，限流+capped）；这是 owner 想看的核心("贝莱德加仓了谁")。#3d：前端 `/institutional`
+> 榜单页（申报人+标的+13D活跃/13G被动标签+日期+SEC链接，非投资建议）+ 导航。#7/#8 暂停；#2a WS 实时待开盘验证（本环境市场锚定 6/9，演示不了）。**
 > **▶ RESUMED 2026-06-09 — owner restored SSH; the #2a+#3a backlog deployed + verified (universe
 > ~6.5k stocks; #3a is dead code until #3b wires it). KEY DEPLOY FIX: background the ENTIRE deploy
 > script via `nohup` so the SSH command returns sub-second (the flaky link drops connections held open
