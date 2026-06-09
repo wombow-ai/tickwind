@@ -239,9 +239,12 @@ Status: ✅ done · 🟡 in progress · ⬜ todo
 > **◐#3 earnings: (a) `finnhub.EarningsCalendar` + `store.Earning` + parse test ✅ `ec45870` (deployed);
 > (b) store CRUD + EarningsIngestor ✅ `21c47bd`; (c) API `GET /v1/earnings?from=&to=` + `GET /v1/stocks/{t}/earnings`
 > (`EarningsSource` iface in api.New, 5 call sites synced) + `api.ts` `Earning`/`getEarnings`/`getStockEarnings`
-> ✅ `27dc91f` — go+web all green. **(b)+(c) backend deploy PENDING — SSH dropped 3× across last 2 ticks,
-> intermittent; deploys on next successful single attempt.** api.ts (frontend) auto-deploys via Vercel now.
-> Next: (d) StockView "下次财报" chip (getStockEarnings → nearest future row, date+bmo/amc) + optional timeline merge.
+> ✅ `27dc91f` — go+web all green; (d) StockView `EarningsChip` ("下次财报" — nearest upcoming date + bmo/amc/dmh
+> label + est-EPS, hide-on-empty; i18n earnings.*) ✅ `32914da` (frontend LIVE via Vercel, gracefully hidden
+> until backend lands). **(b)+(c) backend deploy STILL PENDING — SSH dropped 4× across last 3 ticks (handshake
+> "closed by remote host"; API itself healthy: universe 200 + healthz 200). One single attempt per tick; if it
+> keeps failing several more ticks may need owner VNC (check fail2ban/sshd MaxStartups).** Once backend lands,
+> #3 fully lights up (chip shows real dates, /v1/earnings populates). Optional later: merge earnings into events timeline.
 > ◐#6: notes inline-edit LIVE `d97db72` (Vercel; rest of #6 = Markdown + comment edit/like).**
 > **▶ RESUMED 2026-06-09 — owner restored SSH; the #2a+#3a backlog deployed + verified (universe
 > ~6.5k stocks; #3a is dead code until #3b wires it). KEY DEPLOY FIX: background the ENTIRE deploy
