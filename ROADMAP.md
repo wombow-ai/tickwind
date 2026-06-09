@@ -283,7 +283,13 @@ Status: ✅ done · 🟡 in progress · ⬜ todo
 > ✅ `349953c` **已部署**（VPS 成功拉到 coder/websocket + healthz 200 + universe 6685）。**实时效果待开盘验证**：当前为休市/盘前
 > 极薄（quote `at` 仍是 6/9 收盘前的最后成交，无实时成交可推流）；WS 连通日志核对 SSH 掉线未成——开盘后看热门票 `at` 是否秒级刷新
 > + docker logs 看 "connected + subscribed"。WS 出错会优雅退回 poller（无害）。**#2b 动态按浏览订阅 = 可选增强，暂缓**（30 上限够覆盖热门/自选）。
-> ◐③ 机构/13D举牌榜(41) ← 下一步（可立即构建+验证，不依赖开盘）。#7/#8 暂停。**
+> ◐③ 机构/13D举牌榜(41)：**数据源核查** —— SEC 直连从本沙箱 IP 被 403（curl+WebFetch 都不行），但 VPS 上现有 `internal/sec`
+> 客户端（带 UA/gzip/限流）能成功取每日索引（机会榜 Form-4 count:14 为证）；efts.sec.gov 从 VPS 可达(200)但需调参。**结论：复用
+> 已验证的 sec 客户端走每日索引路径。** #3a `internal/sec/ownership.go`：`DailyBeneficialOwnership(date)`(复用 `c.get`) +
+> `parseOwnershipIndex`(提取 "SC 13D/13D-A/13G/13G-A" 行；13D=活跃举牌 Activist=true，13G=被动；Company=标的issuer) + 单测 ✅ 本 tick
+> （go 全绿；未接服务=dead code，无需部署）。**下一步 #3b**：cache + ingestor（仿 congress，扫近 2-3 天去重）→ 部署验证 SEC 实时取数返回真实 13D/13G
+> → API `/v1/institutional` → 前端榜单页（13D/13G 标签区分；申报人(BlackRock 等)从 filing header 解析，可作 #3c 增强）。
+> 注：被动三巨头 13G 信号弱，UI 诚实区分。#7/#8 暂停；#2a WS 实时待开盘验证。**
 > **▶ RESUMED 2026-06-09 — owner restored SSH; the #2a+#3a backlog deployed + verified (universe
 > ~6.5k stocks; #3a is dead code until #3b wires it). KEY DEPLOY FIX: background the ENTIRE deploy
 > script via `nohup` so the SSH command returns sub-second (the flaky link drops connections held open
