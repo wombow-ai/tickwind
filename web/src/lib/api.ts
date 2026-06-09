@@ -173,6 +173,10 @@ export interface Quote {
   price: number;
   /** Previous trading day's close, for the day's change. Absent when unknown. */
   prev_close?: number;
+  /** Regular-session close (live regular price during hours; the day's close
+   *  after). In pre/post sessions, `price` is the extended price shown against
+   *  this. Absent when unknown. */
+  regular_close?: number;
   /** Trading session the price was observed in. */
   session: Session;
   /** Upstream data provider, e.g. `alpaca`. */

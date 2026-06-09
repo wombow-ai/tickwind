@@ -286,6 +286,20 @@ export function StockView({ticker}: {ticker: string}) {
     }
   }
 
+  // Regular vs extended-hours split (Futu/Google style): the primary line shows
+  // the regular-session price + day change; in pre/post/overnight sessions a
+  // second line shows the extended price + its change vs the regular close.
+  const regClose =
+    quote && quote.regular_close && quote.regular_close > 0
+      ? quote.regular_close
+      : quote?.price ?? 0;
+  const isExt =
+    !!quote &&
+    (quote.session === 'pre' || quote.session === 'post' || quote.session === 'overnight') &&
+    regClose > 0 &&
+    Math.abs(quote.price - regClose) > 1e-9;
+  const primaryPrice = isExt ? regClose : quote?.price ?? 0;
+
   return (
     <div className="mx-auto max-w-4xl">
       {/* header */}
@@ -315,19 +329,17 @@ export function StockView({ticker}: {ticker: string}) {
               {quote && <SessionBadge session={quote.session} />}
             </div>
             {quote ? (
-              <PriceTag value={quote.price} cur={cur} size="lg" />
+              <PriceTag value={primaryPrice} cur={cur} size="lg" />
             ) : (
               <span className={cx('text-4xl font-semibold tabular-nums sm:text-5xl', t.faint)}>
                 {cur}—
               </span>
             )}
             <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
-              {quote?.prev_close ? (
+              {quote && quote.prev_close ? (
                 <ChangeLine
-                  chg={quote.price - quote.prev_close}
-                  pct={
-                    ((quote.price - quote.prev_close) / quote.prev_close) * 100
-                  }
+                  chg={regClose - quote.prev_close}
+                  pct={((regClose - quote.prev_close) / quote.prev_close) * 100}
                   cur={cur}
                   size="lg"
                 />
@@ -346,6 +358,23 @@ export function StockView({ticker}: {ticker: string}) {
                 <span className={cx('text-[11px]', t.faint)}>{tr('stock.waitingPrice')}</span>
               )}
             </div>
+            {/* extended-hours line: pre/post/overnight price vs the regular close */}
+            {isExt && quote && (
+              <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                <span className={cx('text-[12px] font-semibold', t.faint)}>
+                  {tr(`session.${quote.session}`)}
+                </span>
+                <span className={cx('text-[15px] font-bold tabular-nums', t.text)}>
+                  {cur}
+                  {quote.price.toFixed(2)}
+                </span>
+                <ChangeLine
+                  chg={quote.price - regClose}
+                  pct={((quote.price - regClose) / regClose) * 100}
+                  cur={cur}
+                />
+              </div>
+            )}
           </div>
 
           {/* right column: watchlist action + the price-trend sparkline (fills

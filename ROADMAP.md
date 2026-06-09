@@ -269,6 +269,12 @@ Status: ✅ done · 🟡 in progress · ⬜ todo
 > (c) **comment LIKE** — `store.LikeComment` toggle (per-user dedup via `comment_likes` table; ListComments returns count) +
 > `POST /v1/comments/{id}/like` + Heart button (optimistic, count) + memory tests. "Markdown supported" compose hint; i18n zh/en.
 > Owner paused #7 (Brazil) + #8 (FINRA) — NOT starting those.**
+> **▶ v3 owner ideas (2026-06-10): ①盘前/盘后价格分行卡片 ②价格更实时 ③机构信号。决定：①+② 做；②直接上 Alpaca IEX
+> WebSocket 真实时；③不并入 Hot/Surging（被动三巨头≠信念信号、13F季度滞后会污染社交榜）——改为日后单独做 13D举牌/13F主动加仓榜；
+> #7/#8 仍暂停。 ◐①价格卡(39): (a) 后端 `Quote.RegularClose`（=Alpaca dailyBar.c，盘前缺失则回退 prevClose；LatestQuote+
+> SnapshotQuotes+postgres quotes 加 regular_close 列幂等 ALTER+UpsertQuote/GetQuote；poller 走 LatestQuote 自动带上）+ (b) 前端
+> StockView 头部两行（主行=正常盘价+当日涨跌 vs 昨收；盘前/盘后/夜盘副行=延伸价+涨跌 vs 正常盘收盘；非美股/旧报价 regular_close
+> 缺失则优雅回退原样）✅ 本 tick，go+web 全绿。 ②实时(40, WebSocket)、③机构榜(41) 待做。**
 > **▶ RESUMED 2026-06-09 — owner restored SSH; the #2a+#3a backlog deployed + verified (universe
 > ~6.5k stocks; #3a is dead code until #3b wires it). KEY DEPLOY FIX: background the ENTIRE deploy
 > script via `nohup` so the SSH command returns sub-second (the flaky link drops connections held open

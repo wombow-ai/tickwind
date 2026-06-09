@@ -30,13 +30,18 @@ type Filing struct {
 // sessions — pre-market, regular, after-hours and overnight.
 type Quote struct {
 	Ticker string  `json:"ticker"`
-	Price  float64 `json:"price"`
+	Price  float64 `json:"price"` // latest trade, all-session (incl. pre/post/overnight)
 	// PrevClose is the previous trading day's closing price, used to compute
 	// the day's change. Zero when unknown (omitted from JSON).
-	PrevClose float64   `json:"prev_close,omitempty"`
-	Session   string    `json:"session"` // pre | regular | post | overnight | closed
-	Source    string    `json:"source"`
-	At        time.Time `json:"at"`
+	PrevClose float64 `json:"prev_close,omitempty"`
+	// RegularClose is the current/most-recent REGULAR-session close (Alpaca
+	// dailyBar close). It equals the live regular price during market hours and
+	// the day's close after; in pre/post sessions the frontend shows Price (the
+	// extended-hours price) against this as the extended change. Zero → unknown.
+	RegularClose float64   `json:"regular_close,omitempty"`
+	Session      string    `json:"session"` // pre | regular | post | overnight | closed
+	Source       string    `json:"source"`
+	At           time.Time `json:"at"`
 }
 
 // Candle is one daily OHLC bar (+ volume) for the candlestick chart. Time is the

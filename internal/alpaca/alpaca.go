@@ -94,13 +94,24 @@ func (c *Client) LatestQuote(ctx context.Context, ticker string) (store.Quote, e
 		return store.Quote{}, fmt.Errorf("alpaca: decode snapshot %s: %w", ticker, err)
 	}
 	return store.Quote{
-		Ticker:    ticker,
-		Price:     body.LatestTrade.Price,
-		PrevClose: body.PrevDailyBar.Close,
-		Session:   c.sessionAt(body.LatestTrade.Timestamp),
-		Source:    "alpaca",
-		At:        body.LatestTrade.Timestamp,
+		Ticker:       ticker,
+		Price:        body.LatestTrade.Price,
+		PrevClose:    body.PrevDailyBar.Close,
+		RegularClose: regularClose(body.DailyBar.Close, body.PrevDailyBar.Close),
+		Session:      c.sessionAt(body.LatestTrade.Timestamp),
+		Source:       "alpaca",
+		At:           body.LatestTrade.Timestamp,
 	}, nil
+}
+
+// regularClose picks the regular-session close: the day bar's close when present,
+// else the previous day's close (e.g. pre-market before today's bar exists), so
+// extended-hours change always has a sane reference.
+func regularClose(dailyClose, prevClose float64) float64 {
+	if dailyClose > 0 {
+		return dailyClose
+	}
+	return prevClose
 }
 
 type barsResp struct {
@@ -354,12 +365,13 @@ func (c *Client) SnapshotQuotes(ctx context.Context, symbols []string) (map[stri
 				continue
 			}
 			out[sym] = store.Quote{
-				Ticker:    sym,
-				Price:     price,
-				PrevClose: snap.PrevDailyBar.Close,
-				Session:   c.sessionAt(snap.LatestTrade.Timestamp),
-				Source:    "alpaca",
-				At:        snap.LatestTrade.Timestamp,
+				Ticker:       sym,
+				Price:        price,
+				PrevClose:    snap.PrevDailyBar.Close,
+				RegularClose: regularClose(snap.DailyBar.Close, snap.PrevDailyBar.Close),
+				Session:      c.sessionAt(snap.LatestTrade.Timestamp),
+				Source:       "alpaca",
+				At:           snap.LatestTrade.Timestamp,
 			}
 		}
 	}
