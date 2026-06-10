@@ -28,7 +28,7 @@ function fmtQty(n: number): string {
  * interest for the latest twice-monthly settlement — days-to-cover, the short
  * position and its change vs the prior period, plus a "squeeze risk" badge
  * when pressure runs hot. Hides entirely (no fake data) when the symbol has no
- * row, mirroring EarningsChip.
+ * row (non-US etc.; ETFs are covered — verified SPY), mirroring EarningsChip.
  */
 export function ShortChip({ticker}: {ticker: string}) {
   const dark = useDark();

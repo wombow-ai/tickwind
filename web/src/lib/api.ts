@@ -850,7 +850,8 @@ export interface ShortInterest {
 
 /**
  * Fetches the latest FINRA short-interest row for a stock (squeeze radar).
- * Rejects with 404 when the symbol has no row (ETFs, new listings, non-US).
+ * Rejects with 404 when the symbol has no row (non-US, brand-new listings —
+ * note ETFs ARE covered, e.g. SPY).
  */
 export function getShort(
   ticker: string,

@@ -322,6 +322,12 @@ Status: ✅ done · 🟡 in progress · ⬜ todo
 > **▶️ 解除暂停（owner "可以开干了"）**：#23 FINRA 轧空雷达 — **匿名 API 已验证可用**（consolidatedShortInterest 含
 > daysToCover/short qty/ADV/change%；⚠️默认返回最老期，需按 settlementDate 过滤最新结算期）。#38 巴西 B3 — **brapi key 已验证**
 > （PETR4 实时 41.83 BRL + marketCap）。循环按 #23 → #38 顺序开工。#39 cashtag 仍按 owner 指示等用户量。
+> **✅#23 FINRA 轧空雷达 LIVE（`86f4f37` 后端 + `546e116` 前端）**：API 契约实测=settlementDate 是分区键（sortFields 被拒须
+> EQUAL）→ `finra.LatestSettlementCandidates`（15日/月末工作日回调+节假日±2天余量，单测）探测最新已发布期 →
+> `ingest.ShortCache` 每日全分区分页（5000/页+500ms 礼貌间隔，~1.6万股入内存，失败保旧表，日期无关化单测）→
+> `GET /v1/stocks/{t}/short`（404=无行）→ 前端 ShortChip（回补天数/空头仓位 M/B/环比变色/「轧空风险」徽标 DTC≥5 或环比≥+20%/
+> 截至日·FINRA，404 整体隐藏）。**公网验证抓到最新期 2026-05-29**：GME DTC 11.99+徽标 ✓ / AAPL 3.38 无徽标 ✓ /
+> SPY 有数据（FINRA 覆盖 ETF，意外之喜）/ 0700.HK 正确隐藏 ✓。零控制台错误。
 > ◐③ 机构/13D举牌榜(41)：**数据源核查** —— SEC 直连从本沙箱 IP 被 403（curl+WebFetch 都不行），但 VPS 上现有 `internal/sec`
 > 客户端（带 UA/gzip/限流）能成功取每日索引（机会榜 Form-4 count:14 为证）；efts.sec.gov 从 VPS 可达(200)但需调参。**结论：复用
 > 已验证的 sec 客户端走每日索引路径。** #3a `internal/sec/ownership.go`：`DailyBeneficialOwnership(date)`(复用 `c.get`) +
