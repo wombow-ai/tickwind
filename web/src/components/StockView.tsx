@@ -476,7 +476,7 @@ export function StockView({ticker}: {ticker: string}) {
 
       {/* K-line candlestick chart + indicators (MA/MACD/RSI/Volume) */}
       <div className="mb-6">
-        <KLineChart ticker={norm} />
+        <KLineChart ticker={norm} quote={quote} />
       </div>
 
       {/* login gate */}

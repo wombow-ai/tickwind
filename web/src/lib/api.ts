@@ -897,6 +897,27 @@ export function getInstitutional(
 }
 
 /** One screener match from `GET /v1/screen`. change_pct is null when unknown. */
+/** One major-market-index level (the real index, not an ETF proxy). */
+export interface IndexQuote {
+  symbol: string; // Yahoo-style, e.g. ^GSPC
+  name?: string;
+  price: number;
+  prev_close?: number;
+  source: string;
+  at: string;
+}
+
+/** Envelope returned by `GET /v1/indices`. */
+export interface IndicesResponse {
+  count: number;
+  indices: IndexQuote[];
+}
+
+/** Fetches the latest major US index levels for the homepage strip. */
+export function getIndices(signal?: AbortSignal): Promise<IndicesResponse> {
+  return getJson<IndicesResponse>('/v1/indices', signal);
+}
+
 export interface ScreenResult {
   ticker: string;
   price: number;

@@ -44,6 +44,18 @@ type Quote struct {
 	At           time.Time `json:"at"`
 }
 
+// IndexQuote is a major-market-index level (e.g. the S&P 500 itself, not an
+// ETF proxy) for the homepage indices strip. PrevClose is the prior session's
+// close, for the day-change %. Zero → unknown.
+type IndexQuote struct {
+	Symbol    string    `json:"symbol"` // Yahoo-style, e.g. ^GSPC
+	Name      string    `json:"name,omitempty"`
+	Price     float64   `json:"price"`
+	PrevClose float64   `json:"prev_close,omitempty"`
+	Source    string    `json:"source"`
+	At        time.Time `json:"at"`
+}
+
 // Candle is one daily OHLC bar (+ volume) for the candlestick chart. Time is the
 // bar's date (UTC midnight).
 type Candle struct {

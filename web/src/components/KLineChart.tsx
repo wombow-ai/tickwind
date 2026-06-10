@@ -5,6 +5,7 @@ import {
   ColorType,
   createChart,
   HistogramSeries,
+  type ISeriesApi,
   LineSeries,
   LineStyle,
   type LogicalRange,
@@ -12,7 +13,7 @@ import {
 } from 'lightweight-charts';
 import {useEffect, useRef, useState} from 'react';
 import {aggregate, type Timeframe} from '@/lib/aggregate';
-import {getCandles, type Candle} from '@/lib/api';
+import {getCandles, type Candle, type Quote} from '@/lib/api';
 import {bollinger, macd, rsi, sma, type Series} from '@/lib/indicators';
 import {useT} from '@/lib/i18n';
 import {useDark} from '@/lib/theme';
@@ -50,6 +51,79 @@ function intradayRes(tf: TF): string {
   return tf === '1D' ? '5Min' : tf === '5D' ? '15Min' : '';
 }
 
+// How a live quote folds into the displayed series, per timeframe family:
+// 'intraday' extends/appends minute buckets (any session — 1D/5D show extended
+// hours); 'daily' extends today's candle or appends it (regular session only,
+// so pre/post prints never distort the daily close, matching Google/Futu);
+// 'bucket' only extends the last W/M/Q/Y aggregate, never appends.
+type StitchMode = 'intraday' | 'daily' | 'bucket';
+
+/**
+ * Folds the card's live quote into the tail of the candle series, so the chart
+ * tip always agrees with the (real-time) price card above it. Returns the
+ * amended-or-appended tail candle, or null when the quote is stale, for another
+ * symbol's session type, or older than the data already charted.
+ */
+function stitchTail(
+  view: readonly Candle[],
+  quote: Quote,
+  mode: StitchMode,
+  resSec: number,
+): Candle | null {
+  if (view.length === 0 || !(quote.price > 0)) return null;
+  const last = view[view.length - 1];
+  if (mode === 'intraday') {
+    const qms = Date.parse(quote.at);
+    const lastms = Date.parse(last.time);
+    if (!Number.isFinite(qms) || !Number.isFinite(lastms)) return null;
+    const bucket = Math.floor(qms / 1000 / resSec);
+    const lastBucket = Math.floor(lastms / 1000 / resSec);
+    if (bucket < lastBucket) return null; // already have a newer bar
+    if (bucket === lastBucket) {
+      return {
+        ...last,
+        close: quote.price,
+        high: Math.max(last.high, quote.price),
+        low: Math.min(last.low, quote.price),
+      };
+    }
+    return {
+      time: new Date(bucket * resSec * 1000).toISOString(),
+      open: quote.price,
+      high: quote.price,
+      low: quote.price,
+      close: quote.price,
+      volume: 0,
+    };
+  }
+  // Daily-derived views: only a live regular-session price belongs in the
+  // daily candle. (During regular hours the UTC date == the ET trading date,
+  // so the date slice below is safe.)
+  if (quote.session !== 'regular') return null;
+  const qd = quote.at.slice(0, 10);
+  const ld = last.time.slice(0, 10);
+  if (qd < ld) return null;
+  if (qd === ld || mode === 'bucket') {
+    return {
+      ...last,
+      close: quote.price,
+      high: Math.max(last.high, quote.price),
+      low: Math.min(last.low, quote.price),
+    };
+  }
+  // First print of a new trading day with no daily bar yet: synthesize one.
+  return {time: qd, open: quote.price, high: quote.price, low: quote.price, close: quote.price, volume: 0};
+}
+
+/** Replaces the tail candle in place (same time) or appends a new one. */
+function applyTail(view: Candle[], tail: Candle): void {
+  if (view.length > 0 && view[view.length - 1].time === tail.time) {
+    view[view.length - 1] = tail;
+  } else {
+    view.push(tail);
+  }
+}
+
 /** {time,value}[] from an indicator Series, dropping null warmup points. */
 function lineData(
   times: string[],
@@ -71,7 +145,7 @@ function lineData(
  * lightweight-charts is canvas + imperative, so this is a client component that
  * builds the chart in an effect and tears it down on cleanup.
  */
-export function KLineChart({ticker}: {ticker: string}) {
+export function KLineChart({ticker, quote}: {ticker: string; quote?: Quote}) {
   const dark = useDark();
   const t = tok(dark);
   const tr = useT();
@@ -85,11 +159,25 @@ export function KLineChart({ticker}: {ticker: string}) {
   // Remembers the user's pan/zoom so a rebuild (dark or Bollinger toggle) doesn't
   // snap the view back to the default window; reset on ticker change.
   const rangeRef = useRef<LogicalRange | null>(null);
+  // Live-stitch plumbing: the mounted candle series + the working copy of its
+  // data, so a quote tick can extend the tail via series.update() without the
+  // (expensive) full chart rebuild. lastQuoteRef lets a rebuild (tf/dark/BOLL
+  // toggle) re-apply the most recent quote immediately instead of waiting for
+  // the next tick.
+  const seriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
+  const stitchRef = useRef<{
+    view: Candle[];
+    mode: StitchMode;
+    resSec: number;
+    toT: (iso: string) => Time;
+  } | null>(null);
+  const lastQuoteRef = useRef<Quote | null>(null);
 
   useEffect(() => {
     const c = new AbortController();
     setStatus('loading');
     rangeRef.current = null; // new stock → default to the most-recent window
+    lastQuoteRef.current = null; // never stitch another symbol's quote
     setIntraday({});
     intradayReq.current = new Set();
     getCandles(ticker, c.signal).then(
@@ -130,7 +218,7 @@ export function KLineChart({ticker}: {ticker: string}) {
 
     const isIntraday = tf === '1D' || tf === '5D';
     const res = intradayRes(tf);
-    const view = isIntraday
+    const base = isIntraday
       ? (intraday[res] ?? [])
       : tf === '1Day'
         ? candles
@@ -140,6 +228,16 @@ export function KLineChart({ticker}: {ticker: string}) {
       isIntraday
         ? (Math.floor(Date.parse(iso) / 1000) as unknown as Time)
         : (iso.slice(0, 10) as unknown as Time);
+    // Fold the latest live quote into the tail so the chart opens already
+    // agreeing with the price card (ticks after this go through series.update).
+    const mode: StitchMode = isIntraday ? 'intraday' : tf === '1Day' ? 'daily' : 'bucket';
+    const resSec = tf === '1D' ? 300 : tf === '5D' ? 900 : 86400;
+    const view = base.slice();
+    const q0 = lastQuoteRef.current;
+    if (q0 && q0.ticker.toUpperCase() === ticker.toUpperCase()) {
+      const tail = stitchTail(view, q0, mode, resSec);
+      if (tail) applyTail(view, tail);
+    }
     const closes = view.map(c => c.close);
     const times = view.map(c => c.time);
     const grid = dark ? '#1e293b' : '#eef2f7';
@@ -178,6 +276,8 @@ export function KLineChart({ticker}: {ticker: string}) {
         close: c.close,
       })),
     );
+    seriesRef.current = candleSeries;
+    stitchRef.current = {view, mode, resSec, toT};
 
     // MA overlays (pane 0).
     for (const ma of MAS) {
@@ -287,8 +387,35 @@ export function KLineChart({ticker}: {ticker: string}) {
       if (r) rangeRef.current = r;
     });
 
-    return () => chart.remove();
-  }, [status, candles, dark, showBoll, tf, intraday]);
+    return () => {
+      seriesRef.current = null; // a tick must never update a removed chart
+      stitchRef.current = null;
+      chart.remove();
+    };
+  }, [status, candles, dark, showBoll, tf, intraday, ticker]);
+
+  // Live tick: extend the charted tail with each quote the price card shows.
+  // series.update() replaces the tail bar (same time) or appends (newer time),
+  // so the chart stays in lock-step with the card without a rebuild. Indicator
+  // panes (MA/VOL/MACD/RSI) refresh on the next rebuild — their period values
+  // barely move within a bar, and a per-tick recompute isn't worth the jank.
+  useEffect(() => {
+    if (!quote || quote.ticker.toUpperCase() !== ticker.toUpperCase()) return;
+    lastQuoteRef.current = quote;
+    const ctx = stitchRef.current;
+    const s = seriesRef.current;
+    if (!ctx || !s) return;
+    const tail = stitchTail(ctx.view, quote, ctx.mode, ctx.resSec);
+    if (!tail) return;
+    applyTail(ctx.view, tail);
+    s.update({
+      time: ctx.toT(tail.time),
+      open: tail.open,
+      high: tail.high,
+      low: tail.low,
+      close: tail.close,
+    });
+  }, [quote, ticker]);
 
   return (
     <section className={cx('rounded-2xl border p-4', t.card, t.border, t.soft)}>

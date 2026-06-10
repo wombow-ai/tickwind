@@ -260,6 +260,12 @@ func main() {
 	// filings (public domain, keyless). Same unconditional, off-request-path pattern.
 	go ingest.NewInstitutionalIngestor(sec.New(cfg.EDGARUserAgent), institutionalCache, cfg.InstitutionalSweepEvery, log).Run(ctx)
 
+	// Homepage indices strip: real index levels (^GSPC/^DJI/^IXIC) via Yahoo —
+	// Alpaca has no index symbols and Finnhub paywalls them. 60s keeps the strip
+	// near-real-time at 3 req/min, far under Yahoo's tolerance.
+	indicesCache := ingest.NewIndicesCache(yahoo.New(), time.Minute, log)
+	go indicesCache.Run(ctx)
+
 	// bars feeds the sparkline endpoint; nil (disabled) without Alpaca creds.
 	var bars api.BarSource
 	var liveSub api.LiveSubscriber // real-time WS streamer (nil when disabled)
@@ -305,7 +311,7 @@ func main() {
 
 	srv := &http.Server{
 		Addr:              ":" + cfg.Port,
-		Handler:           api.New(st, hub, enricher, verifier, bars, topicCache, oppCache, universeCache, guruCache, scheduler, symbolCache, eventsCache, fundCache, st, congressCache, institutionalCache, liveSub, cfg.AdminUserIDs, log),
+		Handler:           api.New(st, hub, enricher, verifier, bars, topicCache, oppCache, universeCache, guruCache, scheduler, symbolCache, eventsCache, fundCache, st, congressCache, institutionalCache, liveSub, indicesCache, cfg.AdminUserIDs, log),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 

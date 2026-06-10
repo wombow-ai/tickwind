@@ -302,6 +302,17 @@ Status: ✅ done · 🟡 in progress · ⬜ todo
 > HOTH finnhub 兜底 / 前端 200。**域名 DNS 零改动**（Tunnel 出站）。老箱 `104.168.46.15`=停机冷备（postgres 留数据），回滚 =
 > `docker compose start cloudflared api`。SSH 经验：两箱都"连接保持>1-2s 即掉"→全程后台+轮询、文件传输用 `cat|ssh` 不用 scp。
 > ⏭️ 预算余款待 owner 采购：住宅代理(~$10 解锁港股公告+雪球) + LLM 充值(~$10-15 激活中文 AI 摘要)。
+> **✅v3.1（owner 2026-06-10 四连）①K线与卡片价格一致**：KLineChart 接收卡片同款实时 quote，`stitchTail` 缝合到末根蜡烛
+> （盘中图任何时段缝分钟柱；日线只缝 regular 时段防污染日K收盘=Google/富途行为；W/M/Q/Y 只延展末桶），逐笔走 `series.update()`
+> 不重建图表；指标盘下次重建时刷新。**②首页指数改真实点位**：实测 Finnhub 免费版拒绝指数(CFD 需订阅)、Stooq 404；
+> **Yahoo v8 chart 从 VPS 可用**(^GSPC 7312.99 实时)→ 复用既有 internal/yahoo 客户端 + `ingest.IndicesCache`(60s 刷、失败保留旧值、
+> 单测) + `GET /v1/indices` + IndicesStrip 改造（真实点位+名称，ETF 代理自动降级，tooltip 标 yahoo 源）。**③Vercel/Supabase 锁定+
+> 暂停调研**：Supabase 免费版 7 天无活动会暂停，但"活动"含直连 Postgres 的真实查询——咱们后端每隔几分钟写入市场库=永动 keepalive，
+> **基本免疫**（唯一暴露面=后端宕机≥7天；可选 $0 保险=GH Actions 每日 ping）。锁定风险：Vercel 低（纯 Next.js 无私有服务，可随时
+> 自托管/换 CF Pages）；Supabase 中低（市场库纯 pg_dump 可迁；Auth 用户含密码哈希可经直连导出）。结论：现阶段 $0 方案即可，
+> Pro($300/yr) 不必。**④评论 cashtag** → 排期 #39（owner：不紧急，等用户量）。
+> 📋 **#39 评论 at 股票（cashtag）**：个股评论自动带 $TICKER；评论体内 $XXX 解析为链接并 fan-out 到对应个股评论区；
+> 公共区可 at 多股。等用户量上来再做（owner 2026-06-10）。
 > ◐③ 机构/13D举牌榜(41)：**数据源核查** —— SEC 直连从本沙箱 IP 被 403（curl+WebFetch 都不行），但 VPS 上现有 `internal/sec`
 > 客户端（带 UA/gzip/限流）能成功取每日索引（机会榜 Form-4 count:14 为证）；efts.sec.gov 从 VPS 可达(200)但需调参。**结论：复用
 > 已验证的 sec 客户端走每日索引路径。** #3a `internal/sec/ownership.go`：`DailyBeneficialOwnership(date)`(复用 `c.get`) +

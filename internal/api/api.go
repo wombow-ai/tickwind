@@ -123,6 +123,12 @@ type LiveSubscriber interface {
 	Subscribe(ticker string)
 }
 
+// IndicesSource serves the latest major-market-index levels for the homepage
+// strip (nil-safe; nil = empty). Satisfied by *ingest.IndicesCache.
+type IndicesSource interface {
+	Indices() []store.IndexQuote
+}
+
 type Server struct {
 	store         store.Store
 	hub           QuoteStream
@@ -142,19 +148,20 @@ type Server struct {
 	congress      CongressSource
 	institutional InstitutionalSource
 	live          LiveSubscriber
+	indices       IndicesSource
 	admins        map[string]bool // user UUIDs and/or emails (lowercased) allowed to delete any comment
 	commentRL     *rateLimiter    // per-user comment-post throttle
 	log           *slog.Logger
 }
 
-func New(st store.Store, hub QuoteStream, enricher enrich.Enricher, verifier *auth.Verifier, bars BarSource, topicSrc TopicSource, oppSrc OpportunitySource, universeSrc UniverseSource, guruSrc GuruSource, ingestor TickerIngestor, symbolSrc SymbolSearcher, eventSrc EventSource, fundSrc FundamentalsSource, earningsSrc EarningsSource, congressSrc CongressSource, institutionalSrc InstitutionalSource, liveSub LiveSubscriber, adminIDs []string, log *slog.Logger) http.Handler {
+func New(st store.Store, hub QuoteStream, enricher enrich.Enricher, verifier *auth.Verifier, bars BarSource, topicSrc TopicSource, oppSrc OpportunitySource, universeSrc UniverseSource, guruSrc GuruSource, ingestor TickerIngestor, symbolSrc SymbolSearcher, eventSrc EventSource, fundSrc FundamentalsSource, earningsSrc EarningsSource, congressSrc CongressSource, institutionalSrc InstitutionalSource, liveSub LiveSubscriber, indicesSrc IndicesSource, adminIDs []string, log *slog.Logger) http.Handler {
 	admins := make(map[string]bool, len(adminIDs))
 	for _, id := range adminIDs {
 		if id = strings.ToLower(strings.TrimSpace(id)); id != "" {
 			admins[id] = true
 		}
 	}
-	s := &Server{store: st, hub: hub, clip: clip.NewFetcher(), enrich: enricher, auth: verifier, bars: bars, topics: topicSrc, opps: oppSrc, universe: universeSrc, gurus: guruSrc, ingestor: ingestor, symbols: symbolSrc, events: eventSrc, fundamentals: fundSrc, earnings: earningsSrc, congress: congressSrc, institutional: institutionalSrc, live: liveSub, admins: admins, commentRL: newRateLimiter(10, 10*time.Minute), log: log}
+	s := &Server{store: st, hub: hub, clip: clip.NewFetcher(), enrich: enricher, auth: verifier, bars: bars, topics: topicSrc, opps: oppSrc, universe: universeSrc, gurus: guruSrc, ingestor: ingestor, symbols: symbolSrc, events: eventSrc, fundamentals: fundSrc, earnings: earningsSrc, congress: congressSrc, institutional: institutionalSrc, live: liveSub, indices: indicesSrc, admins: admins, commentRL: newRateLimiter(10, 10*time.Minute), log: log}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", s.health)
 
@@ -208,6 +215,7 @@ func New(st store.Store, hub QuoteStream, enricher enrich.Enricher, verifier *au
 	mux.HandleFunc("GET /v1/earnings", s.getEarnings)
 	mux.HandleFunc("GET /v1/congress", s.getCongress)
 	mux.HandleFunc("GET /v1/institutional", s.getInstitutional)
+	mux.HandleFunc("GET /v1/indices", s.getIndices)
 	mux.HandleFunc("GET /v1/stream", s.getStream)
 
 	// auth.Middleware attaches the user when a valid bearer token is present;
@@ -1482,6 +1490,17 @@ func (s *Server) getCongress(w http.ResponseWriter, r *http.Request) {
 // filings (13D = active/activist stake, higher signal; 13G = passive, e.g. the
 // index giants), newest first. ?type=13d|13g filters by activist flag; ?limit=
 // caps (default 60). Always 200 with a (possibly empty) list. nil source → empty.
+// getIndices returns the latest major-market-index levels (homepage strip).
+func (s *Server) getIndices(w http.ResponseWriter, _ *http.Request) {
+	indices := []store.IndexQuote{}
+	if s.indices != nil {
+		if got := s.indices.Indices(); got != nil {
+			indices = got
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"count": len(indices), "indices": indices})
+}
+
 func (s *Server) getInstitutional(w http.ResponseWriter, r *http.Request) {
 	var filings []sec.OwnershipRef
 	if s.institutional != nil {
