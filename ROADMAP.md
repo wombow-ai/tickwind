@@ -289,6 +289,12 @@ Status: ✅ done · 🟡 in progress · ⬜ todo
 > 效果：打开任意股票（含非自选如 RDW）即进实时流。✅ `e1b0d5e` **已部署+LIVE 验证**：`POST /v1/stocks/RDW/subscribe`→`{ok:true}`，
 > healthz 200，universe 回血 6650，institutional 2，无回归。**且本环境 Alpaca 数据已追上 6/10 实时**（RDW/RKLB/AAPL 现在 session=`pre`、
 > `at` 在 ~1 分钟内）→ **①价格卡盘前分行 + ②实时 现在都能真实演示**：RDW 日内 -15.19%(=Google)+盘前价分行。v3 ①②②b③ 全部 LIVE。
+> **✅小票报价陈旧修复（owner 2026-06-10 选 A+B）`869b174`：** 根因=免费 Alpaca 是 IEX 单一所(~1-2% 成交量)，小票几小时甚至几周无 IEX 成交
+> （实测 HOTH 上一笔 IEX print 是 5/27）。A=合并行情兜底：`finnhub.Quote`(/quote, parseQuote 单测) + BarCache `ConsolidatedQuoter`
+> （IEX 报价 >5min 旧或无数据→overlay 合并行情价/时间/来源，保留 IEX 基准，overlayConsolidated 单测）+ api getQuote 对 store 旧报价
+> 也走按需刷新取较新者；main 复用 newsClient（typed-nil guard）。B=诚实文案：徽标改"最后成交 X前 · src"(i18n quote.lastTrade) +
+> useQuotes 新鲜度不回退守卫。**LIVE 验证三分支**：HOTH alpaca·5/27→finnhub·6/9(+13天)；YOUL 合并源不更新→保留 alpaca；AAPL 活跃
+> 不触发。**预览实测页面渲染 "Last trade 1d ago · finnhub"**。注：Finnhub 黄源、免费展示 OK（付费转售红线不变）。
 > ◐③ 机构/13D举牌榜(41)：**数据源核查** —— SEC 直连从本沙箱 IP 被 403（curl+WebFetch 都不行），但 VPS 上现有 `internal/sec`
 > 客户端（带 UA/gzip/限流）能成功取每日索引（机会榜 Form-4 count:14 为证）；efts.sec.gov 从 VPS 可达(200)但需调参。**结论：复用
 > 已验证的 sec 客户端走每日索引路径。** #3a `internal/sec/ownership.go`：`DailyBeneficialOwnership(date)`(复用 `c.get`) +
