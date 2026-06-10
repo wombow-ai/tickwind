@@ -286,7 +286,9 @@ Status: ✅ done · 🟡 in progress · ⬜ todo
 > streamer 重构为 writer-goroutine 独占 WS 写（auth/订阅/ping/动态增删），`Subscribe(ticker)` 把"正在看的票"加入 LRU（base 上限 20 +
 > viewed 上限 10 ≤ MaxSymbols 30，淘汰最久未看；新票订阅前先 reseed prev/regular_close）；nil-safe `LiveSubscriber` 接口接进 api.New
 > （6 处调用点）+ `POST /v1/stocks/{ticker}/subscribe`；前端 `subscribeLive` + StockView 打开详情页即调用。lruAdd/Subscribe 单测 + go/web 全绿。
-> 效果：打开任意股票（含非自选如 RDW）即进实时流，生产环境秒级；本沙箱因 Alpaca 锚 6/9 仍演示不出。**待部署验证 endpoint 200 + 不破坏现有 WS/poller。**
+> 效果：打开任意股票（含非自选如 RDW）即进实时流。✅ `e1b0d5e` **已部署+LIVE 验证**：`POST /v1/stocks/RDW/subscribe`→`{ok:true}`，
+> healthz 200，universe 回血 6650，institutional 2，无回归。**且本环境 Alpaca 数据已追上 6/10 实时**（RDW/RKLB/AAPL 现在 session=`pre`、
+> `at` 在 ~1 分钟内）→ **①价格卡盘前分行 + ②实时 现在都能真实演示**：RDW 日内 -15.19%(=Google)+盘前价分行。v3 ①②②b③ 全部 LIVE。
 > ◐③ 机构/13D举牌榜(41)：**数据源核查** —— SEC 直连从本沙箱 IP 被 403（curl+WebFetch 都不行），但 VPS 上现有 `internal/sec`
 > 客户端（带 UA/gzip/限流）能成功取每日索引（机会榜 Form-4 count:14 为证）；efts.sec.gov 从 VPS 可达(200)但需调参。**结论：复用
 > 已验证的 sec 客户端走每日索引路径。** #3a `internal/sec/ownership.go`：`DailyBeneficialOwnership(date)`(复用 `c.get`) +
