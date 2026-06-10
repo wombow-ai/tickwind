@@ -14,6 +14,7 @@ const (
 	KR Market = "KR"
 	TW Market = "TW"
 	HK Market = "HK"
+	BR Market = "BR"
 )
 
 // Of classifies a ticker by its suffix (case-insensitive). A ticker with no
@@ -27,6 +28,8 @@ func Of(ticker string) Market {
 		return TW
 	case strings.HasSuffix(u, ".HK"):
 		return HK
+	case strings.HasSuffix(u, ".SA"):
+		return BR
 	default:
 		return US
 	}

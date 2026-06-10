@@ -65,6 +65,10 @@ type Config struct {
 	KRXAPIKey   string
 	OpenDARTKey string
 
+	// Brazil market (optional). BRAPIKey enables B3 (.SA) delayed quotes via
+	// brapi.dev. Free token; empty → Brazil disabled.
+	BRAPIKey string
+
 	// OpportunityBackfillDays seeds the Opportunity board with this many days of
 	// SEC Form-4 history on startup (it then accumulates forward to a 30d window).
 	// Higher = a fuller initial board but a longer startup sweep.
@@ -142,6 +146,7 @@ func Load() Config {
 		AlphaVantageKey:         env("ALPHAVANTAGE_API_KEY", ""),
 		KRXAPIKey:               env("KRX_API_KEY", ""),
 		OpenDARTKey:             env("OPENDART_API_KEY", ""),
+		BRAPIKey:                env("BRAPI_API_KEY", ""),
 		OpportunityBackfillDays: envInt("OPPORTUNITY_BACKFILL_DAYS", 3),
 		LLMAPIKey:               env("LLM_API_KEY", ""),
 		LLMBaseURL:              env("LLM_BASE_URL", ""),

@@ -19,6 +19,7 @@ import (
 	"github.com/wombow-ai/tickwind/internal/api"
 	"github.com/wombow-ai/tickwind/internal/auth"
 	"github.com/wombow-ai/tickwind/internal/bluesky"
+	"github.com/wombow-ai/tickwind/internal/brapi"
 	"github.com/wombow-ai/tickwind/internal/config"
 	"github.com/wombow-ai/tickwind/internal/congress"
 	"github.com/wombow-ai/tickwind/internal/dart"
@@ -92,6 +93,11 @@ var hongKongSeed = []string{"0700.HK", "2513.HK", "0100.HK"}
 // moment the (free) KRX key is set.
 var koreaSeed = []string{"005930.KS", "000660.KS"}
 
+// brazilSeed is a small set of B3 (Bovespa) blue chips, ingested when the
+// Brazil market is enabled (BRAPI_API_KEY set) so their pages have data
+// immediately. Tickwind canonical form carries the ".SA" venue suffix.
+var brazilSeed = []string{"PETR4.SA", "VALE3.SA", "ITUB4.SA", "BBDC4.SA", "ABEV3.SA", "B3SA3.SA"}
+
 func main() {
 	log := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	cfg := config.Load()
@@ -142,7 +148,8 @@ func main() {
 
 	// Tickers to ingest = the default set (always available for public pages)
 	// ∪ every user's watchlist, deduped and capped.
-	var koreaSeedActive []string // populated below when Korea is enabled
+	var koreaSeedActive []string  // populated below when Korea is enabled
+	var brazilSeedActive []string // populated below when Brazil is enabled
 	ingestTickers := func(ctx context.Context) []string {
 		seen := make(map[string]struct{})
 		var out []string
@@ -166,6 +173,9 @@ func main() {
 			add(t)
 		}
 		for _, t := range koreaSeedActive { // KR large-caps when Korea is enabled
+			add(t)
+		}
+		for _, t := range brazilSeedActive { // B3 blue chips when Brazil is enabled
 			add(t)
 		}
 		if all, err := st.AllWatchlistTickers(ctx); err != nil {
@@ -207,6 +217,15 @@ func main() {
 		marketAdapters[market.KR] = ingest.NewKRAdapter(krxClient, dart.New(cfg.OpenDARTKey))
 		koreaSeedActive = koreaSeed
 		log.Info("korea market enabled (KRX + OpenDART)", "dart_filings", cfg.OpenDARTKey != "")
+	}
+	// Brazil is opt-in via a free brapi.dev token; when set, the BR adapter +
+	// seed activate and B3 (.SA) names go live with no further change.
+	if brapiClient := brapi.New(cfg.BRAPIKey); brapiClient.Enabled() {
+		marketAdapters[market.BR] = ingest.NewBRAdapter(brapiClient)
+		brazilSeedActive = brazilSeed
+		log.Info("brazil market enabled (brapi.dev delayed quotes — gray source)", "seed", len(brazilSeed))
+	} else {
+		log.Warn("BRAPI_API_KEY not set — Brazil (B3) market disabled")
 	}
 	scheduler.SetAdapters(marketAdapters)
 	go scheduler.Run(ctx)

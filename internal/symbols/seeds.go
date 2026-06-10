@@ -19,5 +19,19 @@ func ForeignSeeds() []Symbol {
 		{Ticker: "0700.HK", Name: "Tencent Holdings", Exchange: "HKEX", Country: "HK"},
 		{Ticker: "2513.HK", Name: "Zhipu AI (Knowledge Atlas / Z.ai)", Exchange: "HKEX", Country: "HK"},
 		{Ticker: "0100.HK", Name: "MiniMax", Exchange: "HKEX", Country: "HK"},
+		// Brazil (B3 / Bovespa) — live via the brapi.dev adapter when enabled.
+		// Tickwind uses the ".SA" venue suffix; brapi is queried with the bare code.
+		{Ticker: "PETR4.SA", Name: "Petrobras PN", Exchange: "B3", Country: "BR"},
+		{Ticker: "PETR3.SA", Name: "Petrobras ON", Exchange: "B3", Country: "BR"},
+		{Ticker: "VALE3.SA", Name: "Vale", Exchange: "B3", Country: "BR"},
+		{Ticker: "ITUB4.SA", Name: "Itaú Unibanco PN", Exchange: "B3", Country: "BR"},
+		{Ticker: "BBDC4.SA", Name: "Bradesco PN", Exchange: "B3", Country: "BR"},
+		{Ticker: "BBAS3.SA", Name: "Banco do Brasil ON", Exchange: "B3", Country: "BR"},
+		{Ticker: "ABEV3.SA", Name: "Ambev", Exchange: "B3", Country: "BR"},
+		{Ticker: "B3SA3.SA", Name: "B3 (Brasil Bolsa Balcão)", Exchange: "B3", Country: "BR"},
+		{Ticker: "WEGE3.SA", Name: "WEG", Exchange: "B3", Country: "BR"},
+		{Ticker: "MGLU3.SA", Name: "Magazine Luiza", Exchange: "B3", Country: "BR"},
+		{Ticker: "ITSA4.SA", Name: "Itaúsa PN", Exchange: "B3", Country: "BR"},
+		{Ticker: "BBDC3.SA", Name: "Bradesco ON", Exchange: "B3", Country: "BR"},
 	}
 }
