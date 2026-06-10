@@ -108,6 +108,11 @@ const dict: Record<Lang, Record<string, string>> = {
     // earnings
     'quote.lastTrade': 'Last trade {t} ago · {src}',
     'quote.lastTradeNow': 'Last trade just now · {src}',
+    'short.title': 'Short pressure',
+    'short.dtc': 'Days to cover',
+    'short.qty': 'Short interest',
+    'short.risk': 'Squeeze risk',
+    'short.asof': 'as of {d}',
     'earnings.next': 'Next earnings',
     'earnings.estEps': 'Est. EPS',
     'earnings.bmo': 'Pre-market',
@@ -473,6 +478,11 @@ const dict: Record<Lang, Record<string, string>> = {
     // earnings
     'quote.lastTrade': '最后成交 {t}前 · {src}',
     'quote.lastTradeNow': '最后成交 刚刚 · {src}',
+    'short.title': '空头压力',
+    'short.dtc': '回补天数',
+    'short.qty': '空头仓位',
+    'short.risk': '轧空风险',
+    'short.asof': '截至 {d}',
     'earnings.next': '下次财报',
     'earnings.estEps': '预期EPS',
     'earnings.bmo': '盘前',

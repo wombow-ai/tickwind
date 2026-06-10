@@ -56,6 +56,7 @@ import {HoldingsPanel} from '@/components/HoldingsPanel';
 import {KLineChart} from '@/components/KLineChart';
 import {FundamentalsCard} from '@/components/FundamentalsCard';
 import {EarningsChip} from '@/components/EarningsChip';
+import {ShortChip} from '@/components/ShortChip';
 import {CommentsPanel} from '@/components/CommentsPanel';
 
 type Status = 'loading' | 'ready' | 'error';
@@ -471,6 +472,9 @@ export function StockView({ticker}: {ticker: string}) {
 
       {/* next earnings date (Finnhub calendar; hides when none upcoming) */}
       <EarningsChip ticker={norm} />
+
+      {/* FINRA short pressure (squeeze radar; hides when the symbol has no row) */}
+      <ShortChip ticker={norm} />
 
       {/* fundamentals: market cap / P/E / revenue / net income (SEC XBRL; hides for non-US) */}
       <FundamentalsCard ticker={norm} />

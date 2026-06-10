@@ -835,6 +835,33 @@ export function getStockEarnings(
   return getJson<StockEarningsResponse>(`${path}${q}`, signal);
 }
 
+/** A symbol's latest FINRA short-interest row (twice-monthly settlement). */
+export interface ShortInterest {
+  symbol: string;
+  name?: string;
+  market?: string;
+  settlement_date: string; // YYYY-MM-DD
+  short_qty: number;
+  prev_short_qty?: number;
+  avg_daily_volume?: number;
+  days_to_cover: number;
+  change_pct: number;
+}
+
+/**
+ * Fetches the latest FINRA short-interest row for a stock (squeeze radar).
+ * Rejects with 404 when the symbol has no row (ETFs, new listings, non-US).
+ */
+export function getShort(
+  ticker: string,
+  signal?: AbortSignal,
+): Promise<{ticker: string; short: ShortInterest}> {
+  return getJson<{ticker: string; short: ShortInterest}>(
+    `/v1/stocks/${encodeURIComponent(normalizeTicker(ticker))}/short`,
+    signal,
+  );
+}
+
 /** A U.S. House Periodic Transaction Report filing (official Clerk disclosure). */
 export interface CongressFiling {
   name: string; // "Richard W. Allen"
