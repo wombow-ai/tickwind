@@ -361,7 +361,9 @@ export function StockView({ticker}: {ticker: string}) {
                       style={{width: 6, height: 6, background: '#10B981'}}
                     />
                   )}
-                  via {quote.source} · {timeAgo(quote.at)} ago
+                  {tr('quote.lastTrade')
+                    .replace('{t}', timeAgo(quote.at))
+                    .replace('{src}', quote.source)}
                 </span>
               ) : (
                 <span className={cx('text-[11px]', t.faint)}>{tr('stock.waitingPrice')}</span>

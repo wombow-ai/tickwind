@@ -268,7 +268,13 @@ func main() {
 		poller := ingest.NewPricePoller(st, priceClient, ingestTickers, cfg.PricePollEvery, hub.Publish, log)
 		poller.SetAdapters(marketAdapters) // route .TW/.TWO to the TWSE/TPEx adapter
 		go poller.Run(ctx)
-		bars = ingest.NewBarCache(priceClient, 30, time.Hour)
+		// Consolidated-tape fallback for thin names (typed nil guard: a nil
+		// *finnhub.Client must not become a non-nil interface).
+		var quoteFB ingest.ConsolidatedQuoter
+		if newsClient != nil {
+			quoteFB = newsClient
+		}
+		bars = ingest.NewBarCache(priceClient, 30, time.Hour, quoteFB)
 		log.Info("price polling enabled", "every", cfg.PricePollEvery.String(), "feed", cfg.AlpacaFeed)
 
 		// Real-time WS stream (free IEX): sub-second live prices for the hot/

@@ -1025,12 +1025,15 @@ func (s *Server) getQuote(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, errBody(err.Error()))
 		return
 	}
-	if !ok && s.bars != nil {
-		// Not polled (a stock the user just navigated to): fetch a quote on demand
-		// so the price shows alongside the on-demand candles (fixes K-line present
-		// but price blank). Errors degrade to the 404 below.
+	// Refresh on demand when the store has nothing (a stock the user just
+	// navigated to) OR when the stored quote's last trade is stale — thin names
+	// can sit unrefreshed; BarCache also overlays a consolidated-tape fallback
+	// for symbols with no recent IEX print. Errors degrade to what we have.
+	if s.bars != nil && (!ok || time.Since(q.At) > quoteStaleAfter) {
 		if oq, found, qerr := s.bars.LatestQuote(r.Context(), ticker); qerr == nil && found {
-			q, ok = oq, true
+			if !ok || oq.At.After(q.At) {
+				q, ok = oq, true
+			}
 		}
 	}
 	if !ok {
@@ -1252,6 +1255,10 @@ func (s *Server) getScreen(w http.ResponseWriter, r *http.Request) {
 // maxBarsBatch caps how many tickers one batched request (bars/news/social)
 // will resolve.
 const maxBarsBatch = 30
+
+// quoteStaleAfter: a stored quote whose last trade is older than this gets an
+// on-demand refresh (which can also engage the consolidated-tape fallback).
+const quoteStaleAfter = 5 * time.Minute
 
 // queryTickers reads the comma-separated `tickers` query param, uppercased,
 // deduped, and capped at max.

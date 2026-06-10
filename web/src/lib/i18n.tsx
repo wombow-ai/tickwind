@@ -105,6 +105,7 @@ const dict: Record<Lang, Record<string, string>> = {
     'fund.loss': 'Loss',
     'fund.source': 'Source: SEC filings',
     // earnings
+    'quote.lastTrade': 'Last trade {t} ago · {src}',
     'earnings.next': 'Next earnings',
     'earnings.estEps': 'Est. EPS',
     'earnings.bmo': 'Pre-market',
@@ -467,6 +468,7 @@ const dict: Record<Lang, Record<string, string>> = {
     'fund.loss': '亏损',
     'fund.source': '数据来源：SEC 申报',
     // earnings
+    'quote.lastTrade': '最后成交 {t}前 · {src}',
     'earnings.next': '下次财报',
     'earnings.estEps': '预期EPS',
     'earnings.bmo': '盘前',

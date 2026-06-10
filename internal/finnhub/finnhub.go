@@ -38,6 +38,56 @@ type newsItem struct {
 	URL      string `json:"url"`
 }
 
+// quoteResp mirrors GET /quote: c = last consolidated price, pc = previous
+// close, t = unix seconds of the last trade. Zeroes mean "no data".
+type quoteResp struct {
+	Current   float64 `json:"c"`
+	PrevClose float64 `json:"pc"`
+	Time      int64   `json:"t"`
+}
+
+// Quote returns the consolidated-tape latest trade for a US symbol — the last
+// print across ALL exchanges, unlike Alpaca's free IEX-only feed (~1-2% of US
+// volume) where thin names can go hours between prints. Used as a freshness
+// fallback when the IEX quote is stale. ok=false when Finnhub has no data.
+func (c *Client) Quote(ctx context.Context, symbol string) (price, prevClose float64, at time.Time, ok bool, err error) {
+	q := url.Values{}
+	q.Set("symbol", symbol)
+	q.Set("token", c.token)
+	endpoint := baseURL + "/quote?" + q.Encode()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return 0, 0, time.Time{}, false, err
+	}
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return 0, 0, time.Time{}, false, fmt.Errorf("finnhub: quote %s: %w", symbol, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return 0, 0, time.Time{}, false, fmt.Errorf("finnhub: quote %s: %s", symbol, resp.Status)
+	}
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		return 0, 0, time.Time{}, false, fmt.Errorf("finnhub: read quote %s: %w", symbol, err)
+	}
+	return parseQuote(body)
+}
+
+// parseQuote decodes a /quote body; ok=false for unknown symbols (Finnhub
+// returns zeroes rather than an error). Pure — unit-tested.
+func parseQuote(body []byte) (price, prevClose float64, at time.Time, ok bool, err error) {
+	var r quoteResp
+	if err := json.Unmarshal(body, &r); err != nil {
+		return 0, 0, time.Time{}, false, fmt.Errorf("finnhub: decode quote: %w", err)
+	}
+	if r.Current <= 0 || r.Time <= 0 {
+		return 0, 0, time.Time{}, false, nil
+	}
+	return r.Current, r.PrevClose, time.Unix(r.Time, 0).UTC(), true, nil
+}
+
 // CompanyNews returns company news for ticker over the last `days` days.
 func (c *Client) CompanyNews(ctx context.Context, ticker string, days int) ([]store.News, error) {
 	now := time.Now().UTC()

@@ -43,3 +43,21 @@ func TestParseEarningsCalendarEmpty(t *testing.T) {
 		t.Fatalf("empty calendar = %+v (err %v), want 0 rows", got, err)
 	}
 }
+
+func TestParseQuote(t *testing.T) {
+	// Real /quote shape: c=last consolidated price, pc=prev close, t=unix seconds.
+	p, pc, at, ok, err := parseQuote([]byte(`{"c":261.74,"h":263.31,"l":260.68,"o":261.07,"pc":259.45,"t":1582641000}`))
+	if err != nil || !ok {
+		t.Fatalf("parseQuote: ok=%v err=%v", ok, err)
+	}
+	if p != 261.74 || pc != 259.45 {
+		t.Errorf("price/pc = %v/%v, want 261.74/259.45", p, pc)
+	}
+	if at.Unix() != 1582641000 {
+		t.Errorf("at = %v, want unix 1582641000", at)
+	}
+	// Unknown symbol → zeroes → ok=false, no error.
+	if _, _, _, ok, err := parseQuote([]byte(`{"c":0,"pc":0,"t":0}`)); ok || err != nil {
+		t.Errorf("zero quote: ok=%v err=%v, want false/nil", ok, err)
+	}
+}

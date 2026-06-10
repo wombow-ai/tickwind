@@ -50,13 +50,22 @@ export function useQuotes(
 
     const wanted = new Set(symbols);
 
-    /** Merges one quote into state if it belongs to the tracked set. */
+    /**
+     * Merges one quote into state if it belongs to the tracked set. Freshness
+     * never regresses: a pushed/fetched quote with an older trade time than the
+     * one already shown (e.g. an IEX-only stream print racing a fresher
+     * consolidated-tape fetch) is dropped.
+     */
     function apply(quote: Quote): void {
       const ticker = quote.ticker.toUpperCase();
       if (!wanted.has(ticker)) {
         return;
       }
       setQuotes(prev => {
+        const cur = prev.get(ticker);
+        if (cur && Date.parse(cur.at) > Date.parse(quote.at)) {
+          return prev;
+        }
         const next = new Map(prev);
         next.set(ticker, quote);
         return next;

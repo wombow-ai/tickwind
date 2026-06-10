@@ -19,6 +19,7 @@ const candleDays = 1300
 // bars only change once per day). It satisfies api.BarSource.
 type BarCache struct {
 	client *alpaca.Client
+	fb     ConsolidatedQuoter // consolidated-tape freshness fallback (nil = off)
 	limit  int
 	ttl    time.Duration
 
@@ -47,11 +48,25 @@ type quoteEntry struct {
 // quoteTTL caps how often an on-demand (non-polled) quote re-hits Alpaca.
 const quoteTTL = 20 * time.Second
 
+// staleQuoteAfter: when the freshest IEX trade is older than this, the
+// consolidated-tape fallback kicks in — thin names can go hours between IEX
+// prints (free Alpaca is IEX-only, ~1-2% of US volume) while still trading
+// elsewhere.
+const staleQuoteAfter = 5 * time.Minute
+
+// ConsolidatedQuoter returns the consolidated-tape last trade (all exchanges)
+// for a symbol — price, previous close, and trade time. Satisfied by
+// *finnhub.Client; nil disables the freshness fallback.
+type ConsolidatedQuoter interface {
+	Quote(ctx context.Context, symbol string) (price, prevClose float64, at time.Time, ok bool, err error)
+}
+
 // NewBarCache builds a cache fetching `limit` daily closes per ticker, holding
-// each series for ttl.
-func NewBarCache(client *alpaca.Client, limit int, ttl time.Duration) *BarCache {
+// each series for ttl. fb (optional) is the consolidated-tape quote fallback.
+func NewBarCache(client *alpaca.Client, limit int, ttl time.Duration, fb ConsolidatedQuoter) *BarCache {
 	return &BarCache{
 		client:   client,
+		fb:       fb,
 		limit:    limit,
 		ttl:      ttl,
 		entries:  make(map[string]barEntry),
@@ -59,6 +74,27 @@ func NewBarCache(client *alpaca.Client, limit int, ttl time.Duration) *BarCache 
 		intraday: make(map[string]candleEntry),
 		quotes:   make(map[string]quoteEntry),
 	}
+}
+
+// overlayConsolidated overlays a fresher consolidated-tape print onto an (older)
+// IEX-derived quote: price/time/source/session come from the consolidated trade;
+// the IEX-derived prev/regular-close baselines are kept (filled from the
+// consolidated prev close only when missing). Pure — unit-tested.
+func overlayConsolidated(q store.Quote, price, prevClose float64, at time.Time, session string) store.Quote {
+	q.Price = price
+	q.At = at
+	q.Source = "finnhub"
+	q.Session = session
+	if q.PrevClose == 0 && prevClose > 0 {
+		q.PrevClose = prevClose
+	}
+	if q.RegularClose == 0 && prevClose > 0 {
+		q.RegularClose = prevClose
+	}
+	if session == "regular" {
+		q.RegularClose = price // live regular price is the regular close
+	}
+	return q
 }
 
 // DailyBars returns the cached series for ticker, fetching and caching it when
@@ -157,6 +193,16 @@ func (b *BarCache) LatestQuote(ctx context.Context, ticker string) (store.Quote,
 	q, err := b.client.LatestQuote(ctx, ticker)
 	if err != nil {
 		return store.Quote{}, false, err
+	}
+
+	// Freshness fallback: IEX-only quotes go stale for thin names (no IEX print
+	// for minutes–hours while the stock trades elsewhere). When the IEX trade is
+	// old — or IEX has nothing at all — overlay the consolidated-tape last trade.
+	if b.fb != nil && (q.Price == 0 || time.Since(q.At) > staleQuoteAfter) {
+		if p, pc, at, ok, ferr := b.fb.Quote(ctx, ticker); ferr == nil && ok && at.After(q.At) {
+			q.Ticker = ticker
+			q = overlayConsolidated(q, p, pc, at, b.client.SessionAt(at))
+		}
 	}
 	if q.Price == 0 {
 		return store.Quote{}, false, nil
