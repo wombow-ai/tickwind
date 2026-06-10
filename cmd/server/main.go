@@ -262,6 +262,7 @@ func main() {
 
 	// bars feeds the sparkline endpoint; nil (disabled) without Alpaca creds.
 	var bars api.BarSource
+	var liveSub api.LiveSubscriber // real-time WS streamer (nil when disabled)
 	if cfg.AlpacaKeyID != "" && cfg.AlpacaSecret != "" {
 		priceClient := alpaca.New(cfg.AlpacaKeyID, cfg.AlpacaSecret, cfg.AlpacaDataURL, cfg.AlpacaFeed)
 		poller := ingest.NewPricePoller(st, priceClient, ingestTickers, cfg.PricePollEvery, hub.Publish, log)
@@ -275,9 +276,11 @@ func main() {
 		// seeds prev/regular-close. Quotes flow to the same SSE hub + store.
 		if cfg.AlpacaWSEnabled {
 			wsSyms := usSymbols(ingestTickers(ctx))
-			go alpacaws.New(cfg.AlpacaWSURL, cfg.AlpacaKeyID, cfg.AlpacaSecret, wsSyms,
-				priceClient, priceClient.SessionAt, hub.Publish, st, log).Run(ctx)
-			log.Info("alpaca WS real-time enabled", "symbols", min(len(wsSyms), alpacaws.MaxSymbols))
+			streamer := alpacaws.New(cfg.AlpacaWSURL, cfg.AlpacaKeyID, cfg.AlpacaSecret, wsSyms,
+				priceClient, priceClient.SessionAt, hub.Publish, st, log)
+			liveSub = streamer // viewed-ticker live subscription (#2b)
+			go streamer.Run(ctx)
+			log.Info("alpaca WS real-time enabled", "base_symbols", min(len(wsSyms), alpacaws.MaxSymbols-10))
 		}
 
 		// Opportunity board: SEC Form-4 insider buys + market cap (needs prices).
@@ -296,7 +299,7 @@ func main() {
 
 	srv := &http.Server{
 		Addr:              ":" + cfg.Port,
-		Handler:           api.New(st, hub, enricher, verifier, bars, topicCache, oppCache, universeCache, guruCache, scheduler, symbolCache, eventsCache, fundCache, st, congressCache, institutionalCache, cfg.AdminUserIDs, log),
+		Handler:           api.New(st, hub, enricher, verifier, bars, topicCache, oppCache, universeCache, guruCache, scheduler, symbolCache, eventsCache, fundCache, st, congressCache, institutionalCache, liveSub, cfg.AdminUserIDs, log),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 

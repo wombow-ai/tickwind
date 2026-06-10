@@ -117,6 +117,12 @@ type InstitutionalSource interface {
 	Get() []sec.OwnershipRef
 }
 
+// LiveSubscriber adds a just-viewed ticker to the real-time price stream so its
+// price updates live (nil-safe; nil = no-op). Satisfied by *alpacaws.Streamer.
+type LiveSubscriber interface {
+	Subscribe(ticker string)
+}
+
 type Server struct {
 	store         store.Store
 	hub           QuoteStream
@@ -135,19 +141,20 @@ type Server struct {
 	earnings      EarningsSource
 	congress      CongressSource
 	institutional InstitutionalSource
+	live          LiveSubscriber
 	admins        map[string]bool // user UUIDs and/or emails (lowercased) allowed to delete any comment
 	commentRL     *rateLimiter    // per-user comment-post throttle
 	log           *slog.Logger
 }
 
-func New(st store.Store, hub QuoteStream, enricher enrich.Enricher, verifier *auth.Verifier, bars BarSource, topicSrc TopicSource, oppSrc OpportunitySource, universeSrc UniverseSource, guruSrc GuruSource, ingestor TickerIngestor, symbolSrc SymbolSearcher, eventSrc EventSource, fundSrc FundamentalsSource, earningsSrc EarningsSource, congressSrc CongressSource, institutionalSrc InstitutionalSource, adminIDs []string, log *slog.Logger) http.Handler {
+func New(st store.Store, hub QuoteStream, enricher enrich.Enricher, verifier *auth.Verifier, bars BarSource, topicSrc TopicSource, oppSrc OpportunitySource, universeSrc UniverseSource, guruSrc GuruSource, ingestor TickerIngestor, symbolSrc SymbolSearcher, eventSrc EventSource, fundSrc FundamentalsSource, earningsSrc EarningsSource, congressSrc CongressSource, institutionalSrc InstitutionalSource, liveSub LiveSubscriber, adminIDs []string, log *slog.Logger) http.Handler {
 	admins := make(map[string]bool, len(adminIDs))
 	for _, id := range adminIDs {
 		if id = strings.ToLower(strings.TrimSpace(id)); id != "" {
 			admins[id] = true
 		}
 	}
-	s := &Server{store: st, hub: hub, clip: clip.NewFetcher(), enrich: enricher, auth: verifier, bars: bars, topics: topicSrc, opps: oppSrc, universe: universeSrc, gurus: guruSrc, ingestor: ingestor, symbols: symbolSrc, events: eventSrc, fundamentals: fundSrc, earnings: earningsSrc, congress: congressSrc, institutional: institutionalSrc, admins: admins, commentRL: newRateLimiter(10, 10*time.Minute), log: log}
+	s := &Server{store: st, hub: hub, clip: clip.NewFetcher(), enrich: enricher, auth: verifier, bars: bars, topics: topicSrc, opps: oppSrc, universe: universeSrc, gurus: guruSrc, ingestor: ingestor, symbols: symbolSrc, events: eventSrc, fundamentals: fundSrc, earnings: earningsSrc, congress: congressSrc, institutional: institutionalSrc, live: liveSub, admins: admins, commentRL: newRateLimiter(10, 10*time.Minute), log: log}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", s.health)
 
@@ -178,6 +185,7 @@ func New(st store.Store, hub QuoteStream, enricher enrich.Enricher, verifier *au
 	mux.HandleFunc("GET /v1/stocks/{ticker}", s.getStock)
 	mux.HandleFunc("GET /v1/stocks/{ticker}/filings", s.getFilings)
 	mux.HandleFunc("GET /v1/stocks/{ticker}/quote", s.getQuote)
+	mux.HandleFunc("POST /v1/stocks/{ticker}/subscribe", s.subscribeLive)
 	mux.HandleFunc("GET /v1/stocks/{ticker}/bars", s.getBars)
 	mux.HandleFunc("GET /v1/stocks/{ticker}/candles", s.getCandles)
 	mux.HandleFunc("GET /v1/stocks/{ticker}/fundamentals", s.getFundamentals)
@@ -1030,6 +1038,17 @@ func (s *Server) getQuote(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, q)
+}
+
+// subscribeLive nudges the real-time WS streamer to subscribe a ticker the user
+// just opened, so its price updates live (within the free-tier cap, LRU-evicted).
+// Fire-and-forget; always 200 (no-op when streaming is disabled). Public — it only
+// influences the live-stream subscription set.
+func (s *Server) subscribeLive(w http.ResponseWriter, r *http.Request) {
+	if s.live != nil {
+		s.live.Subscribe(strings.ToUpper(strings.TrimSpace(r.PathValue("ticker"))))
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
 // getBars returns recent daily closing prices for a sparkline. It degrades

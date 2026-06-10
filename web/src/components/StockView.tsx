@@ -23,6 +23,7 @@ import {
   getFilings,
   getNews,
   getSignals,
+  subscribeLive,
   getSocial,
   getStock,
   getWatchlist,
@@ -150,6 +151,14 @@ export function StockView({ticker}: {ticker: string}) {
       c.abort();
       if (timer) clearTimeout(timer);
     };
+  }, [norm]);
+
+  // Ask the backend to stream this ticker in real time while it's open (#2b):
+  // it joins the live WebSocket subscription so the price stays fresh. Best-effort.
+  useEffect(() => {
+    const c = new AbortController();
+    subscribeLive(norm, c.signal).catch(() => {});
+    return () => c.abort();
   }, [norm]);
 
   // Trend sparkline (recent daily closes); empty when unavailable.

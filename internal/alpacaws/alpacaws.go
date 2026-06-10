@@ -21,8 +21,12 @@ import (
 	"github.com/wombow-ai/tickwind/internal/store"
 )
 
-// MaxSymbols is Alpaca's free-tier subscription cap.
-const MaxSymbols = 30
+// MaxSymbols is Alpaca's free-tier subscription cap. viewedSlots of those are
+// reserved for actively-viewed (non-base) tickers; the rest is the pinned base.
+const (
+	MaxSymbols  = 30
+	viewedSlots = 10
+)
 
 // trade is one incoming trade message (message type "t").
 type trade struct {
@@ -43,7 +47,7 @@ type Streamer struct {
 	url      string
 	keyID    string
 	secret   string
-	symbols  []string
+	base     []string // pinned base set (watchlist∪popular), always subscribed
 	seeder   QuoteSeeder
 	classify func(time.Time) string // session classifier (alpaca.Client.SessionAt)
 	publish  func(store.Quote)      // SSE hub publish (may be nil)
@@ -54,27 +58,102 @@ type Streamer struct {
 	seed        map[string]store.Quote
 	lastPublish map[string]time.Time
 	lastUpsert  map[string]time.Time
+
+	submu    sync.Mutex    // guards viewed
+	viewed   []string      // LRU of actively-viewed tickers (most-recent last), disjoint from base
+	resyncCh chan struct{} // nudges the writer goroutine to re-diff subscriptions
 }
 
-// New builds a Streamer; the symbol set is capped at MaxSymbols.
-func New(wsURL, keyID, secret string, symbols []string, seeder QuoteSeeder, classify func(time.Time) string, publish func(store.Quote), st store.Store, log *slog.Logger) *Streamer {
-	if len(symbols) > MaxSymbols {
-		symbols = symbols[:MaxSymbols]
+// New builds a Streamer; the pinned base set is capped at MaxSymbols-viewedSlots,
+// leaving room for actively-viewed tickers added via Subscribe.
+func New(wsURL, keyID, secret string, base []string, seeder QuoteSeeder, classify func(time.Time) string, publish func(store.Quote), st store.Store, log *slog.Logger) *Streamer {
+	if baseCap := MaxSymbols - viewedSlots; len(base) > baseCap {
+		base = base[:baseCap]
 	}
 	return &Streamer{
-		url: wsURL, keyID: keyID, secret: secret, symbols: symbols,
+		url: wsURL, keyID: keyID, secret: secret, base: base,
 		seeder: seeder, classify: classify, publish: publish, store: st, log: log,
 		seed:        make(map[string]store.Quote),
 		lastPublish: make(map[string]time.Time),
 		lastUpsert:  make(map[string]time.Time),
+		resyncCh:    make(chan struct{}, 1),
 	}
+}
+
+// Subscribe marks ticker as actively viewed so it joins the live stream (within
+// the free-tier cap, evicting the least-recently-viewed). No-op for blank /
+// non-US / already-base tickers. Safe for concurrent use (called from handlers).
+func (s *Streamer) Subscribe(ticker string) {
+	ticker = strings.ToUpper(strings.TrimSpace(ticker))
+	if ticker == "" || isForeignSuffix(ticker) {
+		return
+	}
+	s.submu.Lock()
+	for _, b := range s.base {
+		if b == ticker {
+			s.submu.Unlock()
+			return // already pinned
+		}
+	}
+	maxViewed := MaxSymbols - len(s.base)
+	if maxViewed < 1 {
+		s.submu.Unlock()
+		return
+	}
+	before := len(s.viewed)
+	s.viewed = lruAdd(s.viewed, ticker, maxViewed)
+	// Only nudge a resync when the set actually changed (avoid needless WS churn).
+	changed := before != len(s.viewed) || (len(s.viewed) > 0 && s.viewed[len(s.viewed)-1] == ticker)
+	s.submu.Unlock()
+	if changed {
+		select {
+		case s.resyncCh <- struct{}{}:
+		default:
+		}
+	}
+}
+
+// desired returns the full set to be subscribed (base ∪ viewed, disjoint).
+func (s *Streamer) desired() []string {
+	s.submu.Lock()
+	defer s.submu.Unlock()
+	out := make([]string, 0, len(s.base)+len(s.viewed))
+	out = append(out, s.base...)
+	out = append(out, s.viewed...)
+	return out
+}
+
+// lruAdd moves ticker to most-recent (end), dropping any prior occurrence, and
+// trims the oldest (front) so the slice is at most max long. Pure — unit-tested.
+func lruAdd(lru []string, ticker string, max int) []string {
+	out := make([]string, 0, len(lru)+1)
+	for _, t := range lru {
+		if t != ticker {
+			out = append(out, t)
+		}
+	}
+	out = append(out, ticker)
+	if max > 0 && len(out) > max {
+		out = out[len(out)-max:]
+	}
+	return out
+}
+
+// isForeignSuffix reports whether a ticker is non-US (Alpaca IEX is US-only).
+func isForeignSuffix(t string) bool {
+	for _, sfx := range []string{".HK", ".TW", ".TWO", ".KS", ".KQ"} {
+		if strings.HasSuffix(t, sfx) {
+			return true
+		}
+	}
+	return false
 }
 
 // Run connects, subscribes, and streams until ctx is cancelled, reconnecting with
 // capped exponential backoff.
 func (s *Streamer) Run(ctx context.Context) {
-	if len(s.symbols) == 0 {
-		s.log.Info("alpacaws: no symbols — not starting")
+	if len(s.base) == 0 {
+		s.log.Info("alpacaws: no base symbols — not starting")
 		return
 	}
 	backoff := time.Second
@@ -100,7 +179,7 @@ func (s *Streamer) Run(ctx context.Context) {
 
 // session runs one full connection lifecycle (dial → auth → subscribe → read).
 func (s *Streamer) session(parent context.Context) error {
-	s.reseed(parent)
+	s.reseed(parent, s.desired())
 
 	ctx, cancel := context.WithCancel(parent)
 	defer cancel()
@@ -114,31 +193,13 @@ func (s *Streamer) session(parent context.Context) error {
 	defer conn.Close(websocket.StatusNormalClosure, "")
 	conn.SetReadLimit(8 << 20)
 
-	if err := s.writeJSON(ctx, conn, map[string]any{"action": "auth", "key": s.keyID, "secret": s.secret}); err != nil {
-		return fmt.Errorf("auth: %w", err)
-	}
-	if err := s.writeJSON(ctx, conn, map[string]any{"action": "subscribe", "trades": s.symbols}); err != nil {
-		return fmt.Errorf("subscribe: %w", err)
-	}
-	s.log.Info("alpacaws: connected + subscribed", "symbols", len(s.symbols))
-
-	// Keepalive: ping periodically; on failure cancel so Read unblocks → reconnect.
+	// The writer goroutine owns ALL WS writes (auth, (un)subscribe, ping) —
+	// coder/websocket forbids concurrent writes, and Subscribe() fires from
+	// request goroutines. Read happens here; Read+Write concurrency is allowed.
 	go func() {
-		t := time.NewTicker(30 * time.Second)
-		defer t.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-t.C:
-				pctx, pcancel := context.WithTimeout(ctx, 10*time.Second)
-				err := conn.Ping(pctx)
-				pcancel()
-				if err != nil {
-					cancel()
-					return
-				}
-			}
+		if err := s.writer(ctx, conn); err != nil && ctx.Err() == nil {
+			s.log.Warn("alpacaws: writer ended", "err", err)
+			cancel() // unblock Read → reconnect
 		}
 	}()
 
@@ -149,6 +210,77 @@ func (s *Streamer) session(parent context.Context) error {
 		}
 		s.handle(ctx, data)
 	}
+}
+
+// writer authenticates, subscribes the desired set, then keeps subscriptions in
+// sync (on resync nudges) and the connection alive (ping). Sole WS writer.
+func (s *Streamer) writer(ctx context.Context, conn *websocket.Conn) error {
+	if err := s.writeJSON(ctx, conn, map[string]any{"action": "auth", "key": s.keyID, "secret": s.secret}); err != nil {
+		return fmt.Errorf("auth: %w", err)
+	}
+	subscribed := make(map[string]bool)
+	if err := s.sync(ctx, conn, subscribed); err != nil {
+		return fmt.Errorf("subscribe: %w", err)
+	}
+	s.log.Info("alpacaws: connected + subscribed", "base", len(s.base), "subscribed", len(subscribed))
+
+	ping := time.NewTicker(30 * time.Second)
+	defer ping.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-s.resyncCh:
+			if err := s.sync(ctx, conn, subscribed); err != nil {
+				return err
+			}
+		case <-ping.C:
+			pctx, pcancel := context.WithTimeout(ctx, 10*time.Second)
+			err := conn.Ping(pctx)
+			pcancel()
+			if err != nil {
+				return fmt.Errorf("ping: %w", err)
+			}
+		}
+	}
+}
+
+// sync diffs the desired subscription set against what's on the wire and sends
+// the necessary subscribe/unsubscribe messages (owned by the writer goroutine).
+func (s *Streamer) sync(ctx context.Context, conn *websocket.Conn, subscribed map[string]bool) error {
+	want := make(map[string]bool)
+	for _, t := range s.desired() {
+		want[t] = true
+	}
+	var add, rem []string
+	for t := range want {
+		if !subscribed[t] {
+			add = append(add, t)
+		}
+	}
+	for t := range subscribed {
+		if !want[t] {
+			rem = append(rem, t)
+		}
+	}
+	if len(rem) > 0 {
+		if err := s.writeJSON(ctx, conn, map[string]any{"action": "unsubscribe", "trades": rem}); err != nil {
+			return err
+		}
+		for _, t := range rem {
+			delete(subscribed, t)
+		}
+	}
+	if len(add) > 0 {
+		s.reseed(ctx, add) // seed prev/regular-close before the live price streams in
+		if err := s.writeJSON(ctx, conn, map[string]any{"action": "subscribe", "trades": add}); err != nil {
+			return err
+		}
+		for _, t := range add {
+			subscribed[t] = true
+		}
+	}
+	return nil
 }
 
 func (s *Streamer) writeJSON(ctx context.Context, conn *websocket.Conn, v any) error {
@@ -218,15 +350,16 @@ func (s *Streamer) merge(tr trade) store.Quote {
 	return q
 }
 
-// reseed refreshes prev/regular-close baselines from a REST snapshot (on each
-// (re)connect — these change at most daily, so per-connect is enough).
-func (s *Streamer) reseed(ctx context.Context) {
-	if s.seeder == nil {
+// reseed refreshes prev/regular-close baselines for the given symbols from a REST
+// snapshot — called for the full set on (re)connect and for newly-viewed tickers
+// as they're added (so a freshly-streamed ticker has a correct day-change base).
+func (s *Streamer) reseed(ctx context.Context, symbols []string) {
+	if s.seeder == nil || len(symbols) == 0 {
 		return
 	}
 	rctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
-	quotes, err := s.seeder.SnapshotQuotes(rctx, s.symbols)
+	quotes, err := s.seeder.SnapshotQuotes(rctx, symbols)
 	if err != nil {
 		s.log.Warn("alpacaws: reseed failed", "err", err)
 		return

@@ -1,6 +1,7 @@
 package alpacaws
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -49,7 +50,40 @@ func TestNewCapsSymbols(t *testing.T) {
 		syms[i] = "T"
 	}
 	s := New("ws://x", "k", "s", syms, nil, func(_ time.Time) string { return "regular" }, nil, nil, nil)
-	if len(s.symbols) != MaxSymbols {
-		t.Fatalf("symbols capped to %d, want %d", len(s.symbols), MaxSymbols)
+	if want := MaxSymbols - viewedSlots; len(s.base) != want {
+		t.Fatalf("base capped to %d, want %d", len(s.base), want)
 	}
 }
+
+func TestLruAdd(t *testing.T) {
+	// Most-recent goes to the end; re-adding bumps it; oldest is trimmed at max.
+	lru := lruAdd(nil, "A", 3)
+	lru = lruAdd(lru, "B", 3)
+	lru = lruAdd(lru, "C", 3)
+	if got := join(lru); got != "A,B,C" {
+		t.Fatalf("after A,B,C → %q", got)
+	}
+	lru = lruAdd(lru, "A", 3) // bump A to most-recent
+	if got := join(lru); got != "B,C,A" {
+		t.Fatalf("after bump A → %q, want B,C,A", got)
+	}
+	lru = lruAdd(lru, "D", 3) // over cap → evict oldest (B)
+	if got := join(lru); got != "C,A,D" {
+		t.Fatalf("after D (cap 3) → %q, want C,A,D", got)
+	}
+}
+
+func TestSubscribeViewed(t *testing.T) {
+	s := New("ws://x", "k", "s", []string{"AAPL", "MSFT"}, nil, func(_ time.Time) string { return "regular" }, nil, nil, nil)
+	s.Subscribe("nvda")    // lowercased + added
+	s.Subscribe("AAPL")    // already base → ignored
+	s.Subscribe("0700.HK") // foreign → ignored
+	if got := join(s.viewed); got != "NVDA" {
+		t.Fatalf("viewed = %q, want NVDA", got)
+	}
+	if got := join(s.desired()); got != "AAPL,MSFT,NVDA" {
+		t.Fatalf("desired = %q, want AAPL,MSFT,NVDA", got)
+	}
+}
+
+func join(s []string) string { return strings.Join(s, ",") }

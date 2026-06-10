@@ -282,7 +282,11 @@ Status: ✅ done · 🟡 in progress · ⬜ todo
 > config `ALPACA_WS_URL`/`ALPACA_WS_ENABLED`(默认开)；main 有 key 时与 poller 并存启动；trade 解析 + 30 上限单测。
 > ✅ `349953c` **已部署**（VPS 成功拉到 coder/websocket + healthz 200 + universe 6685）。**实时效果待开盘验证**：当前为休市/盘前
 > 极薄（quote `at` 仍是 6/9 收盘前的最后成交，无实时成交可推流）；WS 连通日志核对 SSH 掉线未成——开盘后看热门票 `at` 是否秒级刷新
-> + docker logs 看 "connected + subscribed"。WS 出错会优雅退回 poller（无害）。**#2b 动态按浏览订阅 = 可选增强，暂缓**（30 上限够覆盖热门/自选）。
+> + docker logs 看 "connected + subscribed"。WS 出错会优雅退回 poller（无害）。**✅#2b 查看即实时订阅（owner 2026-06-10 要求）**：
+> streamer 重构为 writer-goroutine 独占 WS 写（auth/订阅/ping/动态增删），`Subscribe(ticker)` 把"正在看的票"加入 LRU（base 上限 20 +
+> viewed 上限 10 ≤ MaxSymbols 30，淘汰最久未看；新票订阅前先 reseed prev/regular_close）；nil-safe `LiveSubscriber` 接口接进 api.New
+> （6 处调用点）+ `POST /v1/stocks/{ticker}/subscribe`；前端 `subscribeLive` + StockView 打开详情页即调用。lruAdd/Subscribe 单测 + go/web 全绿。
+> 效果：打开任意股票（含非自选如 RDW）即进实时流，生产环境秒级；本沙箱因 Alpaca 锚 6/9 仍演示不出。**待部署验证 endpoint 200 + 不破坏现有 WS/poller。**
 > ◐③ 机构/13D举牌榜(41)：**数据源核查** —— SEC 直连从本沙箱 IP 被 403（curl+WebFetch 都不行），但 VPS 上现有 `internal/sec`
 > 客户端（带 UA/gzip/限流）能成功取每日索引（机会榜 Form-4 count:14 为证）；efts.sec.gov 从 VPS 可达(200)但需调参。**结论：复用
 > 已验证的 sec 客户端走每日索引路径。** #3a `internal/sec/ownership.go`：`DailyBeneficialOwnership(date)`(复用 `c.get`) +

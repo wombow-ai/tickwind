@@ -399,6 +399,19 @@ export function getQuote(ticker: string, signal?: AbortSignal): Promise<Quote> {
   );
 }
 
+/**
+ * Asks the backend to stream this ticker's price in real time (it joins the live
+ * WebSocket subscription, within the free-tier cap). Fire-and-forget — call when
+ * a stock detail page opens so its quote stays fresh. Public; failures are ignored.
+ */
+export function subscribeLive(ticker: string, signal?: AbortSignal): Promise<{ok: boolean}> {
+  return postJson<{ok: boolean}>(
+    `/v1/stocks/${encodeURIComponent(normalizeTicker(ticker))}/subscribe`,
+    {},
+    signal,
+  );
+}
+
 /** Envelope returned by `GET /v1/stocks/{ticker}/bars`. */
 export interface BarsResponse {
   ticker: string;
