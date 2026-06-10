@@ -328,6 +328,12 @@ Status: ✅ done · 🟡 in progress · ⬜ todo
 > `GET /v1/stocks/{t}/short`（404=无行）→ 前端 ShortChip（回补天数/空头仓位 M/B/环比变色/「轧空风险」徽标 DTC≥5 或环比≥+20%/
 > 截至日·FINRA，404 整体隐藏）。**公网验证抓到最新期 2026-05-29**：GME DTC 11.99+徽标 ✓ / AAPL 3.38 无徽标 ✓ /
 > SPY 有数据（FINRA 覆盖 ETF，意外之喜）/ 0700.HK 正确隐藏 ✓。零控制台错误。
+> **✅#38 巴西 B3 市场 LIVE（`7052015`）**：`internal/brapi` 客户端（token-gated，parseQuote 单测）+ `BRAdapter`（照 HK 延迟报价
+> 模板：canonical `.SA` 后缀路由、调用时 strip 成裸码喂 brapi、BRT 时钟 session、Source `brapi`）+ `market.Of` 加 `.SA`→BR（单测）+
+> config `BRAPI_API_KEY` + main 注册（key 在则启用 + brazilSeed 6 支注入 ingest，缺 key 则 warn 跳过）+ `symbols.ForeignSeeds` 加
+> 12 支 B3 蓝筹（Country=BR/Exchange=B3）。**公网实测**：search "PETR"→PETR3/PETR4.SA 置顶、"vale"→VALE3.SA、PETR4.SA 报价
+> `41.71 regular brapi`（实时）。多市场框架现含 US/TW/HK/KR/BR。注：brapi 黄源、免费展示 OK（付费转售红线不变）。
+> **🏁 开发循环阶段性收官**：roadmap 仅余 #39 评论 cashtag（owner 指示等用户量再做）。v3 计划 + #23 + #38 全部交付。
 > ◐③ 机构/13D举牌榜(41)：**数据源核查** —— SEC 直连从本沙箱 IP 被 403（curl+WebFetch 都不行），但 VPS 上现有 `internal/sec`
 > 客户端（带 UA/gzip/限流）能成功取每日索引（机会榜 Form-4 count:14 为证）；efts.sec.gov 从 VPS 可达(200)但需调参。**结论：复用
 > 已验证的 sec 客户端走每日索引路径。** #3a `internal/sec/ownership.go`：`DailyBeneficialOwnership(date)`(复用 `c.get`) +
