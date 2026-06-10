@@ -28,6 +28,7 @@ import (
 	"github.com/wombow-ai/tickwind/internal/edgar"
 	"github.com/wombow-ai/tickwind/internal/enrich"
 	"github.com/wombow-ai/tickwind/internal/events"
+	"github.com/wombow-ai/tickwind/internal/finra"
 	"github.com/wombow-ai/tickwind/internal/guru"
 	"github.com/wombow-ai/tickwind/internal/opportunity"
 	"github.com/wombow-ai/tickwind/internal/sec"
@@ -129,6 +130,12 @@ type IndicesSource interface {
 	Indices() []store.IndexQuote
 }
 
+// ShortSource serves the latest-settlement FINRA short-interest row for a
+// symbol (nil-safe; nil = none). Satisfied by *ingest.ShortCache.
+type ShortSource interface {
+	ShortInterest(ticker string) (finra.ShortInterest, bool)
+}
+
 type Server struct {
 	store         store.Store
 	hub           QuoteStream
@@ -149,19 +156,20 @@ type Server struct {
 	institutional InstitutionalSource
 	live          LiveSubscriber
 	indices       IndicesSource
+	short         ShortSource
 	admins        map[string]bool // user UUIDs and/or emails (lowercased) allowed to delete any comment
 	commentRL     *rateLimiter    // per-user comment-post throttle
 	log           *slog.Logger
 }
 
-func New(st store.Store, hub QuoteStream, enricher enrich.Enricher, verifier *auth.Verifier, bars BarSource, topicSrc TopicSource, oppSrc OpportunitySource, universeSrc UniverseSource, guruSrc GuruSource, ingestor TickerIngestor, symbolSrc SymbolSearcher, eventSrc EventSource, fundSrc FundamentalsSource, earningsSrc EarningsSource, congressSrc CongressSource, institutionalSrc InstitutionalSource, liveSub LiveSubscriber, indicesSrc IndicesSource, adminIDs []string, log *slog.Logger) http.Handler {
+func New(st store.Store, hub QuoteStream, enricher enrich.Enricher, verifier *auth.Verifier, bars BarSource, topicSrc TopicSource, oppSrc OpportunitySource, universeSrc UniverseSource, guruSrc GuruSource, ingestor TickerIngestor, symbolSrc SymbolSearcher, eventSrc EventSource, fundSrc FundamentalsSource, earningsSrc EarningsSource, congressSrc CongressSource, institutionalSrc InstitutionalSource, liveSub LiveSubscriber, indicesSrc IndicesSource, shortSrc ShortSource, adminIDs []string, log *slog.Logger) http.Handler {
 	admins := make(map[string]bool, len(adminIDs))
 	for _, id := range adminIDs {
 		if id = strings.ToLower(strings.TrimSpace(id)); id != "" {
 			admins[id] = true
 		}
 	}
-	s := &Server{store: st, hub: hub, clip: clip.NewFetcher(), enrich: enricher, auth: verifier, bars: bars, topics: topicSrc, opps: oppSrc, universe: universeSrc, gurus: guruSrc, ingestor: ingestor, symbols: symbolSrc, events: eventSrc, fundamentals: fundSrc, earnings: earningsSrc, congress: congressSrc, institutional: institutionalSrc, live: liveSub, indices: indicesSrc, admins: admins, commentRL: newRateLimiter(10, 10*time.Minute), log: log}
+	s := &Server{store: st, hub: hub, clip: clip.NewFetcher(), enrich: enricher, auth: verifier, bars: bars, topics: topicSrc, opps: oppSrc, universe: universeSrc, gurus: guruSrc, ingestor: ingestor, symbols: symbolSrc, events: eventSrc, fundamentals: fundSrc, earnings: earningsSrc, congress: congressSrc, institutional: institutionalSrc, live: liveSub, indices: indicesSrc, short: shortSrc, admins: admins, commentRL: newRateLimiter(10, 10*time.Minute), log: log}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", s.health)
 
@@ -216,6 +224,7 @@ func New(st store.Store, hub QuoteStream, enricher enrich.Enricher, verifier *au
 	mux.HandleFunc("GET /v1/congress", s.getCongress)
 	mux.HandleFunc("GET /v1/institutional", s.getInstitutional)
 	mux.HandleFunc("GET /v1/indices", s.getIndices)
+	mux.HandleFunc("GET /v1/stocks/{ticker}/short", s.getShort)
 	mux.HandleFunc("GET /v1/stream", s.getStream)
 
 	// auth.Middleware attaches the user when a valid bearer token is present;
@@ -1490,6 +1499,22 @@ func (s *Server) getCongress(w http.ResponseWriter, r *http.Request) {
 // filings (13D = active/activist stake, higher signal; 13G = passive, e.g. the
 // index giants), newest first. ?type=13d|13g filters by activist flag; ?limit=
 // caps (default 60). Always 200 with a (possibly empty) list. nil source → empty.
+// getShort returns the symbol's latest FINRA short-interest row (squeeze
+// radar): 404 when the table has no row for it (ETFs, new listings, non-US).
+func (s *Server) getShort(w http.ResponseWriter, r *http.Request) {
+	ticker := strings.ToUpper(strings.TrimSpace(r.PathValue("ticker")))
+	if s.short == nil {
+		writeJSON(w, http.StatusNotFound, errBody("no short-interest data"))
+		return
+	}
+	si, ok := s.short.ShortInterest(ticker)
+	if !ok {
+		writeJSON(w, http.StatusNotFound, errBody("no short-interest data"))
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ticker": ticker, "short": si})
+}
+
 // getIndices returns the latest major-market-index levels (homepage strip).
 func (s *Server) getIndices(w http.ResponseWriter, _ *http.Request) {
 	indices := []store.IndexQuote{}
