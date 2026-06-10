@@ -295,6 +295,13 @@ Status: ✅ done · 🟡 in progress · ⬜ todo
 > 也走按需刷新取较新者；main 复用 newsClient（typed-nil guard）。B=诚实文案：徽标改"最后成交 X前 · src"(i18n quote.lastTrade) +
 > useQuotes 新鲜度不回退守卫。**LIVE 验证三分支**：HOTH alpaca·5/27→finnhub·6/9(+13天)；YOUL 合并源不更新→保留 alpaca；AAPL 活跃
 > 不触发。**预览实测页面渲染 "Last trade 1d ago · finnhub"**。注：Finnhub 黄源、免费展示 OK（付费转售红线不变）。
+> **🚚 VPS 升级迁移（owner +$100/年预算，Claude 拍板）2026-06-10：** 1GB→**4GB RackNerd `104.168.38.21`**（$59.99/yr，根治
+> `go build` OOM→杀 sshd→fail2ban 锁门）。迁移：装 key+Docker(29.5.3/Compose v5.1.4)→拉最新仓库→`.env` 逐字节复制→`pg_dump --clean`
+> 7 张用户表 dump→restore（**watchlist=3, notes=2** 零丢失）→新 cloudflared 作第 2 连接器加入隧道→停老箱 cloudflared+api。**4G 上 Go 镜像
+> 构建一次过、零 OOM**（坐实升级价值）。公网验证全绿：healthz 200 / universe 5577 / earnings 319 / AAPL 289.19·alpaca(实时) /
+> HOTH finnhub 兜底 / 前端 200。**域名 DNS 零改动**（Tunnel 出站）。老箱 `104.168.46.15`=停机冷备（postgres 留数据），回滚 =
+> `docker compose start cloudflared api`。SSH 经验：两箱都"连接保持>1-2s 即掉"→全程后台+轮询、文件传输用 `cat|ssh` 不用 scp。
+> ⏭️ 预算余款待 owner 采购：住宅代理(~$10 解锁港股公告+雪球) + LLM 充值(~$10-15 激活中文 AI 摘要)。
 > ◐③ 机构/13D举牌榜(41)：**数据源核查** —— SEC 直连从本沙箱 IP 被 403（curl+WebFetch 都不行），但 VPS 上现有 `internal/sec`
 > 客户端（带 UA/gzip/限流）能成功取每日索引（机会榜 Form-4 count:14 为证）；efts.sec.gov 从 VPS 可达(200)但需调参。**结论：复用
 > 已验证的 sec 客户端走每日索引路径。** #3a `internal/sec/ownership.go`：`DailyBeneficialOwnership(date)`(复用 `c.get`) +

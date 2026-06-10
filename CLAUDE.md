@@ -12,8 +12,10 @@ feature-flagged plugin, never on the critical path. Web only.
 ## Owner / infra
 - GitHub: `wombow-ai/tickwind`. EDGAR User-Agent / contact email: `inverael@gmail.com`.
 - Domain `tickwind.com` (on Cloudflare). **Frontend → Vercel** (auto-deploys on push
-  to `main`, Root Directory `web/`). **Backend → RackNerd VPS `root@104.168.46.15`**,
-  reached at `api.tickwind.com` via a **Cloudflare Tunnel**. **$0/month.**
+  to `main`, Root Directory `web/`). **Backend → RackNerd VPS `root@104.168.38.21`**
+  (4 GB / 3 vCPU / 60 GB; **migrated 2026-06-10** from the old 1 GB box `104.168.46.15`,
+  which is now a STOPPED cold standby — `docker compose start` there to roll back),
+  reached at `api.tickwind.com` via a **Cloudflare Tunnel**. **~$60/year (owner-funded upgrade).**
 - **⚠️ Vercel Hobby limits (learned 2026-06-09/10): ~100 deploys/day.** A fast `/loop`
   that pushes 1–2 commits/tick can EXHAUST it → new pushes stop deploying (site keeps
   serving the last good deploy; new routes 404) with no obvious error. Symptom seen: a
