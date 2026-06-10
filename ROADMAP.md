@@ -313,6 +313,15 @@ Status: ✅ done · 🟡 in progress · ⬜ todo
 > Pro($300/yr) 不必。**④评论 cashtag** → 排期 #39（owner：不紧急，等用户量）。
 > 📋 **#39 评论 at 股票（cashtag）**：个股评论自动带 $TICKER；评论体内 $XXX 解析为链接并 fan-out 到对应个股评论区；
 > 公共区可 at 多股。等用户量上来再做（owner 2026-06-10）。
+> **🧹 老箱清空（owner 2026-06-10 要求腾给其他项目）**：先复核新箱用户数据完好(watchlist=3/notes=2)→ `104.168.46.15` 容器/卷/镜像
+> 全删、/root/tickwind(含 .env)删除、shell 历史清除。Docker 引擎+部署公钥保留可复用。**老箱不再是回滚备机**；恢复路径=新箱
+> `/root/tw_users_only.sql` + Supabase 市场库 + 迁移 runbook。
+> **✅页面合并（owner 2026-06-10）**：`/institutional` + `/congress` → **`/smart-money`（聪明钱）双 tab**（13D/G 机构举牌 | 国会交易），
+> 旧路由 permanentRedirect 保收藏/外链，导航二级菜单少一项。预览实测：重定向带 tab 预选、切 tab 内容+URL 同步、零控制台错误。
+> 其余页面评估过不合并：机会榜=旗舰保持独立；/discussion(聚合社交)≠/community(真人评论)；财报已融合在事件时间线。
+> **▶️ 解除暂停（owner "可以开干了"）**：#23 FINRA 轧空雷达 — **匿名 API 已验证可用**（consolidatedShortInterest 含
+> daysToCover/short qty/ADV/change%；⚠️默认返回最老期，需按 settlementDate 过滤最新结算期）。#38 巴西 B3 — **brapi key 已验证**
+> （PETR4 实时 41.83 BRL + marketCap）。循环按 #23 → #38 顺序开工。#39 cashtag 仍按 owner 指示等用户量。
 > ◐③ 机构/13D举牌榜(41)：**数据源核查** —— SEC 直连从本沙箱 IP 被 403（curl+WebFetch 都不行），但 VPS 上现有 `internal/sec`
 > 客户端（带 UA/gzip/限流）能成功取每日索引（机会榜 Form-4 count:14 为证）；efts.sec.gov 从 VPS 可达(200)但需调参。**结论：复用
 > 已验证的 sec 客户端走每日索引路径。** #3a `internal/sec/ownership.go`：`DailyBeneficialOwnership(date)`(复用 `c.get`) +
