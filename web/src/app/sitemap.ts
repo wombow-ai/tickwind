@@ -39,10 +39,14 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const staticPages: MetadataRoute.Sitemap = [
     {url: `${SITE_URL}/`, lastModified: now, changeFrequency: 'hourly', priority: 1},
     {url: `${SITE_URL}/opportunities`, lastModified: now, changeFrequency: 'daily', priority: 0.7},
+    {url: `${SITE_URL}/smart-money`, lastModified: now, changeFrequency: 'daily', priority: 0.7},
     {url: `${SITE_URL}/hot`, lastModified: now, changeFrequency: 'hourly', priority: 0.7},
+    {url: `${SITE_URL}/screen`, lastModified: now, changeFrequency: 'daily', priority: 0.6},
+    {url: `${SITE_URL}/earnings`, lastModified: now, changeFrequency: 'daily', priority: 0.6},
     {url: `${SITE_URL}/news`, lastModified: now, changeFrequency: 'hourly', priority: 0.6},
     {url: `${SITE_URL}/discussion`, lastModified: now, changeFrequency: 'hourly', priority: 0.6},
     {url: `${SITE_URL}/events`, lastModified: now, changeFrequency: 'daily', priority: 0.6},
+    {url: `${SITE_URL}/briefing`, lastModified: now, changeFrequency: 'daily', priority: 0.6},
     {url: `${SITE_URL}/community`, lastModified: now, changeFrequency: 'daily', priority: 0.6},
     {url: `${SITE_URL}/announcements`, lastModified: now, changeFrequency: 'weekly', priority: 0.5},
   ];

@@ -353,6 +353,14 @@ Status: ✅ done · 🟡 in progress · ⬜ todo
 > 加 owner 临时插入:#39 评论 cashtag、巴西 B3、AI 新闻标题中译、盘前价 bug 复核。全部线上验证。AI 用 OpenRouter(DeepSeek)+智谱备用。
 > **建议下一步**(待 owner):SEO/SSR(首页对 Google 隐形)· 住宅代理解锁港股公告+雪球 · 期权异动榜 · 13F 大佬持仓 · 站外推送提醒。
 > 收尾小项(可选):13D/G 榜 CIK→ticker 可点、评论"我已赞"回传、指数条加 ^HSI、i18n 英文硬编码扫尾。
+>
+> ## v5 计划（owner 2026-06-12："先做 1/3/4,2 放后面"）
+> **① SEO/SSR**(进行中)→ **③ 期权异动榜 / 13F 大佬持仓 / 站外推送**(注:web-push 仍 DEFERRED,push 走邮件/TG 或再缓)→ **④ 收尾小项**。
+> **⏸ ② 住宅代理(~$10/年,解锁港股公告+雪球)→ 延后**,待 owner 采购代理凭据再做(代码框架早已写好,卡在 IP)。
+> **✅v5①(a) SEO 首发(本 commit,纯前端)**:发现 SEO 基础其实已成熟(个股页 SSR+generateMetadata+JSON-LD+ISR、robots.ts、layout OG、sitemap 有个股页)。
+> 本增量补缺口:sitemap 补 /smart-money /screen /earnings /briefing(原先漏,Google 发现不了);旗舰看板页中文关键词 metadata——
+> smart-money→「国会山股神·佩洛西持仓·13D举牌」、opportunities→「美股内部人买入·高管增持」(瞄准研究指出的中文搜索空档,零中文工具竞争)。
+> SEO 下一步(下 tick 评估):首页是客户端壳(有 layout metadata 但服务端内容薄)→ 可加 SSR 内容块;或 pSEO 中文关键词落地页。
 > **🧹 老箱清空（owner 2026-06-10 要求腾给其他项目）**：先复核新箱用户数据完好(watchlist=3/notes=2)→ `104.168.46.15` 容器/卷/镜像
 > 全删、/root/tickwind(含 .env)删除、shell 历史清除。Docker 引擎+部署公钥保留可复用。**老箱不再是回滚备机**；恢复路径=新箱
 > `/root/tw_users_only.sql` + Supabase 市场库 + 迁移 runbook。
