@@ -53,7 +53,9 @@ func New(cfg Config) Enricher {
 		model = "gpt-4o-mini"
 	}
 	return &llm{
-		http:    &http.Client{Timeout: 30 * time.Second},
+		// Generous ceiling: batch translation streams many tokens and some
+		// OpenRouter providers are slow; per-call context keeps tighter bounds.
+		http:    &http.Client{Timeout: 90 * time.Second},
 		apiKey:  cfg.APIKey,
 		baseURL: strings.TrimRight(base, "/"),
 		model:   model,

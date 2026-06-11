@@ -9,9 +9,11 @@ import (
 	"github.com/wombow-ai/tickwind/internal/store"
 )
 
-// translateBatch is the headlines-per-LLM-request size: large enough to
-// amortize the prompt, small enough that one malformed reply wastes little.
-const translateBatch = 40
+// translateBatch is the headlines-per-LLM-request size: small enough that one
+// request stays well under the LLM timeout (40 titles streamed >30s and timed
+// out), large enough to amortize the prompt. Index-anchoring tolerates a short
+// reply, and leftover untranslated rows are picked up next sweep.
+const translateBatch = 20
 
 // translateStore is the slice of the Store the translator needs.
 type translateStore interface {
@@ -69,7 +71,7 @@ func (t *TranslateIngestor) sweep(ctx context.Context) {
 	for i, n := range items {
 		titles[i] = n.Headline
 	}
-	cctx, cancel := context.WithTimeout(ctx, 60*time.Second)
+	cctx, cancel := context.WithTimeout(ctx, 85*time.Second)
 	defer cancel()
 	zh, err := t.enr.TranslateTitles(cctx, titles)
 	if err != nil {
