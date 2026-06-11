@@ -512,6 +512,19 @@ func (s *Store) DeleteAlert(_ context.Context, userID, id string) (bool, error) 
 	return true, nil
 }
 
+func (s *Store) ReactivateAlert(_ context.Context, userID, id string) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	a, ok := s.alerts[userID][id]
+	if !ok {
+		return false, nil
+	}
+	a.Active = true
+	a.TriggeredAt = time.Time{} // re-armed
+	s.alerts[userID][id] = a
+	return true, nil
+}
+
 func (s *Store) SaveHolding(_ context.Context, h store.Holding) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()

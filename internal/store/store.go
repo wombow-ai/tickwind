@@ -333,6 +333,9 @@ type Store interface {
 	SaveAlert(ctx context.Context, a Alert) error
 	ListAlerts(ctx context.Context, userID string) ([]Alert, error)
 	DeleteAlert(ctx context.Context, userID, id string) (bool, error)
+	// ReactivateAlert re-arms a triggered alert (active=true, triggered_at
+	// cleared). Only the owner (userID) may; found=false if unknown/not theirs.
+	ReactivateAlert(ctx context.Context, userID, id string) (bool, error)
 	// ListActiveAlerts returns ALL users' active, not-yet-triggered alerts (for
 	// the evaluator goroutine); MarkAlertTriggered stamps one as fired.
 	ListActiveAlerts(ctx context.Context) ([]Alert, error)

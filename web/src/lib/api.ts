@@ -1154,6 +1154,20 @@ export function deleteAlert(
   return deleteJson<{deleted: boolean}>(`/v1/alerts/${encodeURIComponent(id)}`, signal, token);
 }
 
+/** Re-arms a triggered alert (active again, trigger cleared). Requires auth. */
+export function reactivateAlert(
+  token: string | null,
+  id: string,
+  signal?: AbortSignal,
+): Promise<{reactivated: boolean}> {
+  return patchJson<{reactivated: boolean}>(
+    `/v1/alerts/${encodeURIComponent(id)}`,
+    {},
+    signal,
+    token,
+  );
+}
+
 /** A user's position in a ticker (shares + average cost). */
 export interface Holding {
   id: string;

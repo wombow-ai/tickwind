@@ -22,6 +22,24 @@ func TestAlertsCRUD(t *testing.T) {
 	if err != nil || len(got) != 1 || got[0].Ticker != "AAPL" || got[0].Threshold != 200 {
 		t.Fatalf("ListAlerts(u1) = %+v, err %v", got, err)
 	}
+	// Trigger then re-arm: ReactivateAlert clears triggered_at + re-activates,
+	// and only for the owner.
+	if err := s.MarkAlertTriggered(ctx, "a1", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if ok, _ := s.ReactivateAlert(ctx, "u2", "a1"); ok {
+		t.Error("u2 re-armed u1's alert (ownership not enforced)")
+	}
+	if ok, _ := s.ReactivateAlert(ctx, "u1", "a1"); !ok {
+		t.Error("owner reactivate returned false")
+	}
+	if got, _ := s.ListAlerts(ctx, "u1"); len(got) != 1 || !got[0].TriggeredAt.IsZero() || !got[0].Active {
+		t.Fatalf("after reactivate: %+v, want active + triggered_at zero", got)
+	}
+	if ok, _ := s.ReactivateAlert(ctx, "u1", "nope"); ok {
+		t.Error("reactivate unknown id returned true")
+	}
+
 	if ok, _ := s.DeleteAlert(ctx, "u2", "a1"); ok {
 		t.Error("u2 deleted u1's alert (ownership not enforced)")
 	}

@@ -9,6 +9,7 @@ import {useLang, useT} from '@/lib/i18n';
 import {useTheme} from '@/lib/theme';
 import {btnPrimary, cx, tok} from '@/lib/ui';
 import {Logo} from '@/components/ui/atoms';
+import {AlertsBell} from '@/components/AlertsBell';
 import {SearchBox} from '@/components/SearchBox';
 
 type Tokens = ReturnType<typeof tok>;
@@ -91,6 +92,7 @@ export function TopNav() {
     {href: '/community', label: tr('nav.community')},
     ...(authed ? [{href: '/notes', label: tr('nav.notes')}] : []),
     ...(authed ? [{href: '/portfolio', label: tr('nav.portfolio')}] : []),
+    ...(authed ? [{href: '/alerts', label: tr('nav.alerts')}] : []),
   ];
   const whatsnew: NavItem = {href: '/announcements', label: tr('nav.whatsnew')};
   // The full ordered list for the mobile sheet.
@@ -161,6 +163,7 @@ export function TopNav() {
           >
             <Search size={16} />
           </button>
+          <AlertsBell dark={dark} />
           <Link
             href="/announcements"
             aria-current={pathname === '/announcements' ? 'page' : undefined}

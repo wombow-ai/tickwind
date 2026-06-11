@@ -856,6 +856,16 @@ func (s *Store) DeleteAlert(ctx context.Context, userID, id string) (bool, error
 	return tag.RowsAffected() == 1, nil
 }
 
+func (s *Store) ReactivateAlert(ctx context.Context, userID, id string) (bool, error) {
+	tag, err := s.pool.Exec(ctx,
+		`UPDATE alerts SET active = true, triggered_at = NULL WHERE id = $1 AND user_id = $2`,
+		id, userID)
+	if err != nil {
+		return false, fmt.Errorf("postgres: reactivate alert: %w", err)
+	}
+	return tag.RowsAffected() == 1, nil
+}
+
 const holdingCols = `id, user_id, ticker, shares, avg_cost, created_at, updated_at`
 
 func scanHolding(row interface{ Scan(...any) error }) (store.Holding, error) {

@@ -187,6 +187,7 @@ func New(st store.Store, hub QuoteStream, enricher enrich.Enricher, verifier *au
 	mux.HandleFunc("GET /v1/alerts", s.getAlerts)
 	mux.HandleFunc("POST /v1/alerts", s.postAlert)
 	mux.HandleFunc("DELETE /v1/alerts/{id}", s.deleteAlert)
+	mux.HandleFunc("PATCH /v1/alerts/{id}", s.reactivateAlert)
 	mux.HandleFunc("GET /v1/holdings", s.getHoldings)
 	mux.HandleFunc("POST /v1/holdings", s.postHolding)
 	mux.HandleFunc("DELETE /v1/holdings/{id}", s.deleteHolding)
@@ -607,6 +608,25 @@ func (s *Server) deleteAlert(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"deleted": true})
+}
+
+// reactivateAlert re-arms a triggered alert (active again, trigger cleared) so a
+// one-shot alert can be reused without recreating it. 404 if not the user's.
+func (s *Server) reactivateAlert(w http.ResponseWriter, r *http.Request) {
+	u, ok := s.requireUser(w, r)
+	if !ok {
+		return
+	}
+	ok2, err := s.store.ReactivateAlert(r.Context(), u.ID, r.PathValue("id"))
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, errBody(err.Error()))
+		return
+	}
+	if !ok2 {
+		writeJSON(w, http.StatusNotFound, errBody("alert not found"))
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"reactivated": true})
 }
 
 // ── Per-user: holdings ───────────────────────────────────────────────────

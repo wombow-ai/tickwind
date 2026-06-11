@@ -329,6 +329,12 @@ Status: ✅ done · 🟡 in progress · ⬜ todo
 > ②批量偶尔少返一条 → 改**序号锚定协议** {items:[{i,zh}]},缺的留下轮、绝不串位;③40 条/批超 30s 客户端超时 → 批 20+90s+3min 扫。
 > **公网实测**:NVDA 14/40、GOOGL 6、MSFT 5…共 36+ 条中文标题,质量专业(上调评级/跑输大盘/业绩超预期/再融资)。新闻在 Supabase 市场库(非本地 pg)。
 > 成本:~$0.00002/条,稳态扫到 0 条即跳过不调 LLM。**AI 包下一步**:个股 AI 速览(每日缓存)→ 每日中文晨报 → NL 选股。
+> **✅v4 速赢①热榜价格 LIVE（`b6d87cd`+`4d6ee18`）**：getHot join universe 快照补 price+guarded change_pct(复用 screener 守卫 → 抽出
+> guardedChangePct)；universe 快照缺的票回退 store.GetQuote。前端 HotRow 加价格列(sm+)。注:非 ingest 集且不在快照窗口的票(SPY/QQQ 等)
+> 暂无价——universe 缓存特性,记为跟进。**✅v4 速赢②提醒中心 LIVE（`<this>`）**：后端 getAlerts 本就全量(不按 ticker)→ 只加重新激活:
+> store.ReactivateAlert(active=true+triggered_at 清零,owner 校验,5 层 + 单测)+ api `PATCH /v1/alerts/{id}`。前端:`/alerts` 全局页
+> (AlertsCenter,按 触发/监控中 分组,触发的带"重新激活"+删除,股票可点)+ TopNav `AlertsBell`(登录态轮询 60s 数已触发,红点角标,
+> 任意页可见)+ secondary nav 加"提醒"+ i18n zh/en。**不碰 web-push（DEFERRED）**。下:③ 搜索中文化 → ④ 个股 AI 速览 → ⑤ 晨报 → ⑥ 期权。
 > **🧹 老箱清空（owner 2026-06-10 要求腾给其他项目）**：先复核新箱用户数据完好(watchlist=3/notes=2)→ `104.168.46.15` 容器/卷/镜像
 > 全删、/root/tickwind(含 .env)删除、shell 历史清除。Docker 引擎+部署公钥保留可复用。**老箱不再是回滚备机**；恢复路径=新箱
 > `/root/tw_users_only.sql` + Supabase 市场库 + 迁移 runbook。
