@@ -16,22 +16,29 @@ type Symbol struct {
 	Name     string `json:"name"`
 	Exchange string `json:"exchange"` // "Nasdaq" | "NYSE" | "OTC" | ...
 	Country  string `json:"country"`  // "US" for now (per-source); intl later
+	// Aliases are alternate search terms (notably Chinese names, e.g. "英伟达"
+	// for NVDA) so zh-first users can find a stock by its native name.
+	Aliases []string `json:"aliases,omitempty"`
 }
 
 // Index is an immutable, searchable snapshot of the directory.
 type Index struct {
 	all       []Symbol
 	nameLower []string         // parallel to all: lower-cased name (substring scan)
+	aliases   [][]string       // parallel to all: this symbol's aliases (e.g. CJK names)
 	byTicker  map[string]int   // upper ticker -> index in all
 	nameTok   map[string][]int // lower name token -> indices in all
 }
 
-// Build constructs a searchable Index, deduped by ticker.
+// Build constructs a searchable Index, deduped by ticker. Each symbol's curated
+// aliases (Chinese names) are merged from the alias table so a CJK query can
+// resolve it.
 func Build(syms []Symbol) *Index {
 	idx := &Index{
 		byTicker: make(map[string]int, len(syms)),
 		nameTok:  make(map[string][]int),
 	}
+	aliasTable := Aliases()
 	for _, s := range syms {
 		t := strings.ToUpper(strings.TrimSpace(s.Ticker))
 		if t == "" {
@@ -41,9 +48,13 @@ func Build(syms []Symbol) *Index {
 			continue
 		}
 		s.Ticker = t
+		if extra := aliasTable[t]; len(extra) > 0 {
+			s.Aliases = append(append([]string{}, s.Aliases...), extra...)
+		}
 		i := len(idx.all)
 		idx.all = append(idx.all, s)
 		idx.nameLower = append(idx.nameLower, strings.ToLower(s.Name))
+		idx.aliases = append(idx.aliases, s.Aliases)
 		idx.byTicker[t] = i
 		seen := map[string]bool{}
 		for _, tok := range tokenize(s.Name) {
@@ -52,6 +63,17 @@ func Build(syms []Symbol) *Index {
 			}
 			seen[tok] = true
 			idx.nameTok[tok] = append(idx.nameTok[tok], i)
+		}
+		// ASCII aliases (e.g. "Meta", "Alphabet") also feed the token index so
+		// English-keyword search finds them; CJK aliases are matched separately.
+		for _, a := range s.Aliases {
+			for _, tok := range tokenize(a) {
+				if seen[tok] {
+					continue
+				}
+				seen[tok] = true
+				idx.nameTok[tok] = append(idx.nameTok[tok], i)
+			}
 		}
 	}
 	return idx
@@ -128,6 +150,20 @@ func (idx *Index) Search(q string, limit int) []Symbol {
 		}
 	}
 
+	if hasCJK(q) { // CJK query → match curated aliases (the only index that has them)
+		for i, als := range idx.aliases {
+			for _, a := range als {
+				if a == q { // exact alias, e.g. "英伟达"
+					consider(i, 0)
+					break
+				}
+				if strings.Contains(a, q) || strings.Contains(q, a) {
+					consider(i, 2)
+				}
+			}
+		}
+	}
+
 	type hit struct{ i, rank int }
 	hits := make([]hit, 0, len(best))
 	for i, r := range best {
@@ -156,6 +192,17 @@ func (idx *Index) Search(q string, limit int) []Symbol {
 		}
 	}
 	return out
+}
+
+// hasCJK reports whether s contains any CJK character (so search routes to the
+// alias index). Covers the CJK Unified Ideographs block, enough for our names.
+func hasCJK(s string) bool {
+	for _, r := range s {
+		if r >= 0x4E00 && r <= 0x9FFF {
+			return true
+		}
+	}
+	return false
 }
 
 // exchRank orders exchanges so primary listings beat OTC on ties.

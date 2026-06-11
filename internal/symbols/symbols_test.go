@@ -21,6 +21,29 @@ func tickers(syms []Symbol) []string {
 	return out
 }
 
+func TestSearchChineseAlias(t *testing.T) {
+	idx := sampleIndex()
+	cases := map[string]string{
+		"苹果":   "AAPL",
+		"微软":   "MSFT",
+		"通用电气": "GE",
+	}
+	for q, want := range cases {
+		got := idx.Search(q, 10)
+		if len(got) == 0 || got[0].Ticker != want {
+			t.Errorf("Search(%q) = %v, want %s first", q, tickers(got), want)
+		}
+	}
+	// Partial CJK ("苹") surfaces Apple via alias substring.
+	if got := idx.Search("苹", 10); len(got) == 0 || got[0].Ticker != "AAPL" {
+		t.Errorf("Search(\"苹\") = %v, want AAPL", tickers(got))
+	}
+	// A CJK term with no alias match returns nothing (no noise).
+	if got := idx.Search("螺丝钉", 10); len(got) != 0 {
+		t.Errorf("Search(\"螺丝钉\") = %v, want empty", tickers(got))
+	}
+}
+
 func TestSearchExactTickerWins(t *testing.T) {
 	idx := sampleIndex()
 	got := idx.Search("app", 10) // matches APP ticker (exact), AAPL/AMAT/APP via name token "app..."
