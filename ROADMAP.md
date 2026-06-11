@@ -312,7 +312,17 @@ Status: ✅ done · 🟡 in progress · ⬜ todo
 > 自托管/换 CF Pages）；Supabase 中低（市场库纯 pg_dump 可迁；Auth 用户含密码哈希可经直连导出）。结论：现阶段 $0 方案即可，
 > Pro($300/yr) 不必。**④评论 cashtag** → 排期 #39（owner：不紧急，等用户量）。
 > 📋 **#39 评论 at 股票（cashtag）**：个股评论自动带 $TICKER；评论体内 $XXX 解析为链接并 fan-out 到对应个股评论区；
-> 公共区可 at 多股。等用户量上来再做（owner 2026-06-10）。
+> 公共区可 at 多股。等用户量上来再做（owner 2026-06-10）。✅ **已于 2026-06-11 由 owner "不等用户量直接开发" 落地**（见上）。
+> **✅盘前/盘后再排查（owner 2026-06-11 "还是不行"）`bf00270`：** 经反复核对,**流动票盘前数据+逻辑本就正确**（Futu/Google 风格:
+> 主区=昨收+昨日涨跌,小字第二行=盘前价 vs 昨收;owner 确认"现状即可")。一度误判 prev_close 错位想改,发现会破坏正确显示已撤销。
+> 真正修掉两个 bug:①StockView 盘中主数字用实时价、涨跌却用 regular_close → 不一致(RDW 大数字 16.19 显示 +6.9% 实为 +8.9%)
+> → 统一为 `regularPrice`(盘中=实时价,其余=昨收),数字与百分比同源;盘前/盘后渲染不变。②`overlayConsolidated` 小票走 finnhub
+> 兜底时 regClose(IEX)与 prev_close 混源 → 假日内涨跌(HOTH 显示 +92.94%)→ 扩展时段把 prev_close 锚定到 regClose(日内涨跌归零、
+> 扩展 delta 显示真实变化)。单测更新,公网验证 HOTH prev_close 1.36=regClose、假涨幅消除。
+> **🚀 v4 启动（owner "直接开干"）：** ①AI 中文化包(待 owner 给 OpenRouter/智谱 key——OpenRouter 兼容现有 enrich 插件,设
+> LLM_BASE_URL/KEY/MODEL 即可,零改码)。②速赢三连:**✅财报日历页 /earnings**（后端早 LIVE、前端补页:按日分组+BMO/AMC+EPS 预期/实际
+> beat 绿 miss 红+点击进个股,公开页,Vercel 部署)→ 下:提醒中心(铃铛+全局页+重武装)→ 热榜补涨跌幅。③搜索中文化(别名+CJK)。
+> ④期权面板(Cboe 免费延迟链)。注:调研称"站点对 Google 隐形"经核实**仅首页**(价格客户端拉取),个股页已 SSR 出 title+名,SEO 没那么糟。
 > **🧹 老箱清空（owner 2026-06-10 要求腾给其他项目）**：先复核新箱用户数据完好(watchlist=3/notes=2)→ `104.168.46.15` 容器/卷/镜像
 > 全删、/root/tickwind(含 .env)删除、shell 历史清除。Docker 引擎+部署公钥保留可复用。**老箱不再是回滚备机**；恢复路径=新箱
 > `/root/tw_users_only.sql` + Supabase 市场库 + 迁移 runbook。
