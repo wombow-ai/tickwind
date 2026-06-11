@@ -47,11 +47,17 @@ type BriefingCache struct {
 	inst     briefInst
 	log      *slog.Logger
 
-	mu   sync.RWMutex
-	date string // ET day the text belongs to
-	text string
-	at   time.Time
+	mu       sync.RWMutex
+	date     string // ET day the text belongs to
+	text     string
+	at       time.Time
+	complete bool // material had the [指数] section (caches were warm) → locked for the day
+	attempts int  // generations this ET day (bounds incomplete re-tries)
 }
+
+// briefMaxAttempts caps generations per day so a missing data source can't
+// trigger endless regeneration — a few tries cover the post-restart warm-up.
+const briefMaxAttempts = 6
 
 // NewBriefingCache builds the cache; call Run to start the daily generation.
 func NewBriefingCache(enr BriefEnricher, idx briefIndices, quotes briefQuotes, earnings briefEarner, cg briefCongress, inst briefInst, log *slog.Logger) *BriefingCache {
@@ -72,7 +78,7 @@ func (b *BriefingCache) Get() (date, text string, at time.Time, ok bool) {
 // still needs generating, until ctx is cancelled.
 func (b *BriefingCache) Run(ctx context.Context) {
 	b.maybeGenerate(ctx)
-	t := time.NewTicker(30 * time.Minute)
+	t := time.NewTicker(5 * time.Minute)
 	defer t.Stop()
 	for {
 		select {
@@ -103,17 +109,24 @@ func (b *BriefingCache) maybeGenerate(ctx context.Context) {
 		return
 	}
 	day := now.Format("2006-01-02")
-	b.mu.RLock()
-	done := b.date == day
-	b.mu.RUnlock()
-	if done {
-		return
+	b.mu.Lock()
+	if b.date != day {
+		b.attempts = 0 // new ET day → reset the retry budget
 	}
+	if b.date == day && (b.complete || b.attempts >= briefMaxAttempts) {
+		b.mu.Unlock()
+		return // today's briefing is locked (complete, or out of retries)
+	}
+	b.mu.Unlock()
 
 	material := b.buildMaterial(ctx, now)
 	if strings.TrimSpace(material) == "" {
 		return // caches still warming up after a restart — retry next tick
 	}
+	// On a fresh restart the index/universe caches may not be warm yet; a
+	// briefing without the [指数] section is provisional — keep it servable but
+	// re-generate (overwrite) on a later tick once the caches fill.
+	complete := strings.Contains(material, "[指数]")
 	cctx, cancel := context.WithTimeout(ctx, 85*time.Second)
 	defer cancel()
 	text, err := b.enr.Brief(cctx, material)
@@ -122,9 +135,13 @@ func (b *BriefingCache) maybeGenerate(ctx context.Context) {
 		return
 	}
 	b.mu.Lock()
-	b.date, b.text, b.at = day, text, time.Now().UTC()
+	if b.date != day {
+		b.attempts = 0
+	}
+	b.date, b.text, b.at, b.complete = day, text, time.Now().UTC(), complete
+	b.attempts++
 	b.mu.Unlock()
-	b.log.Info("morning briefing generated", "date", day, "chars", len(text))
+	b.log.Info("morning briefing generated", "date", day, "chars", len(text), "complete", complete)
 }
 
 // buildMaterial assembles the day's structured Chinese source material from
