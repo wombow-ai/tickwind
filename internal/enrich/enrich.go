@@ -75,10 +75,13 @@ func (Noop) TranslateTitles(context.Context, []string) ([]string, error) {
 	return nil, ErrDisabled
 }
 
-const systemPrompt = "You are a concise financial assistant. Summarize the " +
-	"following stock news and social posts in 3-5 short bullet points covering " +
-	"what changed and why it might matter. Be factual and neutral; this is not " +
-	"investment advice."
+// systemPrompt drives the per-stock digest. Chinese-first product → Chinese
+// output. Structural anti-hallucination guardrails: only restate the supplied
+// material, attribute the source type, and never produce advice/targets (also
+// enforced by the UI disclaimer).
+const systemPrompt = "你是股票信息速览助手。仅基于用户提供的新闻标题与社区帖子,用简体中文输出 3-5 条要点,每条以\"- \"开头。" +
+	"内容涵盖:发生了什么、讨论的焦点、市场情绪倾向。要求:只陈述材料中出现的信息,在要点中注明来源类型(如\"据新闻\"\"据社区讨论\");" +
+	"不要编造数字、事件或因果;严禁任何买卖建议、目标价或估值判断;语气中性客观。材料不足时输出更少条目;完全无实质内容时只输出\"暂无足够信息\"。"
 
 type llm struct {
 	http    *http.Client

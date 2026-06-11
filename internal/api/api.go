@@ -160,7 +160,16 @@ type Server struct {
 	short         ShortSource
 	admins        map[string]bool // user UUIDs and/or emails (lowercased) allowed to delete any comment
 	commentRL     *rateLimiter    // per-user comment-post throttle
-	log           *slog.Logger
+	// AI digest cache: one LLM generation per (ticker, ET day), then served from
+	// memory — token spend stays bounded no matter the traffic. Guarded by sumMu;
+	// sumInflight dedupes concurrent first requests; sumDay* enforce a global
+	// per-day generation cap.
+	sumMu       sync.Mutex
+	sumCache    map[string]summaryEntry
+	sumInflight map[string]chan struct{}
+	sumDayDate  string
+	sumDayCount int
+	log         *slog.Logger
 }
 
 func New(st store.Store, hub QuoteStream, enricher enrich.Enricher, verifier *auth.Verifier, bars BarSource, topicSrc TopicSource, oppSrc OpportunitySource, universeSrc UniverseSource, guruSrc GuruSource, ingestor TickerIngestor, symbolSrc SymbolSearcher, eventSrc EventSource, fundSrc FundamentalsSource, earningsSrc EarningsSource, congressSrc CongressSource, institutionalSrc InstitutionalSource, liveSub LiveSubscriber, indicesSrc IndicesSource, shortSrc ShortSource, adminIDs []string, log *slog.Logger) http.Handler {
@@ -170,7 +179,7 @@ func New(st store.Store, hub QuoteStream, enricher enrich.Enricher, verifier *au
 			admins[id] = true
 		}
 	}
-	s := &Server{store: st, hub: hub, clip: clip.NewFetcher(), enrich: enricher, auth: verifier, bars: bars, topics: topicSrc, opps: oppSrc, universe: universeSrc, gurus: guruSrc, ingestor: ingestor, symbols: symbolSrc, events: eventSrc, fundamentals: fundSrc, earnings: earningsSrc, congress: congressSrc, institutional: institutionalSrc, live: liveSub, indices: indicesSrc, short: shortSrc, admins: admins, commentRL: newRateLimiter(10, 10*time.Minute), log: log}
+	s := &Server{store: st, hub: hub, clip: clip.NewFetcher(), enrich: enricher, auth: verifier, bars: bars, topics: topicSrc, opps: oppSrc, universe: universeSrc, gurus: guruSrc, ingestor: ingestor, symbols: symbolSrc, events: eventSrc, fundamentals: fundSrc, earnings: earningsSrc, congress: congressSrc, institutional: institutionalSrc, live: liveSub, indices: indicesSrc, short: shortSrc, admins: admins, commentRL: newRateLimiter(10, 10*time.Minute), sumCache: map[string]summaryEntry{}, sumInflight: map[string]chan struct{}{}, log: log}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", s.health)
 
@@ -1719,25 +1728,108 @@ func (s *Server) getSignals(w http.ResponseWriter, r *http.Request) {
 
 // getSummary returns an LLM summary of the ticker's recent news + social posts.
 // It is an optional feature: when no LLM is configured it responds 503.
+// summaryEntry is one cached AI digest (per ticker per ET day).
+type summaryEntry struct {
+	Summary string    `json:"summary"`
+	At      time.Time `json:"generated_at"`
+}
+
+// summaryDailyCap bounds LLM digest generations per day across ALL tickers —
+// a hard token-budget backstop (cache hits don't count).
+const summaryDailyCap = 150
+
+// summaryDay is the cache day key (ET, so it rolls with the trading day).
+func summaryDay() string {
+	loc, err := time.LoadLocation("America/New_York")
+	if err != nil {
+		loc = time.UTC
+	}
+	return time.Now().In(loc).Format("2006-01-02")
+}
+
+// getSummary returns the ticker's AI digest, generated at most once per ET day
+// (first visitor pays the LLM call, everyone else hits the cache; concurrent
+// first requests are deduped). 503 when no LLM is configured, 429 past the
+// daily generation cap.
 func (s *Server) getSummary(w http.ResponseWriter, r *http.Request) {
 	if !s.enrich.Enabled() {
 		writeJSON(w, http.StatusServiceUnavailable, errBody("llm enrichment is not enabled"))
 		return
 	}
-	ticker := r.PathValue("ticker")
+	ticker := strings.ToUpper(strings.TrimSpace(r.PathValue("ticker")))
+	day := summaryDay()
+	key := ticker + "|" + day
+
+	for {
+		s.sumMu.Lock()
+		if e, ok := s.sumCache[key]; ok {
+			s.sumMu.Unlock()
+			writeJSON(w, http.StatusOK, map[string]any{
+				"ticker": ticker, "summary": e.Summary, "generated_at": e.At,
+			})
+			return
+		}
+		ch, busy := s.sumInflight[key]
+		if !busy {
+			break // we'll generate
+		}
+		s.sumMu.Unlock()
+		select { // someone else is generating: wait, then re-check the cache
+		case <-ch:
+		case <-r.Context().Done():
+			return
+		}
+	}
+	// We hold sumMu and are the generator for this key.
+	if s.sumDayDate != day {
+		s.sumDayDate, s.sumDayCount = day, 0
+		for k := range s.sumCache { // yesterday's digests are dead weight
+			if !strings.HasSuffix(k, day) {
+				delete(s.sumCache, k)
+			}
+		}
+	}
+	if s.sumDayCount >= summaryDailyCap {
+		s.sumMu.Unlock()
+		writeJSON(w, http.StatusTooManyRequests, errBody("daily AI digest budget reached — try again tomorrow"))
+		return
+	}
+	s.sumDayCount++
+	ch := make(chan struct{})
+	s.sumInflight[key] = ch
+	s.sumMu.Unlock()
+
+	finish := func(e *summaryEntry) {
+		s.sumMu.Lock()
+		if e != nil {
+			s.sumCache[key] = *e
+		}
+		delete(s.sumInflight, key)
+		close(ch)
+		s.sumMu.Unlock()
+	}
+
 	news, _ := s.store.ListNews(r.Context(), ticker, 10)
 	posts, _ := s.store.ListSocial(r.Context(), ticker, 10)
 	input := summaryInput(ticker, news, posts)
-	if strings.TrimSpace(input) == "" {
-		writeJSON(w, http.StatusOK, map[string]any{"ticker": ticker, "summary": ""})
+	if len(news) == 0 && len(posts) == 0 {
+		e := summaryEntry{Summary: "", At: time.Now().UTC()} // cache the emptiness too
+		finish(&e)
+		writeJSON(w, http.StatusOK, map[string]any{"ticker": ticker, "summary": "", "generated_at": e.At})
 		return
 	}
 	summary, err := s.enrich.Summarize(r.Context(), input)
 	if err != nil {
+		s.sumMu.Lock()
+		s.sumDayCount-- // failed generation shouldn't burn budget
+		s.sumMu.Unlock()
+		finish(nil)
 		writeJSON(w, http.StatusBadGateway, errBody(err.Error()))
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"ticker": ticker, "summary": summary})
+	e := summaryEntry{Summary: summary, At: time.Now().UTC()}
+	finish(&e)
+	writeJSON(w, http.StatusOK, map[string]any{"ticker": ticker, "summary": e.Summary, "generated_at": e.At})
 }
 
 func summaryInput(ticker string, news []store.News, posts []store.Post) string {

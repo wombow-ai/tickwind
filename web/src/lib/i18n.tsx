@@ -108,6 +108,9 @@ const dict: Record<Lang, Record<string, string>> = {
     // earnings
     'quote.lastTrade': 'Last trade {t} ago · {src}',
     'quote.lastTradeNow': 'Last trade just now · {src}',
+    'ai.title': 'AI Digest',
+    'ai.badge': 'AI generated',
+    'ai.disclaimer': 'AI-generated from recent news & community posts · for reference only · not investment advice',
     'short.title': 'Short pressure',
     'short.dtc': 'Days to cover',
     'short.qty': 'Short interest',
@@ -494,6 +497,9 @@ const dict: Record<Lang, Record<string, string>> = {
     // earnings
     'quote.lastTrade': '最后成交 {t}前 · {src}',
     'quote.lastTradeNow': '最后成交 刚刚 · {src}',
+    'ai.title': 'AI 速览',
+    'ai.badge': 'AI 生成',
+    'ai.disclaimer': '由 AI 基于近期新闻与社区讨论生成 · 仅供参考 · 不构成投资建议',
     'short.title': '空头压力',
     'short.dtc': '回补天数',
     'short.qty': '空头仓位',

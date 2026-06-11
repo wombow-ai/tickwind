@@ -841,6 +841,25 @@ export function getStockEarnings(
   return getJson<StockEarningsResponse>(`${path}${q}`, signal);
 }
 
+/** The AI digest for a stock from `GET /v1/stocks/{t}/summary` (cached daily). */
+export interface AISummary {
+  ticker: string;
+  /** Chinese bullet points ("- " lines); empty when there's no material yet. */
+  summary: string;
+  generated_at?: string;
+}
+
+/**
+ * Fetches the stock's AI digest. Rejects with 503 when no LLM is configured
+ * (hide the card) and 429 when the daily generation budget is exhausted.
+ */
+export function getSummary(ticker: string, signal?: AbortSignal): Promise<AISummary> {
+  return getJson<AISummary>(
+    `/v1/stocks/${encodeURIComponent(normalizeTicker(ticker))}/summary`,
+    signal,
+  );
+}
+
 /** A symbol's latest FINRA short-interest row (twice-monthly settlement). */
 export interface ShortInterest {
   symbol: string;
