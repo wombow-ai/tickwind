@@ -17,7 +17,7 @@ func TestOverlayConsolidated(t *testing.T) {
 	// 1.36-vs-0.7049 pairing would otherwise headline ~+93% (the HOTH bug).
 	q := store.Quote{Ticker: "HOTH", Price: 1.48, PrevClose: 0.7049, RegularClose: 1.36, Session: "post", Source: "alpaca", At: old}
 	got := overlayConsolidated(q, 1.52, 1.41, fresh, "pre")
-	if got.Price != 1.52 || got.Source != "finnhub" || got.Session != "pre" || !got.At.Equal(fresh) {
+	if got.Price != 1.52 || got.Source != "yahoo" || got.Session != "pre" || !got.At.Equal(fresh) {
 		t.Errorf("overlay = %+v", got)
 	}
 	if got.RegularClose != 1.36 || got.PrevClose != 1.36 {

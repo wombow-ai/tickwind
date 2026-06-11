@@ -54,9 +54,11 @@ const quoteTTL = 20 * time.Second
 // elsewhere.
 const staleQuoteAfter = 5 * time.Minute
 
-// ConsolidatedQuoter returns the consolidated-tape last trade (all exchanges)
-// for a symbol — price, previous close, and trade time. Satisfied by
-// *finnhub.Client; nil disables the freshness fallback.
+// ConsolidatedQuoter returns the consolidated last trade (all exchanges,
+// INCLUDING pre/post-market) for a symbol — price, previous close, and trade
+// time. Satisfied by yahoo.Consolidated; nil disables the freshness fallback.
+// (Finnhub's free /quote also fits the shape but freezes at the regular close
+// in extended hours, so Yahoo's includePrePost series is used instead.)
 type ConsolidatedQuoter interface {
 	Quote(ctx context.Context, symbol string) (price, prevClose float64, at time.Time, ok bool, err error)
 }
@@ -83,7 +85,7 @@ func NewBarCache(client *alpaca.Client, limit int, ttl time.Duration, fb Consoli
 func overlayConsolidated(q store.Quote, price, prevClose float64, at time.Time, session string) store.Quote {
 	q.Price = price
 	q.At = at
-	q.Source = "finnhub"
+	q.Source = "yahoo"
 	q.Session = session
 	if q.RegularClose == 0 && prevClose > 0 {
 		q.RegularClose = prevClose

@@ -321,12 +321,13 @@ func main() {
 		poller := ingest.NewPricePoller(st, priceClient, ingestTickers, cfg.PricePollEvery, hub.Publish, log)
 		poller.SetAdapters(marketAdapters) // route .TW/.TWO to the TWSE/TPEx adapter
 		go poller.Run(ctx)
-		// Consolidated-tape fallback for thin names (typed nil guard: a nil
-		// *finnhub.Client must not become a non-nil interface).
-		var quoteFB ingest.ConsolidatedQuoter
-		if newsClient != nil {
-			quoteFB = newsClient
-		}
+		// Pre/post-aware freshness fallback for thin names: when the free IEX
+		// trade is stale (sparse after hours), overlay Yahoo's includePrePost
+		// minute series — which carries the real extended-hours print that
+		// Finnhub's free /quote (frozen at the 16:00 ET close) and sparse IEX
+		// both miss. Keyless; owner-authorized gray source, free display only,
+		// labeled + delayed (replace with a licensed feed before any paid tier).
+		quoteFB := yahoo.Consolidated{Client: yahoo.New()}
 		bars = ingest.NewBarCache(priceClient, 30, time.Hour, quoteFB)
 		log.Info("price polling enabled", "every", cfg.PricePollEvery.String(), "feed", cfg.AlpacaFeed)
 
