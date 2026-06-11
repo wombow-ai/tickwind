@@ -135,6 +135,10 @@ type HotStock struct {
 	Upvotes      int       `json:"upvotes"`
 	Score        float64   `json:"score"` // this board's ranking score
 	UpdatedAt    time.Time `json:"updated_at"`
+	// Price + ChangePct are joined in by the API from the live universe cache
+	// (not stored in the hotlist table); ChangePct is nil when unknown.
+	Price     float64  `json:"price,omitempty"`
+	ChangePct *float64 `json:"change_pct,omitempty"`
 }
 
 // InsiderBuy is one Form 4 filing's open-market insider PURCHASE, summarized

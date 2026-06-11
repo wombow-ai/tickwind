@@ -1160,6 +1160,20 @@ const (
 
 // screenQuotes filters a universe snapshot by the criteria, then sorts + caps it.
 // Pure (no I/O) so it is directly unit-tested.
+// guardedChangePct is the day-change % (price vs prev close), or nil when prev
+// close is unknown or the move is implausibly large — a delayed-data reverse-
+// split artifact. Shared by the screener and the hot boards.
+func guardedChangePct(price, prevClose float64) *float64 {
+	if prevClose <= 0 {
+		return nil
+	}
+	v := (price - prevClose) / prevClose * 100
+	if v > maxSaneChangePct || v < minSaneChangePct {
+		return nil
+	}
+	return &v
+}
+
 func screenQuotes(quotes map[string]store.Quote, c screenCriteria) []screenResult {
 	out := make([]screenResult, 0)
 	for tk, q := range quotes {
@@ -1172,12 +1186,7 @@ func screenQuotes(quotes map[string]store.Quote, c screenCriteria) []screenResul
 		if c.maxPrice > 0 && q.Price > c.maxPrice {
 			continue
 		}
-		var chg *float64
-		if q.PrevClose > 0 {
-			if v := (q.Price - q.PrevClose) / q.PrevClose * 100; v <= maxSaneChangePct && v >= minSaneChangePct {
-				chg = &v // else: implausible → leave change unknown (artifact guard)
-			}
-		}
+		chg := guardedChangePct(q.Price, q.PrevClose)
 		if c.hasMinChange && (chg == nil || *chg < c.minChange) {
 			continue
 		}
@@ -1608,6 +1617,18 @@ func (s *Server) getHot(w http.ResponseWriter, r *http.Request) {
 	}
 	if stocks == nil {
 		stocks = []store.HotStock{} // marshal as [] not null
+	}
+	// Join the live universe cache so each row carries a price + day change —
+	// a buzz leaderboard is far more useful when you can see if the hype is
+	// riding a rip or a dump without clicking through.
+	if s.universe != nil {
+		snap := s.universe.Snapshot()
+		for i := range stocks {
+			if q, ok := snap[strings.ToUpper(stocks[i].Ticker)]; ok && q.Price > 0 {
+				stocks[i].Price = q.Price
+				stocks[i].ChangePct = guardedChangePct(q.Price, q.PrevClose)
+			}
+		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"board":  board,

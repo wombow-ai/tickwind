@@ -170,6 +170,31 @@ function HotRow({
         {s.name && <p className={cx('truncate text-[12px]', t.sub)}>{s.name}</p>}
       </div>
 
+      {typeof s.price === 'number' && (
+        <div className="hidden shrink-0 text-right sm:block">
+          <div className={cx('text-[13px] font-semibold tabular-nums', t.text)}>
+            ${s.price.toFixed(2)}
+          </div>
+          {typeof s.change_pct === 'number' && (
+            <div
+              className={cx(
+                'text-[11px] font-semibold tabular-nums',
+                s.change_pct >= 0
+                  ? dark
+                    ? 'text-emerald-400'
+                    : 'text-emerald-600'
+                  : dark
+                    ? 'text-rose-400'
+                    : 'text-rose-500',
+              )}
+            >
+              {s.change_pct >= 0 ? '+' : ''}
+              {s.change_pct.toFixed(2)}%
+            </div>
+          )}
+        </div>
+      )}
+
       <div className="shrink-0 text-right">
         <div className={cx('text-[13px] font-semibold tabular-nums', t.text)}>
           {s.mentions.toLocaleString()}

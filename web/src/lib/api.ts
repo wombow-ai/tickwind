@@ -148,6 +148,10 @@ export interface HotStock {
   /** This board's ranking score (volume×momentum for hot, momentum for surging). */
   score: number;
   updated_at: string;
+  /** Live price, joined from the universe cache; absent when unknown. */
+  price?: number;
+  /** Day change %, null when prev close is unknown or implausible. */
+  change_pct?: number | null;
 }
 
 /** Envelope returned by `GET /v1/hot`. */
