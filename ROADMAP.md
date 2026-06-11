@@ -323,6 +323,12 @@ Status: ✅ done · 🟡 in progress · ⬜ todo
 > LLM_BASE_URL/KEY/MODEL 即可,零改码)。②速赢三连:**✅财报日历页 /earnings**（后端早 LIVE、前端补页:按日分组+BMO/AMC+EPS 预期/实际
 > beat 绿 miss 红+点击进个股,公开页,Vercel 部署)→ 下:提醒中心(铃铛+全局页+重武装)→ 热榜补涨跌幅。③搜索中文化(别名+CJK)。
 > ④期权面板(Cboe 免费延迟链)。注:调研称"站点对 Google 隐形"经核实**仅首页**(价格客户端拉取),个股页已 SSR 出 title+名,SEO 没那么糟。
+> **✅AI 中文化包·功能①「新闻标题中译」LIVE(owner 2026-06-11 给 key)`a23e94e`:** OpenRouter(DeepSeek v3,$5 额度)主力 + 智谱免费备用,
+> key 仅入 VPS `.env`(未覆盖)。enrich.TranslateTitles + `news.headline_zh` 列(翻一次永久缓存、重抓不丢)+ TranslateIngestor(每 3min 扫 20 条最新未译)
+> + 前端 zh 界面显示中文标题 +「AI 译」角标(悬停原文)。**调试三连(都修了,各带单测)**:①模型把 JSON 裹 ```代码块 → 三级容错解析;
+> ②批量偶尔少返一条 → 改**序号锚定协议** {items:[{i,zh}]},缺的留下轮、绝不串位;③40 条/批超 30s 客户端超时 → 批 20+90s+3min 扫。
+> **公网实测**:NVDA 14/40、GOOGL 6、MSFT 5…共 36+ 条中文标题,质量专业(上调评级/跑输大盘/业绩超预期/再融资)。新闻在 Supabase 市场库(非本地 pg)。
+> 成本:~$0.00002/条,稳态扫到 0 条即跳过不调 LLM。**AI 包下一步**:个股 AI 速览(每日缓存)→ 每日中文晨报 → NL 选股。
 > **🧹 老箱清空（owner 2026-06-10 要求腾给其他项目）**：先复核新箱用户数据完好(watchlist=3/notes=2)→ `104.168.46.15` 容器/卷/镜像
 > 全删、/root/tickwind(含 .env)删除、shell 历史清除。Docker 引擎+部署公钥保留可复用。**老箱不再是回滚备机**；恢复路径=新箱
 > `/root/tw_users_only.sql` + Supabase 市场库 + 迁移 runbook。
