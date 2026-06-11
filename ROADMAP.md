@@ -343,6 +343,16 @@ Status: ✅ done · 🟡 in progress · ⬜ todo
 > (每日 ET≥07:00 生成一次,30min 检查,材料全自有零请求:指数+涨跌 Top5(防伪影/仙股)+今日财报+国会/13D 前 3,缺节跳过,失败下轮重试)+
 > `GET /v1/briefing`(404=未生成;api.New 第 20 参,5 调用点同步)+ /briefing 页(BriefingView:Markdown 正文+AI 角标+免责+日期)+
 > nav"晨报"+i18n。token:1 次/日≈忽略。下:⑥ 期权面板(Cboe)→ 收尾小项。
+> **✅v4⑥期权面板 LIVE（后端 `48248a0` + 前端本 commit；公网验证 AAPL：P/C 0.63量/0.71持仓、最大痛点 $295(6/12到期)、OI Top10
+> 91k…，二次缓存命中；预览 AAPL 渲染卡片、0700.HK 正确隐藏）**：internal/cboe(Cboe 延迟 CDN 无鉴权,OCC 解码+P/C+MaxPain(最近到期)+
+> OITop,全单测)+ ingest.OptionsCache(15min TTL+inflight 去重+负缓存)+ GET /v1/stocks/{t}/options(api.New 第 21 参,5 调用点同步)+
+> OptionsCard(沽购比双指标变色+最大痛点+OI 龙虎榜表 C 绿/P 红+「延迟15分·Cboe」角标,404 隐藏)+ i18n。免费展示不转售。
+>
+> ## 🏁 v4 主线 6 项全部交付（2026-06-11/12,本会话 owner 解锁 #39 后连续 /loop 自主开发）
+> ① 热榜价格 ② 提醒中心(铃铛+/alerts+重激活) ③ 搜索中文化(英伟达→NVDA) ④ 个股 AI 速览(日缓存) ⑤ 中文晨报(/briefing) ⑥ 期权面板。
+> 加 owner 临时插入:#39 评论 cashtag、巴西 B3、AI 新闻标题中译、盘前价 bug 复核。全部线上验证。AI 用 OpenRouter(DeepSeek)+智谱备用。
+> **建议下一步**(待 owner):SEO/SSR(首页对 Google 隐形)· 住宅代理解锁港股公告+雪球 · 期权异动榜 · 13F 大佬持仓 · 站外推送提醒。
+> 收尾小项(可选):13D/G 榜 CIK→ticker 可点、评论"我已赞"回传、指数条加 ^HSI、i18n 英文硬编码扫尾。
 > **🧹 老箱清空（owner 2026-06-10 要求腾给其他项目）**：先复核新箱用户数据完好(watchlist=3/notes=2)→ `104.168.46.15` 容器/卷/镜像
 > 全删、/root/tickwind(含 .env)删除、shell 历史清除。Docker 引擎+部署公钥保留可复用。**老箱不再是回滚备机**；恢复路径=新箱
 > `/root/tw_users_only.sql` + Supabase 市场库 + 迁移 runbook。

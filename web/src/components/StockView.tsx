@@ -57,6 +57,7 @@ import {KLineChart} from '@/components/KLineChart';
 import {FundamentalsCard} from '@/components/FundamentalsCard';
 import {AISummaryCard} from '@/components/AISummaryCard';
 import {EarningsChip} from '@/components/EarningsChip';
+import {OptionsCard} from '@/components/OptionsCard';
 import {ShortChip} from '@/components/ShortChip';
 import {CommentsPanel} from '@/components/CommentsPanel';
 
@@ -486,6 +487,9 @@ export function StockView({ticker}: {ticker: string}) {
 
       {/* AI digest: daily-cached Chinese bullets from news+social (hides when LLM off/empty) */}
       <AISummaryCard ticker={norm} />
+
+      {/* Options overview: delayed Cboe P/C, max pain, OI leaders (hides for non-US/no options) */}
+      <OptionsCard ticker={norm} />
 
       {/* fundamentals: market cap / P/E / revenue / net income (SEC XBRL; hides for non-US) */}
       <FundamentalsCard ticker={norm} />

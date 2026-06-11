@@ -841,6 +841,39 @@ export function getStockEarnings(
   return getJson<StockEarningsResponse>(`${path}${q}`, signal);
 }
 
+/** One option contract in the OI leaderboard. */
+export interface OptionContract {
+  contract: string;
+  type: string; // "C" | "P"
+  strike: number;
+  expiry: string; // YYYY-MM-DD
+  oi: number;
+  volume: number;
+  iv: number; // implied vol, fraction (0.25 = 25%)
+}
+
+/** Per-stock delayed options overview from `GET /v1/stocks/{t}/options`. */
+export interface OptionsView {
+  ticker: string;
+  pc_volume: number;
+  pc_oi: number;
+  max_pain?: number;
+  expiry?: string;
+  top_oi: OptionContract[];
+  updated_at: string;
+}
+
+/**
+ * Fetches the delayed (≈15-min, Cboe) options overview for a stock. Rejects
+ * with 404 when the symbol has no listed options (non-US, etc.).
+ */
+export function getOptions(ticker: string, signal?: AbortSignal): Promise<OptionsView> {
+  return getJson<OptionsView>(
+    `/v1/stocks/${encodeURIComponent(normalizeTicker(ticker))}/options`,
+    signal,
+  );
+}
+
 /** The daily AI pre-market briefing from `GET /v1/briefing` (404 until generated). */
 export interface Briefing {
   date: string; // ET day, YYYY-MM-DD
