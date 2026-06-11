@@ -128,7 +128,11 @@ func main() {
 	// Optional LLM enrichment (disabled without LLM_API_KEY).
 	enricher := enrich.New(enrich.Config{APIKey: cfg.LLMAPIKey, BaseURL: cfg.LLMBaseURL, Model: cfg.LLMModel})
 	if enricher.Enabled() {
-		log.Info("llm enrichment enabled")
+		log.Info("llm enrichment enabled", "model", cfg.LLMModel)
+		// Chinese headline translation: one small batch per sweep, newest news
+		// first; each headline is translated once and cached forever.
+		go ingest.NewTranslateIngestor(st, enricher, 10*time.Minute, log).Run(ctx)
+		log.Info("news headline translation enabled", "every", "10m")
 	}
 
 	// News ingestion runs only when a Finnhub token is configured.

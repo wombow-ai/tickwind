@@ -49,6 +49,9 @@ CREATE TABLE IF NOT EXISTS news (
 
 CREATE INDEX IF NOT EXISTS news_ticker_published_idx
     ON news (ticker, published DESC);
+-- AI-translated Chinese headline (translate ingestor); idempotent add for
+-- existing deployments. Written once per row — headlines are immutable.
+ALTER TABLE news ADD COLUMN IF NOT EXISTS headline_zh text;
 
 CREATE TABLE IF NOT EXISTS social (
     ticker     text NOT NULL,

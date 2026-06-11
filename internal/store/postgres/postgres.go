@@ -187,7 +187,7 @@ SET headline = EXCLUDED.headline, summary = EXCLUDED.summary, source = EXCLUDED.
 // ListNews returns news for ticker, newest first. A limit <= 0 means no limit.
 func (s *Store) ListNews(ctx context.Context, ticker string, limit int) ([]store.News, error) {
 	query := `
-SELECT ticker, id, headline, summary, source, url, published
+SELECT ticker, id, headline, COALESCE(headline_zh,''), summary, source, url, published
 FROM news WHERE ticker = $1 ORDER BY published DESC`
 	args := []any{ticker}
 	if limit > 0 {
@@ -204,7 +204,7 @@ FROM news WHERE ticker = $1 ORDER BY published DESC`
 	var out []store.News
 	for rows.Next() {
 		var n store.News
-		if err := rows.Scan(&n.Ticker, &n.ID, &n.Headline, &n.Summary, &n.Source, &n.URL, &n.Published); err != nil {
+		if err := rows.Scan(&n.Ticker, &n.ID, &n.Headline, &n.HeadlineZH, &n.Summary, &n.Source, &n.URL, &n.Published); err != nil {
 			return nil, fmt.Errorf("postgres: scan news %s: %w", ticker, err)
 		}
 		out = append(out, n)
@@ -213,6 +213,42 @@ FROM news WHERE ticker = $1 ORDER BY published DESC`
 		return nil, fmt.Errorf("postgres: iterate news %s: %w", ticker, err)
 	}
 	return out, nil
+}
+
+// ListUntranslatedNews returns up to limit recent rows lacking a Chinese
+// headline, newest first (fresh news gets translated before the backlog).
+func (s *Store) ListUntranslatedNews(ctx context.Context, limit int) ([]store.News, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	rows, err := s.pool.Query(ctx, `
+SELECT ticker, id, headline, COALESCE(headline_zh,''), summary, source, url, published
+FROM news
+WHERE (headline_zh IS NULL OR headline_zh = '') AND headline <> ''
+ORDER BY published DESC LIMIT $1`, limit)
+	if err != nil {
+		return nil, fmt.Errorf("postgres: list untranslated news: %w", err)
+	}
+	defer rows.Close()
+	var out []store.News
+	for rows.Next() {
+		var n store.News
+		if err := rows.Scan(&n.Ticker, &n.ID, &n.Headline, &n.HeadlineZH, &n.Summary, &n.Source, &n.URL, &n.Published); err != nil {
+			return nil, fmt.Errorf("postgres: scan untranslated news: %w", err)
+		}
+		out = append(out, n)
+	}
+	return out, rows.Err()
+}
+
+// SetNewsTranslation stores the translated headline for one news row.
+func (s *Store) SetNewsTranslation(ctx context.Context, ticker, id, headlineZH string) error {
+	if _, err := s.pool.Exec(ctx,
+		`UPDATE news SET headline_zh = $3 WHERE ticker = $1 AND id = $2`,
+		ticker, id, headlineZH); err != nil {
+		return fmt.Errorf("postgres: set news translation: %w", err)
+	}
+	return nil
 }
 
 // SaveSocial upserts social posts, deduplicating on (ticker, id).

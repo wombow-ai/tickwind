@@ -19,13 +19,17 @@ import (
 // ErrDisabled is returned by a disabled Enricher.
 var ErrDisabled = errors.New("enrich: llm not configured")
 
-// Enricher summarizes text using an LLM.
+// Enricher summarizes and translates text using an LLM.
 type Enricher interface {
 	// Enabled reports whether a real LLM backend is configured.
 	Enabled() bool
 	// Summarize returns a concise summary of text, or ErrDisabled when no LLM
 	// is configured.
 	Summarize(ctx context.Context, text string) (string, error)
+	// TranslateTitles translates English news headlines to Simplified Chinese,
+	// preserving order (result[i] is the translation of titles[i]). Returns
+	// ErrDisabled when no LLM is configured.
+	TranslateTitles(ctx context.Context, titles []string) ([]string, error)
 }
 
 // Config configures the LLM enricher. An empty APIKey yields a disabled Noop.
@@ -63,6 +67,10 @@ func (Noop) Enabled() bool { return false }
 
 func (Noop) Summarize(context.Context, string) (string, error) {
 	return "", ErrDisabled
+}
+
+func (Noop) TranslateTitles(context.Context, []string) ([]string, error) {
+	return nil, ErrDisabled
 }
 
 const systemPrompt = "You are a concise financial assistant. Summarize the " +
@@ -122,4 +130,79 @@ func (l *llm) Summarize(ctx context.Context, text string) (string, error) {
 		return "", errors.New("enrich: empty llm response")
 	}
 	return strings.TrimSpace(out.Choices[0].Message.Content), nil
+}
+
+const translatePrompt = "你是金融新闻标题翻译器。输入是一个英文标题的 JSON 数组;" +
+	"输出只能是一个等长的 JSON 数组,按相同顺序给出简体中文翻译。保留股票代码、公司名、数字与百分比;" +
+	"使用中文财经惯用语(如 beats estimates→超预期, downgrade→下调评级, guidance→业绩指引)。" +
+	"不要输出任何 JSON 数组以外的内容,不要解释。"
+
+func (l *llm) TranslateTitles(ctx context.Context, titles []string) ([]string, error) {
+	if len(titles) == 0 {
+		return nil, nil
+	}
+	payload, err := json.Marshal(titles)
+	if err != nil {
+		return nil, err
+	}
+	body, err := json.Marshal(map[string]any{
+		"model":       l.model,
+		"temperature": 0.1,
+		"messages": []map[string]string{
+			{"role": "system", "content": translatePrompt},
+			{"role": "user", "content": string(payload)},
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, l.baseURL+"/chat/completions", bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+l.apiKey)
+
+	resp, err := l.http.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("enrich: translate request: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("enrich: translate status %s", resp.Status)
+	}
+	var out struct {
+		Choices []struct {
+			Message struct {
+				Content string `json:"content"`
+			} `json:"message"`
+		} `json:"choices"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return nil, fmt.Errorf("enrich: translate decode: %w", err)
+	}
+	if len(out.Choices) == 0 {
+		return nil, errors.New("enrich: empty translate response")
+	}
+	return parseTitleArray(out.Choices[0].Message.Content, len(titles))
+}
+
+// parseTitleArray parses the model's reply into exactly `want` titles. Models
+// occasionally wrap the array in a Markdown code fence — strip it first.
+func parseTitleArray(content string, want int) ([]string, error) {
+	s := strings.TrimSpace(content)
+	if strings.HasPrefix(s, "```") {
+		s = strings.TrimPrefix(s, "```json")
+		s = strings.TrimPrefix(s, "```")
+		s = strings.TrimSuffix(strings.TrimSpace(s), "```")
+		s = strings.TrimSpace(s)
+	}
+	var titles []string
+	if err := json.Unmarshal([]byte(s), &titles); err != nil {
+		return nil, fmt.Errorf("enrich: parse translations: %w", err)
+	}
+	if len(titles) != want {
+		return nil, fmt.Errorf("enrich: got %d translations, want %d", len(titles), want)
+	}
+	return titles, nil
 }

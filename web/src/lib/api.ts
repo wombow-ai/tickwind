@@ -47,6 +47,8 @@ export interface NewsItem {
   /** Stable upstream identifier for the article. */
   id: string;
   headline: string;
+  /** AI-translated Simplified-Chinese headline; absent until translated. */
+  headline_zh?: string;
   /** Short blurb; may be empty when the source omits one. */
   summary: string;
   /** Publisher name, e.g. `Reuters`. */

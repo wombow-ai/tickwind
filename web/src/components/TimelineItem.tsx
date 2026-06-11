@@ -9,7 +9,7 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import type {Clip, Filing, NewsItem, Post} from '@/lib/api';
-import {useT} from '@/lib/i18n';
+import {useLang, useT} from '@/lib/i18n';
 import {useDark} from '@/lib/theme';
 import {cx, timeAgo, tok} from '@/lib/ui';
 
@@ -77,6 +77,7 @@ export function TimelineItem({
   };
 
   const tr = useT();
+  const {lang} = useLang();
   const when =
     entry.kind === 'news'
       ? timeAgo(entry.item.published)
@@ -177,8 +178,24 @@ export function TimelineItem({
                 'break-words text-[14px] font-semibold leading-snug',
                 t.text,
               )}
+              title={
+                lang === 'zh' && entry.item.headline_zh ? entry.item.headline : undefined
+              }
             >
-              {entry.item.headline}
+              {lang === 'zh' && entry.item.headline_zh
+                ? entry.item.headline_zh
+                : entry.item.headline}
+              {lang === 'zh' && entry.item.headline_zh && (
+                <span
+                  className={cx(
+                    'ml-1.5 align-middle rounded px-1 py-px text-[9.5px] font-semibold',
+                    t.chip,
+                    t.faint,
+                  )}
+                >
+                  {tr('news.aiTranslated')}
+                </span>
+              )}
               <ArrowUpRight
                 className="ml-1 -mt-0.5 inline opacity-50 transition group-hover:opacity-100"
                 size={14}

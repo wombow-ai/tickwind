@@ -122,7 +122,39 @@ func (s *Store) SaveNews(_ context.Context, ticker string, items []store.News) e
 		s.news[k] = m
 	}
 	for _, n := range items {
+		// Re-saving a known item must not wipe its translation (postgres keeps
+		// the column too — its upsert doesn't touch headline_zh).
+		if old, ok := m[n.ID]; ok && n.HeadlineZH == "" {
+			n.HeadlineZH = old.HeadlineZH
+		}
 		m[n.ID] = n // dedupe by id
+	}
+	return nil
+}
+
+func (s *Store) ListUntranslatedNews(_ context.Context, limit int) ([]store.News, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([]store.News, 0)
+	for _, m := range s.news {
+		for _, n := range m {
+			if n.HeadlineZH == "" && n.Headline != "" {
+				out = append(out, n)
+			}
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Published.After(out[j].Published) })
+	return limited(out, limit), nil
+}
+
+func (s *Store) SetNewsTranslation(_ context.Context, ticker, id, headlineZH string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if m := s.news[key(ticker)]; m != nil {
+		if n, ok := m[id]; ok {
+			n.HeadlineZH = headlineZH
+			m[id] = n
+		}
 	}
 	return nil
 }

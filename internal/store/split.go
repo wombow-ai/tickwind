@@ -57,6 +57,14 @@ func (s Split) ListNews(ctx context.Context, ticker string, limit int) ([]News, 
 	return s.Market.ListNews(ctx, ticker, limit)
 }
 
+func (s Split) ListUntranslatedNews(ctx context.Context, limit int) ([]News, error) {
+	return s.Market.ListUntranslatedNews(ctx, limit)
+}
+
+func (s Split) SetNewsTranslation(ctx context.Context, ticker, id, headlineZH string) error {
+	return s.Market.SetNewsTranslation(ctx, ticker, id, headlineZH)
+}
+
 func (s Split) SaveSocial(ctx context.Context, ticker string, posts []Post) error {
 	return s.Market.SaveSocial(ctx, ticker, posts)
 }

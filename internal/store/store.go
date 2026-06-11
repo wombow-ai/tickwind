@@ -69,13 +69,17 @@ type Candle struct {
 
 // News is a company-news article for a security.
 type News struct {
-	Ticker    string    `json:"ticker"`
-	ID        string    `json:"id"` // source-assigned id, used for dedupe
-	Headline  string    `json:"headline"`
-	Summary   string    `json:"summary"`
-	Source    string    `json:"source"`
-	URL       string    `json:"url"`
-	Published time.Time `json:"published"`
+	Ticker   string `json:"ticker"`
+	ID       string `json:"id"` // source-assigned id, used for dedupe
+	Headline string `json:"headline"`
+	// HeadlineZH is the AI-translated Simplified-Chinese headline, filled in
+	// asynchronously by the translate ingestor (LLM); empty until translated.
+	// Headlines are immutable, so a translation is written once and kept.
+	HeadlineZH string    `json:"headline_zh,omitempty"`
+	Summary    string    `json:"summary"`
+	Source     string    `json:"source"`
+	URL        string    `json:"url"`
+	Published  time.Time `json:"published"`
 }
 
 // Post is a social-media message about a security (e.g. from StockTwits).
@@ -262,6 +266,11 @@ type Store interface {
 
 	SaveNews(ctx context.Context, ticker string, items []News) error
 	ListNews(ctx context.Context, ticker string, limit int) ([]News, error)
+	// ListUntranslatedNews returns up to limit recent news rows with no Chinese
+	// headline yet (for the translate ingestor), newest first.
+	ListUntranslatedNews(ctx context.Context, limit int) ([]News, error)
+	// SetNewsTranslation stores the translated headline for one news row.
+	SetNewsTranslation(ctx context.Context, ticker, id, headlineZH string) error
 
 	SaveSocial(ctx context.Context, ticker string, posts []Post) error
 	ListSocial(ctx context.Context, ticker string, limit int) ([]Post, error)
