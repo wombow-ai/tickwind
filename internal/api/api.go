@@ -1618,16 +1618,26 @@ func (s *Server) getHot(w http.ResponseWriter, r *http.Request) {
 	if stocks == nil {
 		stocks = []store.HotStock{} // marshal as [] not null
 	}
-	// Join the live universe cache so each row carries a price + day change —
-	// a buzz leaderboard is far more useful when you can see if the hype is
-	// riding a rip or a dump without clicking through.
+	// Join a price + day change onto each row — a buzz leaderboard is far more
+	// useful when you can see if the hype is riding a rip or a dump without
+	// clicking through. Prefer the live universe cache (one in-memory map); fall
+	// back to the per-ticker store quote for names the universe sweep hasn't
+	// covered yet (it's large and rolls through symbols over time).
+	var snap map[string]store.Quote
 	if s.universe != nil {
-		snap := s.universe.Snapshot()
-		for i := range stocks {
-			if q, ok := snap[strings.ToUpper(stocks[i].Ticker)]; ok && q.Price > 0 {
-				stocks[i].Price = q.Price
-				stocks[i].ChangePct = guardedChangePct(q.Price, q.PrevClose)
+		snap = s.universe.Snapshot()
+	}
+	for i := range stocks {
+		tk := strings.ToUpper(stocks[i].Ticker)
+		q, ok := snap[tk]
+		if !ok || q.Price <= 0 {
+			if sq, found, err := s.store.GetQuote(r.Context(), tk); err == nil && found {
+				q, ok = sq, true
 			}
+		}
+		if ok && q.Price > 0 {
+			stocks[i].Price = q.Price
+			stocks[i].ChangePct = guardedChangePct(q.Price, q.PrevClose)
 		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
