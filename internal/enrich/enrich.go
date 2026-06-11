@@ -132,8 +132,8 @@ func (l *llm) Summarize(ctx context.Context, text string) (string, error) {
 	return strings.TrimSpace(out.Choices[0].Message.Content), nil
 }
 
-const translatePrompt = "你是金融新闻标题翻译器。用户给出一个 JSON 对象 {\"titles\":[英文标题...]}。" +
-	"只返回一个 JSON 对象 {\"titles\":[简体中文翻译...]},数组等长且顺序一致。" +
+const translatePrompt = "你是金融新闻标题翻译器。用户给出 JSON 对象 {\"items\":[{\"i\":序号,\"t\":英文标题}...]}。" +
+	"只返回 JSON 对象 {\"items\":[{\"i\":相同序号,\"zh\":简体中文翻译}...]},每条都必须带 i 和 zh,i 与输入一一对应、不要遗漏任何一条。" +
 	"保留股票代码、公司名、数字与百分比;使用中文财经惯用语(beats estimates→超预期, " +
 	"downgrade→下调评级, guidance→业绩指引)。只输出该 JSON 对象,不要解释或代码块。"
 
@@ -141,7 +141,15 @@ func (l *llm) TranslateTitles(ctx context.Context, titles []string) ([]string, e
 	if len(titles) == 0 {
 		return nil, nil
 	}
-	payload, err := json.Marshal(map[string][]string{"titles": titles})
+	type item struct {
+		I int    `json:"i"`
+		T string `json:"t"`
+	}
+	in := make([]item, len(titles))
+	for i, t := range titles {
+		in[i] = item{I: i, T: t}
+	}
+	payload, err := json.Marshal(map[string][]item{"items": in})
 	if err != nil {
 		return nil, err
 	}
@@ -185,16 +193,48 @@ func (l *llm) TranslateTitles(ctx context.Context, titles []string) ([]string, e
 	if len(out.Choices) == 0 {
 		return nil, errors.New("enrich: empty translate response")
 	}
-	return parseTitleArray(out.Choices[0].Message.Content, len(titles))
+	return parseIndexedTranslations(out.Choices[0].Message.Content, len(titles))
 }
 
-// parseTitleArray parses the model's reply into exactly `want` titles, tolerant
-// of the shapes models actually emit: a {"titles":[...]} object, a bare [...]
-// array, or either wrapped in a Markdown code fence / surrounded by prose. The
-// strict length check guards against ever writing misaligned translations.
-func parseTitleArray(content string, want int) ([]string, error) {
+// parseIndexedTranslations maps the model's {"items":[{"i","zh"}]} reply back
+// onto a slice of length n by index, so a miscount (model merges/drops/reorders
+// a title — common at batch size) never misaligns or discards the whole batch:
+// indices present are filled, missing ones stay empty (the caller skips empties
+// and they get retried next sweep). Tolerant of code fences and a bare array.
+func parseIndexedTranslations(content string, n int) ([]string, error) {
+	s := stripFence(content)
+	type item struct {
+		I  int    `json:"i"`
+		ZH string `json:"zh"`
+	}
+	var obj struct {
+		Items []item `json:"items"`
+	}
+	if err := json.Unmarshal([]byte(s), &obj); err != nil || len(obj.Items) == 0 {
+		// Fallback: a bare [...] array of items (with or without prose around it).
+		if a, b := strings.Index(s, "["), strings.LastIndex(s, "]"); a >= 0 && b > a {
+			var items []item
+			if json.Unmarshal([]byte(s[a:b+1]), &items) == nil {
+				obj.Items = items
+			}
+		}
+	}
+	if len(obj.Items) == 0 {
+		return nil, errors.New("enrich: parse translations: no items")
+	}
+	out := make([]string, n)
+	for _, it := range obj.Items {
+		if it.I >= 0 && it.I < n {
+			out[it.I] = strings.TrimSpace(it.ZH)
+		}
+	}
+	return out, nil
+}
+
+// stripFence removes a leading ```json / trailing ``` Markdown fence, if any.
+func stripFence(content string) string {
 	s := strings.TrimSpace(content)
-	if i := strings.Index(s, "```"); i >= 0 { // strip a leading ```json fence
+	if i := strings.Index(s, "```"); i >= 0 {
 		s = s[i+3:]
 		s = strings.TrimPrefix(s, "json")
 		if j := strings.LastIndex(s, "```"); j >= 0 {
@@ -202,33 +242,5 @@ func parseTitleArray(content string, want int) ([]string, error) {
 		}
 		s = strings.TrimSpace(s)
 	}
-
-	// Preferred: the {"titles":[...]} object we asked for.
-	var obj struct {
-		Titles []string `json:"titles"`
-	}
-	if err := json.Unmarshal([]byte(s), &obj); err == nil && len(obj.Titles) > 0 {
-		return checkLen(obj.Titles, want)
-	}
-
-	// Fallbacks: a bare array, or an array embedded in surrounding prose
-	// (slice from the first '[' to the last ']').
-	arr := s
-	if !strings.HasPrefix(arr, "[") {
-		if a, b := strings.Index(s, "["), strings.LastIndex(s, "]"); a >= 0 && b > a {
-			arr = s[a : b+1]
-		}
-	}
-	var titles []string
-	if err := json.Unmarshal([]byte(arr), &titles); err != nil {
-		return nil, fmt.Errorf("enrich: parse translations: %w", err)
-	}
-	return checkLen(titles, want)
-}
-
-func checkLen(titles []string, want int) ([]string, error) {
-	if len(titles) != want {
-		return nil, fmt.Errorf("enrich: got %d translations, want %d", len(titles), want)
-	}
-	return titles, nil
+	return s
 }
