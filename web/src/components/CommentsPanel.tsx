@@ -36,7 +36,10 @@ export function CommentsPanel({ticker}: {ticker?: string}) {
   const t = tok(dark);
   const tr = useT();
   const [comments, setComments] = useState<Comment[]>([]);
-  const [draft, setDraft] = useState('');
+  // On a stock page the composer starts with the stock's cashtag, so the post
+  // carries it by default (deletable). Posting just the bare tag is disabled.
+  const prefix = ticker ? `$${ticker.toUpperCase()} ` : '';
+  const [draft, setDraft] = useState(prefix);
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(() => {
@@ -49,15 +52,18 @@ export function CommentsPanel({ticker}: {ticker?: string}) {
     load();
   }, [load]);
 
+  // True while the draft says nothing beyond the auto-inserted cashtag.
+  const draftEmpty = draft.trim() === '' || draft.trim() === prefix.trim();
+
   async function add() {
     const body = draft.trim();
-    if (!body || busy || !user) return;
+    if (draftEmpty || busy || !user) return;
     setBusy(true);
     try {
       const token = await getToken();
       const c = await postComment(token, ticker ? {body, ticker} : {body});
       setComments(prev => [c, ...prev]);
-      setDraft('');
+      setDraft(prefix);
     } catch (e) {
       toast(e instanceof Error ? e.message : 'Failed to post');
     } finally {
@@ -118,7 +124,7 @@ export function CommentsPanel({ticker}: {ticker?: string}) {
             <span className={cx('text-[11px]', t.faint)}>{tr('comments.mdHint')}</span>
             <button
               onClick={add}
-              disabled={!draft.trim() || busy}
+              disabled={draftEmpty || busy}
               className={cx(
                 'rounded-lg px-3.5 py-1.5 text-[12.5px] font-semibold transition disabled:opacity-50',
                 btnPrimary(dark),

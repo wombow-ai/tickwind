@@ -256,3 +256,13 @@ CREATE TABLE IF NOT EXISTS comment_likes (
     PRIMARY KEY (comment_id, user_id)
 );
 CREATE INDEX IF NOT EXISTS comment_likes_comment_idx ON comment_likes (comment_id);
+
+-- $TICKER cashtags extracted from a comment's body at write time. A comment
+-- mentioning $RKLB also shows in RKLB's comment list (ListComments unions
+-- direct ticker + mentions). Replaced wholesale on edit.
+CREATE TABLE IF NOT EXISTS comment_mentions (
+    comment_id text NOT NULL,
+    ticker     text NOT NULL,
+    PRIMARY KEY (comment_id, ticker)
+);
+CREATE INDEX IF NOT EXISTS comment_mentions_ticker_idx ON comment_mentions (ticker);

@@ -385,7 +385,7 @@ const dict: Record<Lang, Record<string, string>> = {
     'comments.save': 'Save',
     'comments.cancel': 'Cancel',
     'comments.edited': 'edited',
-    'comments.mdHint': 'Markdown supported',
+    'comments.mdHint': 'Markdown + $TICKER mentions supported',
     // settings
     'settings.signInTitle': 'Sign in to continue',
     'settings.signInSub': 'Your settings live with your account.',
@@ -744,7 +744,7 @@ const dict: Record<Lang, Record<string, string>> = {
     'comments.save': '保存',
     'comments.cancel': '取消',
     'comments.edited': '已编辑',
-    'comments.mdHint': '支持 Markdown',
+    'comments.mdHint': '支持 Markdown 和 $股票代码 提及',
     // settings
     'settings.signInTitle': '请先登录',
     'settings.signInSub': '你的设置与账户绑定。',

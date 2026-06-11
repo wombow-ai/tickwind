@@ -562,7 +562,17 @@ func (s *Store) ListComments(_ context.Context, ticker string, limit int) ([]sto
 	tk := key(ticker) // "" stays "" → matches the global board
 	out := make([]store.Comment, 0)
 	for _, c := range s.comments {
-		if key(c.Ticker) == tk {
+		// A stock's list = comments posted on it ∪ comments that cashtag it.
+		match := key(c.Ticker) == tk
+		if !match && tk != "" {
+			for _, m := range c.Mentions {
+				if m == tk {
+					match = true
+					break
+				}
+			}
+		}
+		if match {
 			c.Likes = len(s.cmtLikes[c.ID])
 			out = append(out, c)
 		}
@@ -589,7 +599,7 @@ func (s *Store) ReportComment(_ context.Context, id string) (bool, error) {
 	return ok, nil
 }
 
-func (s *Store) UpdateComment(_ context.Context, id, userID, body string) (store.Comment, bool, error) {
+func (s *Store) UpdateComment(_ context.Context, id, userID, body string, mentions []string) (store.Comment, bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	c, ok := s.comments[id]
@@ -599,6 +609,7 @@ func (s *Store) UpdateComment(_ context.Context, id, userID, body string) (store
 	now := time.Now().UTC()
 	c.Body = body
 	c.EditedAt = &now
+	c.Mentions = mentions // the edited body's cashtags replace the old set
 	s.comments[id] = c
 	return c, true, nil
 }

@@ -334,6 +334,14 @@ Status: ✅ done · 🟡 in progress · ⬜ todo
 > 12 支 B3 蓝筹（Country=BR/Exchange=B3）。**公网实测**：search "PETR"→PETR3/PETR4.SA 置顶、"vale"→VALE3.SA、PETR4.SA 报价
 > `41.71 regular brapi`（实时）。多市场框架现含 US/TW/HK/KR/BR。注：brapi 黄源、免费展示 OK（付费转售红线不变）。
 > **🏁 开发循环阶段性收官**：roadmap 仅余 #39 评论 cashtag（owner 指示等用户量再做）。v3 计划 + #23 + #38 全部交付。
+> **✅#39 评论 cashtag（owner 2026-06-11 解除等待"直接开始开发"）**：`internal/cashtag`（$TAG 正则：1-6 位字母数字+可选
+> 场所后缀；纯数字无后缀=价格剔除；上限 8 个；10 用例单测）→ Comment.Mentions + `comment_mentions` 表（幂等 schema）→
+> SaveComment/UpdateComment 事务化写 mentions（编辑全量替换）→ **ListComments 并集**（个股列表 = 发在本股 ∪ 提及本股，
+> postgres OR 子查询 + memory 切片匹配，fan-out 单测）→ 前端：Markdown `linkifyCashtags`（跳过代码块；$tag→内链 /stock/，
+> Node 5 用例全过）+ 个股评论框**默认预填 $TICKER**（只剩前缀禁发）+ mdHint 文案。Go/web 全绿。
+> **🔭 调研第三轮（owner："想法扩散开，可以有费用"）**：5 subagent 并行 → `docs/research/2026-06-11-*.md`（竞品缺口 12 条/
+> 老功能迭代审计 Top8/新数据源实测 Top10/社区+增长各 6 条/AI 功能含 token 成本核算）。跨报告共识：AI 中文化、站外触达、
+> 期权数据（Cboe 免费链实测可用）、13F、**SSR/SEO（站点对 Google 隐形=最高优先工程项）**。待 owner 定 v4 优先级。
 > ◐③ 机构/13D举牌榜(41)：**数据源核查** —— SEC 直连从本沙箱 IP 被 403（curl+WebFetch 都不行），但 VPS 上现有 `internal/sec`
 > 客户端（带 UA/gzip/限流）能成功取每日索引（机会榜 Form-4 count:14 为证）；efts.sec.gov 从 VPS 可达(200)但需调参。**结论：复用
 > 已验证的 sec 客户端走每日索引路径。** #3a `internal/sec/ownership.go`：`DailyBeneficialOwnership(date)`(复用 `c.get`) +

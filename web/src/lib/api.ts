@@ -1200,6 +1200,9 @@ export interface Comment {
   edited_at?: string;
   /** Total like count (per-user deduped). */
   likes: number;
+  /** $TICKER cashtags extracted from the body — the comment also appears in
+   *  each mentioned stock's comment list. */
+  mentions?: string[];
 }
 
 /** Envelope returned by `GET /v1/comments`. */

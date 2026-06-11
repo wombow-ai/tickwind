@@ -241,7 +241,11 @@ type Comment struct {
 	CreatedAt time.Time  `json:"created_at"`
 	EditedAt  *time.Time `json:"edited_at,omitempty"` // set when the author edits; nil if never edited
 	Likes     int        `json:"likes"`               // total like count (per-user deduped)
-	IP        string     `json:"-"`
+	// Mentions are the $TICKER cashtags extracted from Body at write time
+	// (uppercased, deduped). A comment also appears in each mentioned stock's
+	// comment list — see ListComments.
+	Mentions []string `json:"mentions,omitempty"`
+	IP       string   `json:"-"`
 }
 
 // Store is the persistence boundary. Every backend (memory, postgres)
@@ -336,10 +340,11 @@ type Store interface {
 	ListComments(ctx context.Context, ticker string, limit int) ([]Comment, error)
 	DeleteComment(ctx context.Context, id, userID string, admin bool) (bool, error)
 	ReportComment(ctx context.Context, id string) (bool, error)
-	// UpdateComment edits a comment's body. Only the author (userID match) may
-	// edit; returns ok=false if the comment doesn't exist or isn't theirs. Sets
+	// UpdateComment edits a comment's body, replacing its cashtag mentions with
+	// the given set (extracted from the new body). Only the author (userID
+	// match) may edit; returns ok=false if the comment doesn't exist or isn't theirs. Sets
 	// EditedAt to now.
-	UpdateComment(ctx context.Context, id, userID, body string) (Comment, bool, error)
+	UpdateComment(ctx context.Context, id, userID, body string, mentions []string) (Comment, bool, error)
 	// LikeComment toggles a user's like on a comment (one per user). Returns the
 	// new liked state for this user and the total like count; ok=false when the
 	// comment doesn't exist or is deleted.

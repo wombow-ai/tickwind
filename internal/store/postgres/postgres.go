@@ -865,19 +865,36 @@ func (s *Store) DeleteHolding(ctx context.Context, userID, id string) (bool, err
 	return tag.RowsAffected() == 1, nil
 }
 
-// SaveComment inserts a public comment (empty ticker → NULL = global board).
+// SaveComment inserts a public comment (empty ticker → NULL = global board)
+// together with its cashtag mention rows ($TICKER fan-out).
 func (s *Store) SaveComment(ctx context.Context, c store.Comment) error {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("postgres: save comment begin: %w", err)
+	}
+	defer tx.Rollback(ctx)
 	const query = `
 INSERT INTO comments (id, user_id, author, ticker, body, ip, created_at)
 VALUES ($1, $2, $3, NULLIF($4,''), $5, NULLIF($6,''), $7)`
-	if _, err := s.pool.Exec(ctx, query, c.ID, c.UserID, c.Author, c.Ticker, c.Body, c.IP, c.CreatedAt); err != nil {
+	if _, err := tx.Exec(ctx, query, c.ID, c.UserID, c.Author, c.Ticker, c.Body, c.IP, c.CreatedAt); err != nil {
 		return fmt.Errorf("postgres: save comment: %w", err)
+	}
+	for _, m := range c.Mentions {
+		if _, err := tx.Exec(ctx,
+			`INSERT INTO comment_mentions (comment_id, ticker) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+			c.ID, m); err != nil {
+			return fmt.Errorf("postgres: save comment mention: %w", err)
+		}
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("postgres: save comment commit: %w", err)
 	}
 	return nil
 }
 
 // ListComments returns non-deleted comments for a ticker ("" = the global board,
-// i.e. ticker IS NULL), newest first.
+// i.e. ticker IS NULL), newest first. A non-empty ticker also includes comments
+// posted elsewhere that cashtag-mention it ($TICKER fan-out).
 func (s *Store) ListComments(ctx context.Context, ticker string, limit int) ([]store.Comment, error) {
 	var query string
 	var args []any
@@ -886,7 +903,9 @@ func (s *Store) ListComments(ctx context.Context, ticker string, limit int) ([]s
 	if ticker == "" {
 		query = `SELECT ` + cols + ` FROM comments WHERE ticker IS NULL AND NOT deleted ORDER BY created_at DESC`
 	} else {
-		query = `SELECT ` + cols + ` FROM comments WHERE ticker = $1 AND NOT deleted ORDER BY created_at DESC`
+		query = `SELECT ` + cols + ` FROM comments
+		 WHERE (ticker = $1 OR id IN (SELECT comment_id FROM comment_mentions WHERE ticker = $1))
+		   AND NOT deleted ORDER BY created_at DESC`
 		args = append(args, ticker)
 	}
 	if limit > 0 {
@@ -922,11 +941,17 @@ func (s *Store) DeleteComment(ctx context.Context, id, userID string, admin bool
 	return tag.RowsAffected() == 1, nil
 }
 
-// UpdateComment edits a comment's body. Only the author may edit (user_id match);
-// sets edited_at. ok=false when the id is unknown, deleted, or not the author's.
-func (s *Store) UpdateComment(ctx context.Context, id, userID, body string) (store.Comment, bool, error) {
+// UpdateComment edits a comment's body and replaces its cashtag mentions with
+// the new body's set. Only the author may edit (user_id match); sets edited_at.
+// ok=false when the id is unknown, deleted, or not the author's.
+func (s *Store) UpdateComment(ctx context.Context, id, userID, body string, mentions []string) (store.Comment, bool, error) {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return store.Comment{}, false, fmt.Errorf("postgres: update comment begin: %w", err)
+	}
+	defer tx.Rollback(ctx)
 	var c store.Comment
-	err := s.pool.QueryRow(ctx,
+	err = tx.QueryRow(ctx,
 		`UPDATE comments SET body = $3, edited_at = now() WHERE id = $1 AND user_id = $2 AND NOT deleted
 		 RETURNING id, user_id, author, COALESCE(ticker,''), body, created_at, edited_at`,
 		id, userID, body).
@@ -937,6 +962,20 @@ func (s *Store) UpdateComment(ctx context.Context, id, userID, body string) (sto
 	if err != nil {
 		return store.Comment{}, false, fmt.Errorf("postgres: update comment: %w", err)
 	}
+	if _, err := tx.Exec(ctx, `DELETE FROM comment_mentions WHERE comment_id = $1`, id); err != nil {
+		return store.Comment{}, false, fmt.Errorf("postgres: update comment mentions: %w", err)
+	}
+	for _, m := range mentions {
+		if _, err := tx.Exec(ctx,
+			`INSERT INTO comment_mentions (comment_id, ticker) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+			id, m); err != nil {
+			return store.Comment{}, false, fmt.Errorf("postgres: update comment mention: %w", err)
+		}
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return store.Comment{}, false, fmt.Errorf("postgres: update comment commit: %w", err)
+	}
+	c.Mentions = mentions
 	return c, true, nil
 }
 

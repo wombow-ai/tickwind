@@ -305,26 +305,30 @@ func TestUpdateComment(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Author edits → ok, body updated, EditedAt set.
-	got, ok, err := s.UpdateComment(ctx, "c1", "u1", "edited body")
+	// Author edits → ok, body updated, EditedAt set, mentions replaced.
+	got, ok, err := s.UpdateComment(ctx, "c1", "u1", "edited body $NVDA", []string{"NVDA"})
 	if err != nil || !ok {
 		t.Fatalf("UpdateComment author: ok=%v err=%v", ok, err)
 	}
-	if got.Body != "edited body" || got.EditedAt == nil {
+	if got.Body != "edited body $NVDA" || got.EditedAt == nil {
 		t.Fatalf("got body=%q editedAt=%v, want edited + non-nil", got.Body, got.EditedAt)
+	}
+	// The mention fans the comment out into NVDA's list too.
+	if nv, _ := s.ListComments(ctx, "NVDA", 10); len(nv) != 1 || nv[0].ID != "c1" {
+		t.Fatalf("NVDA list after mention edit = %v, want the mentioning comment", nv)
 	}
 
 	// Non-author cannot edit.
-	if _, ok, _ := s.UpdateComment(ctx, "c1", "u2", "hijack"); ok {
+	if _, ok, _ := s.UpdateComment(ctx, "c1", "u2", "hijack", nil); ok {
 		t.Error("non-author edit should fail")
 	}
 	// Unknown id.
-	if _, ok, _ := s.UpdateComment(ctx, "nope", "u1", "x"); ok {
+	if _, ok, _ := s.UpdateComment(ctx, "nope", "u1", "x", nil); ok {
 		t.Error("unknown id edit should fail")
 	}
 	// The non-author attempt must not have changed the body.
 	list, _ := s.ListComments(ctx, "AAPL", 10)
-	if len(list) != 1 || list[0].Body != "edited body" {
+	if len(list) != 1 || list[0].Body != "edited body $NVDA" {
 		t.Fatalf("after edits, list=%+v", list)
 	}
 }

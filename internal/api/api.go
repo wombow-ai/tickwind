@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/wombow-ai/tickwind/internal/auth"
+	"github.com/wombow-ai/tickwind/internal/cashtag"
 	"github.com/wombow-ai/tickwind/internal/clip"
 	"github.com/wombow-ai/tickwind/internal/congress"
 	"github.com/wombow-ai/tickwind/internal/edgar"
@@ -744,6 +745,7 @@ func (s *Server) postComment(w http.ResponseWriter, r *http.Request) {
 		Ticker:    strings.ToUpper(strings.TrimSpace(req.Ticker)),
 		Body:      body,
 		CreatedAt: time.Now().UTC(),
+		Mentions:  cashtag.Extract(body), // $TICKER fan-out to mentioned stocks
 		IP:        clientIP(r),
 	}
 	if err := s.store.SaveComment(r.Context(), c); err != nil {
@@ -807,7 +809,7 @@ func (s *Server) patchComment(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, errBody("comment too long (2000 chars max)"))
 		return
 	}
-	c, ok2, err := s.store.UpdateComment(r.Context(), r.PathValue("id"), u.ID, body)
+	c, ok2, err := s.store.UpdateComment(r.Context(), r.PathValue("id"), u.ID, body, cashtag.Extract(body))
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, errBody(err.Error()))
 		return
