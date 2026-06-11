@@ -361,6 +361,9 @@ Status: ✅ done · 🟡 in progress · ⬜ todo
 > 本增量补缺口:sitemap 补 /smart-money /screen /earnings /briefing(原先漏,Google 发现不了);旗舰看板页中文关键词 metadata——
 > smart-money→「国会山股神·佩洛西持仓·13D举牌」、opportunities→「美股内部人买入·高管增持」(瞄准研究指出的中文搜索空档,零中文工具竞争)。
 > SEO 下一步(下 tick 评估):首页是客户端壳(有 layout metadata 但服务端内容薄)→ 可加 SSR 内容块;或 pSEO 中文关键词落地页。
+> **✅v5①(b) 首页 SSR 增量(本 commit,纯前端)**:page.tsx(服务端)加 JSON-LD(WebSite+SearchAction+Organization,中文 alternateName"潮汐美股")+
+> 关键词 metadata(美股/国会山股神/内部人买入/财报/期权/轧空)+ 服务端渲染介绍段 + 8 看板内链目录(给爬虫真内容+内链,实时模块仍客户端)。
+> 预览验证:JSON-LD 2 schema、介绍段、8 内链、hub 不破、零报错。**SEO(①)到此收官**(基础已足;pSEO 落地页留 backlog)。转 ③ 期权异动榜。
 > **🧹 老箱清空（owner 2026-06-10 要求腾给其他项目）**：先复核新箱用户数据完好(watchlist=3/notes=2)→ `104.168.46.15` 容器/卷/镜像
 > 全删、/root/tickwind(含 .env)删除、shell 历史清除。Docker 引擎+部署公钥保留可复用。**老箱不再是回滚备机**；恢复路径=新箱
 > `/root/tw_users_only.sql` + Supabase 市场库 + 迁移 runbook。
