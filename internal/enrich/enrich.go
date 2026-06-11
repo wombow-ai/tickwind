@@ -132,22 +132,23 @@ func (l *llm) Summarize(ctx context.Context, text string) (string, error) {
 	return strings.TrimSpace(out.Choices[0].Message.Content), nil
 }
 
-const translatePrompt = "你是金融新闻标题翻译器。输入是一个英文标题的 JSON 数组;" +
-	"输出只能是一个等长的 JSON 数组,按相同顺序给出简体中文翻译。保留股票代码、公司名、数字与百分比;" +
-	"使用中文财经惯用语(如 beats estimates→超预期, downgrade→下调评级, guidance→业绩指引)。" +
-	"不要输出任何 JSON 数组以外的内容,不要解释。"
+const translatePrompt = "你是金融新闻标题翻译器。用户给出一个 JSON 对象 {\"titles\":[英文标题...]}。" +
+	"只返回一个 JSON 对象 {\"titles\":[简体中文翻译...]},数组等长且顺序一致。" +
+	"保留股票代码、公司名、数字与百分比;使用中文财经惯用语(beats estimates→超预期, " +
+	"downgrade→下调评级, guidance→业绩指引)。只输出该 JSON 对象,不要解释或代码块。"
 
 func (l *llm) TranslateTitles(ctx context.Context, titles []string) ([]string, error) {
 	if len(titles) == 0 {
 		return nil, nil
 	}
-	payload, err := json.Marshal(titles)
+	payload, err := json.Marshal(map[string][]string{"titles": titles})
 	if err != nil {
 		return nil, err
 	}
 	body, err := json.Marshal(map[string]any{
-		"model":       l.model,
-		"temperature": 0.1,
+		"model":           l.model,
+		"temperature":     0.1,
+		"response_format": map[string]string{"type": "json_object"},
 		"messages": []map[string]string{
 			{"role": "system", "content": translatePrompt},
 			{"role": "user", "content": string(payload)},
@@ -187,20 +188,45 @@ func (l *llm) TranslateTitles(ctx context.Context, titles []string) ([]string, e
 	return parseTitleArray(out.Choices[0].Message.Content, len(titles))
 }
 
-// parseTitleArray parses the model's reply into exactly `want` titles. Models
-// occasionally wrap the array in a Markdown code fence — strip it first.
+// parseTitleArray parses the model's reply into exactly `want` titles, tolerant
+// of the shapes models actually emit: a {"titles":[...]} object, a bare [...]
+// array, or either wrapped in a Markdown code fence / surrounded by prose. The
+// strict length check guards against ever writing misaligned translations.
 func parseTitleArray(content string, want int) ([]string, error) {
 	s := strings.TrimSpace(content)
-	if strings.HasPrefix(s, "```") {
-		s = strings.TrimPrefix(s, "```json")
-		s = strings.TrimPrefix(s, "```")
-		s = strings.TrimSuffix(strings.TrimSpace(s), "```")
+	if i := strings.Index(s, "```"); i >= 0 { // strip a leading ```json fence
+		s = s[i+3:]
+		s = strings.TrimPrefix(s, "json")
+		if j := strings.LastIndex(s, "```"); j >= 0 {
+			s = s[:j]
+		}
 		s = strings.TrimSpace(s)
 	}
+
+	// Preferred: the {"titles":[...]} object we asked for.
+	var obj struct {
+		Titles []string `json:"titles"`
+	}
+	if err := json.Unmarshal([]byte(s), &obj); err == nil && len(obj.Titles) > 0 {
+		return checkLen(obj.Titles, want)
+	}
+
+	// Fallbacks: a bare array, or an array embedded in surrounding prose
+	// (slice from the first '[' to the last ']').
+	arr := s
+	if !strings.HasPrefix(arr, "[") {
+		if a, b := strings.Index(s, "["), strings.LastIndex(s, "]"); a >= 0 && b > a {
+			arr = s[a : b+1]
+		}
+	}
 	var titles []string
-	if err := json.Unmarshal([]byte(s), &titles); err != nil {
+	if err := json.Unmarshal([]byte(arr), &titles); err != nil {
 		return nil, fmt.Errorf("enrich: parse translations: %w", err)
 	}
+	return checkLen(titles, want)
+}
+
+func checkLen(titles []string, want int) ([]string, error) {
 	if len(titles) != want {
 		return nil, fmt.Errorf("enrich: got %d translations, want %d", len(titles), want)
 	}
