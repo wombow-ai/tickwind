@@ -78,7 +78,8 @@ export function UnusualOptions() {
                 <th className="px-2 py-2 font-medium">{tr('options.expiry')}</th>
                 <th className="px-2 py-2 text-right font-medium">{tr('options.vol')}</th>
                 <th className="px-2 py-2 text-right font-medium">{tr('options.oi')}</th>
-                <th className="px-3 py-2 text-right font-medium">{tr('unusual.volOI')}</th>
+                <th className="px-2 py-2 text-right font-medium">{tr('unusual.volOI')}</th>
+                <th className="px-3 py-2 text-right font-medium">{tr('options.iv')}</th>
               </tr>
             </thead>
             <tbody>
@@ -107,8 +108,11 @@ export function UnusualOptions() {
                     <td className={cx('px-2 py-2', t.sub)}>{expLabel(c.expiry)}</td>
                     <td className={cx('px-2 py-2 text-right font-semibold', t.text)}>{fmtN(c.volume)}</td>
                     <td className={cx('px-2 py-2 text-right', t.sub)}>{fmtN(c.oi)}</td>
-                    <td className={cx('px-3 py-2 text-right font-semibold', c.vol_oi >= 1 ? (dark ? 'text-amber-300' : 'text-amber-600') : t.sub)}>
+                    <td className={cx('px-2 py-2 text-right font-semibold', c.vol_oi >= 1 ? (dark ? 'text-amber-300' : 'text-amber-600') : t.sub)}>
                       {c.vol_oi > 0 ? `${c.vol_oi.toFixed(1)}×` : '—'}
+                    </td>
+                    <td className={cx('px-3 py-2 text-right', t.sub)}>
+                      {c.iv > 0 ? `${(c.iv * 100).toFixed(0)}%` : '—'}
                     </td>
                   </tr>
                 );

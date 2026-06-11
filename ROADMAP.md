@@ -364,6 +364,12 @@ Status: ✅ done · 🟡 in progress · ⬜ todo
 > **✅v5①(b) 首页 SSR 增量(本 commit,纯前端)**:page.tsx(服务端)加 JSON-LD(WebSite+SearchAction+Organization,中文 alternateName"潮汐美股")+
 > 关键词 metadata(美股/国会山股神/内部人买入/财报/期权/轧空)+ 服务端渲染介绍段 + 8 看板内链目录(给爬虫真内容+内链,实时模块仍客户端)。
 > 预览验证:JSON-LD 2 schema、介绍段、8 内链、hub 不破、零报错。**SEO(①)到此收官**(基础已足;pSEO 落地页留 backlog)。转 ③ 期权异动榜。
+> **✅v5③(a) 期权异动榜(本 commit,后端 Go + 前端 web)**:复用 internal/cboe。OptionsCache 加后台 Run(ctx) goroutine——每 30min 对 40 支
+> 重仓期权美股(科技巨头/meme/主要 ETF)逐票拉 Cboe 延迟链(票间 1s 限速,后台不阻塞请求),汇总所有有成交合约,按**单合约成交量降序**取 top 30
+> (附量比 vol/OI)。GET /v1/options/unusual 暴露(给现有 OptionsSource 接口加 Unusual() 方法,免 api.New 签名 churn 5 处)。前端 /unusual 页 +
+> UnusualOptions 表格(ticker链/看涨看跌徽标/行权/到期/成交量/未平仓/量比/IV,"延迟15分·Cboe")+ nav secondary「期权异动」+ zh/en i18n +
+> 中文关键词 metadata(期权异动/量比/期权龙虎榜)。免费展示已标注延迟、不转售。部署后首次扫描 ~1-2min 出数。
+> **③ 下一步**:13F 大佬持仓(SEC 13F datasets + OpenFIGI CUSIP→ticker,名人基金白名单季度 diff→smart-money 加 tab)→ 站外推送(web-push DEFERRED→邮件/TG 或问 owner)。
 > **🧹 老箱清空（owner 2026-06-10 要求腾给其他项目）**：先复核新箱用户数据完好(watchlist=3/notes=2)→ `104.168.46.15` 容器/卷/镜像
 > 全删、/root/tickwind(含 .env)删除、shell 历史清除。Docker 引擎+部署公钥保留可复用。**老箱不再是回滚备机**；恢复路径=新箱
 > `/root/tw_users_only.sql` + Supabase 市场库 + 迁移 runbook。
