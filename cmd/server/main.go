@@ -20,6 +20,7 @@ import (
 	"github.com/wombow-ai/tickwind/internal/auth"
 	"github.com/wombow-ai/tickwind/internal/bluesky"
 	"github.com/wombow-ai/tickwind/internal/brapi"
+	"github.com/wombow-ai/tickwind/internal/cboe"
 	"github.com/wombow-ai/tickwind/internal/config"
 	"github.com/wombow-ai/tickwind/internal/congress"
 	"github.com/wombow-ai/tickwind/internal/dart"
@@ -295,6 +296,10 @@ func main() {
 	shortCache := ingest.NewShortCache(finra.New(), 24*time.Hour, log)
 	go shortCache.Run(ctx)
 
+	// Options overview (squeeze/sentiment): Cboe ~15-min delayed chains, fetched
+	// on demand and cached 15 min per ticker. Keyless public CDN.
+	optionsCache := ingest.NewOptionsCache(cboe.New())
+
 	// Daily Chinese pre-market briefing: one LLM generation a day from data
 	// already in memory. Off (404) when no LLM key is configured.
 	var briefingSrc api.BriefingSource
@@ -352,7 +357,7 @@ func main() {
 
 	srv := &http.Server{
 		Addr:              ":" + cfg.Port,
-		Handler:           api.New(st, hub, enricher, verifier, bars, topicCache, oppCache, universeCache, guruCache, scheduler, symbolCache, eventsCache, fundCache, st, congressCache, institutionalCache, liveSub, indicesCache, shortCache, briefingSrc, cfg.AdminUserIDs, log),
+		Handler:           api.New(st, hub, enricher, verifier, bars, topicCache, oppCache, universeCache, guruCache, scheduler, symbolCache, eventsCache, fundCache, st, congressCache, institutionalCache, liveSub, indicesCache, shortCache, briefingSrc, optionsCache, cfg.AdminUserIDs, log),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 

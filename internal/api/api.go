@@ -31,6 +31,7 @@ import (
 	"github.com/wombow-ai/tickwind/internal/events"
 	"github.com/wombow-ai/tickwind/internal/finra"
 	"github.com/wombow-ai/tickwind/internal/guru"
+	"github.com/wombow-ai/tickwind/internal/ingest"
 	"github.com/wombow-ai/tickwind/internal/opportunity"
 	"github.com/wombow-ai/tickwind/internal/sec"
 	"github.com/wombow-ai/tickwind/internal/store"
@@ -143,6 +144,12 @@ type BriefingSource interface {
 	Get() (date, text string, at time.Time, ok bool)
 }
 
+// OptionsSource serves the per-stock delayed options overview (nil-safe; nil or
+// ok=false = 404). Satisfied by *ingest.OptionsCache.
+type OptionsSource interface {
+	Options(ctx context.Context, ticker string) (ingest.OptionsView, bool)
+}
+
 type Server struct {
 	store         store.Store
 	hub           QuoteStream
@@ -165,6 +172,7 @@ type Server struct {
 	indices       IndicesSource
 	short         ShortSource
 	briefing      BriefingSource
+	options       OptionsSource
 	admins        map[string]bool // user UUIDs and/or emails (lowercased) allowed to delete any comment
 	commentRL     *rateLimiter    // per-user comment-post throttle
 	// AI digest cache: one LLM generation per (ticker, ET day), then served from
@@ -179,14 +187,14 @@ type Server struct {
 	log         *slog.Logger
 }
 
-func New(st store.Store, hub QuoteStream, enricher enrich.Enricher, verifier *auth.Verifier, bars BarSource, topicSrc TopicSource, oppSrc OpportunitySource, universeSrc UniverseSource, guruSrc GuruSource, ingestor TickerIngestor, symbolSrc SymbolSearcher, eventSrc EventSource, fundSrc FundamentalsSource, earningsSrc EarningsSource, congressSrc CongressSource, institutionalSrc InstitutionalSource, liveSub LiveSubscriber, indicesSrc IndicesSource, shortSrc ShortSource, briefingSrc BriefingSource, adminIDs []string, log *slog.Logger) http.Handler {
+func New(st store.Store, hub QuoteStream, enricher enrich.Enricher, verifier *auth.Verifier, bars BarSource, topicSrc TopicSource, oppSrc OpportunitySource, universeSrc UniverseSource, guruSrc GuruSource, ingestor TickerIngestor, symbolSrc SymbolSearcher, eventSrc EventSource, fundSrc FundamentalsSource, earningsSrc EarningsSource, congressSrc CongressSource, institutionalSrc InstitutionalSource, liveSub LiveSubscriber, indicesSrc IndicesSource, shortSrc ShortSource, briefingSrc BriefingSource, optionsSrc OptionsSource, adminIDs []string, log *slog.Logger) http.Handler {
 	admins := make(map[string]bool, len(adminIDs))
 	for _, id := range adminIDs {
 		if id = strings.ToLower(strings.TrimSpace(id)); id != "" {
 			admins[id] = true
 		}
 	}
-	s := &Server{store: st, hub: hub, clip: clip.NewFetcher(), enrich: enricher, auth: verifier, bars: bars, topics: topicSrc, opps: oppSrc, universe: universeSrc, gurus: guruSrc, ingestor: ingestor, symbols: symbolSrc, events: eventSrc, fundamentals: fundSrc, earnings: earningsSrc, congress: congressSrc, institutional: institutionalSrc, live: liveSub, indices: indicesSrc, short: shortSrc, briefing: briefingSrc, admins: admins, commentRL: newRateLimiter(10, 10*time.Minute), sumCache: map[string]summaryEntry{}, sumInflight: map[string]chan struct{}{}, log: log}
+	s := &Server{store: st, hub: hub, clip: clip.NewFetcher(), enrich: enricher, auth: verifier, bars: bars, topics: topicSrc, opps: oppSrc, universe: universeSrc, gurus: guruSrc, ingestor: ingestor, symbols: symbolSrc, events: eventSrc, fundamentals: fundSrc, earnings: earningsSrc, congress: congressSrc, institutional: institutionalSrc, live: liveSub, indices: indicesSrc, short: shortSrc, briefing: briefingSrc, options: optionsSrc, admins: admins, commentRL: newRateLimiter(10, 10*time.Minute), sumCache: map[string]summaryEntry{}, sumInflight: map[string]chan struct{}{}, log: log}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", s.health)
 
@@ -244,6 +252,7 @@ func New(st store.Store, hub QuoteStream, enricher enrich.Enricher, verifier *au
 	mux.HandleFunc("GET /v1/indices", s.getIndices)
 	mux.HandleFunc("GET /v1/briefing", s.getBriefing)
 	mux.HandleFunc("GET /v1/stocks/{ticker}/short", s.getShort)
+	mux.HandleFunc("GET /v1/stocks/{ticker}/options", s.getOptions)
 	mux.HandleFunc("GET /v1/stream", s.getStream)
 
 	// auth.Middleware attaches the user when a valid bearer token is present;
@@ -1564,6 +1573,22 @@ func (s *Server) getShort(w http.ResponseWriter, r *http.Request) {
 }
 
 // getIndices returns the latest major-market-index levels (homepage strip).
+// getOptions returns the ticker's delayed options overview (P/C, max pain, OI
+// leaders). 404 when the symbol has no listed options or the source is off.
+func (s *Server) getOptions(w http.ResponseWriter, r *http.Request) {
+	if s.options == nil {
+		writeJSON(w, http.StatusNotFound, errBody("no options data"))
+		return
+	}
+	ticker := strings.ToUpper(strings.TrimSpace(r.PathValue("ticker")))
+	view, ok := s.options.Options(r.Context(), ticker)
+	if !ok {
+		writeJSON(w, http.StatusNotFound, errBody("no options data"))
+		return
+	}
+	writeJSON(w, http.StatusOK, view)
+}
+
 // getBriefing returns today's AI pre-market briefing; 404 until generated.
 func (s *Server) getBriefing(w http.ResponseWriter, _ *http.Request) {
 	if s.briefing == nil {
