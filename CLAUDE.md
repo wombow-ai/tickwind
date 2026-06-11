@@ -300,6 +300,23 @@ feature-flagged plugin, never on the critical path. Web only.
   `GET /v1/stocks/{ticker}/quote`. Poller auto-disables when `ALPACA_API_KEY/SECRET`
   are unset. Postgres `quotes.prev_close` column (idempotent `ADD COLUMN IF NOT
   EXISTS`); `GetQuote` `COALESCE(prev_close,0)`. Verified e2e locally.
+  **Extended-hours freshness fallback (2026-06-12, fixes "RDW frozen at 17.09
+  in post-market"):** the on-demand `BarCache.LatestQuote` overlays a fresher
+  consolidated print when the IEX trade is stale (>5min) — thin names go
+  hours between IEX prints. This fallback was Finnhub `/quote`, but Finnhub's
+  **free `/quote` freezes `c`/`t` at the 16:00 ET close in pre/post-market** →
+  showed the stale close labeled "post". Now uses **`yahoo.Consolidated`**
+  (`yahoo.ExtendedQuote` reads the `includePrePost` 1-min chart series, last
+  non-null print = the real pre/post price; Yahoo's `meta.regularMarketPrice`
+  also freezes, so MUST use the series). `overlayConsolidated` labels source
+  `"yahoo"`; the extended-hours prev_close anchoring (→ Alpaca daily-bar
+  regular close) is unchanged → no phantom day-change. Yahoo = owner-authorized
+  gray source (also HK), keyless, ~15min delayed + labeled, free display only,
+  replace before any paid tier. **Note:** only the **on-demand** path (most of
+  the market) has this; the **poller** (popular ∪ watchlist set) is still
+  Alpaca-only — liquid names have IEX after-hours prints so it's minor, but a
+  thin *watchlisted* name can still freeze post-market (backlog: wire the same
+  Yahoo fallback into `PricePoller`).
 - Live push: `GET /v1/stream` = Server-Sent Events via `internal/stream.Hub`
   (chose SSE over WebSocket — one-way, stdlib-only). Poller publishes each quote;
   handler sends an initial `: connected` so headers flush immediately.
