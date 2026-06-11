@@ -41,6 +41,7 @@ func newTestServer() *httptest.Server {
 		nil, // no live subscriber in tests
 		nil, // no indices source in tests
 		nil, // no short-interest source in tests
+		nil, // no briefing source in tests
 		nil, // no admin user ids in tests
 		slog.New(slog.NewTextHandler(io.Discard, nil)),
 	)
@@ -222,6 +223,7 @@ func TestWatchlistAddTriggersIngest(t *testing.T) {
 		nil, // no live subscriber
 		nil, // no indices source
 		nil, // no short-interest source
+		nil, // no briefing source
 		nil, // no admin user ids
 		slog.New(slog.NewTextHandler(io.Discard, nil)),
 	)

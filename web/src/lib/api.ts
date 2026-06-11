@@ -841,6 +841,18 @@ export function getStockEarnings(
   return getJson<StockEarningsResponse>(`${path}${q}`, signal);
 }
 
+/** The daily AI pre-market briefing from `GET /v1/briefing` (404 until generated). */
+export interface Briefing {
+  date: string; // ET day, YYYY-MM-DD
+  text: string; // Chinese briefing body (markdown-ish sections)
+  generated_at: string;
+}
+
+/** Fetches today's AI morning briefing; rejects 404 before generation. */
+export function getBriefing(signal?: AbortSignal): Promise<Briefing> {
+  return getJson<Briefing>('/v1/briefing', signal);
+}
+
 /** The AI digest for a stock from `GET /v1/stocks/{t}/summary` (cached daily). */
 export interface AISummary {
   ticker: string;

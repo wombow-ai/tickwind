@@ -335,6 +335,14 @@ Status: ✅ done · 🟡 in progress · ⬜ todo
 > store.ReactivateAlert(active=true+triggered_at 清零,owner 校验,5 层 + 单测)+ api `PATCH /v1/alerts/{id}`。前端:`/alerts` 全局页
 > (AlertsCenter,按 触发/监控中 分组,触发的带"重新激活"+删除,股票可点)+ TopNav `AlertsBell`(登录态轮询 60s 数已触发,红点角标,
 > 任意页可见)+ secondary nav 加"提醒"+ i18n zh/en。**不碰 web-push（DEFERRED）**。下:③ 搜索中文化 → ④ 个股 AI 速览 → ⑤ 晨报 → ⑥ 期权。
+> **✅v4③搜索中文化 LIVE（`e3b2e81`，公网验证：英伟达→NVDA/苹果→AAPL/台积电→TSM/英文无回归）**：aliases.go ~100 票中文别名 +
+> Symbol.Aliases + Build 合并(ASCII 别名进 token 索引) + Search CJK 路径(精确 rank0/子串 rank2) + hasCJK + 单测。
+> **✅v4④个股 AI 速览 LIVE（`b583ec8`，验证：首次 3s 生成、复调 0.7s 缓存命中同 generated_at，中文带"据新闻/据社区讨论"来源标注）**：
+> getSummary 按(ticker,ET日)缓存+inflight 去重+失败退额度+150/日全局上限;enrich 中文防幻觉 prompt;AISummaryCard(紫 Sparkles+
+> AI 角标+免责)+i18n。**✅v4⑤中文晨报（本 commit）**：enrich.Brief(晨报编辑 prompt,材料 only,无建议)+`ingest.BriefingCache`
+> (每日 ET≥07:00 生成一次,30min 检查,材料全自有零请求:指数+涨跌 Top5(防伪影/仙股)+今日财报+国会/13D 前 3,缺节跳过,失败下轮重试)+
+> `GET /v1/briefing`(404=未生成;api.New 第 20 参,5 调用点同步)+ /briefing 页(BriefingView:Markdown 正文+AI 角标+免责+日期)+
+> nav"晨报"+i18n。token:1 次/日≈忽略。下:⑥ 期权面板(Cboe)→ 收尾小项。
 > **🧹 老箱清空（owner 2026-06-10 要求腾给其他项目）**：先复核新箱用户数据完好(watchlist=3/notes=2)→ `104.168.46.15` 容器/卷/镜像
 > 全删、/root/tickwind(含 .env)删除、shell 历史清除。Docker 引擎+部署公钥保留可复用。**老箱不再是回滚备机**；恢复路径=新箱
 > `/root/tw_users_only.sql` + Supabase 市场库 + 迁移 runbook。

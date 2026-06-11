@@ -30,6 +30,9 @@ type Enricher interface {
 	// preserving order (result[i] is the translation of titles[i]). Returns
 	// ErrDisabled when no LLM is configured.
 	TranslateTitles(ctx context.Context, titles []string) ([]string, error)
+	// Brief writes the Chinese pre-market briefing from structured material
+	// (indices, movers, earnings, smart money). ErrDisabled when no LLM.
+	Brief(ctx context.Context, material string) (string, error)
 }
 
 // Config configures the LLM enricher. An empty APIKey yields a disabled Noop.
@@ -73,6 +76,10 @@ func (Noop) Summarize(context.Context, string) (string, error) {
 
 func (Noop) TranslateTitles(context.Context, []string) ([]string, error) {
 	return nil, ErrDisabled
+}
+
+func (Noop) Brief(context.Context, string) (string, error) {
+	return "", ErrDisabled
 }
 
 // systemPrompt drives the per-stock digest. Chinese-first product → Chinese
@@ -133,6 +140,57 @@ func (l *llm) Summarize(ctx context.Context, text string) (string, error) {
 	}
 	if len(out.Choices) == 0 {
 		return "", errors.New("enrich: empty llm response")
+	}
+	return strings.TrimSpace(out.Choices[0].Message.Content), nil
+}
+
+// briefPrompt drives the daily pre-market briefing — one generation a day
+// serves everyone. Same structural guardrails as the digest: material-only,
+// no fabricated numbers, no advice.
+const briefPrompt = "你是财经晨报编辑。仅基于用户提供的材料,写一篇 150-300 字的简体中文盘前简报," +
+	"按【指数】【热点】【今日财报】【聪明钱】小节组织(材料缺某节就跳过该节)。" +
+	"只引用材料中出现的数字与事实,不要编造;严禁任何买卖建议、目标价或预测;语气专业简洁。直接输出正文,不要前言。"
+
+// Brief writes the daily Chinese pre-market briefing from structured material.
+func (l *llm) Brief(ctx context.Context, material string) (string, error) {
+	body, err := json.Marshal(map[string]any{
+		"model":       l.model,
+		"temperature": 0.3,
+		"messages": []map[string]string{
+			{"role": "system", "content": briefPrompt},
+			{"role": "user", "content": material},
+		},
+	})
+	if err != nil {
+		return "", err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, l.baseURL+"/chat/completions", bytes.NewReader(body))
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+l.apiKey)
+
+	resp, err := l.http.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("enrich: brief request: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("enrich: brief status %s", resp.Status)
+	}
+	var out struct {
+		Choices []struct {
+			Message struct {
+				Content string `json:"content"`
+			} `json:"message"`
+		} `json:"choices"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return "", fmt.Errorf("enrich: brief decode: %w", err)
+	}
+	if len(out.Choices) == 0 {
+		return "", errors.New("enrich: empty brief response")
 	}
 	return strings.TrimSpace(out.Choices[0].Message.Content), nil
 }

@@ -295,6 +295,18 @@ func main() {
 	shortCache := ingest.NewShortCache(finra.New(), 24*time.Hour, log)
 	go shortCache.Run(ctx)
 
+	// Daily Chinese pre-market briefing: one LLM generation a day from data
+	// already in memory. Off (404) when no LLM key is configured.
+	var briefingSrc api.BriefingSource
+	if enricher.Enabled() {
+		briefingCache := ingest.NewBriefingCache(enricher, indicesCache, universeCache, st, congressCache, institutionalCache, log)
+		go briefingCache.Run(ctx)
+		briefingSrc = briefingCache
+		log.Info("morning briefing enabled (daily, ET >= 07:00)")
+	} else {
+		log.Warn("morning briefing disabled — no LLM configured")
+	}
+
 	// bars feeds the sparkline endpoint; nil (disabled) without Alpaca creds.
 	var bars api.BarSource
 	var liveSub api.LiveSubscriber // real-time WS streamer (nil when disabled)
@@ -340,7 +352,7 @@ func main() {
 
 	srv := &http.Server{
 		Addr:              ":" + cfg.Port,
-		Handler:           api.New(st, hub, enricher, verifier, bars, topicCache, oppCache, universeCache, guruCache, scheduler, symbolCache, eventsCache, fundCache, st, congressCache, institutionalCache, liveSub, indicesCache, shortCache, cfg.AdminUserIDs, log),
+		Handler:           api.New(st, hub, enricher, verifier, bars, topicCache, oppCache, universeCache, guruCache, scheduler, symbolCache, eventsCache, fundCache, st, congressCache, institutionalCache, liveSub, indicesCache, shortCache, briefingSrc, cfg.AdminUserIDs, log),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 

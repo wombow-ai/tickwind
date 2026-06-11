@@ -137,6 +137,12 @@ type ShortSource interface {
 	ShortInterest(ticker string) (finra.ShortInterest, bool)
 }
 
+// BriefingSource serves the day's AI pre-market briefing (nil-safe; nil or
+// ok=false = 404). Satisfied by *ingest.BriefingCache.
+type BriefingSource interface {
+	Get() (date, text string, at time.Time, ok bool)
+}
+
 type Server struct {
 	store         store.Store
 	hub           QuoteStream
@@ -158,6 +164,7 @@ type Server struct {
 	live          LiveSubscriber
 	indices       IndicesSource
 	short         ShortSource
+	briefing      BriefingSource
 	admins        map[string]bool // user UUIDs and/or emails (lowercased) allowed to delete any comment
 	commentRL     *rateLimiter    // per-user comment-post throttle
 	// AI digest cache: one LLM generation per (ticker, ET day), then served from
@@ -172,14 +179,14 @@ type Server struct {
 	log         *slog.Logger
 }
 
-func New(st store.Store, hub QuoteStream, enricher enrich.Enricher, verifier *auth.Verifier, bars BarSource, topicSrc TopicSource, oppSrc OpportunitySource, universeSrc UniverseSource, guruSrc GuruSource, ingestor TickerIngestor, symbolSrc SymbolSearcher, eventSrc EventSource, fundSrc FundamentalsSource, earningsSrc EarningsSource, congressSrc CongressSource, institutionalSrc InstitutionalSource, liveSub LiveSubscriber, indicesSrc IndicesSource, shortSrc ShortSource, adminIDs []string, log *slog.Logger) http.Handler {
+func New(st store.Store, hub QuoteStream, enricher enrich.Enricher, verifier *auth.Verifier, bars BarSource, topicSrc TopicSource, oppSrc OpportunitySource, universeSrc UniverseSource, guruSrc GuruSource, ingestor TickerIngestor, symbolSrc SymbolSearcher, eventSrc EventSource, fundSrc FundamentalsSource, earningsSrc EarningsSource, congressSrc CongressSource, institutionalSrc InstitutionalSource, liveSub LiveSubscriber, indicesSrc IndicesSource, shortSrc ShortSource, briefingSrc BriefingSource, adminIDs []string, log *slog.Logger) http.Handler {
 	admins := make(map[string]bool, len(adminIDs))
 	for _, id := range adminIDs {
 		if id = strings.ToLower(strings.TrimSpace(id)); id != "" {
 			admins[id] = true
 		}
 	}
-	s := &Server{store: st, hub: hub, clip: clip.NewFetcher(), enrich: enricher, auth: verifier, bars: bars, topics: topicSrc, opps: oppSrc, universe: universeSrc, gurus: guruSrc, ingestor: ingestor, symbols: symbolSrc, events: eventSrc, fundamentals: fundSrc, earnings: earningsSrc, congress: congressSrc, institutional: institutionalSrc, live: liveSub, indices: indicesSrc, short: shortSrc, admins: admins, commentRL: newRateLimiter(10, 10*time.Minute), sumCache: map[string]summaryEntry{}, sumInflight: map[string]chan struct{}{}, log: log}
+	s := &Server{store: st, hub: hub, clip: clip.NewFetcher(), enrich: enricher, auth: verifier, bars: bars, topics: topicSrc, opps: oppSrc, universe: universeSrc, gurus: guruSrc, ingestor: ingestor, symbols: symbolSrc, events: eventSrc, fundamentals: fundSrc, earnings: earningsSrc, congress: congressSrc, institutional: institutionalSrc, live: liveSub, indices: indicesSrc, short: shortSrc, briefing: briefingSrc, admins: admins, commentRL: newRateLimiter(10, 10*time.Minute), sumCache: map[string]summaryEntry{}, sumInflight: map[string]chan struct{}{}, log: log}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", s.health)
 
@@ -235,6 +242,7 @@ func New(st store.Store, hub QuoteStream, enricher enrich.Enricher, verifier *au
 	mux.HandleFunc("GET /v1/congress", s.getCongress)
 	mux.HandleFunc("GET /v1/institutional", s.getInstitutional)
 	mux.HandleFunc("GET /v1/indices", s.getIndices)
+	mux.HandleFunc("GET /v1/briefing", s.getBriefing)
 	mux.HandleFunc("GET /v1/stocks/{ticker}/short", s.getShort)
 	mux.HandleFunc("GET /v1/stream", s.getStream)
 
@@ -1556,6 +1564,20 @@ func (s *Server) getShort(w http.ResponseWriter, r *http.Request) {
 }
 
 // getIndices returns the latest major-market-index levels (homepage strip).
+// getBriefing returns today's AI pre-market briefing; 404 until generated.
+func (s *Server) getBriefing(w http.ResponseWriter, _ *http.Request) {
+	if s.briefing == nil {
+		writeJSON(w, http.StatusNotFound, errBody("briefing not available"))
+		return
+	}
+	date, text, at, ok := s.briefing.Get()
+	if !ok {
+		writeJSON(w, http.StatusNotFound, errBody("briefing not generated yet"))
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"date": date, "text": text, "generated_at": at})
+}
+
 func (s *Server) getIndices(w http.ResponseWriter, _ *http.Request) {
 	indices := []store.IndexQuote{}
 	if s.indices != nil {
