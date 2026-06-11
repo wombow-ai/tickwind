@@ -299,6 +299,7 @@ func main() {
 	// Options overview (squeeze/sentiment): Cboe ~15-min delayed chains, fetched
 	// on demand and cached 15 min per ticker. Keyless public CDN.
 	optionsCache := ingest.NewOptionsCache(cboe.New())
+	go optionsCache.Run(ctx) // whole-market unusual-options scan (background, 30 min)
 
 	// Daily Chinese pre-market briefing: one LLM generation a day from data
 	// already in memory. Off (404) when no LLM key is configured.

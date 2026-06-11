@@ -88,6 +88,7 @@ export function TopNav() {
     {href: '/briefing', label: tr('nav.briefing')},
     {href: '/screen', label: tr('nav.screen')},
     {href: '/smart-money', label: tr('nav.smartMoney')},
+    {href: '/unusual', label: tr('nav.unusual')},
     {href: '/earnings', label: tr('nav.earnings')},
     {href: '/events', label: tr('nav.events')},
     {href: '/community', label: tr('nav.community')},

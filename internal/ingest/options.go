@@ -2,6 +2,7 @@ package ingest
 
 import (
 	"context"
+	"sort"
 	"sync"
 	"time"
 
@@ -11,6 +12,22 @@ import (
 // optionsTTL is how long a fetched chain stays fresh. Cboe's feed is ~15-min
 // delayed, so refetching more often than that buys nothing.
 const optionsTTL = 15 * time.Minute
+
+// unusualScan is the set of heavily-optioned US names the whole-market unusual-
+// activity board scans. Kept to liquid mega-caps, meme stocks and major ETFs —
+// where outsized single-contract volume actually signals something.
+var unusualScan = []string{
+	"AAPL", "NVDA", "TSLA", "AMD", "MSFT", "META", "AMZN", "GOOGL", "NFLX", "AVGO",
+	"MU", "INTC", "SMCI", "PLTR", "COIN", "HOOD", "MSTR", "SOFI", "BABA", "NIO",
+	"F", "BAC", "AAL", "CCL", "GME", "AMC", "UBER", "DIS", "PYPL", "CRM",
+	"SPY", "QQQ", "IWM", "TQQQ", "SQQQ", "ARKK", "GLD", "TLT", "SLV", "XLF",
+}
+
+// unusualTopN caps the board size; unusualRefresh is the scan cadence.
+const (
+	unusualTopN    = 30
+	unusualRefresh = 30 * time.Minute
+)
 
 // OptionsView is the per-stock options summary served to the API: put/call
 // ratios, max pain (nearest expiry), and the open-interest leaders.
@@ -38,6 +55,24 @@ type OptionsCache struct {
 	mu       sync.Mutex
 	cache    map[string]optionsEntry
 	inflight map[string]chan struct{}
+
+	// Whole-market unusual-activity board, refreshed by Run.
+	unusualMu sync.RWMutex
+	unusual   []UnusualContract
+	unusualAt time.Time
+}
+
+// UnusualContract is one contract on the unusual-activity board: the per-stock
+// chain contract plus its parent ticker and volume/OI ratio.
+type UnusualContract struct {
+	Ticker string  `json:"ticker"`
+	Type   string  `json:"type"`
+	Strike float64 `json:"strike"`
+	Expiry string  `json:"expiry"`
+	Volume int64   `json:"volume"`
+	OI     int64   `json:"oi"`
+	VolOI  float64 `json:"vol_oi"` // volume ÷ open interest (0 when OI is 0)
+	IV     float64 `json:"iv"`
 }
 
 type optionsEntry struct {
@@ -83,6 +118,71 @@ func (c *OptionsCache) Options(ctx context.Context, ticker string) (OptionsView,
 	close(ch)
 	c.mu.Unlock()
 	return view, ok
+}
+
+// Unusual returns the latest whole-market unusual-activity board (top contracts
+// by single-contract volume) and when it was built. nil before the first scan.
+func (c *OptionsCache) Unusual() ([]UnusualContract, time.Time) {
+	c.unusualMu.RLock()
+	defer c.unusualMu.RUnlock()
+	return c.unusual, c.unusualAt
+}
+
+// Run scans the unusual list immediately and then every unusualRefresh until
+// ctx is cancelled. Chains are fetched serially with a polite gap (each is
+// ~1-2 MB) on a background goroutine, off the request path.
+func (c *OptionsCache) Run(ctx context.Context) {
+	c.scanUnusual(ctx)
+	t := time.NewTicker(unusualRefresh)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			c.scanUnusual(ctx)
+		}
+	}
+}
+
+func (c *OptionsCache) scanUnusual(ctx context.Context) {
+	var all []UnusualContract
+	for i, tk := range unusualScan {
+		if i > 0 {
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(time.Second): // polite gap between large chain pulls
+			}
+		}
+		chain, ok, err := c.src.Options(ctx, tk)
+		if err != nil || !ok {
+			continue
+		}
+		for _, ct := range chain.Contracts {
+			if ct.Volume <= 0 {
+				continue
+			}
+			var volOI float64
+			if ct.OI > 0 {
+				volOI = float64(ct.Volume) / float64(ct.OI)
+			}
+			all = append(all, UnusualContract{
+				Ticker: tk, Type: ct.Type, Strike: ct.Strike, Expiry: ct.Expiry,
+				Volume: ct.Volume, OI: ct.OI, VolOI: volOI, IV: ct.IV,
+			})
+		}
+	}
+	if len(all) == 0 {
+		return // total miss (e.g. CDN down) — keep the previous board
+	}
+	sort.Slice(all, func(i, j int) bool { return all[i].Volume > all[j].Volume })
+	if len(all) > unusualTopN {
+		all = all[:unusualTopN]
+	}
+	c.unusualMu.Lock()
+	c.unusual, c.unusualAt = all, time.Now().UTC()
+	c.unusualMu.Unlock()
 }
 
 func (c *OptionsCache) compute(ctx context.Context, ticker string) (OptionsView, bool) {

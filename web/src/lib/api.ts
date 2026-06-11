@@ -874,6 +874,30 @@ export function getOptions(ticker: string, signal?: AbortSignal): Promise<Option
   );
 }
 
+/** One row of the whole-market unusual options-activity board. */
+export interface UnusualContract {
+  ticker: string;
+  type: string; // "C" | "P"
+  strike: number;
+  expiry: string;
+  volume: number;
+  oi: number;
+  vol_oi: number;
+  iv: number;
+}
+
+/** Envelope from `GET /v1/options/unusual`. */
+export interface UnusualResponse {
+  count: number;
+  updated_at: string;
+  contracts: UnusualContract[];
+}
+
+/** Fetches the whole-market unusual options-activity board (delayed, Cboe). */
+export function getUnusualOptions(signal?: AbortSignal): Promise<UnusualResponse> {
+  return getJson<UnusualResponse>('/v1/options/unusual', signal);
+}
+
 /** The daily AI pre-market briefing from `GET /v1/briefing` (404 until generated). */
 export interface Briefing {
   date: string; // ET day, YYYY-MM-DD

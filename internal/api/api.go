@@ -144,10 +144,11 @@ type BriefingSource interface {
 	Get() (date, text string, at time.Time, ok bool)
 }
 
-// OptionsSource serves the per-stock delayed options overview (nil-safe; nil or
-// ok=false = 404). Satisfied by *ingest.OptionsCache.
+// OptionsSource serves the per-stock delayed options overview + the whole-market
+// unusual-activity board (nil-safe). Satisfied by *ingest.OptionsCache.
 type OptionsSource interface {
 	Options(ctx context.Context, ticker string) (ingest.OptionsView, bool)
+	Unusual() ([]ingest.UnusualContract, time.Time)
 }
 
 type Server struct {
@@ -253,6 +254,7 @@ func New(st store.Store, hub QuoteStream, enricher enrich.Enricher, verifier *au
 	mux.HandleFunc("GET /v1/briefing", s.getBriefing)
 	mux.HandleFunc("GET /v1/stocks/{ticker}/short", s.getShort)
 	mux.HandleFunc("GET /v1/stocks/{ticker}/options", s.getOptions)
+	mux.HandleFunc("GET /v1/options/unusual", s.getUnusualOptions)
 	mux.HandleFunc("GET /v1/stream", s.getStream)
 
 	// auth.Middleware attaches the user when a valid bearer token is present;
@@ -1587,6 +1589,19 @@ func (s *Server) getOptions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, view)
+}
+
+// getUnusualOptions returns the whole-market unusual options-activity board
+// (top contracts by single-contract volume). Empty list until the first scan.
+func (s *Server) getUnusualOptions(w http.ResponseWriter, _ *http.Request) {
+	contracts := []ingest.UnusualContract{}
+	var at time.Time
+	if s.options != nil {
+		if got, t := s.options.Unusual(); got != nil {
+			contracts, at = got, t
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"count": len(contracts), "updated_at": at, "contracts": contracts})
 }
 
 // getBriefing returns today's AI pre-market briefing; 404 until generated.
