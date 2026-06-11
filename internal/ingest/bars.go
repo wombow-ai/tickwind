@@ -85,14 +85,24 @@ func overlayConsolidated(q store.Quote, price, prevClose float64, at time.Time, 
 	q.At = at
 	q.Source = "finnhub"
 	q.Session = session
-	if q.PrevClose == 0 && prevClose > 0 {
-		q.PrevClose = prevClose
-	}
 	if q.RegularClose == 0 && prevClose > 0 {
 		q.RegularClose = prevClose
 	}
+	// prev_close drives the day-change and MUST share RegularClose's basis.
 	if session == "regular" {
 		q.RegularClose = price // live regular price is the regular close
+		if q.PrevClose == 0 && prevClose > 0 {
+			q.PrevClose = prevClose // same (consolidated) source as price → consistent
+		}
+	} else if q.RegularClose > 0 {
+		// Extended hours: pairing an IEX/daily-bar RegularClose with a stale or
+		// sparse prev bar (this is the fallback path, taken because IEX was
+		// stale) manufactures a phantom day-change on thin names — e.g. a +90%
+		// headline. Anchor prev_close to RegularClose so the day-change is 0;
+		// the extended delta (price vs close) carries the real move.
+		q.PrevClose = q.RegularClose
+	} else if q.PrevClose == 0 && prevClose > 0 {
+		q.PrevClose = prevClose
 	}
 	return q
 }

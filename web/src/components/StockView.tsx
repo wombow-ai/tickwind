@@ -303,12 +303,19 @@ export function StockView({ticker}: {ticker: string}) {
     quote && quote.regular_close && quote.regular_close > 0
       ? quote.regular_close
       : quote?.price ?? 0;
+  // The regular-session figure shown as the primary line: the LIVE price during
+  // regular hours, else the most-recent regular close (pre/post/overnight). Both
+  // the big number and its day-change derive from this single value, so they
+  // always agree — previously the big number used `price` while the change used
+  // `regClose`, which disagreed whenever the snapshot's daily bar lagged the
+  // latest trade.
+  const regularPrice = quote?.session === 'regular' ? quote.price : regClose;
   const isExt =
     !!quote &&
     (quote.session === 'pre' || quote.session === 'post' || quote.session === 'overnight') &&
     regClose > 0 &&
     Math.abs(quote.price - regClose) > 1e-9;
-  const primaryPrice = isExt ? regClose : quote?.price ?? 0;
+  const primaryPrice = regularPrice;
 
   return (
     <div className="mx-auto max-w-4xl">
@@ -348,8 +355,8 @@ export function StockView({ticker}: {ticker: string}) {
             <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
               {quote && quote.prev_close ? (
                 <ChangeLine
-                  chg={regClose - quote.prev_close}
-                  pct={((regClose - quote.prev_close) / quote.prev_close) * 100}
+                  chg={regularPrice - quote.prev_close}
+                  pct={((regularPrice - quote.prev_close) / quote.prev_close) * 100}
                   cur={cur}
                   size="lg"
                 />
