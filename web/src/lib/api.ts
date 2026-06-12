@@ -947,18 +947,25 @@ export function getThirteenF(signal?: AbortSignal): Promise<ThirteenFBoard> {
 /** The AI digest for a stock from `GET /v1/stocks/{t}/summary` (cached daily). */
 export interface AISummary {
   ticker: string;
-  /** Chinese bullet points ("- " lines); empty when there's no material yet. */
+  /** Bullet points ("- " lines) in the requested language; empty when there's
+   *  no material yet. */
   summary: string;
   generated_at?: string;
 }
 
 /**
- * Fetches the stock's AI digest. Rejects with 503 when no LLM is configured
- * (hide the card) and 429 when the daily generation budget is exhausted.
+ * Fetches the stock's AI digest in the given UI language ("zh"|"en"; cached
+ * per language, server-side). Rejects with 503 when no LLM is configured (hide
+ * the card) and 429 when the daily generation budget is exhausted.
  */
-export function getSummary(ticker: string, signal?: AbortSignal): Promise<AISummary> {
+export function getSummary(
+  ticker: string,
+  lang: string,
+  signal?: AbortSignal,
+): Promise<AISummary> {
+  const q = lang === 'en' ? '?lang=en' : '';
   return getJson<AISummary>(
-    `/v1/stocks/${encodeURIComponent(normalizeTicker(ticker))}/summary`,
+    `/v1/stocks/${encodeURIComponent(normalizeTicker(ticker))}/summary${q}`,
     signal,
   );
 }

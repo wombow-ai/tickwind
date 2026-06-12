@@ -1845,8 +1845,12 @@ func (s *Server) getSummary(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ticker := strings.ToUpper(strings.TrimSpace(r.PathValue("ticker")))
+	lang := "zh" // Chinese-first default; English UI requests ?lang=en
+	if r.URL.Query().Get("lang") == "en" {
+		lang = "en"
+	}
 	day := summaryDay()
-	key := ticker + "|" + day
+	key := ticker + "|" + day + "|" + lang
 
 	for {
 		s.sumMu.Lock()
@@ -1872,7 +1876,7 @@ func (s *Server) getSummary(w http.ResponseWriter, r *http.Request) {
 	if s.sumDayDate != day {
 		s.sumDayDate, s.sumDayCount = day, 0
 		for k := range s.sumCache { // yesterday's digests are dead weight
-			if !strings.HasSuffix(k, day) {
+			if !strings.Contains(k, "|"+day+"|") { // key = ticker|day|lang
 				delete(s.sumCache, k)
 			}
 		}
@@ -1906,7 +1910,7 @@ func (s *Server) getSummary(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{"ticker": ticker, "summary": "", "generated_at": e.At})
 		return
 	}
-	summary, err := s.enrich.Summarize(r.Context(), input)
+	summary, err := s.enrich.Summarize(r.Context(), input, lang)
 	if err != nil {
 		s.sumMu.Lock()
 		s.sumDayCount-- // failed generation shouldn't burn budget

@@ -23,9 +23,10 @@ var ErrDisabled = errors.New("enrich: llm not configured")
 type Enricher interface {
 	// Enabled reports whether a real LLM backend is configured.
 	Enabled() bool
-	// Summarize returns a concise summary of text, or ErrDisabled when no LLM
+	// Summarize returns a concise summary of text in the given language
+	// ("zh"|"en"; anything else falls back to zh), or ErrDisabled when no LLM
 	// is configured.
-	Summarize(ctx context.Context, text string) (string, error)
+	Summarize(ctx context.Context, text, lang string) (string, error)
 	// TranslateTitles translates English news headlines to Simplified Chinese,
 	// preserving order (result[i] is the translation of titles[i]). Returns
 	// ErrDisabled when no LLM is configured.
@@ -70,7 +71,7 @@ type Noop struct{}
 
 func (Noop) Enabled() bool { return false }
 
-func (Noop) Summarize(context.Context, string) (string, error) {
+func (Noop) Summarize(context.Context, string, string) (string, error) {
 	return "", ErrDisabled
 }
 
@@ -90,6 +91,21 @@ const systemPrompt = "你是股票信息速览助手。仅基于用户提供的�
 	"内容涵盖:发生了什么、讨论的焦点、市场情绪倾向。要求:只陈述材料中出现的信息,在要点中注明来源类型(如\"据新闻\"\"据社区讨论\");" +
 	"不要编造数字、事件或因果;严禁任何买卖建议、目标价或估值判断;语气中性客观。材料不足时输出更少条目;完全无实质内容时只输出\"暂无足够信息\"。"
 
+// systemPromptEN is the English-output counterpart, same guardrails. The product
+// is Chinese-first, so zh is the default; en is served when the user's UI is in
+// English.
+const systemPromptEN = "You are a stock-info digest assistant. Based ONLY on the news headlines and community posts the user provides, output 3-5 bullet points in English, each starting with \"- \". " +
+	"Cover: what happened, what the discussion focuses on, and the sentiment leaning. Requirements: state only information present in the material, and attribute the source type in each bullet (e.g. \"per news\", \"per community\"); " +
+	"do not fabricate numbers, events or causation; absolutely no buy/sell advice, price targets or valuation calls; keep a neutral, objective tone. Output fewer bullets when material is thin; output only \"Not enough information yet\" when there is no substantive content."
+
+// summarySystemPrompt picks the digest system prompt for a UI language.
+func summarySystemPrompt(lang string) string {
+	if lang == "en" {
+		return systemPromptEN
+	}
+	return systemPrompt
+}
+
 type llm struct {
 	http    *http.Client
 	apiKey  string
@@ -99,12 +115,12 @@ type llm struct {
 
 func (l *llm) Enabled() bool { return true }
 
-func (l *llm) Summarize(ctx context.Context, text string) (string, error) {
+func (l *llm) Summarize(ctx context.Context, text, lang string) (string, error) {
 	body, err := json.Marshal(map[string]any{
 		"model":       l.model,
 		"temperature": 0.2,
 		"messages": []map[string]string{
-			{"role": "system", "content": systemPrompt},
+			{"role": "system", "content": summarySystemPrompt(lang)},
 			{"role": "user", "content": text},
 		},
 	})
