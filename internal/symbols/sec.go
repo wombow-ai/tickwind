@@ -49,6 +49,10 @@ func FetchUS(ctx context.Context, hc *http.Client, userAgent string) ([]Symbol, 
 		col[strings.ToLower(f)] = i
 	}
 	nameCol, tickerCol, exchCol := col["name"], col["ticker"], col["exchange"]
+	cikCol := -1 // optional — guard so a missing column doesn't alias column 0
+	if c, ok := col["cik"]; ok {
+		cikCol = c
+	}
 
 	out := make([]Symbol, 0, len(body.Data))
 	for _, row := range body.Data {
@@ -62,6 +66,7 @@ func FetchUS(ctx context.Context, hc *http.Client, userAgent string) ([]Symbol, 
 			Name:     name,
 			Exchange: cell(row, exchCol),
 			Country:  "US",
+			CIK:      cellInt(row, cikCol),
 		})
 	}
 	return out, nil
@@ -74,4 +79,20 @@ func cell(row []any, i int) string {
 	}
 	s, _ := row[i].(string)
 	return strings.TrimSpace(s)
+}
+
+// cellInt returns the integer at column i, or 0 if absent/non-numeric. JSON
+// numbers decode to float64 by default, so the CIK arrives as a float64.
+func cellInt(row []any, i int) int {
+	if i < 0 || i >= len(row) {
+		return 0
+	}
+	switch v := row[i].(type) {
+	case float64:
+		return int(v)
+	case json.Number:
+		n, _ := v.Int64()
+		return int(n)
+	}
+	return 0
 }

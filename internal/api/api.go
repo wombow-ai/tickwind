@@ -94,6 +94,10 @@ type TickerIngestor interface {
 // SymbolSearcher searches the symbol directory for autocomplete. nil → empty.
 type SymbolSearcher interface {
 	Search(q string, limit int) []symbols.Symbol
+	// ByCIK resolves a SEC Central Index Key to its symbol, so CIK-keyed filings
+	// (e.g. 13D/13G ownership refs) can link to the stock page. ok=false when
+	// unknown / the directory is unloaded.
+	ByCIK(cik int) (symbols.Symbol, bool)
 }
 
 // EventSource provides the latest major-events timeline. nil → empty list.
@@ -1691,6 +1695,21 @@ func (s *Server) getInstitutional(w http.ResponseWriter, r *http.Request) {
 	}
 	if lim := queryLimit(r, 60); lim > 0 && len(filings) > lim {
 		filings = filings[:lim]
+	}
+	// Resolve each filing's subject-company CIK to a ticker so the frontend can
+	// link the company name to its stock page. Copy into a fresh slice (don't
+	// mutate the shared cache snapshot).
+	if s.symbols != nil && len(filings) > 0 {
+		enriched := make([]sec.OwnershipRef, len(filings))
+		for i, f := range filings {
+			if f.Ticker == "" && f.CIK != 0 {
+				if sym, ok := s.symbols.ByCIK(f.CIK); ok {
+					f.Ticker = sym.Ticker
+				}
+			}
+			enriched[i] = f
+		}
+		filings = enriched
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"count": len(filings), "filings": filings})
 }

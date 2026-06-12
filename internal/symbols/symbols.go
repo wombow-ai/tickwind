@@ -16,6 +16,10 @@ type Symbol struct {
 	Name     string `json:"name"`
 	Exchange string `json:"exchange"` // "Nasdaq" | "NYSE" | "OTC" | ...
 	Country  string `json:"country"`  // "US" for now (per-source); intl later
+	// CIK is the SEC Central Index Key (US filers). Lets filings keyed by CIK —
+	// e.g. 13D/13G beneficial-ownership refs — resolve back to a ticker. 0 when
+	// unknown (non-US, or sources without it).
+	CIK int `json:"cik,omitempty"`
 	// Aliases are alternate search terms (notably Chinese names, e.g. "英伟达"
 	// for NVDA) so zh-first users can find a stock by its native name.
 	Aliases []string `json:"aliases,omitempty"`
@@ -27,6 +31,7 @@ type Index struct {
 	nameLower []string         // parallel to all: lower-cased name (substring scan)
 	aliases   [][]string       // parallel to all: this symbol's aliases (e.g. CJK names)
 	byTicker  map[string]int   // upper ticker -> index in all
+	byCIK     map[int]int      // SEC CIK -> index in all (US filers)
 	nameTok   map[string][]int // lower name token -> indices in all
 }
 
@@ -36,6 +41,7 @@ type Index struct {
 func Build(syms []Symbol) *Index {
 	idx := &Index{
 		byTicker: make(map[string]int, len(syms)),
+		byCIK:    make(map[int]int, len(syms)),
 		nameTok:  make(map[string][]int),
 	}
 	aliasTable := Aliases()
@@ -56,6 +62,11 @@ func Build(syms []Symbol) *Index {
 		idx.nameLower = append(idx.nameLower, strings.ToLower(s.Name))
 		idx.aliases = append(idx.aliases, s.Aliases)
 		idx.byTicker[t] = i
+		if s.CIK != 0 {
+			if _, dup := idx.byCIK[s.CIK]; !dup {
+				idx.byCIK[s.CIK] = i // first listing wins (same as byTicker)
+			}
+		}
 		seen := map[string]bool{}
 		for _, tok := range tokenize(s.Name) {
 			if seen[tok] {
@@ -85,6 +96,20 @@ func (idx *Index) Len() int {
 		return 0
 	}
 	return len(idx.all)
+}
+
+// ByCIK returns the symbol for a SEC Central Index Key, if indexed. Lets
+// CIK-keyed filings (e.g. 13D/13G ownership refs) resolve to a ticker. A nil
+// Index or unknown CIK returns ok=false.
+func (idx *Index) ByCIK(cik int) (Symbol, bool) {
+	if idx == nil || cik == 0 {
+		return Symbol{}, false
+	}
+	i, ok := idx.byCIK[cik]
+	if !ok {
+		return Symbol{}, false
+	}
+	return idx.all[i], true
 }
 
 // USTickers returns every indexed US ticker (for the universe price sweep). nil-safe.

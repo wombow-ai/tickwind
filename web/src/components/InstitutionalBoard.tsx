@@ -1,6 +1,7 @@
 'use client';
 
 import {FileText, Landmark} from 'lucide-react';
+import Link from 'next/link';
 import {useCallback, useEffect, useState} from 'react';
 import {getInstitutional, type InstitutionalFiling} from '@/lib/api';
 import {useLang, useT} from '@/lib/i18n';
@@ -141,7 +142,16 @@ function Row({
           <span className={cx('text-[13px] italic', t.faint)}>{tr('inst.unknownFiler')}</span>
         )}
         <span className={cx('text-[12px]', t.faint)}>→</span>
-        <span className={cx('text-[13.5px] font-semibold', t.sub)}>{f.company}</span>
+        {f.ticker ? (
+          <Link
+            href={`/stock/${encodeURIComponent(f.ticker)}`}
+            className={cx('text-[13.5px] font-semibold hover:underline', t.accentText)}
+          >
+            {f.company}
+          </Link>
+        ) : (
+          <span className={cx('text-[13.5px] font-semibold', t.sub)}>{f.company}</span>
+        )}
         <span className={cx('rounded-full px-2 py-0.5 text-[10.5px] font-semibold', badge)}>
           {f.activist ? tr('inst.activist') : tr('inst.passive')} · {f.form_type}
         </span>

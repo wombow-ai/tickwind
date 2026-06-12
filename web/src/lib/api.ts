@@ -1033,6 +1033,7 @@ export interface InstitutionalFiling {
   form_type: string; // "SC 13D" | "SC 13D/A" | "SC 13G" | "SC 13G/A"
   cik: number;
   company: string; // subject issuer
+  ticker?: string; // resolved from cik (links to the stock page) when known
   accession: string;
   filed_date: string; // YYYYMMDD
   activist: boolean; // true = 13D (active stake), false = 13G (passive)

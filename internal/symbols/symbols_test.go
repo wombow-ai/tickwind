@@ -92,3 +92,23 @@ func TestBuildDedupesAndLimits(t *testing.T) {
 		t.Errorf("nil index should return nil, got %v", got)
 	}
 }
+
+func TestByCIK(t *testing.T) {
+	idx := Build([]Symbol{
+		{Ticker: "NVDA", Name: "NVIDIA Corp", Exchange: "Nasdaq", Country: "US", CIK: 1045810},
+		{Ticker: "AAPL", Name: "Apple Inc.", Exchange: "Nasdaq", Country: "US", CIK: 320193},
+		{Ticker: "NOCIK", Name: "No CIK Co", Exchange: "NYSE", Country: "US"}, // CIK 0 → not indexed
+	})
+	if s, ok := idx.ByCIK(1045810); !ok || s.Ticker != "NVDA" {
+		t.Errorf("ByCIK(1045810) = %q,%v; want NVDA,true", s.Ticker, ok)
+	}
+	if _, ok := idx.ByCIK(999999); ok {
+		t.Error("ByCIK(unknown) should be ok=false")
+	}
+	if _, ok := idx.ByCIK(0); ok { // CIK 0 is the "unknown" sentinel, never indexed
+		t.Error("ByCIK(0) should be ok=false")
+	}
+	if _, ok := (*Index)(nil).ByCIK(1045810); ok {
+		t.Error("nil Index ByCIK should be ok=false")
+	}
+}

@@ -20,6 +20,7 @@ type OwnershipRef struct {
 	FormType  string `json:"form_type"`
 	CIK       int    `json:"cik"`
 	Company   string `json:"company"`
+	Ticker    string `json:"ticker,omitempty"` // resolved from CIK by the API (links to /stock)
 	Accession string `json:"accession"`
 	FiledDate string `json:"filed_date"`      // as listed in the index (YYYYMMDD)
 	Activist  bool   `json:"activist"`        // true for 13D (and 13D/A); false for 13G

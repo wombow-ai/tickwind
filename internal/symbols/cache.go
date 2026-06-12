@@ -26,3 +26,6 @@ func (c *Cache) Get() *Index {
 
 // Search runs against the current snapshot (empty while unloaded).
 func (c *Cache) Search(q string, limit int) []Symbol { return c.Get().Search(q, limit) }
+
+// ByCIK resolves a SEC CIK against the current snapshot (none while unloaded).
+func (c *Cache) ByCIK(cik int) (Symbol, bool) { return c.Get().ByCIK(cik) }
