@@ -57,6 +57,9 @@ func New() *Store {
 
 func key(ticker string) string { return strings.ToUpper(strings.TrimSpace(ticker)) }
 
+// Ping always succeeds — the in-memory store is its own process.
+func (s *Store) Ping(_ context.Context) error { return nil }
+
 func (s *Store) UpsertSecurity(_ context.Context, sec store.Security) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()

@@ -48,6 +48,9 @@ func New(ctx context.Context, dsn string) (*Store, error) {
 func (s *Store) Close() { s.pool.Close() }
 
 // UpsertSecurity inserts or updates a tracked security, keyed by ticker.
+// Ping verifies the connection pool can reach Postgres.
+func (s *Store) Ping(ctx context.Context) error { return s.pool.Ping(ctx) }
+
 func (s *Store) UpsertSecurity(ctx context.Context, sec store.Security) error {
 	const q = `
 INSERT INTO securities (ticker, cik, name, market, updated_at)

@@ -297,8 +297,25 @@ func (s *Server) requireUser(w http.ResponseWriter, r *http.Request) (auth.User,
 	return u, true
 }
 
-func (s *Server) health(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "service": "tickwind"})
+// health is a readiness probe: it pings the store and reports subsystem status,
+// returning 503 when a dependency (the DB) is unreachable so uptime monitors
+// actually catch outages instead of seeing a flat "ok".
+func (s *Server) health(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+	defer cancel()
+	db, status, code := "ok", "ok", http.StatusOK
+	if err := s.store.Ping(ctx); err != nil {
+		db, status, code = "down", "degraded", http.StatusServiceUnavailable
+	}
+	writeJSON(w, code, map[string]any{
+		"status":  status,
+		"service": "tickwind",
+		"db":      db,
+		"llm":     s.enrich != nil && s.enrich.Enabled(),
+		"prices":  s.bars != nil,
+		"options": s.options != nil,
+		"13f":     s.thirteenf != nil,
+	})
 }
 
 // ── Per-user: watchlist ──────────────────────────────────────────────────

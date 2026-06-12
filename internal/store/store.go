@@ -260,6 +260,10 @@ type Comment struct {
 // Store is the persistence boundary. Every backend (memory, postgres)
 // implements this so the rest of the app never depends on a driver.
 type Store interface {
+	// Ping verifies the backend is reachable (used by the /healthz readiness
+	// probe). Returns nil when healthy.
+	Ping(ctx context.Context) error
+
 	UpsertSecurity(ctx context.Context, s Security) error
 	GetSecurity(ctx context.Context, ticker string) (Security, bool, error)
 

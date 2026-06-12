@@ -23,6 +23,15 @@ type Split struct {
 // Compile-time assurance that Split satisfies Store.
 var _ Store = Split{}
 
+// Ping checks both backends — a readiness probe should fail if either the
+// durable Market store or the per-user store is unreachable.
+func (s Split) Ping(ctx context.Context) error {
+	if err := s.Market.Ping(ctx); err != nil {
+		return err
+	}
+	return s.User.Ping(ctx)
+}
+
 // ── Market: collected data (durable) ─────────────────────────────────────
 
 func (s Split) UpsertSecurity(ctx context.Context, sec Security) error {
