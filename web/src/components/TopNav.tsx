@@ -137,7 +137,7 @@ export function TopNav() {
           onSelect={go}
           onSubmit={search}
           placeholder={tr('nav.search')}
-          className="ml-1 hidden w-56 lg:block"
+          className="ml-1 hidden w-44 lg:block"
         />
 
         <nav className="hidden items-center gap-1 md:flex">
@@ -169,7 +169,7 @@ export function TopNav() {
             href="/announcements"
             aria-current={pathname === '/announcements' ? 'page' : undefined}
             className={cx(
-              'hidden rounded-full px-3 py-1.5 text-[13px] font-medium md:inline-flex',
+              'hidden whitespace-nowrap rounded-full px-3 py-1.5 text-[13px] font-medium md:inline-flex',
               pathname === '/announcements' ? t.accentText : t.sub,
               'hover:opacity-80',
             )}

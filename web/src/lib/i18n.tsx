@@ -493,6 +493,8 @@ const dict: Record<Lang, Record<string, string>> = {
     'notes.legendEvent': 'Event',
     'notes.legendNotes': 'Notes',
     'common.ago': 'ago',
+    'common.showMore': 'Show more',
+    'common.showLess': 'Show less',
   },
   zh: {
     // top nav
@@ -911,5 +913,7 @@ const dict: Record<Lang, Record<string, string>> = {
     'notes.legendEvent': '事件',
     'notes.legendNotes': '笔记',
     'common.ago': '前',
+    'common.showMore': '展开全文',
+    'common.showLess': '收起',
   },
 };

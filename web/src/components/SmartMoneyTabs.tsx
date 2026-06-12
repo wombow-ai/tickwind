@@ -23,9 +23,9 @@ export function SmartMoneyTabs({initial}: {initial: SmartMoneyTab}) {
   const [tab, setTab] = useState<SmartMoneyTab>(initial);
 
   const tabs: {id: SmartMoneyTab; label: string}[] = [
-    {id: 'institutional', label: tr('nav.institutional')},
-    {id: 'congress', label: tr('nav.congress')},
     {id: '13f', label: tr('13f.tab')},
+    {id: 'congress', label: tr('nav.congress')},
+    {id: 'institutional', label: tr('nav.institutional')},
   ];
 
   return (

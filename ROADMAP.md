@@ -550,3 +550,4 @@ TTL) → ⬜ ④ `GET /v1/stocks/{t}/short` (short_volume_pct, days_to_cover, SI
 _Working agreement: each `/loop` iteration picks the next unchecked item(s),
 implements rigorously (Google style, OSS reuse, parallel subagents where safe),
 verifies (build/vet/lint), updates this file + `CLAUDE.md`, and commits._
+> **🔧收官后微调(owner 2026-06-12)**:(1) **晨报折叠靠前**(owner 选)——BriefingCard 默认 collapse 到 max-h-40 + 底部渐隐 + 「展开全文/Show more」toggle(useRef 量 scrollHeight>172 才显 toggle;summary-first 高曝光但不占高度)。(2) **Smart Money 标签换位**——institutional 内容少→把「大佬持仓 13F」提到第一并设为默认 landing(tabs 序 13f|congress|institutional;page.tsx 默认 '13f');机构举牌移到最后。(3) **英文导航不换行**——「What's new」加 whitespace-nowrap(不再折行)+ 搜索框 lg 由 w-56 收窄到 w-44(腾~48px,中文 lg 仍带内联搜索不受损)。预览验证:折叠态渐隐+toggle 展开/收起、tab 序 Whale 13F 首+默认、英文导航 1080px 单行不溢出(bar 1070/1070)。纯前端,web 绿。
