@@ -31,8 +31,18 @@ async function indexableTickers(): Promise<string[]> {
 }
 
 /**
+ * Bilingual hreflang alternates for a sitemap URL. Every page is served in both
+ * languages via a `?lang=zh|en` param, so each entry advertises its en / zh
+ * variants — letting search engines index and language-target both.
+ */
+function langAlt(url: string): {languages: Record<string, string>} {
+  return {languages: {en: `${url}?lang=en`, 'zh-CN': `${url}?lang=zh`}};
+}
+
+/**
  * Sitemap of the public, indexable pages: the hub + section pages, and a stock
  * page per indexable ticker. Per-user/auth routes are intentionally omitted.
+ * Every entry carries en / zh hreflang alternates (URL-level i18n via `?lang=`).
  */
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const now = new Date();
@@ -56,5 +66,8 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     changeFrequency: 'hourly',
     priority: 0.8,
   }));
-  return [...staticPages, ...stockPages];
+  return [...staticPages, ...stockPages].map(entry => ({
+    ...entry,
+    alternates: langAlt(entry.url),
+  }));
 }

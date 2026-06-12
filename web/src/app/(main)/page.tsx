@@ -1,6 +1,6 @@
 import type {Metadata} from 'next';
 import Link from 'next/link';
-import {APP_NAME, APP_TAGLINE, SITE_URL} from '@/lib/config';
+import {APP_NAME, APP_TAGLINE, SITE_URL, langAlternates} from '@/lib/config';
 import {HomeHub} from '@/components/HomeHub';
 import {LocalizedTitle} from '@/components/LocalizedTitle';
 
@@ -16,6 +16,7 @@ export const metadata: Metadata = {
   description:
     'Tickwind 是面向中文投资者的美股数据平台:实时行情、SEC 内部人买入、国会山股神(议员持仓交易)、13D/13G 机构举牌、财报日历、期权异动、轧空雷达与 AI 中文速览。Data-first US-stock tracker for Chinese-speaking investors.',
   keywords: ['美股', '美股行情', '国会山股神', '美股内部人买入', '财报日历', '期权异动', '轧空', 'AI 股票速览', '13F 持仓', 'US stocks', 'congress trading'],
+  alternates: langAlternates('/'),
 };
 
 // Server-rendered links to every public board — real content + internal linking

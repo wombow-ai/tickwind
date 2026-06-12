@@ -40,3 +40,25 @@ export const APP_NAME = 'Tickwind';
 
 /** Short tagline shown in the header. */
 export const APP_TAGLINE = "Read every tick. See where the market's blowing.";
+
+/**
+ * Bilingual hreflang alternates for a page `path` (e.g. `/smart-money`). The
+ * site does URL-level i18n via a `?lang=zh|en` param (resolved before paint by
+ * the language no-flash script), so search engines can index both languages of
+ * the same page. `canonical` is the clean path; `x-default` points there (it
+ * defaults to English). Assign to a page's `metadata.alternates`.
+ */
+export function langAlternates(path: string): {
+  canonical: string;
+  languages: Record<string, string>;
+} {
+  const base = `${SITE_URL}${path}`;
+  return {
+    canonical: base,
+    languages: {
+      en: `${base}?lang=en`,
+      'zh-CN': `${base}?lang=zh`,
+      'x-default': base,
+    },
+  };
+}

@@ -15,8 +15,13 @@ export type Lang = 'en' | 'zh';
 const STORAGE_KEY = 'tw-lang';
 const EVENT = 'tw-lang-change';
 
-/** Inline script applying the persisted language before first paint. */
-export const langNoFlashScript = `(function(){try{var l=localStorage.getItem('${STORAGE_KEY}');if(l==='zh'||l==='en'){document.documentElement.lang=l;}}catch(e){}})();`;
+/**
+ * Inline script applying the chosen language before first paint. A `?lang=zh|en`
+ * URL param wins (and is persisted) — this is what makes the bilingual hreflang
+ * URLs resolve to the right language for crawlers and shared links; otherwise the
+ * persisted preference (from the in-app toggle) is used.
+ */
+export const langNoFlashScript = `(function(){try{var p=new URLSearchParams(location.search).get('lang');var s=null;try{s=localStorage.getItem('${STORAGE_KEY}');}catch(e){}var l=(p==='zh'||p==='en')?p:s;if(l==='zh'||l==='en'){document.documentElement.lang=l;}if((p==='zh'||p==='en')&&p!==s){try{localStorage.setItem('${STORAGE_KEY}',p);}catch(e){}}}catch(e){}})();`;
 
 function subscribe(cb: () => void): () => void {
   window.addEventListener(EVENT, cb);

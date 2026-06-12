@@ -1,4 +1,5 @@
 import type {Metadata} from 'next';
+import {langAlternates} from '@/lib/config';
 import {GuruRail} from '@/components/GuruRail';
 import {LocalizedTitle} from '@/components/LocalizedTitle';
 import {OpportunityBoard} from '@/components/OpportunityBoard';
@@ -14,6 +15,7 @@ export const metadata: Metadata = {
   description:
     '美股内部人买入雷达：从 SEC Form 4 申报中挖出高管/董事公开市场增持的小盘股，配合独立财经作者的最新观点。US insider-buying signals from SEC Form 4 filings. 公开数据，不构成投资建议。',
   keywords: ['美股内部人买入', '高管增持', '内部人交易', 'Form 4', 'insider buying', '小盘股机会'],
+  alternates: langAlternates('/opportunities'),
 };
 
 /** Public Opportunity board (small-cap insider-buy signals) + the Guru-watch rail. */
