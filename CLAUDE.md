@@ -391,6 +391,13 @@ feature-flagged plugin, never on the critical path. Web only.
   names, source/platform labels) shows as-sourced. `{t}`/`{n}` placeholders +`.replace()`
   for interpolation. Tab/board keys stay English where they double as state. Left in
   English by design: the `/announcements` changelog (release-notes content).
+  **Owner principle (2026-06): a single-language-only value defaults to ENGLISH.**
+  Page `<title>`s (browser tab) were Chinese-led for SEO but showed Chinese on the
+  English UI — fixed: `metadata.title` is now an absolute ENGLISH string (the crawl +
+  default), and `components/LocalizedTitle.tsx` (client, reads `useLang`) swaps in the
+  zh title for Chinese users. Applied to `/`, `/smart-money`, `/unusual`,
+  `/opportunities`. Chinese SEO keywords stay in `description`/`keywords`/SSR body.
+  Use the same pattern for any future single-value-but-bilingual UI.
 - **Auth**: `web/src/lib/auth.tsx` (`AuthProvider`/`useAuth`) tracks the Supabase
   user + exposes `getToken()`; `web/src/lib/api.ts` private calls take that token
   as `Authorization: Bearer`. `web/src/proxy.ts` refreshes the session cookie
