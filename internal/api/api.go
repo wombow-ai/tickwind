@@ -36,6 +36,7 @@ import (
 	"github.com/wombow-ai/tickwind/internal/sec"
 	"github.com/wombow-ai/tickwind/internal/store"
 	"github.com/wombow-ai/tickwind/internal/symbols"
+	"github.com/wombow-ai/tickwind/internal/thirteenf"
 	"github.com/wombow-ai/tickwind/internal/topics"
 )
 
@@ -151,6 +152,13 @@ type OptionsSource interface {
 	Unusual() ([]ingest.UnusualContract, time.Time)
 }
 
+// ThirteenFSource serves the 13F whale-holdings board — famous funds' quarterly
+// holdings + quarter-over-quarter changes (nil-safe). Satisfied by
+// *thirteenf.Cache.
+type ThirteenFSource interface {
+	Board() (thirteenf.Board, bool)
+}
+
 type Server struct {
 	store         store.Store
 	hub           QuoteStream
@@ -174,6 +182,7 @@ type Server struct {
 	short         ShortSource
 	briefing      BriefingSource
 	options       OptionsSource
+	thirteenf     ThirteenFSource
 	admins        map[string]bool // user UUIDs and/or emails (lowercased) allowed to delete any comment
 	commentRL     *rateLimiter    // per-user comment-post throttle
 	// AI digest cache: one LLM generation per (ticker, ET day), then served from
@@ -188,14 +197,14 @@ type Server struct {
 	log         *slog.Logger
 }
 
-func New(st store.Store, hub QuoteStream, enricher enrich.Enricher, verifier *auth.Verifier, bars BarSource, topicSrc TopicSource, oppSrc OpportunitySource, universeSrc UniverseSource, guruSrc GuruSource, ingestor TickerIngestor, symbolSrc SymbolSearcher, eventSrc EventSource, fundSrc FundamentalsSource, earningsSrc EarningsSource, congressSrc CongressSource, institutionalSrc InstitutionalSource, liveSub LiveSubscriber, indicesSrc IndicesSource, shortSrc ShortSource, briefingSrc BriefingSource, optionsSrc OptionsSource, adminIDs []string, log *slog.Logger) http.Handler {
+func New(st store.Store, hub QuoteStream, enricher enrich.Enricher, verifier *auth.Verifier, bars BarSource, topicSrc TopicSource, oppSrc OpportunitySource, universeSrc UniverseSource, guruSrc GuruSource, ingestor TickerIngestor, symbolSrc SymbolSearcher, eventSrc EventSource, fundSrc FundamentalsSource, earningsSrc EarningsSource, congressSrc CongressSource, institutionalSrc InstitutionalSource, liveSub LiveSubscriber, indicesSrc IndicesSource, shortSrc ShortSource, briefingSrc BriefingSource, optionsSrc OptionsSource, thirteenfSrc ThirteenFSource, adminIDs []string, log *slog.Logger) http.Handler {
 	admins := make(map[string]bool, len(adminIDs))
 	for _, id := range adminIDs {
 		if id = strings.ToLower(strings.TrimSpace(id)); id != "" {
 			admins[id] = true
 		}
 	}
-	s := &Server{store: st, hub: hub, clip: clip.NewFetcher(), enrich: enricher, auth: verifier, bars: bars, topics: topicSrc, opps: oppSrc, universe: universeSrc, gurus: guruSrc, ingestor: ingestor, symbols: symbolSrc, events: eventSrc, fundamentals: fundSrc, earnings: earningsSrc, congress: congressSrc, institutional: institutionalSrc, live: liveSub, indices: indicesSrc, short: shortSrc, briefing: briefingSrc, options: optionsSrc, admins: admins, commentRL: newRateLimiter(10, 10*time.Minute), sumCache: map[string]summaryEntry{}, sumInflight: map[string]chan struct{}{}, log: log}
+	s := &Server{store: st, hub: hub, clip: clip.NewFetcher(), enrich: enricher, auth: verifier, bars: bars, topics: topicSrc, opps: oppSrc, universe: universeSrc, gurus: guruSrc, ingestor: ingestor, symbols: symbolSrc, events: eventSrc, fundamentals: fundSrc, earnings: earningsSrc, congress: congressSrc, institutional: institutionalSrc, live: liveSub, indices: indicesSrc, short: shortSrc, briefing: briefingSrc, options: optionsSrc, thirteenf: thirteenfSrc, admins: admins, commentRL: newRateLimiter(10, 10*time.Minute), sumCache: map[string]summaryEntry{}, sumInflight: map[string]chan struct{}{}, log: log}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", s.health)
 
@@ -255,6 +264,7 @@ func New(st store.Store, hub QuoteStream, enricher enrich.Enricher, verifier *au
 	mux.HandleFunc("GET /v1/stocks/{ticker}/short", s.getShort)
 	mux.HandleFunc("GET /v1/stocks/{ticker}/options", s.getOptions)
 	mux.HandleFunc("GET /v1/options/unusual", s.getUnusualOptions)
+	mux.HandleFunc("GET /v1/13f", s.getThirteenF)
 	mux.HandleFunc("GET /v1/stream", s.getStream)
 
 	// auth.Middleware attaches the user when a valid bearer token is present;
@@ -1602,6 +1612,18 @@ func (s *Server) getUnusualOptions(w http.ResponseWriter, _ *http.Request) {
 		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"count": len(contracts), "updated_at": at, "contracts": contracts})
+}
+
+// getThirteenF serves the 13F whale-holdings board (famous funds' latest
+// quarterly holdings + QoQ changes). Empty board until the first scan completes.
+func (s *Server) getThirteenF(w http.ResponseWriter, _ *http.Request) {
+	board := thirteenf.Board{Funds: []thirteenf.FundHoldings{}}
+	if s.thirteenf != nil {
+		if b, ok := s.thirteenf.Board(); ok {
+			board = b
+		}
+	}
+	writeJSON(w, http.StatusOK, board)
 }
 
 // getBriefing returns today's AI pre-market briefing; 404 until generated.

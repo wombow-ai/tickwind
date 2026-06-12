@@ -82,6 +82,7 @@ func serverWithBars(bars BarSource) *httptest.Server {
 		nil, // no short-interest source in tests
 		nil, // no briefing source in tests
 		nil, // no options source in tests
+		nil, // no 13F source in tests
 		nil, // no admin user ids in tests
 		slog.New(slog.NewTextHandler(io.Discard, nil)),
 	)

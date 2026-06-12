@@ -34,6 +34,7 @@ import (
 	"github.com/wombow-ai/tickwind/internal/institutional"
 	"github.com/wombow-ai/tickwind/internal/krx"
 	"github.com/wombow-ai/tickwind/internal/market"
+	"github.com/wombow-ai/tickwind/internal/openfigi"
 	"github.com/wombow-ai/tickwind/internal/opportunity"
 	"github.com/wombow-ai/tickwind/internal/sec"
 	"github.com/wombow-ai/tickwind/internal/stocktwits"
@@ -43,6 +44,7 @@ import (
 	"github.com/wombow-ai/tickwind/internal/stream"
 	"github.com/wombow-ai/tickwind/internal/substack"
 	"github.com/wombow-ai/tickwind/internal/symbols"
+	"github.com/wombow-ai/tickwind/internal/thirteenf"
 	"github.com/wombow-ai/tickwind/internal/tickertick"
 	"github.com/wombow-ai/tickwind/internal/topics"
 	"github.com/wombow-ai/tickwind/internal/tpex"
@@ -301,6 +303,12 @@ func main() {
 	optionsCache := ingest.NewOptionsCache(cboe.New())
 	go optionsCache.Run(ctx) // whole-market unusual-options scan (background, 30 min)
 
+	// 13F whale holdings: a curated set of famous funds' latest quarterly holdings
+	// + QoQ changes (SEC public-domain, ~45-day lag). CUSIP→ticker via keyless
+	// OpenFIGI. Slow background refresh (quarterly data).
+	thirteenFCache := thirteenf.NewCache(sec.New(cfg.EDGARUserAgent), openfigi.New(""))
+	go thirteenFCache.Run(ctx)
+
 	// Daily Chinese pre-market briefing: one LLM generation a day from data
 	// already in memory. Off (404) when no LLM key is configured.
 	var briefingSrc api.BriefingSource
@@ -359,7 +367,7 @@ func main() {
 
 	srv := &http.Server{
 		Addr:              ":" + cfg.Port,
-		Handler:           api.New(st, hub, enricher, verifier, bars, topicCache, oppCache, universeCache, guruCache, scheduler, symbolCache, eventsCache, fundCache, st, congressCache, institutionalCache, liveSub, indicesCache, shortCache, briefingSrc, optionsCache, cfg.AdminUserIDs, log),
+		Handler:           api.New(st, hub, enricher, verifier, bars, topicCache, oppCache, universeCache, guruCache, scheduler, symbolCache, eventsCache, fundCache, st, congressCache, institutionalCache, liveSub, indicesCache, shortCache, briefingSrc, optionsCache, thirteenFCache, cfg.AdminUserIDs, log),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 

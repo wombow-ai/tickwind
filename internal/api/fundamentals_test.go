@@ -45,6 +45,7 @@ func fundServer(t *testing.T, q store.Quote, f edgar.Fundamentals) *httptest.Ser
 		nil, // no short-interest source
 		nil, // no briefing source
 		nil, // no options source
+		nil, // no 13F source
 		nil, // admins
 		slog.New(slog.NewTextHandler(io.Discard, nil)),
 	)
