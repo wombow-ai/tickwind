@@ -493,6 +493,14 @@ export function StockView({ticker}: {ticker: string}) {
       {/* FINRA short pressure (squeeze radar; hides when the symbol has no row) */}
       <ShortChip ticker={norm} />
 
+      {/* Fundamentals + AI digest, each full-width, above the chart. (They were
+          briefly a 2-col grid, but the AI digest's variable length left the
+          fundamentals card with a tall empty gap beside it — owner 2026-06-12.) */}
+      {/* fundamentals: market cap / P/E / revenue / net income (SEC XBRL; hides for non-US) */}
+      <FundamentalsCard ticker={norm} />
+      {/* AI digest: daily-cached bullets from news+social (hides when LLM off/empty) */}
+      <AISummaryCard ticker={norm} />
+
       {/* K-line candlestick chart + indicators — the price-and-indicators anchor,
           with the options panel directly below it */}
       <div className="mb-6">
@@ -501,16 +509,6 @@ export function StockView({ticker}: {ticker: string}) {
 
       {/* Options overview: delayed Cboe P/C, max pain, OI leaders (hides for non-US/no options) */}
       <OptionsCard ticker={norm} />
-
-      {/* Fundamentals + AI digest paired side-by-side on wide screens to keep the
-          page compact before the feed tabs (each hides independently; the cards'
-          own mb-6 spaces them, so the grid only needs a column gap). */}
-      <div className="grid gap-x-6 lg:grid-cols-2">
-        {/* fundamentals: market cap / P/E / revenue / net income (SEC XBRL; hides for non-US) */}
-        <FundamentalsCard ticker={norm} />
-        {/* AI digest: daily-cached bullets from news+social (hides when LLM off/empty) */}
-        <AISummaryCard ticker={norm} />
-      </div>
 
       {/* login gate */}
       {!isAuthed && (
