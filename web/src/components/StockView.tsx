@@ -335,17 +335,17 @@ export function StockView({ticker}: {ticker: string}) {
         />
         <div className="flex flex-col gap-6 sm:flex-row sm:items-start sm:justify-between">
           <div>
-            <div className="mb-1.5 flex items-center gap-2.5">
-              <h1 className={cx('text-[22px] font-bold tracking-tight', t.text)}>
-                {security.name}
-              </h1>
+            {/* Ticker leads (it's what identifies the stock); the full name sits
+                below in muted text — matching the home StockCard. */}
+            <div className="mb-1 flex items-center gap-2.5">
+              <h1 className={cx('text-[24px] font-bold tracking-tight', t.text)}>{norm}</h1>
               <MarketBadge mkt={security.market} />
-            </div>
-            <div className="mb-4 flex items-center gap-2.5">
-              <span className={cx('text-[13px] font-semibold tabular-nums', t.sub)}>
-                {security.market}: {norm}
-              </span>
               {quote && <SessionBadge session={quote.session} />}
+            </div>
+            <div className="mb-4">
+              <span className={cx('text-[13px]', t.sub)}>
+                {security.name !== norm ? security.name : ' '}
+              </span>
             </div>
             {quote ? (
               <PriceTag value={primaryPrice} cur={cur} size="lg" />

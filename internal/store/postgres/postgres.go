@@ -942,11 +942,17 @@ VALUES ($1, $2, $3, NULLIF($4,''), $5, NULLIF($6,''), $7)`
 // i.e. ticker IS NULL), newest first. A non-empty ticker also includes comments
 // posted elsewhere that cashtag-mention it ($TICKER fan-out).
 func (s *Store) ListComments(ctx context.Context, ticker string, limit int, viewerID string) ([]store.Comment, error) {
-	// $1 is always the viewer (may be "" for anon → the liked EXISTS never matches).
-	args := []any{viewerID}
+	// $1 is the viewer. Anon → NULL (not ""), because comment_likes.user_id is a
+	// uuid column and binding "" errors with 22P02 (invalid uuid); NULL simply
+	// never matches, so liked=false.
+	var viewer any = viewerID
+	if viewerID == "" {
+		viewer = nil
+	}
+	args := []any{viewer}
 	const cols = `id, user_id, author, COALESCE(ticker,''), body, created_at, edited_at,
 		(SELECT count(*) FROM comment_likes cl WHERE cl.comment_id = comments.id) AS likes,
-		EXISTS(SELECT 1 FROM comment_likes clv WHERE clv.comment_id = comments.id AND clv.user_id = $1) AS liked`
+		EXISTS(SELECT 1 FROM comment_likes clv WHERE clv.comment_id = comments.id AND clv.user_id = $1::uuid) AS liked`
 	var where string
 	if ticker == "" {
 		where = `WHERE ticker IS NULL AND NOT deleted`

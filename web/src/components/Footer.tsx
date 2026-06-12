@@ -46,8 +46,9 @@ export function Footer() {
               {tr('footer.blurb')}
             </p>
           </div>
+          {/* Desktop: clean labeled text columns. */}
           {COLUMNS.map(([heading, items]) => (
-            <div key={heading}>
+            <div key={heading} className="hidden sm:block">
               <p className={cx('mb-3 text-[12px] font-semibold', t.text)}>{tr(heading)}</p>
               <ul className="space-y-2">
                 {items.map(([label, href]) => (
@@ -61,6 +62,25 @@ export function Footer() {
             </div>
           ))}
         </div>
+
+        {/* Mobile: a 2-column grid of tappable chip-blocks (a tall plain-text
+            list reads poorly on phones), matching the home directory cards. */}
+        <nav className="mt-6 grid grid-cols-2 gap-2 sm:hidden" aria-label="Footer">
+          {COLUMNS.flatMap(([, items]) => items).map(([label, href]) => (
+            <Link
+              key={label}
+              href={href}
+              className={cx(
+                'rounded-xl border px-3 py-2.5 text-[13px] font-medium transition active:opacity-70',
+                t.border,
+                t.surf2,
+                t.sub,
+              )}
+            >
+              {tr(label)}
+            </Link>
+          ))}
+        </nav>
         <div
           className={cx(
             'mt-10 flex flex-wrap items-center justify-between gap-2 border-t pt-5',
