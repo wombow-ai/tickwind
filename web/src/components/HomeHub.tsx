@@ -1,6 +1,7 @@
 'use client';
 
 import {
+  ArrowUpDown,
   Flame,
   MessageSquare,
   Mic,
@@ -33,6 +34,12 @@ import {cx, timeAgo, tok} from '@/lib/ui';
 import {useQuotes} from '@/lib/useQuotes';
 import {BriefingCard} from '@/components/BriefingCard';
 import {IndicesStrip} from '@/components/IndicesStrip';
+import {
+  changePct,
+  sortSecurities,
+  SortPills,
+  type SortKey,
+} from '@/components/SortControl';
 import {StockCard} from '@/components/StockCard';
 import {TopicsStrip} from '@/components/TopicsStrip';
 
@@ -79,6 +86,7 @@ export function HomeHub() {
   // its empty state only after the fetch settles (no "No data" flash on load).
   const [loading, setLoading] = useState({hot: true, opps: true, gurus: true, news: true, posts: true});
   const quotes = useQuotes(tickers);
+  const [sortKey, setSortKey] = useState<SortKey>('default');
 
   useEffect(() => {
     const c = new AbortController();
@@ -111,6 +119,9 @@ export function HomeHub() {
   }, [tickerKey]);
 
   const cards = tickers.map(tk => securities[tk] ?? placeholder(tk));
+  const sortedCards = sortSecurities(cards, sortKey, tk =>
+    changePct(quotes.get(tk), bars[tk]),
+  );
 
   return (
     <div>
@@ -128,16 +139,28 @@ export function HomeHub() {
       <IndicesStrip />
 
       {/* Markets strip (hero) */}
-      <div className="mb-8 flex gap-4 overflow-x-auto pb-2">
-        {cards.map(sec => (
-          <div key={sec.ticker} className="w-[270px] shrink-0">
-            <StockCard
-              security={sec}
-              quote={quotes.get(sec.ticker)}
-              closes={bars[sec.ticker]}
-            />
-          </div>
-        ))}
+      <div className="mb-8">
+        <div className="mb-2.5 flex items-center justify-end gap-1.5">
+          <ArrowUpDown size={13} className={t.faint} />
+          <SortPills
+            value={sortKey}
+            onChange={setSortKey}
+            defaultLabel={tr('board.sortDefault')}
+            changeLabel={tr('board.sortChange')}
+            alphaLabel={tr('board.sortAlpha')}
+          />
+        </div>
+        <div className="flex gap-4 overflow-x-auto pb-2">
+          {sortedCards.map(sec => (
+            <div key={sec.ticker} className="w-[270px] shrink-0">
+              <StockCard
+                security={sec}
+                quote={quotes.get(sec.ticker)}
+                closes={bars[sec.ticker]}
+              />
+            </div>
+          ))}
+        </div>
       </div>
 
       {/* Daily AI briefing (folded in from the former /briefing page; self-hides

@@ -1,6 +1,6 @@
 'use client';
 
-import {Lock, MessageSquare, Newspaper, Plus, Wind} from 'lucide-react';
+import {ArrowUpDown, Lock, MessageSquare, Newspaper, Plus, Wind} from 'lucide-react';
 import type {LucideIcon} from 'lucide-react';
 import Link from 'next/link';
 import {useCallback, useEffect, useMemo, useState} from 'react';
@@ -23,6 +23,12 @@ import {useDark} from '@/lib/theme';
 import {btnPrimary, cx, tok} from '@/lib/ui';
 import {useQuotes} from '@/lib/useQuotes';
 import {SearchBox} from '@/components/SearchBox';
+import {
+  changePct,
+  sortSecurities,
+  SortPills,
+  type SortKey,
+} from '@/components/SortControl';
 import {StockCard} from '@/components/StockCard';
 import {TimelineItem} from '@/components/TimelineItem';
 import {EmptyState, ErrorState, FeedSkeleton} from '@/components/ui/states';
@@ -73,6 +79,7 @@ export function Board({variant = 'markets'}: {variant?: 'markets' | 'watchlist'}
   // Watchlist page only: the feeds are optional and can be focused on one stock.
   const [feedsOpen, setFeedsOpen] = useState(true);
   const [focusTicker, setFocusTicker] = useState<string | null>(null);
+  const [sortKey, setSortKey] = useState<SortKey>('default');
 
   const [news, setNews] = useState<Feed<NewsItem>>({status: 'loading', items: []});
   const [social, setSocial] = useState<Feed<Post>>({status: 'loading', items: []});
@@ -224,6 +231,13 @@ export function Board({variant = 'markets'}: {variant?: 'markets' | 'watchlist'}
     () => tickers.map(tk => securities[tk] ?? placeholder(tk)),
     [tickers, securities],
   );
+  // Apply the chosen ordering client-side over the already-loaded set, so
+  // switching is instant and needs no refetch. `change` re-sorts live as quotes
+  // tick (quotes/barsMap are deps).
+  const sortedCards = useMemo(
+    () => sortSecurities(cards, sortKey, tk => changePct(quotes.get(tk), barsMap[tk])),
+    [cards, sortKey, quotes, barsMap],
+  );
   const showEmptyWatchlist =
     watchlistMode && isAuthed && !listLoading && tickers.length === 0;
   const needLogin = watchlistMode && !authLoading && !isAuthed;
@@ -344,36 +358,50 @@ export function Board({variant = 'markets'}: {variant?: 'markets' | 'watchlist'}
           </div>
         </div>
       ) : (
-        <div className="mb-8 flex gap-4 overflow-x-auto pb-2">
-          {(listLoading && tickers.length === 0
-            ? [...Array(4)].map((_, i) => ({ticker: `skeleton-${i}`}))
-            : cards
-          ).map((sec, i) =>
-            'name' in sec ? (
-              <div key={sec.ticker} className="w-[270px] shrink-0">
-                <StockCard
-                  security={sec as Security}
-                  quote={quotes.get(sec.ticker)}
-                  closes={barsMap[sec.ticker]}
-                  onRemove={
-                    watchlistMode && isAuthed
-                      ? () => remove(sec.ticker)
-                      : undefined
-                  }
-                />
-              </div>
-            ) : (
-              <div
-                key={i}
-                className={cx(
-                  'h-[150px] w-[270px] shrink-0 rounded-2xl border',
-                  t.card,
-                  t.border,
-                  t.skel,
-                )}
+        <div className="mb-8">
+          {cards.length >= 2 && !(listLoading && tickers.length === 0) && (
+            <div className="mb-2.5 flex items-center justify-end gap-1.5">
+              <ArrowUpDown size={13} className={t.faint} />
+              <SortPills
+                value={sortKey}
+                onChange={setSortKey}
+                defaultLabel={
+                  watchlistMode ? tr('board.sortAdded') : tr('board.sortDefault')
+                }
+                changeLabel={tr('board.sortChange')}
+                alphaLabel={tr('board.sortAlpha')}
               />
-            ),
+            </div>
           )}
+          <div className="flex gap-4 overflow-x-auto pb-2">
+            {(listLoading && tickers.length === 0
+              ? [...Array(4)].map((_, i) => ({ticker: `skeleton-${i}`}))
+              : sortedCards
+            ).map((sec, i) =>
+              'name' in sec ? (
+                <div key={sec.ticker} className="w-[270px] shrink-0">
+                  <StockCard
+                    security={sec as Security}
+                    quote={quotes.get(sec.ticker)}
+                    closes={barsMap[sec.ticker]}
+                    onRemove={
+                      watchlistMode && isAuthed ? () => remove(sec.ticker) : undefined
+                    }
+                  />
+                </div>
+              ) : (
+                <div
+                  key={i}
+                  className={cx(
+                    'h-[150px] w-[270px] shrink-0 rounded-2xl border',
+                    t.card,
+                    t.border,
+                    t.skel,
+                  )}
+                />
+              ),
+            )}
+          </div>
         </div>
         ))}
 
