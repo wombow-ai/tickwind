@@ -3,7 +3,7 @@
 import {Sparkles} from 'lucide-react';
 import {useEffect, useState} from 'react';
 import {getBriefing, type Briefing} from '@/lib/api';
-import {useT} from '@/lib/i18n';
+import {useLang, useT} from '@/lib/i18n';
 import {useDark} from '@/lib/theme';
 import {cx, timeAgo, tok} from '@/lib/ui';
 import {Markdown} from '@/components/Markdown';
@@ -19,16 +19,17 @@ export function BriefingCard() {
   const dark = useDark();
   const t = tok(dark);
   const tr = useT();
+  const {lang} = useLang();
   const [brief, setBrief] = useState<Briefing | null>(null);
 
   useEffect(() => {
     const c = new AbortController();
-    getBriefing(c.signal).then(
+    getBriefing(lang, c.signal).then(
       b => setBrief(b),
       () => {}, // 404 (not generated) / LLM off → stay hidden
     );
     return () => c.abort();
-  }, []);
+  }, [lang]);
 
   if (!brief) return null;
 

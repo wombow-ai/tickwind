@@ -23,7 +23,7 @@ type (
 	// BriefEnricher is the slice of enrich.Enricher the briefing needs.
 	BriefEnricher interface {
 		Enabled() bool
-		Brief(ctx context.Context, material string) (string, error)
+		Brief(ctx context.Context, material, lang string) (string, error)
 	}
 	briefIndices interface{ Indices() []store.IndexQuote }
 	briefQuotes  interface{ Snapshot() map[string]store.Quote }
@@ -49,7 +49,8 @@ type BriefingCache struct {
 
 	mu       sync.RWMutex
 	date     string // ET day the text belongs to
-	text     string
+	text     string // zh briefing (the Chinese-first default)
+	textEN   string // en briefing (generated alongside; "" → falls back to zh)
 	at       time.Time
 	complete bool // material had the [指数] section (caches were warm) → locked for the day
 	attempts int  // generations this ET day (bounds incomplete re-tries)
@@ -67,11 +68,17 @@ func NewBriefingCache(enr BriefEnricher, idx briefIndices, quotes briefQuotes, e
 	return &BriefingCache{enr: enr, indices: idx, quotes: quotes, earnings: earnings, congress: cg, inst: inst, log: log}
 }
 
-// Get returns the current briefing (ok=false before the first generation).
-func (b *BriefingCache) Get() (date, text string, at time.Time, ok bool) {
+// Get returns the current briefing in the given language ("en" falls back to
+// the zh text when the English version is missing). ok=false before the first
+// generation.
+func (b *BriefingCache) Get(lang string) (date, text string, at time.Time, ok bool) {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
-	return b.date, b.text, b.at, b.text != ""
+	t := b.text
+	if lang == "en" && b.textEN != "" {
+		t = b.textEN
+	}
+	return b.date, t, b.at, t != ""
 }
 
 // Run checks every 30 minutes (and once at startup) whether today's briefing
@@ -127,18 +134,28 @@ func (b *BriefingCache) maybeGenerate(ctx context.Context) {
 	// briefing without the [指数] section is provisional — keep it servable but
 	// re-generate (overwrite) on a later tick once the caches fill.
 	complete := strings.Contains(material, "[指数]")
-	cctx, cancel := context.WithTimeout(ctx, 85*time.Second)
-	defer cancel()
-	text, err := b.enr.Brief(cctx, material)
+	gen := func(lang string) (string, error) {
+		cctx, cancel := context.WithTimeout(ctx, 85*time.Second)
+		defer cancel()
+		return b.enr.Brief(cctx, material, lang)
+	}
+	text, err := gen("zh")
 	if err != nil {
-		b.log.Warn("briefing generation failed", "err", err)
+		b.log.Warn("briefing generation failed", "lang", "zh", "err", err)
 		return
+	}
+	// English is generated alongside from the same material; a failure here is
+	// non-fatal — the zh briefing still serves and en falls back to it.
+	textEN, err := gen("en")
+	if err != nil {
+		b.log.Warn("briefing generation failed", "lang", "en", "err", err)
+		textEN = ""
 	}
 	b.mu.Lock()
 	if b.date != day {
 		b.attempts = 0
 	}
-	b.date, b.text, b.at, b.complete = day, text, time.Now().UTC(), complete
+	b.date, b.text, b.textEN, b.at, b.complete = day, text, textEN, time.Now().UTC(), complete
 	b.attempts++
 	b.mu.Unlock()
 	b.log.Info("morning briefing generated", "date", day, "chars", len(text), "complete", complete)

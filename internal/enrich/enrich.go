@@ -31,9 +31,10 @@ type Enricher interface {
 	// preserving order (result[i] is the translation of titles[i]). Returns
 	// ErrDisabled when no LLM is configured.
 	TranslateTitles(ctx context.Context, titles []string) ([]string, error)
-	// Brief writes the Chinese pre-market briefing from structured material
-	// (indices, movers, earnings, smart money). ErrDisabled when no LLM.
-	Brief(ctx context.Context, material string) (string, error)
+	// Brief writes the pre-market briefing from structured material (indices,
+	// movers, earnings, smart money) in the given language ("zh"|"en"; anything
+	// else falls back to zh). ErrDisabled when no LLM.
+	Brief(ctx context.Context, material, lang string) (string, error)
 }
 
 // Config configures the LLM enricher. An empty APIKey yields a disabled Noop.
@@ -79,7 +80,7 @@ func (Noop) TranslateTitles(context.Context, []string) ([]string, error) {
 	return nil, ErrDisabled
 }
 
-func (Noop) Brief(context.Context, string) (string, error) {
+func (Noop) Brief(context.Context, string, string) (string, error) {
 	return "", ErrDisabled
 }
 
@@ -167,13 +168,30 @@ const briefPrompt = "你是财经晨报编辑。仅基于用户提供的材料,�
 	"按【指数】【热点】【今日财报】【聪明钱】小节组织(材料缺某节就跳过该节)。" +
 	"只引用材料中出现的数字与事实,不要编造;严禁任何买卖建议、目标价或预测;语气专业简洁。直接输出正文,不要前言。"
 
-// Brief writes the daily Chinese pre-market briefing from structured material.
-func (l *llm) Brief(ctx context.Context, material string) (string, error) {
+// briefPromptEN is the English-output counterpart (same guardrails). The
+// material's section markers are Chinese (【指数】…) but carry numeric data;
+// reorganize them under English headings (Indices / Movers / Earnings today /
+// Smart money).
+const briefPromptEN = "You are a financial pre-market briefing editor. Based ONLY on the material the user provides, write a 150-300 word English pre-market brief, " +
+	"organized under the sections Indices / Movers / Earnings today / Smart money (skip a section when the material lacks it). " +
+	"Cite only the numbers and facts present in the material; do not fabricate; absolutely no buy/sell advice, price targets or forecasts; professional, concise tone. Output the body directly with no preamble."
+
+// briefSystemPrompt picks the briefing system prompt for a language.
+func briefSystemPrompt(lang string) string {
+	if lang == "en" {
+		return briefPromptEN
+	}
+	return briefPrompt
+}
+
+// Brief writes the daily pre-market briefing from structured material, in the
+// requested language ("zh"|"en").
+func (l *llm) Brief(ctx context.Context, material, lang string) (string, error) {
 	body, err := json.Marshal(map[string]any{
 		"model":       l.model,
 		"temperature": 0.3,
 		"messages": []map[string]string{
-			{"role": "system", "content": briefPrompt},
+			{"role": "system", "content": briefSystemPrompt(lang)},
 			{"role": "user", "content": material},
 		},
 	})

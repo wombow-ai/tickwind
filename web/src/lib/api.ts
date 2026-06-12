@@ -906,8 +906,9 @@ export interface Briefing {
 }
 
 /** Fetches today's AI morning briefing; rejects 404 before generation. */
-export function getBriefing(signal?: AbortSignal): Promise<Briefing> {
-  return getJson<Briefing>('/v1/briefing', signal);
+export function getBriefing(lang: string, signal?: AbortSignal): Promise<Briefing> {
+  const q = lang === 'en' ? '?lang=en' : '';
+  return getJson<Briefing>(`/v1/briefing${q}`, signal);
 }
 
 /** One position on a 13F whale-holdings fund card (from `GET /v1/13f`). */

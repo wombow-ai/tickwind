@@ -142,7 +142,7 @@ type ShortSource interface {
 // BriefingSource serves the day's AI pre-market briefing (nil-safe; nil or
 // ok=false = 404). Satisfied by *ingest.BriefingCache.
 type BriefingSource interface {
-	Get() (date, text string, at time.Time, ok bool)
+	Get(lang string) (date, text string, at time.Time, ok bool)
 }
 
 // OptionsSource serves the per-stock delayed options overview + the whole-market
@@ -1631,12 +1631,16 @@ func (s *Server) getThirteenF(w http.ResponseWriter, _ *http.Request) {
 }
 
 // getBriefing returns today's AI pre-market briefing; 404 until generated.
-func (s *Server) getBriefing(w http.ResponseWriter, _ *http.Request) {
+func (s *Server) getBriefing(w http.ResponseWriter, r *http.Request) {
 	if s.briefing == nil {
 		writeJSON(w, http.StatusNotFound, errBody("briefing not available"))
 		return
 	}
-	date, text, at, ok := s.briefing.Get()
+	lang := "zh" // Chinese-first default; English UI requests ?lang=en
+	if r.URL.Query().Get("lang") == "en" {
+		lang = "en"
+	}
+	date, text, at, ok := s.briefing.Get(lang)
 	if !ok {
 		writeJSON(w, http.StatusNotFound, errBody("briefing not generated yet"))
 		return
