@@ -35,6 +35,22 @@ export function StockCard({
   const tr = useT();
   const cur = marketCurrency(security.market);
 
+  // Regular vs extended-hours split (mirrors the detail header): the main line
+  // is the regular-session price + its day-change vs the prior regular close; a
+  // small line carries the pre/post delta. In extended hours quote.prev_close
+  // can be anchored to regClose (thin-name overlay guard), so the day-change
+  // measures against the daily bars' prior close instead — never a phantom zero.
+  const regClose =
+    quote?.regular_close && quote.regular_close > 0 ? quote.regular_close : quote?.price ?? 0;
+  const regularPrice = quote?.session === 'regular' ? quote.price : regClose;
+  const isExt =
+    !!quote &&
+    (quote.session === 'pre' || quote.session === 'post' || quote.session === 'overnight') &&
+    regClose > 0 &&
+    Math.abs(quote.price - regClose) > 1e-9;
+  const priorClose =
+    isExt && closes && closes.length >= 2 ? closes[closes.length - 2] : quote?.prev_close ?? 0;
+
   return (
     <div className="group relative">
       <Link
@@ -58,15 +74,12 @@ export function StockCard({
           <div>
             {quote ? (
               <>
-                <PriceTag value={quote.price} cur={cur} size="md" />
-                {quote.prev_close ? (
+                <PriceTag value={regularPrice} cur={cur} size="md" />
+                {priorClose > 0 ? (
                   <div className="mt-0.5">
                     <ChangeLine
-                      chg={quote.price - quote.prev_close}
-                      pct={
-                        ((quote.price - quote.prev_close) / quote.prev_close) *
-                        100
-                      }
+                      chg={regularPrice - priorClose}
+                      pct={((regularPrice - priorClose) / priorClose) * 100}
                       cur={cur}
                     />
                   </div>
@@ -89,6 +102,23 @@ export function StockCard({
             </div>
           )}
         </div>
+
+        {/* extended-hours mini line: pre/post price + its delta vs the regular
+            close (the regular figure above stays the "official" last-session number) */}
+        {isExt && quote && (
+          <div className="mt-1.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[11px]">
+            <span className={t.faint}>{tr(`session.${quote.session}`)}</span>
+            <span className={cx('font-semibold tabular-nums', t.sub)}>
+              {cur}
+              {quote.price.toFixed(2)}
+            </span>
+            <ChangeLine
+              chg={quote.price - regClose}
+              pct={((quote.price - regClose) / regClose) * 100}
+              cur={cur}
+            />
+          </div>
+        )}
 
         <div className="mt-3">
           {quote ? (

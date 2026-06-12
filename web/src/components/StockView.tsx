@@ -318,6 +318,14 @@ export function StockView({ticker}: {ticker: string}) {
     regClose > 0 &&
     Math.abs(quote.price - regClose) > 1e-9;
   const primaryPrice = regularPrice;
+  // The prior close to measure the regular-session day-change against. In
+  // extended hours the live quote's prev_close can be anchored to regClose (the
+  // thin-name overlay guard against phantom day-changes), which would zero out
+  // the change — so fall back to the reliable daily bars: the close before the
+  // most recent one. Keeps "正股" change real (last completed session) while the
+  // separate extended line carries the pre/post delta.
+  const priorClose =
+    isExt && bars.length >= 2 ? bars[bars.length - 2] : quote?.prev_close ?? 0;
 
   return (
     <div className="mx-auto max-w-4xl">
@@ -355,10 +363,10 @@ export function StockView({ticker}: {ticker: string}) {
               </span>
             )}
             <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
-              {quote && quote.prev_close ? (
+              {quote && priorClose > 0 ? (
                 <ChangeLine
-                  chg={regularPrice - quote.prev_close}
-                  pct={((regularPrice - quote.prev_close) / quote.prev_close) * 100}
+                  chg={regularPrice - priorClose}
+                  pct={((regularPrice - priorClose) / priorClose) * 100}
                   cur={cur}
                   size="lg"
                 />
