@@ -18,6 +18,7 @@ var indexSymbols = []struct{ symbol, name string }{
 	{"^GSPC", "S&P 500"},
 	{"^DJI", "Dow Jones"},
 	{"^IXIC", "Nasdaq"},
+	{"^HSI", "Hang Seng"}, // Hong Kong (HKD, HK hours) — trades while the US is closed
 }
 
 // IndexQuoter is the slice of *yahoo.Client the indices cache uses.

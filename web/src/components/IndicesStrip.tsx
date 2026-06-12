@@ -96,11 +96,18 @@ export function IndicesStrip() {
     };
   }, []);
 
+  // Column count tracks the cells actually rendered: 4 real indices (incl. the
+  // Hang Seng) vs the 3-ETF fallback. Keeps every cell on one row (so the
+  // per-cell left-border dividers stay correct).
+  const cellCount = indices.length > 0 ? indices.length : FALLBACK.length;
+  const colsClass = cellCount >= 4 ? 'grid-cols-4' : 'grid-cols-3';
+
   return (
     <div
       aria-label={tr('home.indices')}
       className={cx(
-        'mb-5 grid grid-cols-3 overflow-hidden rounded-2xl border',
+        'mb-5 grid overflow-hidden rounded-2xl border',
+        colsClass,
         t.card,
         t.border,
         t.soft,
