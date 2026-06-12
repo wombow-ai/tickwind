@@ -250,3 +250,14 @@ summary:focus-visible,
 .tw-md blockquote { margin: 0.4em 0; padding-left: 0.75rem; border-left: 2px solid rgba(148, 163, 184, 0.4); opacity: 0.85; }
 .tw-md strong { font-weight: 700; }
 .tw-md em { font-style: italic; }
+
+/* ----------------------- bilingual SSR content ------------------------ */
+/* Server-rendered blocks (e.g. the home intro + board directory) can't use the
+   client useT() hook, so they emit BOTH languages — crawlers index both, and
+   only the one matching <html lang> (set before paint by the no-flash script)
+   is shown to the reader. Hiding only the inactive variant preserves the
+   active element's natural / Tailwind display. */
+html:lang(en) [data-i18n="zh"],
+html:lang(zh) [data-i18n="en"] {
+  display: none !important;
+}

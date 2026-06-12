@@ -85,7 +85,6 @@ export function TopNav() {
   ];
   const watchlist: NavItem = {href: '/watchlist', label: tr('nav.watchlist')};
   const secondary: NavItem[] = [
-    {href: '/briefing', label: tr('nav.briefing')},
     {href: '/screen', label: tr('nav.screen')},
     {href: '/smart-money', label: tr('nav.smartMoney')},
     {href: '/unusual', label: tr('nav.unusual')},

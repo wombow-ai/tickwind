@@ -370,6 +370,9 @@ Status: ✅ done · 🟡 in progress · ⬜ todo
 > UnusualOptions 表格(ticker链/看涨看跌徽标/行权/到期/成交量/未平仓/量比/IV,"延迟15分·Cboe")+ nav secondary「期权异动」+ zh/en i18n +
 > 中文关键词 metadata(期权异动/量比/期权龙虎榜)。免费展示已标注延迟、不转售。部署后首次扫描 ~1-2min 出数。
 > **③ 下一步**:13F 大佬持仓(SEC 13F datasets + OpenFIGI CUSIP→ticker,名人基金白名单季度 diff→smart-money 加 tab)→ 站外推送(web-push DEFERRED→邮件/TG 或问 owner)。
+> **✅[插入修复] 盘后价 bug(owner 报 RDW 17.09 冻结)**:免费源盘后冻结(Finnhub /quote + IEX 稀疏)→ 兜底改 Yahoo includePrePost 分时,source=yahoo,实时(详见 CLAUDE.md「Extended-hours freshness fallback」)。
+> **✅[owner 反馈两项,本 commit 纯前端]**:(1) **首页底部介绍英文页显示中文**——该介绍段是 SSR(不能用客户端 useT),改为 zh+en 双语都渲染、按 `<html lang>` 用 CSS `[data-i18n]` 只显示当前语言(globals.css;爬虫两语都收录、读者只见当前语言;production CSS 已含规则,预览验证 EN/ZH 切换正常)。审计其余组件无硬编码中文泄漏(仅 TopNav 语言切换按钮是故意双语)。(2) **AI 总结(盘前晨报)从独立页并入首页**——新 BriefingCard 挂 HomeHub(行情条下方,无晨报时自隐),删 /briefing 页+BriefingView+nav 项+sitemap 项+nav.briefing i18n;sitemap 顺带补 /unusual。原则:场景类似可合并,不必每功能独立 nav+页。
+> **④ i18n/页面收尾备忘**:首页晨报正文仍是 AI 中文(数据按源展示,Chinese-first;若要双语晨报=改 LLM prompt 生成两语,留 backlog)。首页 metadata title 仍英文默认(可中文关键词化)。
 > **🧹 老箱清空（owner 2026-06-10 要求腾给其他项目）**：先复核新箱用户数据完好(watchlist=3/notes=2)→ `104.168.46.15` 容器/卷/镜像
 > 全删、/root/tickwind(含 .env)删除、shell 历史清除。Docker 引擎+部署公钥保留可复用。**老箱不再是回滚备机**；恢复路径=新箱
 > `/root/tw_users_only.sql` + Supabase 市场库 + 迁移 runbook。

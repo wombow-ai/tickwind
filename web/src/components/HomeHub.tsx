@@ -31,6 +31,7 @@ import {useT} from '@/lib/i18n';
 import {useDark} from '@/lib/theme';
 import {cx, timeAgo, tok} from '@/lib/ui';
 import {useQuotes} from '@/lib/useQuotes';
+import {BriefingCard} from '@/components/BriefingCard';
 import {IndicesStrip} from '@/components/IndicesStrip';
 import {StockCard} from '@/components/StockCard';
 import {TopicsStrip} from '@/components/TopicsStrip';
@@ -138,6 +139,10 @@ export function HomeHub() {
           </div>
         ))}
       </div>
+
+      {/* Daily AI briefing (folded in from the former /briefing page; self-hides
+          until generated) */}
+      <BriefingCard />
 
       {/* Boards & signals (榜单 · 机会 · 大V) */}
       <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
