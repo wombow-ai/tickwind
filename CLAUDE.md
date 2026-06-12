@@ -61,6 +61,12 @@ feature-flagged plugin, never on the critical path. Web only.
   next tick rather than hammering. If fully locked out again, owner unbans via the panel **VNC** console.
 - **brapi.dev API key** (Brazil B3, feature #38) provided by owner 2026-06-09, stored in the **VPS `.env`**
   as `BRAPI_API_KEY` (NOT in git — repo is public). Read it from the VPS env when building the BR adapter.
+- **DB backups (2026-06-12):** the **local user Postgres** (watchlist/notes/holdings/clips/alerts) is dumped
+  daily at **04:30** by `/root/backup.sh` (cron) → `gzip` to `/root/backups/user-TS.sql.gz`, newest 7 kept.
+  The script auto-detects the postgres container + reads creds from its env. The **market** corpus lives on
+  managed Supabase (backed up there), so only the user DB needs local dumps. **SSH transfer note:** held-open
+  / `cat|ssh` stdin transfers DROP on this box — push small files via **base64 embedded in the command**
+  (`B64=$(base64<f|tr -d '\n'); ssh host "echo '$B64'|base64 -d > /path"`); long ops nohup-backgrounded.
 
 ## Owner habits & preferences (keep this current — context gets compacted)
 - **Workflow**: drives development via `/loop` (autonomous, self-paced). Each iteration =
