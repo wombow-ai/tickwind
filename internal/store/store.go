@@ -249,6 +249,7 @@ type Comment struct {
 	CreatedAt time.Time  `json:"created_at"`
 	EditedAt  *time.Time `json:"edited_at,omitempty"` // set when the author edits; nil if never edited
 	Likes     int        `json:"likes"`               // total like count (per-user deduped)
+	Liked     bool       `json:"liked"`               // whether the requesting viewer liked it (false when anon)
 	// Mentions are the $TICKER cashtags extracted from Body at write time
 	// (uppercased, deduped). A comment also appears in each mentioned stock's
 	// comment list — see ListComments.
@@ -353,7 +354,7 @@ type Store interface {
 	// Delete is author-or-admin (admin=true skips the author check); Report flags
 	// a comment for moderation. All return found=false when the id is unknown.
 	SaveComment(ctx context.Context, c Comment) error
-	ListComments(ctx context.Context, ticker string, limit int) ([]Comment, error)
+	ListComments(ctx context.Context, ticker string, limit int, viewerID string) ([]Comment, error)
 	DeleteComment(ctx context.Context, id, userID string, admin bool) (bool, error)
 	ReportComment(ctx context.Context, id string) (bool, error)
 	// UpdateComment edits a comment's body, replacing its cashtag mentions with

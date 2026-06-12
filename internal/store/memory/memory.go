@@ -601,7 +601,7 @@ func (s *Store) SaveComment(_ context.Context, c store.Comment) error {
 	return nil
 }
 
-func (s *Store) ListComments(_ context.Context, ticker string, limit int) ([]store.Comment, error) {
+func (s *Store) ListComments(_ context.Context, ticker string, limit int, viewerID string) ([]store.Comment, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	tk := key(ticker) // "" stays "" → matches the global board
@@ -618,7 +618,9 @@ func (s *Store) ListComments(_ context.Context, ticker string, limit int) ([]sto
 			}
 		}
 		if match {
-			c.Likes = len(s.cmtLikes[c.ID])
+			likes := s.cmtLikes[c.ID]
+			c.Likes = len(likes)
+			c.Liked = viewerID != "" && likes[viewerID]
 			out = append(out, c)
 		}
 	}

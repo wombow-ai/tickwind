@@ -755,7 +755,11 @@ func (s *Server) deleteHolding(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) getComments(w http.ResponseWriter, r *http.Request) {
 	ticker := strings.ToUpper(strings.TrimSpace(r.URL.Query().Get("ticker")))
-	comments, err := s.store.ListComments(r.Context(), ticker, queryLimit(r, 100))
+	viewer := "" // public endpoint: include per-user liked state when a token is present
+	if u, ok := auth.UserFrom(r.Context()); ok {
+		viewer = u.ID
+	}
+	comments, err := s.store.ListComments(r.Context(), ticker, queryLimit(r, 100), viewer)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, errBody(err.Error()))
 		return

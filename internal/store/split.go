@@ -186,8 +186,8 @@ func (s Split) SaveComment(ctx context.Context, c Comment) error {
 	return s.Market.SaveComment(ctx, c)
 }
 
-func (s Split) ListComments(ctx context.Context, ticker string, limit int) ([]Comment, error) {
-	return s.Market.ListComments(ctx, ticker, limit)
+func (s Split) ListComments(ctx context.Context, ticker string, limit int, viewerID string) ([]Comment, error) {
+	return s.Market.ListComments(ctx, ticker, limit, viewerID)
 }
 
 func (s Split) DeleteComment(ctx context.Context, id, userID string, admin bool) (bool, error) {

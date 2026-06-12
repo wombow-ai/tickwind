@@ -201,7 +201,7 @@ function CommentCard({
   const [editing, setEditing] = useState(false);
   const [editDraft, setEditDraft] = useState(c.body);
   const [savingEdit, setSavingEdit] = useState(false);
-  const [liked, setLiked] = useState(false); // server doesn't return per-user state in the list
+  const [liked, setLiked] = useState(c.liked ?? false); // server returns the viewer's like state
   const [likeBusy, setLikeBusy] = useState(false);
 
   async function saveEdit() {

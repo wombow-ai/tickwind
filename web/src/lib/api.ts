@@ -1342,6 +1342,8 @@ export interface Comment {
   edited_at?: string;
   /** Total like count (per-user deduped). */
   likes: number;
+  /** Whether the requesting (authenticated) viewer has liked it. */
+  liked?: boolean;
   /** $TICKER cashtags extracted from the body — the comment also appears in
    *  each mentioned stock's comment list. */
   mentions?: string[];

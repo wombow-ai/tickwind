@@ -332,7 +332,7 @@ func TestUpdateComment(t *testing.T) {
 		t.Fatalf("got body=%q editedAt=%v, want edited + non-nil", got.Body, got.EditedAt)
 	}
 	// The mention fans the comment out into NVDA's list too.
-	if nv, _ := s.ListComments(ctx, "NVDA", 10); len(nv) != 1 || nv[0].ID != "c1" {
+	if nv, _ := s.ListComments(ctx, "NVDA", 10, ""); len(nv) != 1 || nv[0].ID != "c1" {
 		t.Fatalf("NVDA list after mention edit = %v, want the mentioning comment", nv)
 	}
 
@@ -345,7 +345,7 @@ func TestUpdateComment(t *testing.T) {
 		t.Error("unknown id edit should fail")
 	}
 	// The non-author attempt must not have changed the body.
-	list, _ := s.ListComments(ctx, "AAPL", 10)
+	list, _ := s.ListComments(ctx, "AAPL", 10, "")
 	if len(list) != 1 || list[0].Body != "edited body $NVDA" {
 		t.Fatalf("after edits, list=%+v", list)
 	}
@@ -371,7 +371,7 @@ func TestLikeComment(t *testing.T) {
 		t.Fatalf("toggle off: liked=%v n=%d, want false/1", liked, n)
 	}
 	// Count surfaces in ListComments.
-	list, _ := s.ListComments(ctx, "AAPL", 10)
+	list, _ := s.ListComments(ctx, "AAPL", 10, "")
 	if len(list) != 1 || list[0].Likes != 1 {
 		t.Fatalf("list likes=%d, want 1", list[0].Likes)
 	}

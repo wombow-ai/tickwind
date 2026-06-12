@@ -941,19 +941,20 @@ VALUES ($1, $2, $3, NULLIF($4,''), $5, NULLIF($6,''), $7)`
 // ListComments returns non-deleted comments for a ticker ("" = the global board,
 // i.e. ticker IS NULL), newest first. A non-empty ticker also includes comments
 // posted elsewhere that cashtag-mention it ($TICKER fan-out).
-func (s *Store) ListComments(ctx context.Context, ticker string, limit int) ([]store.Comment, error) {
-	var query string
-	var args []any
+func (s *Store) ListComments(ctx context.Context, ticker string, limit int, viewerID string) ([]store.Comment, error) {
+	// $1 is always the viewer (may be "" for anon → the liked EXISTS never matches).
+	args := []any{viewerID}
 	const cols = `id, user_id, author, COALESCE(ticker,''), body, created_at, edited_at,
-		(SELECT count(*) FROM comment_likes cl WHERE cl.comment_id = comments.id) AS likes`
+		(SELECT count(*) FROM comment_likes cl WHERE cl.comment_id = comments.id) AS likes,
+		EXISTS(SELECT 1 FROM comment_likes clv WHERE clv.comment_id = comments.id AND clv.user_id = $1) AS liked`
+	var where string
 	if ticker == "" {
-		query = `SELECT ` + cols + ` FROM comments WHERE ticker IS NULL AND NOT deleted ORDER BY created_at DESC`
+		where = `WHERE ticker IS NULL AND NOT deleted`
 	} else {
-		query = `SELECT ` + cols + ` FROM comments
-		 WHERE (ticker = $1 OR id IN (SELECT comment_id FROM comment_mentions WHERE ticker = $1))
-		   AND NOT deleted ORDER BY created_at DESC`
-		args = append(args, ticker)
+		args = append(args, ticker) // $2
+		where = `WHERE (ticker = $2 OR id IN (SELECT comment_id FROM comment_mentions WHERE ticker = $2)) AND NOT deleted`
 	}
+	query := `SELECT ` + cols + ` FROM comments ` + where + ` ORDER BY created_at DESC`
 	if limit > 0 {
 		args = append(args, limit)
 		query += fmt.Sprintf(" LIMIT $%d", len(args))
@@ -966,7 +967,7 @@ func (s *Store) ListComments(ctx context.Context, ticker string, limit int) ([]s
 	var out []store.Comment
 	for rows.Next() {
 		var c store.Comment
-		if err := rows.Scan(&c.ID, &c.UserID, &c.Author, &c.Ticker, &c.Body, &c.CreatedAt, &c.EditedAt, &c.Likes); err != nil {
+		if err := rows.Scan(&c.ID, &c.UserID, &c.Author, &c.Ticker, &c.Body, &c.CreatedAt, &c.EditedAt, &c.Likes, &c.Liked); err != nil {
 			return nil, fmt.Errorf("postgres: scan comment: %w", err)
 		}
 		out = append(out, c)
