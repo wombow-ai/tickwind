@@ -2,11 +2,17 @@ import type {Metadata} from 'next';
 import Link from 'next/link';
 import {APP_NAME, APP_TAGLINE, SITE_URL} from '@/lib/config';
 import {HomeHub} from '@/components/HomeHub';
+import {LocalizedTitle} from '@/components/LocalizedTitle';
+
+// The tab title in each language. English is the server/default (crawlers + the
+// browser tab on the English UI); LocalizedTitle swaps in the zh title for
+// Chinese users. The Chinese keywords still live in the description, keywords,
+// the SSR intro body and the JSON-LD below.
+const TITLE_EN = 'Tickwind · US Stocks, Congress Trades, Options Flow & 13F';
+const TITLE_ZH = '潮汐 Tickwind · 美股实时行情 / 国会山股神 / 期权异动 / 13F大佬持仓 / 财报';
 
 export const metadata: Metadata = {
-  // Absolute title (bypasses the layout's "%s · Tickwind" template): the home
-  // page is the most-weighted page for the Chinese-keyword gap we target.
-  title: {absolute: '潮汐 Tickwind · 美股实时行情 / 国会山股神 / 期权异动 / 13F大佬持仓 / 财报'},
+  title: {absolute: TITLE_EN},
   description:
     'Tickwind 是面向中文投资者的美股数据平台:实时行情、SEC 内部人买入、国会山股神(议员持仓交易)、13D/13G 机构举牌、财报日历、期权异动、轧空雷达与 AI 中文速览。Data-first US-stock tracker for Chinese-speaking investors.',
   keywords: ['美股', '美股行情', '国会山股神', '美股内部人买入', '财报日历', '期权异动', '轧空', 'AI 股票速览', '13F 持仓', 'US stocks', 'congress trading'],
@@ -56,6 +62,7 @@ export default function HomePage() {
 
   return (
     <>
+      <LocalizedTitle en={TITLE_EN} zh={TITLE_ZH} />
       <script type="application/ld+json" dangerouslySetInnerHTML={{__html: JSON.stringify(ld)}} />
       <HomeHub />
 
