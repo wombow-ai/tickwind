@@ -17,6 +17,7 @@ export default async function SmartMoneyPage({
   searchParams: Promise<{tab?: string}>;
 }) {
   const sp = await searchParams;
-  const initial: SmartMoneyTab = sp.tab === 'congress' ? 'congress' : 'institutional';
+  const initial: SmartMoneyTab =
+    sp.tab === 'congress' ? 'congress' : sp.tab === '13f' ? '13f' : 'institutional';
   return <SmartMoneyTabs initial={initial} />;
 }

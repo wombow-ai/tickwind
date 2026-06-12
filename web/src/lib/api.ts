@@ -910,6 +910,40 @@ export function getBriefing(signal?: AbortSignal): Promise<Briefing> {
   return getJson<Briefing>('/v1/briefing', signal);
 }
 
+/** One position on a 13F whale-holdings fund card (from `GET /v1/13f`). */
+export interface WhalePosition {
+  ticker: string; // "" when the CUSIP has no US-equity match
+  issuer: string;
+  value: number; // whole USD
+  shares: number;
+  pct: number; // % of the fund's 13F portfolio value
+  change: 'new' | 'add' | 'trim' | 'hold';
+  chg_pct: number; // signed share change vs the prior quarter (%)
+}
+
+/** One famous fund's latest 13F snapshot with quarter-over-quarter tags. */
+export interface FundHoldings {
+  slug: string;
+  name: string; // firm
+  manager: string; // the person it's known for
+  period: string; // quarter-end (as-of), YYYY-MM-DD
+  filed: string; // filing date, YYYY-MM-DD
+  count: number; // total positions in the filing
+  value: number; // total 13F portfolio value (USD)
+  positions: WhalePosition[];
+}
+
+/** The 13F whale-holdings board from `GET /v1/13f`. */
+export interface ThirteenFBoard {
+  funds: FundHoldings[];
+  updated_at: string;
+}
+
+/** Fetches the 13F whale-holdings board (famous funds' latest quarterly holdings). */
+export function getThirteenF(signal?: AbortSignal): Promise<ThirteenFBoard> {
+  return getJson<ThirteenFBoard>('/v1/13f', signal);
+}
+
 /** The AI digest for a stock from `GET /v1/stocks/{t}/summary` (cached daily). */
 export interface AISummary {
   ticker: string;

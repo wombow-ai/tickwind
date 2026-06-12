@@ -3,11 +3,12 @@
 import {useState} from 'react';
 import {CongressBoard} from '@/components/CongressBoard';
 import {InstitutionalBoard} from '@/components/InstitutionalBoard';
+import {ThirteenFBoard} from '@/components/ThirteenFBoard';
 import {useT} from '@/lib/i18n';
 import {useDark} from '@/lib/theme';
 import {cx, tok} from '@/lib/ui';
 
-export type SmartMoneyTab = 'institutional' | 'congress';
+export type SmartMoneyTab = 'institutional' | 'congress' | '13f';
 
 /**
  * The merged "smart money" page: SEC 13D/13G institutional/activist stakes and
@@ -24,6 +25,7 @@ export function SmartMoneyTabs({initial}: {initial: SmartMoneyTab}) {
   const tabs: {id: SmartMoneyTab; label: string}[] = [
     {id: 'institutional', label: tr('nav.institutional')},
     {id: 'congress', label: tr('nav.congress')},
+    {id: '13f', label: tr('13f.tab')},
   ];
 
   return (
@@ -57,7 +59,9 @@ export function SmartMoneyTabs({initial}: {initial: SmartMoneyTab}) {
           </button>
         ))}
       </div>
-      {tab === 'institutional' ? <InstitutionalBoard /> : <CongressBoard />}
+      {tab === 'institutional' && <InstitutionalBoard />}
+      {tab === 'congress' && <CongressBoard />}
+      {tab === '13f' && <ThirteenFBoard />}
     </div>
   );
 }
