@@ -32,6 +32,7 @@ const DIRECTORY: {href: string; zh: string; en: string; descZh: string; descEn: 
   {href: '/unusual', zh: '期权异动榜', en: 'Unusual Options', descZh: '全市场成交最活跃的期权合约', descEn: 'The most-traded options across the market'},
   {href: '/events', zh: '大事件时间线', en: 'Events Timeline', descZh: 'FOMC / CPI 等宏观日历', descEn: 'Macro calendar — FOMC, CPI & more'},
   {href: '/community', zh: '社区讨论', en: 'Community', descZh: '个股 & 大盘讨论区', descEn: 'Per-stock & market-wide discussion'},
+  {href: '/guide', zh: '新手指南', en: 'Guides', descZh: '美股数据怎么查:国会山股神 / 13F / 期权异动', descEn: 'How to track congress, 13F, options & more'},
 ];
 
 /**

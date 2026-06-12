@@ -1,6 +1,7 @@
 import type {MetadataRoute} from 'next';
 import {getHot, getOpportunities} from '@/lib/api';
 import {POPULAR_TICKERS, SITE_URL} from '@/lib/config';
+import {GUIDES} from '@/lib/guides';
 
 // Regenerate hourly so newly-trending tickers enter the sitemap without a deploy.
 export const revalidate = 3600;
@@ -58,15 +59,22 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     {url: `${SITE_URL}/events`, lastModified: now, changeFrequency: 'daily', priority: 0.6},
     {url: `${SITE_URL}/unusual`, lastModified: now, changeFrequency: 'daily', priority: 0.6},
     {url: `${SITE_URL}/community`, lastModified: now, changeFrequency: 'daily', priority: 0.6},
+    {url: `${SITE_URL}/guide`, lastModified: now, changeFrequency: 'weekly', priority: 0.6},
     {url: `${SITE_URL}/announcements`, lastModified: now, changeFrequency: 'weekly', priority: 0.5},
   ];
+  const guidePages: MetadataRoute.Sitemap = GUIDES.map(g => ({
+    url: `${SITE_URL}/guide/${g.slug}`,
+    lastModified: now,
+    changeFrequency: 'monthly',
+    priority: 0.6,
+  }));
   const stockPages: MetadataRoute.Sitemap = (await indexableTickers()).map(ticker => ({
     url: `${SITE_URL}/stock/${encodeURIComponent(ticker)}`,
     lastModified: now,
     changeFrequency: 'hourly',
     priority: 0.8,
   }));
-  return [...staticPages, ...stockPages].map(entry => ({
+  return [...staticPages, ...guidePages, ...stockPages].map(entry => ({
     ...entry,
     alternates: langAlt(entry.url),
   }));
