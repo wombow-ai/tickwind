@@ -268,8 +268,15 @@ type Server struct {
 	// memory (the per-ticker DailyCandles fetch is the only cost). Guarded by btMu.
 	btMu    sync.Mutex
 	btCache map[string]backtestEntry
-	log     *slog.Logger
-	handler http.Handler // the assembled mux + middleware chain (set in New)
+	// Personalized overnight-digest cache: the AI overview + per-stock roll-up is
+	// generated at most once per (userID, ET day) — the day's first visit pays the
+	// data assembly + (optional) one LLM call, everyone else (and every refresh) hits
+	// the cache, so per-user token spend is bounded. Guarded by digestMu; keyed
+	// userID|day|lang. Old days are swept lazily on the first hit of a new ET day.
+	digestMu    sync.Mutex
+	digestCache map[string]digestEntry
+	log         *slog.Logger
+	handler     http.Handler // the assembled mux + middleware chain (set in New)
 }
 
 // ServeHTTP dispatches to the assembled mux + middleware chain, so *Server is an
@@ -289,7 +296,7 @@ func New(st store.Store, hub QuoteStream, enricher enrich.Enricher, verifier *au
 			admins[id] = true
 		}
 	}
-	s := &Server{store: st, hub: hub, clip: clip.NewFetcher(), enrich: enricher, auth: verifier, bars: bars, topics: topicSrc, opps: oppSrc, universe: universeSrc, gurus: guruSrc, ingestor: ingestor, symbols: symbolSrc, events: eventSrc, fundamentals: fundSrc, earnings: earningsSrc, congress: congressSrc, institutional: institutionalSrc, live: liveSub, indices: indicesSrc, short: shortSrc, briefing: briefingSrc, options: optionsSrc, thirteenf: thirteenfSrc, admins: admins, commentRL: newRateLimiter(10, 10*time.Minute), sumCache: map[string]summaryEntry{}, sumInflight: map[string]chan struct{}{}, btCache: map[string]backtestEntry{}, log: log}
+	s := &Server{store: st, hub: hub, clip: clip.NewFetcher(), enrich: enricher, auth: verifier, bars: bars, topics: topicSrc, opps: oppSrc, universe: universeSrc, gurus: guruSrc, ingestor: ingestor, symbols: symbolSrc, events: eventSrc, fundamentals: fundSrc, earnings: earningsSrc, congress: congressSrc, institutional: institutionalSrc, live: liveSub, indices: indicesSrc, short: shortSrc, briefing: briefingSrc, options: optionsSrc, thirteenf: thirteenfSrc, admins: admins, commentRL: newRateLimiter(10, 10*time.Minute), sumCache: map[string]summaryEntry{}, sumInflight: map[string]chan struct{}{}, btCache: map[string]backtestEntry{}, digestCache: map[string]digestEntry{}, log: log}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", s.health)
 
@@ -310,6 +317,7 @@ func New(st store.Store, hub QuoteStream, enricher enrich.Enricher, verifier *au
 	mux.HandleFunc("GET /v1/holdings", s.getHoldings)
 	mux.HandleFunc("POST /v1/holdings", s.postHolding)
 	mux.HandleFunc("DELETE /v1/holdings/{id}", s.deleteHolding)
+	mux.HandleFunc("GET /v1/me/digest", s.getMyDigest)
 	mux.HandleFunc("GET /v1/comments", s.getComments) // public read
 	mux.HandleFunc("POST /v1/comments", s.postComment)
 	mux.HandleFunc("PATCH /v1/comments/{id}", s.patchComment)
@@ -2313,6 +2321,245 @@ func summaryInput(ticker string, news []store.News, posts []store.Post) string {
 	b.WriteString("\nRecent social posts:\n")
 	for _, p := range posts {
 		fmt.Fprintf(&b, "- %s\n", p.Body)
+	}
+	return b.String()
+}
+
+// ── Per-user: overnight digest ("我的隔夜报告") ─────────────────────────────
+//
+// A personalized morning report over the signed-in user's watchlist: each
+// tracked stock's overnight change %, freshest news headline (zh-preferred), and
+// next earnings/event, plus an optional AI overview (2-3 zh sentences) distilled
+// from that material. Read-only, login-only, never in the sitemap. One assembly +
+// at most one LLM call per (user, ET day) — the rest is served from memory.
+
+// digestStock is one watchlist row in the overnight digest: the overnight
+// change %, the freshest news headline (with link), and the next earnings/event.
+type digestStock struct {
+	Ticker    string   `json:"ticker"`
+	Name      string   `json:"name"`
+	ChangePct *float64 `json:"change_pct"` // null when no prev-close reference
+	Headline  string   `json:"headline,omitempty"`
+	HeadURL   string   `json:"headline_url,omitempty"`
+	NextEvent string   `json:"next_event,omitempty"` // e.g. "财报 11-02 盘后"
+}
+
+// digestPayload is the GET /v1/me/digest response body.
+type digestPayload struct {
+	Date    string        `json:"date"` // ET day, YYYY-MM-DD
+	Summary string        `json:"summary"`
+	Stocks  []digestStock `json:"stocks"`
+}
+
+// digestEntry is one cached digest (per user per ET day per language).
+type digestEntry struct {
+	payload digestPayload
+	at      time.Time
+}
+
+// digestMaxTickers caps how many watchlist names the digest assembles (the
+// per-ticker quote/news/earnings reads are bounded — a huge watchlist can't fan
+// out without limit).
+const digestMaxTickers = 25
+
+// getMyDigest returns the signed-in user's personalized overnight report over
+// their watchlist. Generated at most once per (user, ET day, language) and served
+// from memory after; an empty watchlist yields {stocks:[]} with 200; the LLM
+// overview is best-effort (empty summary when the LLM is off / fails) and the
+// data rows always populate regardless.
+func (s *Server) getMyDigest(w http.ResponseWriter, r *http.Request) {
+	u, ok := s.requireUser(w, r)
+	if !ok {
+		return
+	}
+	lang := "zh" // Chinese-first default; English UI requests ?lang=en
+	if r.URL.Query().Get("lang") == "en" {
+		lang = "en"
+	}
+	day := summaryDay() // ET trading day, shared with the per-stock digest
+	key := u.ID + "|" + day + "|" + lang
+
+	s.digestMu.Lock()
+	if e, ok := s.digestCache[key]; ok {
+		s.digestMu.Unlock()
+		writeJSON(w, http.StatusOK, e.payload)
+		return
+	}
+	// Sweep stale days lazily so the cache doesn't grow unbounded over time.
+	for k := range s.digestCache {
+		if !strings.Contains(k, "|"+day+"|") {
+			delete(s.digestCache, k)
+		}
+	}
+	s.digestMu.Unlock()
+
+	tickers, err := s.store.Watchlist(r.Context(), u.ID)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, errBody(err.Error()))
+		return
+	}
+	if len(tickers) > digestMaxTickers {
+		tickers = tickers[:digestMaxTickers]
+	}
+
+	stocks := s.buildDigestStocks(r.Context(), tickers, lang)
+	payload := digestPayload{Date: day, Summary: "", Stocks: stocks}
+
+	// AI overview is best-effort: when the LLM is enabled and there's material,
+	// distill a short zh/en综述 from the assembled rows. A failure (or disabled
+	// LLM) leaves Summary empty — the data rows still serve.
+	if len(stocks) > 0 && s.enrich != nil && s.enrich.Enabled() {
+		if material := digestMaterial(stocks, lang); material != "" {
+			ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
+			if text, err := s.enrich.Summarize(ctx, material, lang); err != nil {
+				s.log.Debug("digest summary failed", "user", u.ID, "err", err)
+			} else {
+				payload.Summary = strings.TrimSpace(text)
+			}
+			cancel()
+		}
+	}
+
+	e := digestEntry{payload: payload, at: time.Now().UTC()}
+	s.digestMu.Lock()
+	s.digestCache[key] = e
+	s.digestMu.Unlock()
+	writeJSON(w, http.StatusOK, payload)
+}
+
+// buildDigestStocks assembles one row per watchlist ticker: overnight change %
+// (quote PrevClose reference, with the same plausibility band as the briefing),
+// the freshest news headline (zh-preferred), and the next earnings/event. Always
+// returns a non-nil slice; per-ticker read failures degrade to partial rows.
+func (s *Server) buildDigestStocks(ctx context.Context, tickers []string, lang string) []digestStock {
+	stocks := make([]digestStock, 0, len(tickers))
+	for _, tk := range tickers {
+		tk = strings.ToUpper(strings.TrimSpace(tk))
+		if tk == "" {
+			continue
+		}
+		row := digestStock{Ticker: tk}
+
+		// Name (best-effort; falls back to the bare ticker).
+		if sec, ok, err := s.store.GetSecurity(ctx, tk); err == nil && ok && sec.Name != "" {
+			row.Name = sec.Name
+		}
+
+		// Overnight change %: the latest all-session quote vs its prev close.
+		if q, ok, err := s.store.GetQuote(ctx, tk); err == nil && ok {
+			if q.PrevClose > 0 && q.Price > 0 {
+				chg := (q.Price - q.PrevClose) / q.PrevClose * 100
+				if chg <= 300 && chg >= -95 { // reject delayed-data split artifacts
+					c := chg
+					row.ChangePct = &c
+				}
+			}
+		}
+
+		// Freshest news headline (zh-preferred), with a link to the original.
+		if news, err := s.store.ListNews(ctx, tk, 1); err == nil && len(news) > 0 {
+			n := news[0]
+			h := n.Headline
+			if lang != "en" && n.HeadlineZH != "" {
+				h = n.HeadlineZH
+			}
+			row.Headline = h
+			row.HeadURL = n.URL
+		}
+
+		// Next earnings/event (nearest upcoming, else most recent).
+		if s.earnings != nil {
+			if es, err := s.earnings.ListEarningsForTicker(ctx, tk, 8); err == nil {
+				row.NextEvent = nextEarningsLabel(es, lang)
+			}
+		}
+
+		stocks = append(stocks, row)
+	}
+	return stocks
+}
+
+// nextEarningsLabel picks the nearest upcoming earnings date (else the most
+// recent past one) and renders a short bilingual label, e.g. "财报 11-02 盘后" /
+// "Earnings 11-02 AMC". Empty when there's no dated row.
+func nextEarningsLabel(es []store.Earning, lang string) string {
+	if len(es) == 0 {
+		return ""
+	}
+	now := time.Now().UTC()
+	var best store.Earning
+	var bestSet, upcoming bool
+	for _, e := range es {
+		if e.Date.IsZero() {
+			continue
+		}
+		isUp := !e.Date.Before(now.Truncate(24 * time.Hour))
+		switch {
+		case !bestSet:
+			best, bestSet, upcoming = e, true, isUp
+		case isUp && !upcoming: // prefer the first upcoming over any past
+			best, upcoming = e, true
+		case isUp && upcoming && e.Date.Before(best.Date): // nearest upcoming
+			best = e
+		case !isUp && !upcoming && e.Date.After(best.Date): // most recent past
+			best = e
+		}
+	}
+	if !bestSet {
+		return ""
+	}
+	hourEN := map[string]string{"bmo": "BMO", "amc": "AMC", "dmh": "DMH"}[best.Hour]
+	hourZH := map[string]string{"bmo": "盘前", "amc": "盘后", "dmh": "盘中"}[best.Hour]
+	date := best.Date.Format("01-02")
+	if lang == "en" {
+		if hourEN != "" {
+			return "Earnings " + date + " " + hourEN
+		}
+		return "Earnings " + date
+	}
+	if hourZH != "" {
+		return "财报 " + date + " " + hourZH
+	}
+	return "财报 " + date
+}
+
+// digestMaterial formats the assembled watchlist rows into compact LLM input for
+// the overnight overview, in the requested language. Returns "" when no row has
+// anything worth summarizing (so the LLM call is skipped).
+func digestMaterial(stocks []digestStock, lang string) string {
+	var b strings.Builder
+	any := false
+	if lang == "en" {
+		b.WriteString("My watchlist — overnight snapshot:\n")
+	} else {
+		b.WriteString("我的自选股隔夜快照:\n")
+	}
+	for _, st := range stocks {
+		name := st.Ticker
+		if st.Name != "" {
+			name = st.Ticker + " (" + st.Name + ")"
+		}
+		fmt.Fprintf(&b, "- %s", name)
+		if st.ChangePct != nil {
+			fmt.Fprintf(&b, " %+.2f%%", *st.ChangePct)
+			any = true
+		}
+		if st.Headline != "" {
+			if lang == "en" {
+				fmt.Fprintf(&b, " | news: %s", st.Headline)
+			} else {
+				fmt.Fprintf(&b, " | 新闻:%s", st.Headline)
+			}
+			any = true
+		}
+		if st.NextEvent != "" {
+			fmt.Fprintf(&b, " | %s", st.NextEvent)
+			any = true
+		}
+		b.WriteByte('\n')
+	}
+	if !any {
+		return ""
 	}
 	return b.String()
 }

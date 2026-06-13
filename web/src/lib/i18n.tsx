@@ -617,10 +617,18 @@ const dict: Record<Lang, Record<string, string>> = {
     'cal.ipo': 'IPO',
     // personal hub (/me) tabs
     'me.title': 'My',
+    'me.overview': 'Overview',
     'me.watchlist': 'Watchlist',
     'me.holdings': 'Holdings',
     'me.notes': 'Notes',
     'me.alerts': 'Alerts',
+    // overnight digest (Overview tab)
+    'digest.aiTitle': "Tonight's overview",
+    'digest.stocksTitle': 'Your watchlist overnight',
+    'digest.emptyTitle': 'No stocks yet',
+    'digest.emptySub': 'Add stocks to your watchlist to get a personalized overnight report each morning.',
+    'digest.emptyCta': 'Add stocks',
+    'digest.error': "Couldn't load your overnight report. Try again later.",
     // discussion shell tabs
     'disc.discussion': 'Discussion',
     'disc.community': 'Community',
@@ -1160,10 +1168,18 @@ const dict: Record<Lang, Record<string, string>> = {
     'cal.ipo': 'IPO',
     // personal hub (/me) tabs
     'me.title': '我的',
+    'me.overview': '今夜',
     'me.watchlist': '自选',
     'me.holdings': '持仓',
     'me.notes': '笔记',
     'me.alerts': '提醒',
+    // overnight digest (Overview tab)
+    'digest.aiTitle': '今夜综述',
+    'digest.stocksTitle': '自选股隔夜',
+    'digest.emptyTitle': '还没有自选股',
+    'digest.emptySub': '添加自选股,每天早晨即可收到一份个性化的隔夜报告。',
+    'digest.emptyCta': '添加自选股',
+    'digest.error': '隔夜报告加载失败,请稍后再试。',
     // discussion shell tabs
     'disc.discussion': '讨论',
     'disc.community': '社区',

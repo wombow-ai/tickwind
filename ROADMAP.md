@@ -591,3 +591,16 @@ verifies (build/vet/lint), updates this file + `CLAUDE.md`, and commits._
 >
 > **🎉 v7 阶段性里程碑(本会话)**:三个 owner 解锁全部落地见效 [Google OAuth · TG 播报@tickwind · 住宅代理→IPO] + 图卡引擎 + wave0(做空日更/恐贪/降息) + **smart-money 全集群**(佩洛西议员页/交易表/个股 congress chip + 13F 基金页/whale 反查 + 跟单回测) + 价格小数位修复。**剩余波次**:中概退市专区 · A股词典 pSEO · 个性化晨报/持仓体检 · AI 深度报告 · 议员交易提醒 · 13F 扩白名单 · OG 分享卡 kind。**遗留修**:backtest obscure 票价格覆盖 · sentiment Short% 校准 · ratecut 阈值盘口展示 · LocalizedTitle ?lang=zh tab 标题。
 > **✅v7 IA 重构(owner 要求,本 commit,纯前端)= 页面合并/排版收口**:24 页→收口,导航 ~17 项→~9 项。① **/calendar** 共享标签外壳 + 三子路径 /calendar/earnings|macro|ipo(各保 SSR metadata+langAlternates,合并旧 earnings/events/ipo)。② **/me 个人中心**(客户端标签 ?tab=watchlist|holdings|notes|alerts,登录门,合并旧 watchlist/portfolio/notes/alerts;PortfolioView 抽出、notes 日历/alerts 增删交互完整搬)。③ **/discussion** 加标签[Discussion·Community](并 community)。TopNav:secondary 去 IPO/Earnings/Events/Community→加 Calendar+Discussion;去 watchlist pill+authed Notes/Portfolio/Alerts→authed My pill(/me);AccountMenu/AlertsBell/Footer/home 目录同步。next.config 8 条 permanent 308 重定向(旧 URL→新,curl 验证)。sitemap 更新(/calendar/* 带 hreflang,去 community/旧日历)。i18n nav.calendar/discussion/my + cal/me/disc.* en+zh。删 8 个旧页目录。预览验证:/calendar 三标签 + 财报分日、/me 登录门、/discussion 两标签;lint 0 error/build 绿/旧八页消失。
+
+## 💎 v8 — 两大重点收费路线(owner 2026-06-13)
+> owner 定为重点、后续可收费。数据集 `data/indicators/`(414 指标,SPEC.md + indicators.json/csv/yaml + 原始 build prompt;owner 提供)。注:prompt 假设 Python/FastAPI,**我们用 Go + Next.js 既有栈适配**。
+### R1 · 超丰富指标库引擎(Glassnode/LookNode 式,dataset-driven)
+- **数据集=单一真相源**:414 条(domain: onchain132/fundamental99/sentiment98/technical85;priority P0=37/P1=61/P2=316;applies_to stock184/crypto132/both98 → **stock-applicable=282**)。每条含 id/domain/subcategory/priority/applies_to/name_en/name_zh/abbr/definition/formula/inputs/default_params/talib_or_lib/output_type/data_source/interpretation。**代码从 json 生成 catalog/registry/UI,不手维护平行清单;绝不臆造/改公式,不能忠实实现就标 unsupported+原因**。
+- **Go 栈适配**:后端 `internal/indicators`——从 json seed catalog + registry(id→compute:technical 用 BarCache OHLCV、fundamental 用 SEC XBRL、sentiment/macro 用现有源)。API:GET /v1/indicators(catalog,按 domain/priority/applies_to/asset 过滤)+ GET /v1/stocks/{t}/indicators(某票指标最新值+历史序列)。前端:可搜索指标目录页 + 按 output_type 渲染(overlay 叠K线/oscillator 子盘/value 卡)+ 个股"指标"区。复用现有 web/lib/indicators.ts(技术)、XBRL fundamentals、sentiment 成分。
+- **范围**:stock-applicable(282)优先;crypto/onchain(132,需 crypto OHLCV+Glassnode 新基建)=后续可选扩展(数据集已支持)。
+- **分阶段**:P0(28 stock,多已算:RSI/MACD/BOLL/ATR/EMA/SMA/KDJ/VWAP/Vol + PE-TTM/PB/ROE/毛利/净利/营收增长/FCF/股息率/资产负债率 + VIX)→ P1 → P2;每阶段 registry-coverage 测试。
+- **收费铺路**:免费=P0 核心+目录浏览;付费=P1/P2 全量+历史深度+多指标叠加+导出(对齐 Koyfin/Glassnode 历史深度分层)。绿区数据(SEC/FINRA/Cboe/价格延迟展示)。
+### R2 · AI 深度分析报告/研报(可收费,依赖 R1)
+- AI 速览升级为长篇中文研报:综合 指标库(R1)+ SEC 财报/filings + smart-money(国会/13F/内部人/做空)+ 期权情绪 → 结构化研报,每论断挂数据源链接(可溯源,对齐 Fiscal.ai);数字从结构化数据注入、LLM 只写定性(防幻觉)。
+- **收费**:每日限量免费 / 付费全量+历史+PDF(对齐 Seeking Alpha/Motley Fool/Zacks 最高客单品类)。绿区数据 + 自产 LLM 内容,不踩行情转售红线。
+> **打法**:Phase 0 dataset 入库(已 cp data/indicators/)+ scaffold(catalog seed/API/目录页)→ Phase 1 P0 vertical(28 stock 指标接进 dataset-driven 框架,多数已算)→ P1/P2 扩。R2 待 R1 有指标输出后做。其余路线(港股/雪球、议员提醒、13F扩白名单等)降到重点路线之下。

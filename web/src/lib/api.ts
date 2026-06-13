@@ -1788,6 +1788,47 @@ export function getIPO(signal?: AbortSignal): Promise<IPOCalendarResponse> {
   return getJson<IPOCalendarResponse>('/v1/ipo', signal);
 }
 
+/** One watchlist row in the personalized overnight digest (`GET /v1/me/digest`). */
+export interface DigestStock {
+  ticker: string;
+  /** Company / instrument name; may be empty until the security is tracked. */
+  name: string;
+  /** Overnight change %, null when no prev-close reference is available. */
+  change_pct: number | null;
+  /** Freshest news headline (Chinese-preferred for zh UI); absent when none. */
+  headline?: string;
+  /** Link to the original article for {@link headline}. */
+  headline_url?: string;
+  /** Next earnings/event label, e.g. "财报 11-02 盘后" / "Earnings 11-02 AMC". */
+  next_event?: string;
+}
+
+/** The signed-in user's personalized overnight report from `GET /v1/me/digest`. */
+export interface MyDigest {
+  /** ET day, YYYY-MM-DD. */
+  date: string;
+  /** AI overview (2-3 sentences) in the requested language; empty when the LLM
+   *  is off or there's no material. */
+  summary: string;
+  stocks: DigestStock[];
+}
+
+/**
+ * Fetches the caller's "我的隔夜报告" — a personalized morning report over their
+ * watchlist (overnight change %, freshest headline, next event) plus an optional
+ * AI overview, in the given UI language ("zh"|"en"). Cached server-side per
+ * (user, ET day, language). Requires authentication; an empty watchlist resolves
+ * to `{stocks: []}`.
+ */
+export function getMyDigest(
+  token: string | null,
+  lang: string,
+  signal?: AbortSignal,
+): Promise<MyDigest> {
+  const q = lang === 'en' ? '?lang=en' : '';
+  return getJson<MyDigest>(`/v1/me/digest${q}`, signal, token);
+}
+
 /** Fetches backend health. */
 export function getHealth(signal?: AbortSignal): Promise<Health> {
   return getJson<Health>('/healthz', signal);
