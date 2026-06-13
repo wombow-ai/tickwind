@@ -19,6 +19,18 @@ func ForeignSeeds() []Symbol {
 		{Ticker: "0700.HK", Name: "Tencent Holdings", Exchange: "HKEX", Country: "HK"},
 		{Ticker: "2513.HK", Name: "Zhipu AI (Knowledge Atlas / Z.ai)", Exchange: "HKEX", Country: "HK"},
 		{Ticker: "0100.HK", Name: "MiniMax", Exchange: "HKEX", Country: "HK"},
+		{Ticker: "9988.HK", Name: "Alibaba Group", Exchange: "HKEX", Country: "HK"},
+		{Ticker: "3690.HK", Name: "Meituan", Exchange: "HKEX", Country: "HK"},
+		{Ticker: "9618.HK", Name: "JD.com", Exchange: "HKEX", Country: "HK"},
+		{Ticker: "9999.HK", Name: "NetEase", Exchange: "HKEX", Country: "HK"},
+		{Ticker: "1810.HK", Name: "Xiaomi", Exchange: "HKEX", Country: "HK"},
+		{Ticker: "1211.HK", Name: "BYD", Exchange: "HKEX", Country: "HK"},
+		{Ticker: "0981.HK", Name: "SMIC (Semiconductor Manufacturing Intl)", Exchange: "HKEX", Country: "HK"},
+		{Ticker: "1024.HK", Name: "Kuaishou", Exchange: "HKEX", Country: "HK"},
+		{Ticker: "9888.HK", Name: "Baidu", Exchange: "HKEX", Country: "HK"},
+		{Ticker: "2015.HK", Name: "Li Auto", Exchange: "HKEX", Country: "HK"},
+		{Ticker: "9866.HK", Name: "NIO", Exchange: "HKEX", Country: "HK"},
+		{Ticker: "9868.HK", Name: "XPeng", Exchange: "HKEX", Country: "HK"},
 		// Brazil (B3 / Bovespa) — live via the brapi.dev adapter when enabled.
 		// Tickwind uses the ".SA" venue suffix; brapi is queried with the bare code.
 		{Ticker: "PETR4.SA", Name: "Petrobras PN", Exchange: "B3", Country: "BR"},

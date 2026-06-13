@@ -95,7 +95,12 @@ var taiwanSeed = []string{"2330.TW", "2317.TW", "2454.TW", "2308.TW", "2412.TW",
 // hongKongSeed is the HK names the owner follows — Tencent, Zhipu / Z.ai (listed
 // as "Knowledge Atlas") and MiniMax — always ingested via the owner-authorized
 // (gray, delayed) Yahoo quote adapter. Values are Yahoo 4-digit .HK codes.
-var hongKongSeed = []string{"0700.HK", "2513.HK", "0100.HK"}
+var hongKongSeed = []string{
+	"0700.HK", "2513.HK", "0100.HK", // Tencent, Zhipu/Z.ai, MiniMax (owner's original set)
+	// Popular HK-listed China-tech / U.S.-dual-listed names Chinese investors follow.
+	"9988.HK", "3690.HK", "9618.HK", "9999.HK", "1810.HK", "1211.HK",
+	"0981.HK", "1024.HK", "9888.HK", "2015.HK", "9866.HK", "9868.HK",
+}
 
 // koreaSeed is the two KR large-caps the owner follows — Samsung Electronics and
 // SK Hynix — ingested only when Korea is enabled, so their pages have data the
