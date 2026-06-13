@@ -380,6 +380,46 @@ func TestComposeErrorIsDataOnly(t *testing.T) {
 	}
 }
 
+// TestComposeOverviewPrepended asserts the LLM's "overview" synthesis becomes a
+// prose-only section rendered FIRST (prepended), while a disabled enricher (the
+// data-only report) gets no overview at all.
+func TestComposeOverviewPrepended(t *testing.T) {
+	src := Sources{
+		Indicators: &fakeIndicators{res: indicators.StockIndicatorsResult{
+			Indicators: []indicators.StockIndicator{okIndicator("technical.rsi", 56.3, "")},
+		}},
+	}
+	// Enabled: an "overview" key (not a section in the material) is prepended as a
+	// prose-only section; the real "technical" section gets its prose too.
+	enr := &fakeEnricher{enabled: true, prose: map[string]string{
+		"overview":  "综合来看,基本面稳健但情绪偏谨慎。以上为基于公开数据的客观梳理,非投资建议。",
+		"technical": "RSI 处于中性区间。",
+	}}
+	composed := Compose(context.Background(), Assemble(context.Background(), "X", src), enr, "zh")
+
+	var keys []string
+	for _, s := range composed.Sections {
+		keys = append(keys, s.Key)
+	}
+	if len(composed.Sections) == 0 || composed.Sections[0].Key != overviewKey {
+		t.Fatalf("section order = %v, want overview first", keys)
+	}
+	ov := composed.Sections[0]
+	if ov.Prose == "" || len(ov.Facts) != 0 {
+		t.Errorf("overview section = %+v, want prose-only (no facts)", ov)
+	}
+	if tech, ok := section(composed, "technical"); !ok || tech.Prose == "" {
+		t.Error("technical section missing its prose")
+	}
+
+	// Disabled → data-only → NO overview section.
+	off := &fakeEnricher{enabled: false, prose: map[string]string{"overview": "should never appear"}}
+	dataOnly := Compose(context.Background(), Assemble(context.Background(), "X", src), off, "zh")
+	if _, ok := section(dataOnly, overviewKey); ok {
+		t.Error("overview section present on a disabled (data-only) report; want none")
+	}
+}
+
 // TestComposeNeverMutatesNumbers asserts the LLM map only touches Prose — every
 // Fact.Value and Fact.Raw is byte-for-byte identical before and after Compose,
 // even when the model returns prose AND a stray bogus number-looking key.

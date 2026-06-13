@@ -41,8 +41,23 @@ func Compose(ctx context.Context, fs FactSheet, enr ResearchEnricher, lang strin
 			fs.Sections[i].Prose = strings.TrimSpace(p)
 		}
 	}
+	// The overview is a synthesis the LLM writes over all the other sections'
+	// facts (it is NOT in the material as an input section). It is prose-only —
+	// no facts of its own — so it exists only when the LLM produced it; the
+	// data-only report (LLM off) has no overview. Rendered FIRST (prepended).
+	if ov := strings.TrimSpace(prose[overviewKey]); ov != "" {
+		fs.Sections = append([]SectionFacts{{
+			Key:     overviewKey,
+			TitleZH: "概览",
+			TitleEN: "Overview",
+			Prose:   ov,
+		}}, fs.Sections...)
+	}
 	return fs
 }
+
+// overviewKey is the synthesis section the composer adds over all other sections.
+const overviewKey = "overview"
 
 // buildMaterial assembles the single pre-formatted material string the LLM sees,
 // in the briefing.buildMaterial style: a header, then one block per section keyed
