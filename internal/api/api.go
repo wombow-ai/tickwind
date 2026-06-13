@@ -26,6 +26,7 @@ import (
 	"github.com/wombow-ai/tickwind/internal/cashtag"
 	"github.com/wombow-ai/tickwind/internal/clip"
 	"github.com/wombow-ai/tickwind/internal/congress"
+	"github.com/wombow-ai/tickwind/internal/congress/ptr"
 	"github.com/wombow-ai/tickwind/internal/edgar"
 	"github.com/wombow-ai/tickwind/internal/enrich"
 	"github.com/wombow-ai/tickwind/internal/events"
@@ -120,6 +121,15 @@ type EarningsSource interface {
 // Transaction Reports (House Clerk public-domain filings). nil → empty list.
 type CongressSource interface {
 	Get() []congress.Filing
+}
+
+// CongressTxSource provides the ticker- and member-level transactions parsed out
+// of the PTR PDFs, powering the per-stock "members trading this" chip and the
+// per-member page. nil-safe (injected post-New via SetCongressTx). Satisfied by
+// *congress.Cache.
+type CongressTxSource interface {
+	ByTicker(ticker string) []congress.TickerTrade
+	ByMember(slug string) (congress.MemberTx, bool)
 }
 
 // InstitutionalSource provides the latest snapshot of SEC Schedule 13D/13G
@@ -227,6 +237,7 @@ type Server struct {
 	shortVolume   ShortVolumeSource // injected post-New via SetShortVolume (avoids growing the New signature)
 	sentiment     SentimentSource   // injected post-New via SetSentiment
 	rateCut       RateCutSource     // injected post-New via SetRateCut
+	congressTx    CongressTxSource  // injected post-New via SetCongressTx
 	admins        map[string]bool   // user UUIDs and/or emails (lowercased) allowed to delete any comment
 	commentRL     *rateLimiter      // per-user comment-post throttle
 	// AI digest cache: one LLM generation per (ticker, ET day), then served from
@@ -313,6 +324,8 @@ func New(st store.Store, hub QuoteStream, enricher enrich.Enricher, verifier *au
 	mux.HandleFunc("GET /v1/events", s.getEvents)
 	mux.HandleFunc("GET /v1/earnings", s.getEarnings)
 	mux.HandleFunc("GET /v1/congress", s.getCongress)
+	mux.HandleFunc("GET /v1/congress/member/{slug}", s.getCongressMember)
+	mux.HandleFunc("GET /v1/stocks/{ticker}/congress", s.getStockCongress)
 	mux.HandleFunc("GET /v1/institutional", s.getInstitutional)
 	mux.HandleFunc("GET /v1/indices", s.getIndices)
 	mux.HandleFunc("GET /v1/briefing", s.getBriefing)
@@ -1644,6 +1657,46 @@ func (s *Server) getCongress(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"count": len(filings), "filings": filings})
 }
 
+// getStockCongress returns the recent congressional trades in a ticker (the
+// per-stock "members trading this" chip), newest first. Always 200 with a
+// (possibly empty) list — never null; nil source / unparsed ticker → empty.
+func (s *Server) getStockCongress(w http.ResponseWriter, r *http.Request) {
+	ticker := strings.ToUpper(strings.TrimSpace(r.PathValue("ticker")))
+	trades := []congress.TickerTrade{}
+	if s.congressTx != nil {
+		if got := s.congressTx.ByTicker(ticker); got != nil {
+			trades = got
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ticker": ticker, "trades": trades})
+}
+
+// getCongressMember returns one member's parsed PTR transactions by slug (the
+// member page). 404 for an unknown slug or when no transactions have been parsed
+// for that member yet (e.g. only scanned filings).
+func (s *Server) getCongressMember(w http.ResponseWriter, r *http.Request) {
+	slug := strings.ToLower(strings.TrimSpace(r.PathValue("slug")))
+	if s.congressTx == nil {
+		writeJSON(w, http.StatusNotFound, errBody("member not found: "+slug))
+		return
+	}
+	m, ok := s.congressTx.ByMember(slug)
+	if !ok {
+		writeJSON(w, http.StatusNotFound, errBody("member not found: "+slug))
+		return
+	}
+	txs := m.Transactions
+	if txs == nil {
+		txs = []ptr.Transaction{} // marshal as [] not null
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"slug":         m.Slug,
+		"name":         m.Name,
+		"state":        m.State,
+		"transactions": txs,
+	})
+}
+
 // getInstitutional returns recent SEC Schedule 13D/13G beneficial-ownership
 // filings (13D = active/activist stake, higher signal; 13G = passive, e.g. the
 // index giants), newest first. ?type=13d|13g filters by activist flag; ?limit=
@@ -1805,6 +1858,10 @@ func (s *Server) SetSentiment(src SentimentSource) { s.sentiment = src }
 
 // SetRateCut injects the Fed rate-cut markets source after New. nil-safe.
 func (s *Server) SetRateCut(src RateCutSource) { s.rateCut = src }
+
+// SetCongressTx injects the parsed-PTR transaction source (ticker/member detail)
+// after New. nil-safe: the per-stock chip + member page stay empty/404 until set.
+func (s *Server) SetCongressTx(src CongressTxSource) { s.congressTx = src }
 
 // getIndices returns the latest major-market-index levels (homepage strip).
 // getOptions returns the ticker's delayed options overview (P/C, max pain, OI

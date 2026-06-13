@@ -73,6 +73,34 @@ func New() *Client {
 	return &Client{http: &http.Client{Timeout: 45 * time.Second}, baseURL: defaultBaseURL}
 }
 
+// maxPDFBytes caps a single PTR PDF download; digital PTRs are well under 1 MB,
+// but the bound keeps a surprise large/hostile response from exhausting memory.
+const maxPDFBytes = 16 << 20
+
+// FetchPDF downloads one filing's PDF (e.g. a Filing.PDFURL) and returns its raw
+// bytes, for the ptr package to parse. It reuses the Client's HTTP client and the
+// same Clerk/EDGAR User-Agent as the index fetch.
+func (c *Client) FetchPDF(ctx context.Context, url string) ([]byte, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("User-Agent", userAgent)
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("fetch ptr pdf: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("ptr pdf %s: status %d", url, resp.StatusCode)
+	}
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxPDFBytes))
+	if err != nil {
+		return nil, fmt.Errorf("read ptr pdf %s: %w", url, err)
+	}
+	return raw, nil
+}
+
 // FetchHousePTRs downloads the given year's financial-disclosure ZIP, parses its
 // XML index, and returns the Periodic Transaction Reports (stock-trade filings)
 // with their official PDF links, newest filing date first.

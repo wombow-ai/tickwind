@@ -23,6 +23,7 @@ import (
 	"github.com/wombow-ai/tickwind/internal/cboe"
 	"github.com/wombow-ai/tickwind/internal/config"
 	"github.com/wombow-ai/tickwind/internal/congress"
+	"github.com/wombow-ai/tickwind/internal/congress/ptr"
 	"github.com/wombow-ai/tickwind/internal/dart"
 	"github.com/wombow-ai/tickwind/internal/edgar"
 	"github.com/wombow-ai/tickwind/internal/enrich"
@@ -284,7 +285,17 @@ func main() {
 	// Congress trading board: official House Clerk PTR disclosures (public domain,
 	// keyless, no Alpaca dependency) refreshed into an in-memory cache on a slow
 	// cadence. Runs unconditionally in its own goroutine, off the request path.
-	go ingest.NewCongressIngestor(congress.New(), congressCache, cfg.CongressSweepEvery, log).Run(ctx)
+	// The PTR extractor (poppler pdftotext) parses each digital filing's PDF down
+	// to ticker-level trades; if pdftotext is unavailable the ingestor degrades
+	// gracefully to storing the filing index alone (no ticker/member detail).
+	var ptrExtractor ptr.Extractor
+	if ex, perr := ptr.NewPdftotext(); perr != nil {
+		log.Warn("congress: pdftotext unavailable — PTR detail (ticker/member) disabled", "err", perr)
+	} else {
+		ptrExtractor = ex
+		log.Info("congress: PTR PDF parsing enabled (pdftotext)")
+	}
+	go ingest.NewCongressIngestor(congress.New(), congressCache, cfg.CongressSweepEvery, ptrExtractor, log).Run(ctx)
 
 	// Institutional / activist board: SEC Schedule 13D/13G beneficial-ownership
 	// filings (public domain, keyless). Same unconditional, off-request-path pattern.
@@ -405,6 +416,7 @@ func main() {
 	apiServer.SetShortVolume(shortVolumeCache)
 	apiServer.SetSentiment(sentimentCache)
 	apiServer.SetRateCut(rateCutIngestor.Cache())
+	apiServer.SetCongressTx(congressCache) // ticker-level / member PTR detail
 
 	srv := &http.Server{
 		Addr:              ":" + cfg.Port,
