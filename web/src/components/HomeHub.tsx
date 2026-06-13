@@ -171,8 +171,10 @@ export function HomeHub() {
           until generated) */}
       <BriefingCard />
 
-      {/* Boards & signals (榜单 · 机会 · 大V) */}
-      <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+      {/* Boards & signals (榜单 · 机会 · 大V). items-start so the shorter
+          leaderboard cards (Hot / Opportunity) keep their natural height instead
+          of stretching to the taller Guru-watch card and leaving dead space. */}
+      <div className="grid items-start gap-5 sm:grid-cols-2 lg:grid-cols-3">
         <ModuleCard
           t={t}
           title={tr('mod.hotStocks')}

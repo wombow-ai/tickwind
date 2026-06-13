@@ -15,8 +15,14 @@ export const runtime = 'nodejs';
  * route never 500s.
  */
 
-const WIDTH = 1200;
-const HEIGHT = 630;
+// The card is DESIGNED at 1200×630 but RENDERED at 2× (2400×1260) for crisp
+// "save image" output on high-DPI screens / 小红书 reposts. The design is scaled
+// up via a transform wrapper so no per-element sizes change.
+const BASE_W = 1200;
+const BASE_H = 630;
+const SCALE = 2;
+const WIDTH = BASE_W * SCALE;
+const HEIGHT = BASE_H * SCALE;
 
 // Force a non-woff2 (TrueType/OpenType) src — satori cannot parse woff2.
 const OLD_UA =
@@ -53,15 +59,31 @@ export async function GET(req: NextRequest, ctx: {params: Promise<{kind: string}
   const subtitle = clamp(sp.get('subtitle'), 140);
   const stat = clamp(sp.get('stat'), 24); // optional big figure (e.g. a price / %)
   const statTone = sp.get('tone'); // 'up' | 'down' | null
-  const tag = clamp(sp.get('tag'), 60) || '国会交易 · 13F · 期权异动 · 内部人买入';
+  const lang = sp.get('lang') === 'en' ? 'en' : 'zh'; // UI language for the card chrome
+  // Brand badge + default footer tag follow the UI language (single-language
+  // values default to English for the EN UI; Chinese for the zh UI).
+  const badge = lang === 'en' ? 'Data-first US stocks' : '中文美股数据台';
+  const defaultTag =
+    lang === 'en'
+      ? 'Congress · 13F · Options flow · Insider buys'
+      : '国会交易 · 13F · 期权异动 · 内部人买入';
+  const tag = clamp(sp.get('tag'), 60) || defaultTag;
 
   const isStock = kind === 'stock';
   const accent = '#0d9488'; // teal-600
   const statColor = statTone === 'down' ? '#e11d48' : statTone === 'up' ? '#059669' : '#0f172a';
 
-  // Subset must cover every glyph we draw.
+  // Subset must cover every glyph we draw. Include BOTH language candidates for
+  // the badge + default tag so the subset always covers the rendered chrome
+  // regardless of `lang` (the extra latin glyphs are harmless).
   const allText =
-    'Tickwind tickwind.com 中文美股数据台' + eyebrow + title + subtitle + stat + tag;
+    'Tickwind tickwind.com 中文美股数据台 Data-first US stocks' +
+    '国会交易 · 13F · 期权异动 · 内部人买入 Congress · Options flow · Insider buys' +
+    eyebrow +
+    title +
+    subtitle +
+    stat +
+    tag;
   const [reg, bold] = await Promise.all([
     loadFontSubset('Noto Sans SC', 400, allText),
     loadFontSubset('Noto Sans SC', 700, allText),
@@ -74,18 +96,21 @@ export async function GET(req: NextRequest, ctx: {params: Promise<{kind: string}
 
   return new ImageResponse(
     (
-      <div
-        style={{
-          width: '100%',
-          height: '100%',
-          display: 'flex',
-          flexDirection: 'column',
-          justifyContent: 'space-between',
-          padding: 72,
-          background: 'linear-gradient(135deg, #ecfeff 0%, #eff6ff 55%, #f5f3ff 100%)',
-          fontFamily: '"Noto Sans SC"',
-        }}
-      >
+      <div style={{display: 'flex', width: '100%', height: '100%'}}>
+        <div
+          style={{
+            width: BASE_W,
+            height: BASE_H,
+            transform: `scale(${SCALE})`,
+            transformOrigin: 'top left',
+            display: 'flex',
+            flexDirection: 'column',
+            justifyContent: 'space-between',
+            padding: 72,
+            background: 'linear-gradient(135deg, #ecfeff 0%, #eff6ff 55%, #f5f3ff 100%)',
+            fontFamily: '"Noto Sans SC"',
+          }}
+        >
         {/* header */}
         <div style={{display: 'flex', alignItems: 'center', justifyContent: 'space-between'}}>
           <div style={{display: 'flex', alignItems: 'center'}}>
@@ -122,7 +147,7 @@ export async function GET(req: NextRequest, ctx: {params: Promise<{kind: string}
               fontWeight: 700,
             }}
           >
-            中文美股数据台
+            {badge}
           </div>
         </div>
 
@@ -160,6 +185,7 @@ export async function GET(req: NextRequest, ctx: {params: Promise<{kind: string}
         <div style={{display: 'flex', alignItems: 'center', justifyContent: 'space-between'}}>
           <div style={{display: 'flex', color: accent, fontSize: 28, fontWeight: 700}}>tickwind.com</div>
           <div style={{display: 'flex', color: '#94a3b8', fontSize: 22}}>{tag}</div>
+        </div>
         </div>
       </div>
     ),

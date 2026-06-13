@@ -3,7 +3,7 @@
 import {ImageDown} from 'lucide-react';
 import type {OgParams} from '@/lib/og';
 import {ogImage} from '@/lib/og';
-import {useT} from '@/lib/i18n';
+import {useLang, useT} from '@/lib/i18n';
 import {useDark} from '@/lib/theme';
 import {cx} from '@/lib/ui';
 
@@ -20,12 +20,19 @@ import {cx} from '@/lib/ui';
  */
 export function ShareCardButton({card, label}: {card: OgParams; label?: string}) {
   const tr = useT();
+  const {lang} = useLang();
   const dark = useDark();
 
   return (
     <button
       type="button"
-      onClick={() => window.open(ogImage(card), '_blank', 'noopener,noreferrer')}
+      onClick={() =>
+        window.open(
+          ogImage({...card, lang: card.lang ?? lang}),
+          '_blank',
+          'noopener,noreferrer',
+        )
+      }
       aria-label={tr('share.aria')}
       title={tr('share.aria')}
       className={cx(

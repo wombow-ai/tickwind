@@ -3,7 +3,7 @@
 import {useId} from 'react';
 import {Info, LineChart, TrendingDown, TrendingUp} from 'lucide-react';
 import type {Backtest} from '@/lib/api';
-import {useT} from '@/lib/i18n';
+import {useLang, useT} from '@/lib/i18n';
 import {useDark} from '@/lib/theme';
 import {ShareCardButton} from '@/components/ShareCardButton';
 
@@ -24,6 +24,7 @@ function fmtPct(v: number): string {
  */
 export function FollowTradeSim({bt, memberName}: {bt: Backtest; memberName: string}) {
   const tr = useT();
+  const {lang} = useLang();
 
   if (bt.insufficient) {
     return (
@@ -46,15 +47,25 @@ export function FollowTradeSim({bt, memberName}: {bt: Backtest; memberName: stri
   const memberPct = fmtPct(bt.member_return_pct);
   const spyPct = fmtPct(bt.spy_return_pct);
 
-  // Share card: a Chinese 跟单 result card for 小红书 / 微信. The disclaimer
-  // ("模拟复盘非投资建议") rides on the subtitle, per the propagation rules.
-  const shareCard = {
-    eyebrow: '国会交易 · 跟单模拟',
-    title: `跟着 ${memberName} 买 ${memberPct}`,
-    subtitle: `vs 标普 SPY ${spyPct} · 近 ${months} 个月 · 模拟复盘非投资建议`,
-    stat: memberPct,
-    tone: (beat ? 'up' : 'down') as 'up' | 'down',
-  };
+  // Share card: a 跟单 result card for 小红书 / 微信. Chrome + copy follow the UI
+  // language (ShareCardButton injects `lang`); the disclaimer rides on subtitle.
+  const tone = (beat ? 'up' : 'down') as 'up' | 'down';
+  const shareCard =
+    lang === 'en'
+      ? {
+          eyebrow: 'Congress trades · follow-along sim',
+          title: `Following ${memberName}: ${memberPct}`,
+          subtitle: `vs SPY ${spyPct} · last ${months} mo · simulated backtest, not advice`,
+          stat: memberPct,
+          tone,
+        }
+      : {
+          eyebrow: '国会交易 · 跟单模拟',
+          title: `跟着 ${memberName} 买 ${memberPct}`,
+          subtitle: `vs 标普 SPY ${spyPct} · 近 ${months} 个月 · 模拟复盘非投资建议`,
+          stat: memberPct,
+          tone,
+        };
 
   return (
     <section className="mb-8">

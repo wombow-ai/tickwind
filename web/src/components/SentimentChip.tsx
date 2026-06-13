@@ -82,14 +82,26 @@ export function SentimentChip() {
   const components = data.components ?? [];
   const score = Math.round(data.score);
 
-  // Share card: today's market mood for 小红书 / 微信. Chinese label always (the
-  // card is a Chinese propagation asset); tone tilts green/red around neutral.
-  const shareCard = {
-    eyebrow: '潮汐恐贪指数',
-    title: `今日美股情绪 ${score} · ${data.label_zh || data.label}`,
-    subtitle: 'VIX/看跌看涨/做空 等合成 · 仅供参考',
-    tone: (score >= 55 ? 'up' : score < 45 ? 'down' : undefined) as 'up' | 'down' | undefined,
-  };
+  // Share card: today's market mood for 小红书 / 微信. Chrome + copy follow the UI
+  // language (ShareCardButton injects `lang`); tone tilts green/red around neutral.
+  const tone = (score >= 55 ? 'up' : score < 45 ? 'down' : undefined) as
+    | 'up'
+    | 'down'
+    | undefined;
+  const shareCard =
+    lang === 'en'
+      ? {
+          eyebrow: 'Tickwind Fear & Greed',
+          title: `US market sentiment: ${score} · ${data.label}`,
+          subtitle: 'Composite of VIX / put-call / short interest · for reference',
+          tone,
+        }
+      : {
+          eyebrow: '潮汐恐贪指数',
+          title: `今日美股情绪 ${score} · ${data.label_zh || data.label}`,
+          subtitle: 'VIX/看跌看涨/做空 等合成 · 仅供参考',
+          tone,
+        };
 
   return (
     <div className={cx('mb-5 rounded-2xl border', t.card, t.border, t.soft)}>

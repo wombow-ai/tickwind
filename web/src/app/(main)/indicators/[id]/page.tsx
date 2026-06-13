@@ -167,12 +167,13 @@ export default async function IndicatorRoute({params}: {params: Promise<{id: str
   }
 
   const description = snippet(ind);
-  // Propagation organ: a branded, shareable indicator card (Chinese-first, like
-  // the OG image) so the glossary entry can spread on social.
+  // Propagation organ: a branded, shareable indicator card. Server component (no
+  // useLang) → English-default chrome per the single-language-defaults-English
+  // principle. The subtitle reuses the existing definition snippet.
   const shareCard: OgParams = {
     kind: 'page',
-    eyebrow: domainZh,
-    title: ind.abbr ? `${n.zh} ${ind.abbr}` : n.zh,
+    eyebrow: ind.domain_name,
+    title: ind.abbr ? `${n.en} ${ind.abbr}` : n.en,
     subtitle: description || undefined,
   };
   const ld = {

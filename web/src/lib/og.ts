@@ -12,6 +12,8 @@ export interface OgParams {
   tone?: 'up' | 'down';
   /** Footer tagline; defaults to the product's pillars. */
   tag?: string;
+  /** UI language for the card chrome (brand badge + default footer tag). Defaults to 'zh' on the route. */
+  lang?: 'zh' | 'en';
 }
 
 /**
@@ -28,10 +30,13 @@ export function ogImage(p: OgParams): string {
   if (p.stat) q.set('stat', p.stat);
   if (p.tone) q.set('tone', p.tone);
   if (p.tag) q.set('tag', p.tag);
+  if (p.lang) q.set('lang', p.lang);
   return `${SITE_URL}/api/og/${p.kind ?? 'page'}?${q.toString()}`;
 }
 
-/** OG image descriptor (URL + standard 1200×630 dimensions) for metadata. */
+/** OG image descriptor (URL + dimensions) for metadata. The card is rendered at
+ * 2× the 1200×630 design (= 2400×1260) for crisp output; the 1.91:1 ratio is the
+ * standard OG aspect, and crawlers downscale as needed. */
 export function ogImageMeta(p: OgParams): {url: string; width: number; height: number} {
-  return {url: ogImage(p), width: 1200, height: 630};
+  return {url: ogImage(p), width: 2400, height: 1260};
 }

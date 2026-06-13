@@ -13,7 +13,7 @@ import {
   X,
 } from 'lucide-react';
 import Link from 'next/link';
-import {useT} from '@/lib/i18n';
+import {useLang, useT} from '@/lib/i18n';
 import {useCallback, useEffect, useState} from 'react';
 import {
   addToWatchlist,
@@ -103,6 +103,7 @@ export function StockView({ticker}: {ticker: string}) {
   const dark = useDark();
   const t = tok(dark);
   const tr = useT();
+  const {lang} = useLang();
   const cur = marketCurrency(guessMarket(norm));
 
   const [security, setSecurity] = useState<Security>({
@@ -345,7 +346,11 @@ export function StockView({ticker}: {ticker: string}) {
     eyebrow: security.market,
     title: norm,
     stat: fmtPrice(cur, regularPrice),
-    subtitle: [security.name !== norm ? security.name : '', chgStr, '数据延迟']
+    subtitle: [
+      security.name !== norm ? security.name : '',
+      chgStr,
+      lang === 'en' ? 'delayed' : '数据延迟',
+    ]
       .filter(Boolean)
       .join(' · '),
     tone: (up ? 'up' : 'down') as 'up' | 'down',

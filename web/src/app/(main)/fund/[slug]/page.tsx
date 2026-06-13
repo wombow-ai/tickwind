@@ -103,9 +103,11 @@ export default async function FundRoute({params}: {params: Promise<{slug: string
     .map(p => `${p.ticker} ${p.pct.toFixed(1)}%`)
     .join(' · ');
   const shareCard = {
-    eyebrow: '13F 大佬持仓',
-    title: `${f.manager}（${f.name}）持仓`,
-    subtitle: topNames ? `最新季 top: ${topNames}` : `${f.name} · SEC 13F 大佬持仓 · 滞后约 45 天`,
+    eyebrow: 'SEC 13F holdings',
+    title: `${f.manager} (${f.name})`,
+    subtitle: topNames
+      ? `Latest quarter top: ${topNames}`
+      : `${f.name} · SEC 13F holdings · ~45-day lag`,
   };
 
   const ld = {
