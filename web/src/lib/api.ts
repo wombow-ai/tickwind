@@ -1754,6 +1754,40 @@ export function reportComment(
   );
 }
 
+/**
+ * One offering on the US IPO calendar. Numeric-looking fields are the source's
+ * display strings (Nasdaq returns them pre-formatted, may be ranges or empty);
+ * render them as-is. `kind` mirrors the calendar section.
+ */
+export interface IPO {
+  ticker: string;
+  company: string;
+  exchange: string;
+  price: string; // proposed/priced share price, e.g. "$18.00"
+  shares: string; // shares offered, e.g. "10,000,000"
+  amount: string; // dollar value of shares offered
+  date: string; // priced date or expected price date (source-formatted)
+  status: string; // deal status, when provided
+  kind: 'priced' | 'upcoming' | 'filed';
+}
+
+/** Envelope returned by `GET /v1/ipo` — the US IPO calendar, by section. */
+export interface IPOCalendarResponse {
+  priced: IPO[];
+  upcoming: IPO[];
+  filed: IPO[];
+  updated_at: string; // RFC 3339
+}
+
+/**
+ * Fetches the US IPO calendar (recently priced, upcoming, and newly-filed
+ * offerings) from Nasdaq. Public endpoint; each section is `[]` until the data
+ * source is ready. Delayed / display-only — not investment advice.
+ */
+export function getIPO(signal?: AbortSignal): Promise<IPOCalendarResponse> {
+  return getJson<IPOCalendarResponse>('/v1/ipo', signal);
+}
+
 /** Fetches backend health. */
 export function getHealth(signal?: AbortSignal): Promise<Health> {
   return getJson<Health>('/healthz', signal);

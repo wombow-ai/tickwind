@@ -34,6 +34,7 @@ import (
 	"github.com/wombow-ai/tickwind/internal/finrashvol"
 	"github.com/wombow-ai/tickwind/internal/guru"
 	"github.com/wombow-ai/tickwind/internal/ingest"
+	"github.com/wombow-ai/tickwind/internal/nasdaq"
 	"github.com/wombow-ai/tickwind/internal/opportunity"
 	"github.com/wombow-ai/tickwind/internal/ratecut"
 	"github.com/wombow-ai/tickwind/internal/sec"
@@ -214,6 +215,14 @@ type RateCutSource interface {
 	UpdatedAt() time.Time
 }
 
+// IPOSource serves the latest US IPO calendar (recently priced / upcoming /
+// newly filed offerings, via Nasdaq through the residential proxy). nil-safe —
+// a nil source (or one before its first refresh) yields empty sections.
+// Satisfied by *ingest.IPOIngestor.
+type IPOSource interface {
+	Calendar() (nasdaq.Calendar, time.Time)
+}
+
 type Server struct {
 	store         store.Store
 	hub           QuoteStream
@@ -242,6 +251,7 @@ type Server struct {
 	sentiment     SentimentSource   // injected post-New via SetSentiment
 	rateCut       RateCutSource     // injected post-New via SetRateCut
 	congressTx    CongressTxSource  // injected post-New via SetCongressTx
+	ipo           IPOSource         // injected post-New via SetIPO
 	admins        map[string]bool   // user UUIDs and/or emails (lowercased) allowed to delete any comment
 	commentRL     *rateLimiter      // per-user comment-post throttle
 	// AI digest cache: one LLM generation per (ticker, ET day), then served from
@@ -343,6 +353,7 @@ func New(st store.Store, hub QuoteStream, enricher enrich.Enricher, verifier *au
 	mux.HandleFunc("GET /v1/short-volume", s.getShortVolume)
 	mux.HandleFunc("GET /v1/sentiment", s.getSentiment)
 	mux.HandleFunc("GET /v1/ratecut", s.getRateCut)
+	mux.HandleFunc("GET /v1/ipo", s.getIPO)
 	mux.HandleFunc("GET /v1/stocks/{ticker}/options", s.getOptions)
 	mux.HandleFunc("GET /v1/options/unusual", s.getUnusualOptions)
 	mux.HandleFunc("GET /v1/13f", s.getThirteenF)
@@ -1874,6 +1885,38 @@ func (s *Server) SetRateCut(src RateCutSource) { s.rateCut = src }
 // SetCongressTx injects the parsed-PTR transaction source (ticker/member detail)
 // after New. nil-safe: the per-stock chip + member page stay empty/404 until set.
 func (s *Server) SetCongressTx(src CongressTxSource) { s.congressTx = src }
+
+// SetIPO injects the US IPO-calendar source after New. nil-safe: /v1/ipo stays
+// empty (200 with empty sections) until set / first refreshed.
+func (s *Server) SetIPO(src IPOSource) { s.ipo = src }
+
+// getIPO returns the US IPO calendar — recently priced, upcoming, and newly
+// filed offerings (Nasdaq, delayed/display-only). Always 200 with well-formed
+// (possibly empty) sections — never null — and nil-safe when the source is unset
+// or hasn't refreshed yet.
+func (s *Server) getIPO(w http.ResponseWriter, _ *http.Request) {
+	priced, upcoming, filed := []nasdaq.IPO{}, []nasdaq.IPO{}, []nasdaq.IPO{}
+	var updatedAt time.Time
+	if s.ipo != nil {
+		cal, at := s.ipo.Calendar()
+		if cal.Priced != nil {
+			priced = cal.Priced
+		}
+		if cal.Upcoming != nil {
+			upcoming = cal.Upcoming
+		}
+		if cal.Filed != nil {
+			filed = cal.Filed
+		}
+		updatedAt = at
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"priced":     priced,
+		"upcoming":   upcoming,
+		"filed":      filed,
+		"updated_at": updatedAt.UTC().Format(time.RFC3339),
+	})
+}
 
 // getIndices returns the latest major-market-index levels (homepage strip).
 // getOptions returns the ticker's delayed options overview (P/C, max pain, OI

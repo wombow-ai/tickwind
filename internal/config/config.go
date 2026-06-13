@@ -2,6 +2,8 @@
 package config
 
 import (
+	"net/http"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -45,6 +47,13 @@ type Config struct {
 
 	// Finnhub company news. Empty token disables news ingestion.
 	FinnhubToken string
+
+	// ResidentialProxyURL routes outbound requests for sources that block
+	// datacenter IPs (e.g. the Nasdaq IPO API, HKEXnews, Xueqiu) through a
+	// residential egress. Form: http://user:pass@host:port (e.g. a dataimpulse
+	// gateway). Empty → those clients use a plain http.Client (no proxy). Read
+	// from env only; the credentials are never committed. See ProxyHTTPClient.
+	ResidentialProxyURL string
 
 	// Telegram broadcast (optional): an empty TelegramBotToken disables the
 	// daily-briefing push. TelegramChannel is the destination (a public
@@ -147,6 +156,7 @@ func Load() Config {
 		CongressSweepEvery:      envDur("CONGRESS_SWEEP_EVERY", 8*time.Hour),
 		InstitutionalSweepEvery: envDur("INSTITUTIONAL_SWEEP_EVERY", 8*time.Hour),
 		FinnhubToken:            env("FINNHUB_TOKEN", ""),
+		ResidentialProxyURL:     env("RESIDENTIAL_PROXY_URL", ""),
 		TelegramBotToken:        env("TELEGRAM_BOT_TOKEN", ""),
 		TelegramChannel:         env("TELEGRAM_CHANNEL", ""),
 		PublicSiteURL:           strings.TrimRight(env("PUBLIC_SITE_URL", "https://tickwind.com"), "/"),
@@ -240,4 +250,24 @@ func splitCSV(s string) []string {
 		}
 	}
 	return out
+}
+
+// ProxyHTTPClient returns an *http.Client whose transport routes requests
+// through the configured ResidentialProxyURL, with the given timeout. When the
+// proxy URL is empty (or unparseable), it returns a plain timeout-only client —
+// so callers transparently fall back to a direct connection. This is the single
+// place that wires the residential egress used by datacenter-IP-blocked sources
+// (e.g. the Nasdaq IPO API).
+func (c Config) ProxyHTTPClient(timeout time.Duration) *http.Client {
+	if c.ResidentialProxyURL == "" {
+		return &http.Client{Timeout: timeout}
+	}
+	parsed, err := url.Parse(c.ResidentialProxyURL)
+	if err != nil || parsed.Host == "" {
+		return &http.Client{Timeout: timeout}
+	}
+	return &http.Client{
+		Timeout:   timeout,
+		Transport: &http.Transport{Proxy: http.ProxyURL(parsed)},
+	}
 }

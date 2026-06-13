@@ -91,6 +91,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     {url: `${SITE_URL}/hot`, lastModified: now, changeFrequency: 'hourly', priority: 0.7},
     {url: `${SITE_URL}/screen`, lastModified: now, changeFrequency: 'daily', priority: 0.6},
     {url: `${SITE_URL}/earnings`, lastModified: now, changeFrequency: 'daily', priority: 0.6},
+    {url: `${SITE_URL}/ipo`, lastModified: now, changeFrequency: 'daily', priority: 0.6},
     {url: `${SITE_URL}/news`, lastModified: now, changeFrequency: 'hourly', priority: 0.6},
     {url: `${SITE_URL}/discussion`, lastModified: now, changeFrequency: 'hourly', priority: 0.6},
     {url: `${SITE_URL}/events`, lastModified: now, changeFrequency: 'daily', priority: 0.6},

@@ -36,6 +36,7 @@ import (
 	"github.com/wombow-ai/tickwind/internal/institutional"
 	"github.com/wombow-ai/tickwind/internal/krx"
 	"github.com/wombow-ai/tickwind/internal/market"
+	"github.com/wombow-ai/tickwind/internal/nasdaq"
 	"github.com/wombow-ai/tickwind/internal/openfigi"
 	"github.com/wombow-ai/tickwind/internal/opportunity"
 	"github.com/wombow-ai/tickwind/internal/ratecut"
@@ -333,6 +334,19 @@ func main() {
 	go rateCutIngestor.Run(ctx)
 	log.Info("rate-cut markets ingestor enabled (Kalshi + Polymarket)")
 
+	// US IPO calendar: Nasdaq's public IPO API, which BLOCKS datacenter IPs, so
+	// the client is routed through the residential proxy (RESIDENTIAL_PROXY_URL)
+	// + a full browser header set. Without the proxy the fetch fails and the
+	// ingestor keeps an empty board (degrades gracefully). The calendar moves
+	// slowly, so a 4h cadence is ample. Backs /v1/ipo + the /ipo page.
+	ipoIngestor := ingest.NewIPOIngestor(nasdaq.New(cfg.ProxyHTTPClient(20*time.Second)), 4*time.Hour, log)
+	go ipoIngestor.Run(ctx)
+	if cfg.ResidentialProxyURL != "" {
+		log.Info("ipo calendar ingestor enabled (Nasdaq via residential proxy)", "every", "4h")
+	} else {
+		log.Warn("ipo calendar ingestor running WITHOUT a residential proxy — Nasdaq blocks datacenter IPs, so the board will stay empty; set RESIDENTIAL_PROXY_URL")
+	}
+
 	// Fear & Greed sentiment index: a daily reading from a handful of optional
 	// market-mood inputs (sentiment.Compute re-weights whatever is present). Wired
 	// inputs: VIX (Yahoo ^VIX), the SPY put/call proxy (Cboe) and the FINRA daily
@@ -428,6 +442,7 @@ func main() {
 	apiServer.SetSentiment(sentimentCache)
 	apiServer.SetRateCut(rateCutIngestor.Cache())
 	apiServer.SetCongressTx(congressCache) // ticker-level / member PTR detail
+	apiServer.SetIPO(ipoIngestor)          // US IPO calendar (Nasdaq via residential proxy)
 
 	srv := &http.Server{
 		Addr:              ":" + cfg.Port,
