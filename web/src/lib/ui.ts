@@ -142,16 +142,30 @@ export function marketCurrency(market: string): string {
   }
 }
 
+/**
+ * Decimal places for a price/delta: a penny is a large fraction of a low-priced
+ * stock, so cheaper names need more precision to not lose accuracy on display
+ * (e.g. a $2.73 print is really 2.7287 — brokers like Futu show 2.729). 4dp
+ * under $1, 3dp under $10, 2dp otherwise.
+ */
+export function priceDecimals(v: number): number {
+  const a = Math.abs(v);
+  if (a > 0 && a < 1) return 4;
+  if (a < 10) return 3;
+  return 2;
+}
+
 /** Formats a price with its currency symbol (KRW has no decimals). */
 export function fmtPrice(cur: string, v: number): string {
   if (cur === '₩') {
     return '₩' + Math.round(v).toLocaleString('en-US');
   }
+  const dp = priceDecimals(v);
   return (
     cur +
     v.toLocaleString('en-US', {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
+      minimumFractionDigits: dp,
+      maximumFractionDigits: dp,
     })
   );
 }
