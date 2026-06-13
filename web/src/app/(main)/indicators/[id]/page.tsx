@@ -8,7 +8,7 @@ import {
   indicatorSlug,
   type Indicator,
 } from '@/lib/api';
-import {SITE_URL, langAlternates} from '@/lib/config';
+import {SITE_URL, POPULAR_TICKERS, langAlternates} from '@/lib/config';
 import {ogImageMeta, type OgParams} from '@/lib/og';
 import {LocalizedTitle} from '@/components/LocalizedTitle';
 import {ShareCardButton} from '@/components/ShareCardButton';
@@ -351,21 +351,41 @@ export default async function IndicatorRoute({params}: {params: Promise<{id: str
         <span data-i18n="en">Public knowledge, not investment advice.</span>
       </div>
 
-      {/* CTAs: back to the library + see it computed on a stock. */}
-      <div className="mb-7 flex flex-wrap gap-2">
+      {/* Activation funnel: turn a glossary reader into a product user by sending
+          them to this indicator's LIVE computed value on real stocks (deep-link to
+          the per-stock indicators panel via the #indicators anchor). */}
+      <section className="mb-6 rounded-xl border border-teal-200 bg-teal-50/60 p-4 dark:border-teal-500/20 dark:bg-teal-500/5">
+        <p className="mb-2.5 text-[13.5px] font-semibold text-slate-800 dark:text-slate-100">
+          <span data-i18n="zh">在热门美股上查看{n.zh}的实时计算值 →</span>
+          <span data-i18n="en">See {n.en} computed live on popular US stocks →</span>
+        </p>
+        <div className="flex flex-wrap gap-1.5">
+          {POPULAR_TICKERS.slice(0, 5).map(tk => (
+            <Link
+              key={tk}
+              href={`/stock/${tk}#indicators`}
+              className="rounded-lg bg-teal-600 px-2.5 py-1 text-[12.5px] font-bold tabular-nums text-white transition hover:bg-teal-700 dark:bg-teal-500 dark:hover:bg-teal-600"
+            >
+              {tk}
+            </Link>
+          ))}
+          <Link
+            href="/screen"
+            className="rounded-lg border border-slate-300 px-2.5 py-1 text-[12.5px] font-medium text-slate-600 transition hover:bg-white dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-900"
+          >
+            <span data-i18n="zh">全部美股 →</span>
+            <span data-i18n="en">All stocks →</span>
+          </Link>
+        </div>
+      </section>
+
+      <div className="mb-7">
         <Link
           href="/indicators"
-          className="rounded-lg border border-slate-200 px-3 py-1.5 text-[12.5px] font-medium text-slate-600 hover:bg-slate-50 dark:border-slate-800 dark:text-slate-300 dark:hover:bg-slate-900"
+          className="inline-block rounded-lg border border-slate-200 px-3 py-1.5 text-[12.5px] font-medium text-slate-600 hover:bg-slate-50 dark:border-slate-800 dark:text-slate-300 dark:hover:bg-slate-900"
         >
           <span data-i18n="zh">← 返回指标库</span>
           <span data-i18n="en">← Back to all indicators</span>
-        </Link>
-        <Link
-          href="/indicators"
-          className="rounded-lg bg-teal-600 px-3 py-1.5 text-[12.5px] font-semibold text-white hover:bg-teal-700 dark:bg-teal-500 dark:hover:bg-teal-600"
-        >
-          <span data-i18n="zh">在个股页查看该指标的实时计算</span>
-          <span data-i18n="en">See it computed on a stock</span>
         </Link>
       </div>
 
