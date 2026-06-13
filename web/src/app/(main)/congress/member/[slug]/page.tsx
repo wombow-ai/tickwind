@@ -2,10 +2,17 @@ import type {Metadata} from 'next';
 import Link from 'next/link';
 import {notFound} from 'next/navigation';
 import {Landmark} from 'lucide-react';
-import {getCongressMember, type MemberResponse, type MemberTx} from '@/lib/api';
+import {
+  getCongressBacktest,
+  getCongressMember,
+  type Backtest,
+  type MemberResponse,
+  type MemberTx,
+} from '@/lib/api';
 import {SITE_URL, langAlternates} from '@/lib/config';
 import {ogImageMeta} from '@/lib/og';
 import {LocalizedTitle} from '@/components/LocalizedTitle';
+import {FollowTradeSim} from '@/components/FollowTradeSim';
 
 // SSR with ISR: a member's disclosure history changes at most daily, so cache an
 // hour. This is the rare pSEO exception — "{member} holdings" deserves its own
@@ -99,6 +106,16 @@ export default async function MemberRoute({params}: {params: Promise<{slug: stri
   }
   if (!m) notFound();
 
+  // Follow-trade simulation (historical replay). Best-effort + SSR: a slow/failed
+  // backtest fetch just hides the section rather than breaking the page.
+  let bt: Backtest | null = null;
+  try {
+    const res = await getCongressBacktest(slug, AbortSignal.timeout(8000));
+    bt = res?.backtest ?? null;
+  } catch {
+    bt = null;
+  }
+
   const tt = titles(m.name);
   const txs = m.transactions ?? [];
 
@@ -158,6 +175,8 @@ export default async function MemberRoute({params}: {params: Promise<{slug: stri
           not real-time trades, and not investment advice.
         </span>
       </div>
+
+      {bt && <FollowTradeSim bt={bt} />}
 
       <h2 className="mb-3 text-[15px] font-bold text-slate-900 dark:text-slate-100">
         <span data-i18n="zh">披露交易</span>

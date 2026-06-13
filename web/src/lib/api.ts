@@ -1278,6 +1278,60 @@ export async function getCongressMember(
   }
 }
 
+/** One dated sample on the follow-trade simulation equity curves (member vs SPY). */
+export interface BacktestPoint {
+  date: string; // YYYY-MM-DD
+  member_pct: number; // cumulative follow-trade return, %
+  spy_pct: number; // cumulative SPY buy-and-hold return, %
+}
+
+/**
+ * Result of the conservative follow-trade SIMULATION for one member: each
+ * disclosed BUY enters equal-weight at its disclosure-date close and is held (or
+ * sold on a disclosed sale) to today, vs. an equal-dollar SPY buy-and-hold
+ * baseline. A historical replay only — not realized returns, not advice.
+ * `insufficient` is true when there isn't enough priced buy history to simulate.
+ */
+export interface Backtest {
+  insufficient: boolean;
+  member_return_pct: number;
+  spy_return_pct: number;
+  window_start: string; // YYYY-MM-DD ("" when insufficient)
+  window_end: string; // YYYY-MM-DD ("" when insufficient)
+  window_days: number;
+  trades_used: number; // priced buy legs that entered the simulation
+  trades_skipped: number; // buy legs dropped for missing price history
+  tickers: string[] | null; // distinct simulated tickers (sorted)
+  curve: BacktestPoint[] | null; // member-vs-SPY equity curve, oldest first
+}
+
+/** Envelope returned by `GET /v1/congress/member/{slug}/backtest`. */
+export interface BacktestResponse {
+  slug: string;
+  name: string;
+  backtest: Backtest;
+}
+
+/**
+ * Fetches one member's follow-trade simulation. The endpoint always returns 200
+ * (an unknown member / no price data → `backtest.insufficient: true`), so this
+ * resolves to `null` only on a transport error the caller should ignore. SSR
+ * callers can render the section conditionally on `insufficient`.
+ */
+export async function getCongressBacktest(
+  slug: string,
+  signal?: AbortSignal,
+): Promise<BacktestResponse | null> {
+  try {
+    return await getJson<BacktestResponse>(
+      `/v1/congress/member/${encodeURIComponent(slug)}/backtest`,
+      signal,
+    );
+  } catch {
+    return null; // a transient API error hides the section rather than breaking the page
+  }
+}
+
 /**
  * Builds a member's URL slug from their display name, matching the backend's
  * Slugify exactly: lowercase, then collapse each run of non-alphanumeric

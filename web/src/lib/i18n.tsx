@@ -324,6 +324,25 @@ const dict: Record<Lang, Record<string, string>> = {
     'member.disclaimer':
       'Public data (U.S. House Clerk). Disclosures lag up to 45 days and show only amount ranges — not real-time trades, and not investment advice.',
     'member.footer': 'Source: U.S. House Clerk financial disclosures (public domain). Not investment advice.',
+    // follow-trade simulation (historical replay) on the member page
+    'sim.title': 'Follow-trade simulation',
+    'sim.subtitle':
+      'A historical replay: virtually buying each disclosed purchase at its disclosure-date close, held to today, vs. buying SPY on the same days.',
+    'sim.vs': 'vs SPY',
+    'sim.statSuffix': 'simulated follow vs SPY',
+    'sim.member': 'Follow',
+    'sim.spy': 'SPY',
+    'sim.method': 'Method',
+    'sim.methodBody':
+      'Each disclosed BUY enters equal-weight at the disclosure-date close (the price a follower could actually have paid — disclosures lag up to ~45 days). A position is held to today, or closed at the disclosure-date close of a later SELL. Benchmark = the same equal dollar into SPY on each buy date, held to today. Daily closes only, gross of fees/taxes.',
+    'sim.notReal':
+      'Simulated historical replay — NOT realized returns, NOT investment advice. Equal-weighted, based on public disclosures that lag real trades.',
+    'sim.coverage': 'Coverage',
+    'sim.coverageBody': '{used} trades simulated · {skipped} skipped (no price history)',
+    'sim.windowNote': 'Window: {start} → today ({months} mo)',
+    'sim.insufficient': 'Not enough data to simulate',
+    'sim.insufficientSub':
+      'This member has no disclosed purchases with usable price history yet, so a follow-trade replay can’t be computed.',
     // congress chip on the stock detail page (members' recent trades in a ticker)
     'cchip.title': 'Congress trades',
     'cchip.buy': 'Buy',
@@ -818,6 +837,24 @@ const dict: Record<Lang, Record<string, string>> = {
     'member.disclaimer':
       '公开数据（美国众议院书记官）。申报最多滞后 45 天，且仅标注金额区间 —— 非实时交易，亦非投资建议。',
     'member.footer': '数据来源：美国众议院书记官金融披露（公有领域）。非投资建议。',
+    // 跟单模拟（历史复盘）—— 议员页
+    'sim.title': '跟单模拟',
+    'sim.subtitle':
+      '历史复盘：在每笔披露买入的“披露日收盘价”虚拟买入并持有至今，对比同日买入 SPY。',
+    'sim.vs': 'vs SPY',
+    'sim.statSuffix': '模拟跟单 vs SPY',
+    'sim.member': '跟单',
+    'sim.spy': 'SPY',
+    'sim.method': '方法',
+    'sim.methodBody':
+      '每笔披露的买入按“披露日收盘价”等权虚拟买入（披露最多滞后约 45 天，这是跟随者真正能买到的价格）；持有至今，或在后续披露卖出的“披露日收盘价”平仓。基准 = 同等金额、于每个买入日买入 SPY 并持有至今。仅用日线收盘价，未计费用与税。',
+    'sim.notReal':
+      '模拟历史复盘 —— 非真实收益，非投资建议。等权计算，基于滞后于真实交易的公开披露。',
+    'sim.coverage': '覆盖率',
+    'sim.coverageBody': '已模拟 {used} 笔 · 跳过 {skipped} 笔（无价格历史）',
+    'sim.windowNote': '区间：{start} → 至今（{months} 个月）',
+    'sim.insufficient': '数据不足以回测',
+    'sim.insufficientSub': '该议员暂无可定价的披露买入记录，无法进行跟单复盘。',
     // congress chip on the stock detail page (members' recent trades in a ticker)
     'cchip.title': '议员近期买卖',
     'cchip.buy': '买入',

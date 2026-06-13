@@ -253,8 +253,13 @@ type Server struct {
 	sumInflight map[string]chan struct{}
 	sumDayDate  string
 	sumDayCount int
-	log         *slog.Logger
-	handler     http.Handler // the assembled mux + middleware chain (set in New)
+	// Follow-trade backtest cache: the simulation is deterministic for a given
+	// (member, price-day), so compute once per slug per UTC day and serve from
+	// memory (the per-ticker DailyCandles fetch is the only cost). Guarded by btMu.
+	btMu    sync.Mutex
+	btCache map[string]backtestEntry
+	log     *slog.Logger
+	handler http.Handler // the assembled mux + middleware chain (set in New)
 }
 
 // ServeHTTP dispatches to the assembled mux + middleware chain, so *Server is an
@@ -274,7 +279,7 @@ func New(st store.Store, hub QuoteStream, enricher enrich.Enricher, verifier *au
 			admins[id] = true
 		}
 	}
-	s := &Server{store: st, hub: hub, clip: clip.NewFetcher(), enrich: enricher, auth: verifier, bars: bars, topics: topicSrc, opps: oppSrc, universe: universeSrc, gurus: guruSrc, ingestor: ingestor, symbols: symbolSrc, events: eventSrc, fundamentals: fundSrc, earnings: earningsSrc, congress: congressSrc, institutional: institutionalSrc, live: liveSub, indices: indicesSrc, short: shortSrc, briefing: briefingSrc, options: optionsSrc, thirteenf: thirteenfSrc, admins: admins, commentRL: newRateLimiter(10, 10*time.Minute), sumCache: map[string]summaryEntry{}, sumInflight: map[string]chan struct{}{}, log: log}
+	s := &Server{store: st, hub: hub, clip: clip.NewFetcher(), enrich: enricher, auth: verifier, bars: bars, topics: topicSrc, opps: oppSrc, universe: universeSrc, gurus: guruSrc, ingestor: ingestor, symbols: symbolSrc, events: eventSrc, fundamentals: fundSrc, earnings: earningsSrc, congress: congressSrc, institutional: institutionalSrc, live: liveSub, indices: indicesSrc, short: shortSrc, briefing: briefingSrc, options: optionsSrc, thirteenf: thirteenfSrc, admins: admins, commentRL: newRateLimiter(10, 10*time.Minute), sumCache: map[string]summaryEntry{}, sumInflight: map[string]chan struct{}{}, btCache: map[string]backtestEntry{}, log: log}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", s.health)
 
@@ -329,6 +334,7 @@ func New(st store.Store, hub QuoteStream, enricher enrich.Enricher, verifier *au
 	mux.HandleFunc("GET /v1/earnings", s.getEarnings)
 	mux.HandleFunc("GET /v1/congress", s.getCongress)
 	mux.HandleFunc("GET /v1/congress/member/{slug}", s.getCongressMember)
+	mux.HandleFunc("GET /v1/congress/member/{slug}/backtest", s.getCongressBacktest)
 	mux.HandleFunc("GET /v1/stocks/{ticker}/congress", s.getStockCongress)
 	mux.HandleFunc("GET /v1/institutional", s.getInstitutional)
 	mux.HandleFunc("GET /v1/indices", s.getIndices)
