@@ -55,6 +55,7 @@ import {AlertsPanel} from '@/components/AlertsPanel';
 import {HoldingsPanel} from '@/components/HoldingsPanel';
 import {KLineChart} from '@/components/KLineChart';
 import {FundamentalsCard} from '@/components/FundamentalsCard';
+import {IndicatorsPanel} from '@/components/IndicatorsPanel';
 import {AISummaryCard} from '@/components/AISummaryCard';
 import {EarningsChip} from '@/components/EarningsChip';
 import {OptionsCard} from '@/components/OptionsCard';
@@ -541,6 +542,11 @@ export function StockView({ticker}: {ticker: string}) {
       <div className="mb-6">
         <KLineChart ticker={norm} quote={quote} />
       </div>
+
+      {/* Computed per-stock indicators (latest values, grouped by domain) — the
+          readout companion to the chart's client-side overlays + FundamentalsCard;
+          hides entirely when no indicators are computable */}
+      <IndicatorsPanel ticker={norm} />
 
       {/* Options overview: delayed Cboe P/C, max pain, OI leaders (hides for non-US/no options) */}
       <OptionsCard ticker={norm} />

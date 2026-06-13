@@ -26,6 +26,17 @@ type Fundamentals struct {
 	Equity     float64 `json:"equity"`      // stockholders' equity (latest)
 	Period     string  `json:"period"`      // fiscal period the income figures cover, e.g. "FY2024"
 	AsOf       string  `json:"as_of"`       // newest underlying fact date (YYYY-MM-DD)
+
+	// Additional figures for margin / leverage / cash-flow / YoY indicators.
+	// Each is 0 when the underlying concept is absent (best-effort).
+	GrossProfit       float64 `json:"gross_profit,omitempty"`        // latest-FY gross profit; us-gaap:GrossProfit, else Revenue − cost of revenue
+	TotalAssets       float64 `json:"total_assets,omitempty"`        // us-gaap:Assets (latest instant)
+	TotalLiabilities  float64 `json:"total_liabilities,omitempty"`   // us-gaap:Liabilities (latest instant), else TotalAssets − Equity
+	OperatingCashFlow float64 `json:"operating_cash_flow,omitempty"` // latest-FY cash from operations (can be <0)
+	CapEx             float64 `json:"capex,omitempty"`               // latest-FY capital expenditure, stored POSITIVE
+	DividendsPaid     float64 `json:"dividends_paid,omitempty"`      // latest-FY common dividends paid, stored POSITIVE; 0 for non-payers
+	RevenuePrior      float64 `json:"revenue_prior,omitempty"`       // prior-FY revenue (for YoY growth)
+	NetIncomePrior    float64 `json:"net_income_prior,omitempty"`    // prior-FY net income (for YoY growth)
 }
 
 // HasData reports whether any meaningful figure was extracted.
@@ -108,20 +119,33 @@ func extractFundamentals(resp factsResp) Fundamentals {
 		f.Equity = p.Val
 	}
 
-	// Revenue (annual flow).
-	if p, ok := latestAnnual(pick(gaap, "USD",
+	// Revenue (annual flow). Keep the chosen point + its concept's full series so
+	// the prior fiscal year and same-period cost of revenue can be matched.
+	revPts := pick(gaap, "USD",
 		"RevenueFromContractWithCustomerExcludingAssessedTax",
 		"Revenues",
 		"RevenueFromContractWithCustomerIncludingAssessedTax",
-		"SalesRevenueNet")); ok {
-		f.Revenue, f.Period, f.AsOf = p.Val, fiscalLabel(p), p.End
+		"SalesRevenueNet")
+	var revPt factPoint
+	var revOK bool
+	if revPt, revOK = latestAnnual(revPts); revOK {
+		f.Revenue, f.Period, f.AsOf = revPt.Val, fiscalLabel(revPt), revPt.End
+		// Prior-year revenue (same concept, FY = chosenFY−1) for YoY growth.
+		if p, ok := annualForFY(revPts, fiscalYear(revPt)-1); ok {
+			f.RevenuePrior = p.Val
+		}
 	}
 
 	// Net income (annual flow) — can be negative (loss).
-	if p, ok := latestAnnual(pick(gaap, "USD", "NetIncomeLoss", "ProfitLoss")); ok {
-		f.NetIncome = p.Val
+	niPts := pick(gaap, "USD", "NetIncomeLoss", "ProfitLoss")
+	if niPt, ok := latestAnnual(niPts); ok {
+		f.NetIncome = niPt.Val
 		if f.Period == "" {
-			f.Period, f.AsOf = fiscalLabel(p), p.End
+			f.Period, f.AsOf = fiscalLabel(niPt), niPt.End
+		}
+		// Prior-year net income (same concept) for YoY growth.
+		if p, ok := annualForFY(niPts, fiscalYear(niPt)-1); ok {
+			f.NetIncomePrior = p.Val
 		}
 	}
 
@@ -131,7 +155,57 @@ func extractFundamentals(resp factsResp) Fundamentals {
 		f.EPSDiluted = p.Val
 	}
 
+	// Gross profit (annual flow): prefer the reported concept; else derive
+	// Revenue − cost of revenue for the SAME fiscal period as Revenue.
+	if p, ok := latestAnnual(pick(gaap, "USD", "GrossProfit")); ok {
+		f.GrossProfit = p.Val
+	} else if revOK {
+		for _, cogsTag := range []string{"CostOfRevenue", "CostOfGoodsAndServicesSold", "CostOfGoodsSold"} {
+			if cp, ok := annualForFY(pick(gaap, "USD", cogsTag), fiscalYear(revPt)); ok {
+				f.GrossProfit = revPt.Val - cp.Val
+				break
+			}
+		}
+	}
+
+	// Total assets / liabilities (point-in-time) — for leverage at the API layer.
+	if p, ok := latestInstant(pick(gaap, "USD", "Assets")); ok {
+		f.TotalAssets = p.Val
+	}
+	if p, ok := latestInstant(pick(gaap, "USD", "Liabilities")); ok {
+		f.TotalLiabilities = p.Val
+	} else if f.TotalAssets != 0 && f.Equity != 0 {
+		f.TotalLiabilities = f.TotalAssets - f.Equity
+	}
+
+	// Operating cash flow (annual flow) — can be negative.
+	if p, ok := latestAnnual(pick(gaap, "USD",
+		"NetCashProvidedByUsedInOperatingActivities")); ok {
+		f.OperatingCashFlow = p.Val
+	}
+
+	// Capital expenditure (annual flow) — stored positive (XBRL reports it
+	// positive, but guard against a sign-flipped filer).
+	if p, ok := latestAnnual(pick(gaap, "USD",
+		"PaymentsToAcquirePropertyPlantAndEquipment")); ok {
+		f.CapEx = abs(p.Val)
+	}
+
+	// Common dividends paid (annual flow) — stored positive; 0 for non-payers.
+	if p, ok := latestAnnual(pick(gaap, "USD",
+		"PaymentsOfDividendsCommonStock", "PaymentsOfDividends")); ok {
+		f.DividendsPaid = abs(p.Val)
+	}
+
 	return f
+}
+
+// abs returns the absolute value of a float64.
+func abs(v float64) float64 {
+	if v < 0 {
+		return -v
+	}
+	return v
 }
 
 // pick returns the units array for the first tag present with data, in the given
@@ -179,6 +253,37 @@ func latestAnnual(pts []factPoint) (factPoint, bool) {
 	return best, found
 }
 
+// annualForFY returns the full-year flow fact for a specific fiscal year (the
+// same ~365-day duration filter as latestAnnual), preferring the latest
+// amendment. Used to pull a prior-year value or a same-period cost of revenue
+// for the SAME concept, so a YoY pair or derived margin stays consistent.
+func annualForFY(pts []factPoint, fy int) (factPoint, bool) {
+	var best factPoint
+	found := false
+	for _, p := range pts {
+		if p.Start == "" || fiscalYear(p) != fy {
+			continue
+		}
+		if d := durationDays(p.Start, p.End); d < 350 || d > 380 {
+			continue
+		}
+		if !found || p.Filed > best.Filed {
+			best, found = p, true
+		}
+	}
+	return best, found
+}
+
+// fiscalYear returns a fact's fiscal year, falling back to its end-date year
+// when the FY field is unset (mirrors fiscalLabel's logic).
+func fiscalYear(p factPoint) int {
+	y := p.FY
+	if y == 0 && len(p.End) >= 4 {
+		_, _ = fmt.Sscanf(p.End[:4], "%d", &y)
+	}
+	return y
+}
+
 func durationDays(start, end string) int {
 	s, err1 := time.Parse("2006-01-02", start)
 	e, err2 := time.Parse("2006-01-02", end)
@@ -191,9 +296,5 @@ func durationDays(start, end string) int {
 // fiscalLabel renders a fact's fiscal year as "FY2024" (from the FY field, or
 // the end-date year as a fallback).
 func fiscalLabel(p factPoint) string {
-	y := p.FY
-	if y == 0 && len(p.End) >= 4 {
-		_, _ = fmt.Sscanf(p.End[:4], "%d", &y)
-	}
-	return fmt.Sprintf("FY%d", y)
+	return fmt.Sprintf("FY%d", fiscalYear(p))
 }

@@ -114,6 +114,16 @@ const dict: Record<Lang, Record<string, string>> = {
     'fund.pb': 'P/B',
     'fund.loss': 'Loss',
     'fund.source': 'Source: SEC filings',
+    // per-stock indicators panel
+    'ind2.title': 'Indicators',
+    'ind2.asOf': 'as of {d}',
+    'ind2.domain.technical': 'Technical',
+    'ind2.domain.fundamental': 'Fundamental',
+    'ind2.domain.sentiment': 'Sentiment',
+    'ind2.vix': 'VIX',
+    'ind2.fearGreed': 'Fear & Greed',
+    'ind2.learnMore': 'View in the indicator library',
+    'ind2.empty': '—',
     // earnings
     'quote.lastTrade': 'Last trade {t} ago · {src}',
     'quote.lastTradeNow': 'Last trade just now · {src}',
@@ -713,6 +723,16 @@ const dict: Record<Lang, Record<string, string>> = {
     'fund.pb': '市净率',
     'fund.loss': '亏损',
     'fund.source': '数据来源：SEC 申报',
+    // per-stock indicators panel
+    'ind2.title': '指标',
+    'ind2.asOf': '数据截至 {d}',
+    'ind2.domain.technical': '技术指标',
+    'ind2.domain.fundamental': '基本面',
+    'ind2.domain.sentiment': '情绪',
+    'ind2.vix': 'VIX',
+    'ind2.fearGreed': '恐慌贪婪',
+    'ind2.learnMore': '在指标大全中查看',
+    'ind2.empty': '—',
     // earnings
     'quote.lastTrade': '最后成交 {t}前 · {src}',
     'quote.lastTradeNow': '最后成交 刚刚 · {src}',

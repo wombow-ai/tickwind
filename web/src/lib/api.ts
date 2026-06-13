@@ -1526,6 +1526,69 @@ export function getIndicators(
   return getJson<IndicatorsResponse>(`/v1/indicators${q ? `?${q}` : ''}`, signal);
 }
 
+/** One dated value in an indicator series (Phase 1 returns latest values only). */
+export interface IndicatorPoint {
+  date: string;
+  value: number;
+}
+
+/**
+ * A computed indicator for one stock: the embedded catalog metadata
+ * ({@link Indicator}) plus the latest computed result. `status` is `ok` when a
+ * headline {@link value} is present, `insufficient` when the inputs are missing
+ * (render as "—"), or `unsupported` when the formula can't be computed here.
+ */
+export interface StockIndicator extends Indicator {
+  status: 'ok' | 'insufficient' | 'unsupported';
+  /** Why the indicator is not `ok`; absent when `ok`. */
+  reason?: string;
+  /** Headline scalar; present only when `status === 'ok'`. */
+  value?: number;
+  /** Display unit: `%` | `ratio` | `price` | `x` | `` (empty). */
+  unit?: string;
+  /** Extra lines for multi-line indicators (e.g. MACD: signal, hist). */
+  extra?: Record<string, number>;
+}
+
+/** The market backdrop returned alongside per-stock indicators. */
+export interface MarketContext {
+  /** CBOE Volatility Index, when available. */
+  vix?: number;
+  /** CNN-style Fear & Greed gauge, when available. */
+  fear_greed?: {score: number; label: string};
+}
+
+/** Envelope returned by `GET /v1/stocks/{ticker}/indicators`. */
+export interface StockIndicatorsResponse {
+  ticker: string;
+  /** Newest underlying data date (may be empty). */
+  as_of: string;
+  /** Market backdrop; omitted when neither VIX nor Fear & Greed is available. */
+  market_context?: MarketContext;
+  /** The P0 stock-applicable set: ok first, then insufficient, then unsupported. */
+  indicators: StockIndicator[];
+}
+
+/**
+ * Fetches the latest computed indicators for a ticker. Resolves to `null` when
+ * the symbol is unknown / has no data (the API 404s), so callers can hide the
+ * panel; other errors reject.
+ */
+export async function getStockIndicators(
+  ticker: string,
+  signal?: AbortSignal,
+): Promise<StockIndicatorsResponse | null> {
+  try {
+    return await getJson<StockIndicatorsResponse>(
+      `/v1/stocks/${encodeURIComponent(normalizeTicker(ticker))}/indicators`,
+      signal,
+    );
+  } catch (e) {
+    if (e instanceof ApiError && e.status === 404) return null;
+    throw e;
+  }
+}
+
 /** A link a user saved to a ticker (private, per-user). */
 export interface Clip {
   id: string;

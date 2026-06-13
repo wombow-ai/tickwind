@@ -233,6 +233,15 @@ type IndicatorSource interface {
 	Len() int
 }
 
+// IndicatorComputeSource computes the live P0 stock-applicable indicator set for
+// a single ticker (latest values), wiring the catalog metadata to the ticker's
+// fetched candles / fundamentals / price / market context. nil-safe — a nil
+// source makes the per-stock indicators endpoint 404. Satisfied by
+// *indicators.Computer.
+type IndicatorComputeSource interface {
+	StockIndicators(ctx context.Context, ticker string) indicators.StockIndicatorsResult
+}
+
 type Server struct {
 	store         store.Store
 	hub           QuoteStream
@@ -257,14 +266,15 @@ type Server struct {
 	briefing      BriefingSource
 	options       OptionsSource
 	thirteenf     ThirteenFSource
-	shortVolume   ShortVolumeSource // injected post-New via SetShortVolume (avoids growing the New signature)
-	sentiment     SentimentSource   // injected post-New via SetSentiment
-	rateCut       RateCutSource     // injected post-New via SetRateCut
-	congressTx    CongressTxSource  // injected post-New via SetCongressTx
-	ipo           IPOSource         // injected post-New via SetIPO
-	indicators    IndicatorSource   // injected post-New via SetIndicators (static catalog)
-	admins        map[string]bool   // user UUIDs and/or emails (lowercased) allowed to delete any comment
-	commentRL     *rateLimiter      // per-user comment-post throttle
+	shortVolume   ShortVolumeSource      // injected post-New via SetShortVolume (avoids growing the New signature)
+	sentiment     SentimentSource        // injected post-New via SetSentiment
+	rateCut       RateCutSource          // injected post-New via SetRateCut
+	congressTx    CongressTxSource       // injected post-New via SetCongressTx
+	ipo           IPOSource              // injected post-New via SetIPO
+	indicators    IndicatorSource        // injected post-New via SetIndicators (static catalog)
+	indicatorCalc IndicatorComputeSource // injected post-New via SetIndicatorCompute (per-stock compute)
+	admins        map[string]bool        // user UUIDs and/or emails (lowercased) allowed to delete any comment
+	commentRL     *rateLimiter           // per-user comment-post throttle
 	// AI digest cache: one LLM generation per (ticker, ET day), then served from
 	// memory — token spend stays bounded no matter the traffic. Guarded by sumMu;
 	// sumInflight dedupes concurrent first requests; sumDay* enforce a global
@@ -378,6 +388,7 @@ func New(st store.Store, hub QuoteStream, enricher enrich.Enricher, verifier *au
 	mux.HandleFunc("GET /v1/13f", s.getThirteenF)
 	mux.HandleFunc("GET /v1/13f/{slug}", s.getThirteenFFund)
 	mux.HandleFunc("GET /v1/stocks/{ticker}/whales", s.getWhales)
+	mux.HandleFunc("GET /v1/stocks/{ticker}/indicators", s.getStockIndicators)
 	mux.HandleFunc("GET /v1/indicators", s.getIndicators)
 	mux.HandleFunc("GET /v1/stream", s.getStream)
 
@@ -1914,6 +1925,10 @@ func (s *Server) SetIPO(src IPOSource) { s.ipo = src }
 // nil-safe: /v1/indicators returns an empty catalog until set.
 func (s *Server) SetIndicators(src IndicatorSource) { s.indicators = src }
 
+// SetIndicatorCompute injects the per-stock indicator compute source after New.
+// nil-safe: /v1/stocks/{ticker}/indicators 404s until set.
+func (s *Server) SetIndicatorCompute(src IndicatorComputeSource) { s.indicatorCalc = src }
+
 // getIndicators returns the stock-applicable indicator catalog, optionally
 // filtered by `domain`, `priority`, `subcategory`, and a free-text `q` (matched
 // against the English/Chinese names, abbreviation, and definition). The response
@@ -1947,6 +1962,70 @@ func (s *Server) getIndicators(w http.ResponseWriter, r *http.Request) {
 		"indicators": list,
 		"facets":     s.indicators.Facets(),
 	})
+}
+
+// marketContextResp is the optional market-wide context block of the per-stock
+// indicators response. Each field is omitted when its reading is unavailable;
+// the whole block is omitted by the caller when neither is present.
+type marketContextResp struct {
+	VIX       *float64              `json:"vix,omitempty"`
+	FearGreed *indicators.FearGreed `json:"fear_greed,omitempty"`
+}
+
+// stockIndicatorsResp is the wire shape of GET /v1/stocks/{ticker}/indicators
+// (see the shared contract): the ticker, the newest underlying data date, an
+// optional market-context block, and the computed indicator set (ok →
+// insufficient → unsupported, as sorted by the compute layer).
+type stockIndicatorsResp struct {
+	Ticker        string                      `json:"ticker"`
+	AsOf          string                      `json:"as_of"`
+	MarketContext *marketContextResp          `json:"market_context,omitempty"`
+	Indicators    []indicators.StockIndicator `json:"indicators"`
+}
+
+// getStockIndicators serves the live P0 stock-applicable indicator set for a
+// single ticker (latest values). It is graceful: it returns 200 with whatever
+// computed — a name with bars but no XBRL still gets its technical indicators —
+// and 404 only when the compute source is unset or there is nothing at all to
+// show (an unknown/non-US ticker with no candles, no fundamentals, and no market
+// context). Market data is free public-domain / display-only sources.
+func (s *Server) getStockIndicators(w http.ResponseWriter, r *http.Request) {
+	if s.indicatorCalc == nil {
+		writeJSON(w, http.StatusNotFound, errBody("indicators unavailable"))
+		return
+	}
+	ticker := strings.ToUpper(strings.TrimSpace(r.PathValue("ticker")))
+	if ticker == "" {
+		writeJSON(w, http.StatusNotFound, errBody("no ticker"))
+		return
+	}
+	res := s.indicatorCalc.StockIndicators(r.Context(), ticker)
+
+	// Detect "nothing at all": no real reading anywhere (no ok indicator, no
+	// underlying data date, no market context). That signals an unknown/non-US
+	// ticker with no data, which 404s so the frontend hides the panel entirely.
+	hasOK := false
+	for _, si := range res.Indicators {
+		if si.Status == indicators.StatusOK {
+			hasOK = true
+			break
+		}
+	}
+	if !hasOK && res.AsOf == "" && res.VIX == nil && res.FearGreed == nil {
+		writeJSON(w, http.StatusNotFound, errBody("no indicators for "+ticker))
+		return
+	}
+
+	out := stockIndicatorsResp{Ticker: res.Ticker, AsOf: res.AsOf, Indicators: res.Indicators}
+	if out.Indicators == nil {
+		out.Indicators = []indicators.StockIndicator{}
+	}
+	// Market-context block: include only the readings that are present; omit the
+	// whole block when neither VIX nor Fear & Greed is available.
+	if res.VIX != nil || res.FearGreed != nil {
+		out.MarketContext = &marketContextResp{VIX: res.VIX, FearGreed: res.FearGreed}
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 // getIPO returns the US IPO calendar — recently priced, upcoming, and newly

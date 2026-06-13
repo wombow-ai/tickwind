@@ -461,6 +461,24 @@ func main() {
 	apiServer.SetIndicators(indicatorCatalog)
 	log.Info("indicator catalog loaded", "stock_applicable", indicatorCatalog.Len())
 
+	// Per-stock indicator compute: wires the catalog metadata to a ticker's live
+	// data (candles, SEC fundamentals, latest price) plus market-wide context
+	// (Fear & Greed). Each source is read-only over an existing store/cache and
+	// optional — a nil source degrades its dependent indicators to "insufficient"
+	// (a name with bars but no XBRL still returns the technicals). Wired only when
+	// the price feed (BarCache) exists, since the technical set needs daily candles.
+	if bars != nil {
+		var ohlcv indicators.OHLCVSource = bars // BarCache.DailyCandles
+		var fundProvider indicators.FundamentalsProvider = fundCache
+		priceProvider := &latestPriceProvider{store: st, bars: bars}
+		marketProvider := &marketContextProvider{sentiment: sentimentCache}
+		computer := indicators.NewComputer(indicatorCatalog, ohlcv, fundProvider, priceProvider, marketProvider)
+		apiServer.SetIndicatorCompute(computer)
+		log.Info("per-stock indicator compute enabled")
+	} else {
+		log.Warn("per-stock indicator compute disabled — no price feed (Alpaca) for daily candles")
+	}
+
 	srv := &http.Server{
 		Addr:              ":" + cfg.Port,
 		Handler:           apiServer,
@@ -480,6 +498,54 @@ func main() {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	_ = srv.Shutdown(shutdownCtx)
+}
+
+// latestPriceProvider satisfies indicators.PriceProvider, reading a ticker's
+// latest price from the polled quote first, then an on-demand BarCache fetch —
+// the same fallback getFundamentals uses, so price-derived indicators (P/E, P/B,
+// dividend yield) see the same number the fundamentals card shows. It returns
+// ok=false (never a fabricated price) when no positive quote is available.
+type latestPriceProvider struct {
+	store store.Store
+	bars  api.BarSource
+}
+
+// Price returns the ticker's latest price and true, or 0/false when unavailable.
+func (p *latestPriceProvider) Price(ctx context.Context, ticker string) (float64, bool) {
+	if q, ok, _ := p.store.GetQuote(ctx, ticker); ok && q.Price > 0 {
+		return q.Price, true
+	}
+	if p.bars != nil {
+		if oq, found, err := p.bars.LatestQuote(ctx, ticker); err == nil && found && oq.Price > 0 {
+			return oq.Price, true
+		}
+	}
+	return 0, false
+}
+
+// marketContextProvider satisfies indicators.MarketContextProvider, exposing the
+// market-wide Fear & Greed reading from the sentiment cache. VIX is reported
+// unavailable: the cache stores the headline Fear & Greed score/label but not a
+// clean numeric VIX level (the VIX input survives only as a display note on a
+// scored component), so — per the no-fabrication discipline — the CBOE VIX
+// indicator stays "insufficient" rather than parsing a formatted string.
+type marketContextProvider struct {
+	sentiment *sentiment.Cache
+}
+
+// VIX reports no market VIX level (no clean numeric source; see the type doc).
+func (m *marketContextProvider) VIX() (float64, bool) { return 0, false }
+
+// FearGreed returns the latest CNN-style Fear & Greed score and English label,
+// or ok=false before the sentiment cache has been populated.
+func (m *marketContextProvider) FearGreed() (int, string, bool) {
+	if m.sentiment == nil {
+		return 0, "", false
+	}
+	if r, ok := m.sentiment.Latest(); ok {
+		return r.Score, r.Label, true
+	}
+	return 0, "", false
 }
 
 // newStore builds the configured store and a cleanup func. A "postgres" backend
