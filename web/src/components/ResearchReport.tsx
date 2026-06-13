@@ -141,7 +141,7 @@ function Section({
     >
       <h3 className={cx('mb-3 text-[14px] font-bold', t.text)}>{title}</h3>
 
-      {sec.facts.length > 0 && (
+      {(sec.facts?.length ?? 0) > 0 && (
         <div className="mb-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
           {sec.facts.map(f => (
             <FactCell key={f.key} fact={f} dark={dark} t={t} tr={tr} lang={lang} />
@@ -151,7 +151,7 @@ function Section({
 
       {sec.prose.trim() && <Markdown>{sec.prose}</Markdown>}
 
-      {sec.citations.length > 0 && (
+      {(sec.citations?.length ?? 0) > 0 && (
         <div className={cx('mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 border-t pt-2.5', t.hair)}>
           <span className={cx('text-[10.5px] font-semibold', t.faint)}>{tr('research.sources')}</span>
           {sec.citations.map((cite, i) => (

@@ -50,7 +50,12 @@ func Compose(ctx context.Context, fs FactSheet, enr ResearchEnricher, lang strin
 			Key:     overviewKey,
 			TitleZH: "概览",
 			TitleEN: "Overview",
-			Prose:   ov,
+			// Non-nil empty slices so the JSON carries "facts":[] / "citations":[]
+			// (a nil slice marshals as null, which would break a client doing
+			// `section.facts.length`). The overview is prose-only.
+			Facts:     []Fact{},
+			Citations: []Citation{},
+			Prose:     ov,
 		}}, fs.Sections...)
 	}
 	return fs
