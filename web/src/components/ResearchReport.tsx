@@ -14,6 +14,8 @@ import {useLang, useT} from '@/lib/i18n';
 import {useDark} from '@/lib/theme';
 import {cx, tok} from '@/lib/ui';
 import {Markdown} from '@/components/Markdown';
+import {ShareCardButton} from '@/components/ShareCardButton';
+import {type OgParams} from '@/lib/og';
 
 type Tokens = ReturnType<typeof tok>;
 type Status = 'loading' | 'ready' | 'hidden';
@@ -63,6 +65,17 @@ export function ResearchReport({ticker}: {ticker: string}) {
     return <ResearchSkeleton dark={dark} t={t} tr={tr} />;
   }
 
+  // Propagation organ: a branded, shareable card for the report. The overview
+  // prose (zh, present when the LLM ran) makes the best subtitle; fall back to
+  // the price label for the data-only report. Never carries a fabricated number.
+  const overviewProse = data.sections.find(s => s.key === 'overview')?.prose;
+  const shareCard: OgParams = {
+    kind: 'page',
+    eyebrow: lang === 'en' ? 'Deep Research' : '深度研报',
+    title: data.name || data.ticker,
+    subtitle: (overviewProse || data.price_label || '').slice(0, 110) || undefined,
+  };
+
   return (
     <div className="tw-fade">
       {/* mandatory top label + AI badge */}
@@ -80,11 +93,15 @@ export function ResearchReport({ticker}: {ticker: string}) {
           >
             {tr('ai.badge')}
           </span>
-          {data.as_of && (
-            <span className={cx('ml-auto text-[10.5px]', t.faint)}>
-              {tr('research.asOf').replace('{d}', data.as_of)}
-            </span>
-          )}
+          <div className="ml-auto flex items-center gap-2">
+            {data.as_of && (
+              <span className={cx('text-[10.5px]', t.faint)}>
+                {tr('research.asOf').replace('{d}', data.as_of)}
+              </span>
+            )}
+            {/* propagation organ: save a branded research card */}
+            <ShareCardButton card={shareCard} />
+          </div>
         </div>
         {data.price_label && (
           <p className={cx('text-[12px] tabular-nums', t.sub)}>{data.price_label}</p>

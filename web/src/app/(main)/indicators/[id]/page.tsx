@@ -9,8 +9,9 @@ import {
   type Indicator,
 } from '@/lib/api';
 import {SITE_URL, langAlternates} from '@/lib/config';
-import {ogImageMeta} from '@/lib/og';
+import {ogImageMeta, type OgParams} from '@/lib/og';
 import {LocalizedTitle} from '@/components/LocalizedTitle';
+import {ShareCardButton} from '@/components/ShareCardButton';
 
 // SSR with ISR: the catalog is static (embedded metadata) and only changes on a
 // deploy that updates the dataset, so mirror the catalog page's long window.
@@ -166,6 +167,14 @@ export default async function IndicatorRoute({params}: {params: Promise<{id: str
   }
 
   const description = snippet(ind);
+  // Propagation organ: a branded, shareable indicator card (Chinese-first, like
+  // the OG image) so the glossary entry can spread on social.
+  const shareCard: OgParams = {
+    kind: 'page',
+    eyebrow: domainZh,
+    title: ind.abbr ? `${n.zh} ${ind.abbr}` : n.zh,
+    subtitle: description || undefined,
+  };
   const ld = {
     '@context': 'https://schema.org',
     '@graph': [
@@ -215,17 +224,21 @@ export default async function IndicatorRoute({params}: {params: Promise<{id: str
       </nav>
 
       <header className="mb-4">
-        <h1 className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[24px] font-bold tracking-tight text-slate-900 dark:text-slate-100">
-          <LayoutGrid size={20} className="text-teal-600 dark:text-teal-300" />
-          {/* English-default name; zh leads for Chinese users (data-i18n CSS). */}
-          <span data-i18n="zh">{n.zh}</span>
-          <span data-i18n="en">{n.en}</span>
-          {ind.abbr && (
-            <span className="text-[15px] font-medium text-slate-500 dark:text-slate-400">
-              {ind.abbr}
-            </span>
-          )}
-        </h1>
+        <div className="flex items-start justify-between gap-3">
+          <h1 className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[24px] font-bold tracking-tight text-slate-900 dark:text-slate-100">
+            <LayoutGrid size={20} className="text-teal-600 dark:text-teal-300" />
+            {/* English-default name; zh leads for Chinese users (data-i18n CSS). */}
+            <span data-i18n="zh">{n.zh}</span>
+            <span data-i18n="en">{n.en}</span>
+            {ind.abbr && (
+              <span className="text-[15px] font-medium text-slate-500 dark:text-slate-400">
+                {ind.abbr}
+              </span>
+            )}
+          </h1>
+          {/* propagation organ: save a branded indicator card */}
+          <ShareCardButton card={shareCard} />
+        </div>
         {/* The other-language name on a secondary line, so both are on the page. */}
         {n.zh !== n.en && (
           <p className="mt-1 text-[13px] text-slate-500 dark:text-slate-400">
