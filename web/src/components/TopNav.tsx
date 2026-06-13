@@ -24,9 +24,19 @@ function initials(email: string | undefined): string {
   return name.slice(0, 2).toUpperCase();
 }
 
+/**
+ * Whether a nav item is the active route. Exact match, except the calendar group
+ * — its pill (`/calendar/earnings`) stays highlighted across all `/calendar/*`
+ * subpaths (Earnings · Macro · IPO).
+ */
+function navActive(href: string, pathname: string): boolean {
+  if (href.startsWith('/calendar')) return pathname.startsWith('/calendar');
+  return pathname === href;
+}
+
 /** A single desktop nav pill. */
 function NavPill({item, pathname, t}: {item: NavItem; pathname: string; t: Tokens}) {
-  const active = pathname === item.href;
+  const active = navActive(item.href, pathname);
   return (
     <Link
       href={item.href}
@@ -83,24 +93,19 @@ export function TopNav() {
     {href: '/hot', label: tr('nav.hot')},
     {href: '/news', label: tr('nav.news')},
   ];
-  const watchlist: NavItem = {href: '/watchlist', label: tr('nav.watchlist')};
+  const my: NavItem = {href: '/me', label: tr('nav.my')};
   const secondary: NavItem[] = [
     {href: '/screen', label: tr('nav.screen')},
     {href: '/smart-money', label: tr('nav.smartMoney')},
     {href: '/unusual', label: tr('nav.unusual')},
-    {href: '/ipo', label: tr('nav.ipo')},
-    {href: '/earnings', label: tr('nav.earnings')},
-    {href: '/events', label: tr('nav.events')},
-    {href: '/community', label: tr('nav.community')},
-    ...(authed ? [{href: '/notes', label: tr('nav.notes')}] : []),
-    ...(authed ? [{href: '/portfolio', label: tr('nav.portfolio')}] : []),
-    ...(authed ? [{href: '/alerts', label: tr('nav.alerts')}] : []),
+    {href: '/calendar/earnings', label: tr('nav.calendar')},
+    {href: '/discussion', label: tr('nav.discussion')},
   ];
   const whatsnew: NavItem = {href: '/announcements', label: tr('nav.whatsnew')};
   // The full ordered list for the mobile sheet.
   const mobileItems: NavItem[] = [
     ...primary,
-    ...(authed ? [watchlist] : []),
+    ...(authed ? [my] : []),
     ...secondary,
     whatsnew,
   ];
@@ -145,7 +150,7 @@ export function TopNav() {
           {primary.map(item => (
             <NavPill key={item.href} item={item} pathname={pathname} t={t} />
           ))}
-          {authed && <NavPill item={watchlist} pathname={pathname} t={t} />}
+          {authed && <NavPill item={my} pathname={pathname} t={t} />}
           <MoreMenu pathname={pathname} items={secondary} />
         </nav>
 
@@ -257,7 +262,7 @@ export function TopNav() {
           <div className="fixed inset-x-0 bottom-0 top-14 z-20 md:hidden" onClick={() => setMobileOpen(false)} />
           <nav className={cx('relative z-30 border-t px-3 py-2 md:hidden', t.border)}>
             {mobileItems.map(item => {
-              const active = pathname === item.href;
+              const active = navActive(item.href, pathname);
               return (
                 <Link
                   key={item.href}
@@ -288,7 +293,7 @@ function MoreMenu({pathname, items}: {pathname: string; items: NavItem[]}) {
   const tr = useT();
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
-  const active = items.some(i => i.href === pathname);
+  const active = items.some(i => navActive(i.href, pathname));
 
   // Escape closes the dropdown + restores focus to its trigger. The global TopNav
   // Escape handler only covers the account/mobile menus (whose state it owns);
@@ -330,21 +335,24 @@ function MoreMenu({pathname, items}: {pathname: string; items: NavItem[]}) {
               t.soft,
             )}
           >
-            {items.map(i => (
-              <Link
-                key={i.href}
-                href={i.href}
-                onClick={() => setOpen(false)}
-                aria-current={pathname === i.href ? 'page' : undefined}
-                className={cx(
-                  'block rounded-xl px-2.5 py-2 text-[13px]',
-                  pathname === i.href ? t.accentText : t.text,
-                  t.ghost,
-                )}
-              >
-                {i.label}
-              </Link>
-            ))}
+            {items.map(i => {
+              const active = navActive(i.href, pathname);
+              return (
+                <Link
+                  key={i.href}
+                  href={i.href}
+                  onClick={() => setOpen(false)}
+                  aria-current={active ? 'page' : undefined}
+                  className={cx(
+                    'block rounded-xl px-2.5 py-2 text-[13px]',
+                    active ? t.accentText : t.text,
+                    t.ghost,
+                  )}
+                >
+                  {i.label}
+                </Link>
+              );
+            })}
           </div>
         </>
       )}
@@ -406,7 +414,7 @@ function AccountMenu({
               </p>
             </div>
             <Link
-              href="/watchlist"
+              href="/me?tab=watchlist"
               onClick={() => setOpen(false)}
               className={cx(
                 'flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-[13px]',
@@ -417,7 +425,7 @@ function AccountMenu({
               <Star size={15} className={t.sub} /> {tr('nav.myWatchlist')}
             </Link>
             <Link
-              href="/notes"
+              href="/me?tab=notes"
               onClick={() => setOpen(false)}
               className={cx(
                 'flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-[13px]',
@@ -428,7 +436,7 @@ function AccountMenu({
               <StickyNote size={15} className={t.sub} /> {tr('nav.notes')}
             </Link>
             <Link
-              href="/portfolio"
+              href="/me?tab=holdings"
               onClick={() => setOpen(false)}
               className={cx(
                 'flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-[13px]',

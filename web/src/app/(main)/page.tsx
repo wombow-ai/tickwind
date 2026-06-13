@@ -28,10 +28,10 @@ const DIRECTORY: {href: string; zh: string; en: string; descZh: string; descEn: 
   {href: '/opportunities', zh: '机会榜 · 内部人买入', en: 'Opportunities · Insider Buys', descZh: 'SEC Form 4 高管增持的小盘股', descEn: 'Small-caps insiders are buying (SEC Form 4)'},
   {href: '/hot', zh: '热门 & 飙升', en: 'Hot & Surging', descZh: '社媒讨论热度榜(含 WSB)', descEn: 'Social-buzz leaderboard (incl. WSB)'},
   {href: '/screen', zh: '选股器', en: 'Screener', descZh: '按价格 / 涨跌幅 / 市值筛选全美股', descEn: 'Filter all US stocks by price / change / cap'},
-  {href: '/earnings', zh: '财报日历', en: 'Earnings Calendar', descZh: '今日及未来财报(预估 EPS)', descEn: 'Upcoming reports with est. EPS'},
+  {href: '/calendar/earnings', zh: '财报日历', en: 'Earnings Calendar', descZh: '今日及未来财报(预估 EPS)', descEn: 'Upcoming reports with est. EPS'},
   {href: '/unusual', zh: '期权异动榜', en: 'Unusual Options', descZh: '全市场成交最活跃的期权合约', descEn: 'The most-traded options across the market'},
-  {href: '/events', zh: '大事件时间线', en: 'Events Timeline', descZh: 'FOMC / CPI 等宏观日历', descEn: 'Macro calendar — FOMC, CPI & more'},
-  {href: '/community', zh: '社区讨论', en: 'Community', descZh: '个股 & 大盘讨论区', descEn: 'Per-stock & market-wide discussion'},
+  {href: '/calendar/macro', zh: '大事件时间线', en: 'Events Timeline', descZh: 'FOMC / CPI 等宏观日历', descEn: 'Macro calendar — FOMC, CPI & more'},
+  {href: '/discussion?tab=community', zh: '社区讨论', en: 'Community', descZh: '个股 & 大盘讨论区', descEn: 'Per-stock & market-wide discussion'},
   {href: '/guide', zh: '新手指南', en: 'Guides', descZh: '美股数据怎么查:国会山股神 / 13F / 期权异动', descEn: 'How to track congress, 13F, options & more'},
 ];
 

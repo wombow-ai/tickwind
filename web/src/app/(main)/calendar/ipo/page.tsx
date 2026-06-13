@@ -23,7 +23,7 @@ export const metadata: Metadata = {
     'recently priced IPOs',
     'Nasdaq IPO',
   ],
-  alternates: langAlternates('/ipo'),
+  alternates: langAlternates('/calendar/ipo'),
   openGraph: {
     images: [
       ogImageMeta({
@@ -35,8 +35,8 @@ export const metadata: Metadata = {
   },
 };
 
-/** Public US IPO calendar page (Nasdaq, delayed/display-only). */
-export default function IPOPage() {
+/** Public US IPO calendar (IPO tab of the unified calendar; Nasdaq, delayed/display-only). */
+export default function IPOCalendarPage() {
   return (
     <>
       <LocalizedTitle en={TITLE_EN} zh={TITLE_ZH} />

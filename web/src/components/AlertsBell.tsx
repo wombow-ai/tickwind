@@ -49,20 +49,20 @@ export function AlertsBell({dark}: {dark: boolean}) {
       c.abort();
       if (timer !== undefined) clearTimeout(timer);
     };
-    // pathname dep: refresh the badge right after navigating (e.g. away from /alerts).
+    // pathname dep: refresh the badge right after navigating (e.g. away from /me).
   }, [user, getToken, pathname]);
 
   if (!user) return null;
 
   return (
     <Link
-      href="/alerts"
+      href="/me?tab=alerts"
       aria-label={tr('nav.alerts')}
       className={cx(
         'relative inline-flex h-9 w-9 items-center justify-center rounded-full border',
         t.border,
         t.ghost,
-        pathname === '/alerts' && t.accentText,
+        pathname === '/me' && t.accentText,
       )}
     >
       <Bell size={16} />

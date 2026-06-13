@@ -17,7 +17,7 @@ const COLUMNS: Array<[string, Array<[string, string]>]> = [
       ['nav.opportunities', '/opportunities'],
       ['nav.news', '/news'],
       ['mod.discussion', '/discussion'],
-      ['nav.watchlist', '/watchlist'],
+      ['nav.watchlist', '/me?tab=watchlist'],
       ['nav.whatsnew', '/announcements'],
     ],
   ],

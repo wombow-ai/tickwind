@@ -27,6 +27,23 @@ const nextConfig: NextConfig = {
   async headers() {
     return [{source: '/:path*', headers: securityHeaders}];
   },
+  // Permanent (308) redirects from the pre-IA-merge URLs to their new homes, so
+  // existing links, bookmarks and indexed pages keep working after the merge.
+  async redirects() {
+    return [
+      // Unified calendar (earnings · macro · ipo)
+      {source: '/earnings', destination: '/calendar/earnings', permanent: true},
+      {source: '/events', destination: '/calendar/macro', permanent: true},
+      {source: '/ipo', destination: '/calendar/ipo', permanent: true},
+      // Personal hub (/me tabs)
+      {source: '/watchlist', destination: '/me?tab=watchlist', permanent: true},
+      {source: '/portfolio', destination: '/me?tab=holdings', permanent: true},
+      {source: '/notes', destination: '/me?tab=notes', permanent: true},
+      {source: '/alerts', destination: '/me?tab=alerts', permanent: true},
+      // Community folded into the discussion shell
+      {source: '/community', destination: '/discussion?tab=community', permanent: true},
+    ];
+  },
 };
 
 export default nextConfig;

@@ -1,5 +1,5 @@
 import type {Metadata} from 'next';
-import {FeedPage} from '@/components/FeedPage';
+import {DiscussionTabs} from '@/components/DiscussionTabs';
 
 export const metadata: Metadata = {
   title: 'Discussion',
@@ -7,7 +7,7 @@ export const metadata: Metadata = {
     'What people are saying about the most-watched US stocks — StockTwits, Bluesky and more.',
 };
 
-/** Public aggregated discussion feed. */
+/** Public discussion shell: aggregated social feed + the global community board. */
 export default function DiscussionPage() {
-  return <FeedPage kind="discussion" />;
+  return <DiscussionTabs />;
 }
