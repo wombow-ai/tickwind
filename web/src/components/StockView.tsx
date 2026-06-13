@@ -37,7 +37,7 @@ import {
 } from '@/lib/api';
 import {useAuth} from '@/lib/auth';
 import {useDark} from '@/lib/theme';
-import {btnPrimary, cx, marketCurrency, timeAgo, tok} from '@/lib/ui';
+import {btnPrimary, cx, fmtPrice, marketCurrency, timeAgo, tok} from '@/lib/ui';
 import {useQuotes} from '@/lib/useQuotes';
 import {
   ChangeLine,
@@ -62,6 +62,7 @@ import {ShortChip} from '@/components/ShortChip';
 import {CongressChip} from '@/components/CongressChip';
 import {WhalesChip} from '@/components/WhalesChip';
 import {CommentsPanel} from '@/components/CommentsPanel';
+import {ShareCardButton} from '@/components/ShareCardButton';
 
 type Status = 'loading' | 'ready' | 'error';
 interface Feed<T> {
@@ -329,6 +330,24 @@ export function StockView({ticker}: {ticker: string}) {
   const priorClose =
     isExt && bars.length >= 2 ? bars[bars.length - 2] : quote?.prev_close ?? 0;
 
+  // Share card (propagation organ): a branded snapshot of the ticker for 小红书 /
+  // 微信. The big figure is the price; tone tilts green/red by day-change; the
+  // "数据延迟" note rides on the subtitle. Only meaningful once a price exists.
+  const dayChgPct = priorClose > 0 ? ((regularPrice - priorClose) / priorClose) * 100 : 0;
+  const up = dayChgPct >= 0;
+  const chgStr =
+    priorClose > 0 ? `${up ? '+' : '−'}${Math.abs(dayChgPct).toFixed(2)}%` : '';
+  const shareCard = {
+    kind: 'stock' as const,
+    eyebrow: security.market,
+    title: norm,
+    stat: fmtPrice(cur, regularPrice),
+    subtitle: [security.name !== norm ? security.name : '', chgStr, '数据延迟']
+      .filter(Boolean)
+      .join(' · '),
+    tone: (up ? 'up' : 'down') as 'up' | 'down',
+  };
+
   return (
     <div className="mx-auto max-w-4xl">
       {/* header */}
@@ -448,6 +467,12 @@ export function StockView({ticker}: {ticker: string}) {
               >
                 <Plus size={15} /> {tr('stock.addWatch')}
               </Link>
+            )}
+            {/* propagation organ: save a branded snapshot card (needs a price) */}
+            {quote && (
+              <div className="flex sm:justify-end">
+                <ShareCardButton card={shareCard} />
+              </div>
             )}
             {bars.length >= 2 && (
               <Sparkline

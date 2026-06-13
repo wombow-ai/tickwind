@@ -6,6 +6,7 @@ import {getFund, type FundHoldings, type WhalePosition} from '@/lib/api';
 import {SITE_URL, langAlternates} from '@/lib/config';
 import {ogImageMeta} from '@/lib/og';
 import {LocalizedTitle} from '@/components/LocalizedTitle';
+import {ShareCardButton} from '@/components/ShareCardButton';
 import {fmtCompactUSD} from '@/lib/ui';
 
 // SSR with ISR: a fund's 13F holdings change at most quarterly (filed ~45 days
@@ -94,6 +95,19 @@ export default async function FundRoute({params}: {params: Promise<{slug: string
   const tt = titles(f.name, f.manager);
   const positions = f.positions ?? [];
 
+  // Share card: a 13F 大佬持仓 card for 小红书 / 微信. Subtitle lists the top
+  // few positions (ticker + portfolio weight), which is the shareable hook.
+  const topNames = positions
+    .filter(p => p.ticker)
+    .slice(0, 4)
+    .map(p => `${p.ticker} ${p.pct.toFixed(1)}%`)
+    .join(' · ');
+  const shareCard = {
+    eyebrow: '13F 大佬持仓',
+    title: `${f.manager}（${f.name}）持仓`,
+    subtitle: topNames ? `最新季 top: ${topNames}` : `${f.name} · SEC 13F 大佬持仓 · 滞后约 45 天`,
+  };
+
   const ld = {
     '@context': 'https://schema.org',
     '@graph': [
@@ -130,10 +144,14 @@ export default async function FundRoute({params}: {params: Promise<{slug: string
       </nav>
 
       <header className="mb-4">
-        <h1 className="flex items-center gap-2 text-[24px] font-bold tracking-tight text-slate-900 dark:text-slate-100">
-          <Briefcase size={20} className="text-violet-600 dark:text-violet-300" />
-          {f.manager}
-        </h1>
+        <div className="flex items-start justify-between gap-3">
+          <h1 className="flex items-center gap-2 text-[24px] font-bold tracking-tight text-slate-900 dark:text-slate-100">
+            <Briefcase size={20} className="text-violet-600 dark:text-violet-300" />
+            {f.manager}
+          </h1>
+          {/* propagation organ: save a branded 13F holdings card */}
+          <ShareCardButton card={shareCard} />
+        </div>
         <div className="mt-2 flex flex-wrap items-center gap-2">
           <span className="text-[13px] text-slate-500 dark:text-slate-400">{f.name}</span>
           <span className="inline-block rounded-full bg-slate-100 px-2.5 py-0.5 text-[11px] font-semibold text-slate-500 dark:bg-slate-800 dark:text-slate-300">

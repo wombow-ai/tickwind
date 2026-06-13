@@ -176,7 +176,7 @@ export default async function MemberRoute({params}: {params: Promise<{slug: stri
         </span>
       </div>
 
-      {bt && <FollowTradeSim bt={bt} />}
+      {bt && <FollowTradeSim bt={bt} memberName={m.name} />}
 
       <h2 className="mb-3 text-[15px] font-bold text-slate-900 dark:text-slate-100">
         <span data-i18n="zh">披露交易</span>

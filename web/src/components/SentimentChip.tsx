@@ -6,6 +6,7 @@ import {getSentiment, type Sentiment} from '@/lib/api';
 import {useLang, useT} from '@/lib/i18n';
 import {useDark} from '@/lib/theme';
 import {cx, timeAgo, tok} from '@/lib/ui';
+import {ShareCardButton} from '@/components/ShareCardButton';
 
 /**
  * Maps a 0–100 fear/greed score to a band: fear leans red, greed leans green,
@@ -79,18 +80,29 @@ export function SentimentChip() {
   const label = lang === 'zh' ? data.label_zh || data.label : data.label || tr(b.labelKey);
   const pos = Math.max(0, Math.min(100, data.score));
   const components = data.components ?? [];
+  const score = Math.round(data.score);
+
+  // Share card: today's market mood for 小红书 / 微信. Chinese label always (the
+  // card is a Chinese propagation asset); tone tilts green/red around neutral.
+  const shareCard = {
+    eyebrow: '潮汐恐贪指数',
+    title: `今日美股情绪 ${score} · ${data.label_zh || data.label}`,
+    subtitle: 'VIX/看跌看涨/做空 等合成 · 仅供参考',
+    tone: (score >= 55 ? 'up' : score < 45 ? 'down' : undefined) as 'up' | 'down' | undefined,
+  };
 
   return (
     <div className={cx('mb-5 rounded-2xl border', t.card, t.border, t.soft)}>
-      <button
-        type="button"
-        onClick={() => components.length > 0 && setOpen(o => !o)}
-        aria-expanded={components.length > 0 ? open : undefined}
-        className={cx(
-          'flex w-full items-center gap-3 px-4 py-3 text-left',
-          components.length > 0 && 'cursor-pointer',
-        )}
-      >
+      <div className="flex items-center">
+        <button
+          type="button"
+          onClick={() => components.length > 0 && setOpen(o => !o)}
+          aria-expanded={components.length > 0 ? open : undefined}
+          className={cx(
+            'flex flex-1 items-center gap-3 px-4 py-3 text-left',
+            components.length > 0 && 'cursor-pointer',
+          )}
+        >
         <Gauge size={18} className={dark ? 'text-teal-300' : 'text-teal-600'} />
         <div className="min-w-0 flex-1">
           <div className="flex items-baseline gap-2">
@@ -122,7 +134,12 @@ export function SentimentChip() {
             className={cx('shrink-0 transition-transform', t.faint, open && 'rotate-180')}
           />
         )}
-      </button>
+        </button>
+        {/* propagation organ: save today's mood as a branded card */}
+        <div className="shrink-0 pr-3">
+          <ShareCardButton card={shareCard} />
+        </div>
+      </div>
 
       {open && components.length > 0 && (
         <div className={cx('tw-fade border-t px-4 py-3', t.hair)}>

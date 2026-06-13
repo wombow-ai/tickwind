@@ -195,6 +195,9 @@ const dict: Record<Lang, Record<string, string>> = {
     'sentiment.components': 'What goes into it',
     'sentiment.updated': 'updated {t} ago',
     'sentiment.footer': 'Tickwind composite index. Methodology — not investment advice.',
+    // share card ("propagation organ") — save/share a branded image card
+    'share.save': 'Save image',
+    'share.aria': 'Open a shareable image card in a new tab',
     'earnings.next': 'Next earnings',
     'earnings.estEps': 'Est. EPS',
     'earnings.bmo': 'Pre-market',
@@ -750,6 +753,9 @@ const dict: Record<Lang, Record<string, string>> = {
     'sentiment.components': '指数构成',
     'sentiment.updated': '{t}前更新',
     'sentiment.footer': '潮汐自有综合指数。方法论 —— 非投资建议。',
+    // share card ("propagation organ") — save/share a branded image card
+    'share.save': '保存图片',
+    'share.aria': '在新标签页打开可分享的图片卡',
     'earnings.next': '下次财报',
     'earnings.estEps': '预期EPS',
     'earnings.bmo': '盘前',

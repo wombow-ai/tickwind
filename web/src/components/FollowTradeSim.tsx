@@ -5,6 +5,7 @@ import {Info, LineChart, TrendingDown, TrendingUp} from 'lucide-react';
 import type {Backtest} from '@/lib/api';
 import {useT} from '@/lib/i18n';
 import {useDark} from '@/lib/theme';
+import {ShareCardButton} from '@/components/ShareCardButton';
 
 /** Signed percentage, e.g. "+26.71%" / "−4.20%" (uses a real minus glyph). */
 function fmtPct(v: number): string {
@@ -21,7 +22,7 @@ function fmtPct(v: number): string {
  * `bt` is fetched server-side (see the member page); this component only renders
  * + colors it. When `bt.insufficient` it shows a "not enough data" notice.
  */
-export function FollowTradeSim({bt}: {bt: Backtest}) {
+export function FollowTradeSim({bt, memberName}: {bt: Backtest; memberName: string}) {
   const tr = useT();
 
   if (bt.insufficient) {
@@ -42,6 +43,18 @@ export function FollowTradeSim({bt}: {bt: Backtest}) {
 
   const beat = bt.member_return_pct >= bt.spy_return_pct;
   const months = Math.max(1, Math.round(bt.window_days / 30));
+  const memberPct = fmtPct(bt.member_return_pct);
+  const spyPct = fmtPct(bt.spy_return_pct);
+
+  // Share card: a Chinese 跟单 result card for 小红书 / 微信. The disclaimer
+  // ("模拟复盘非投资建议") rides on the subtitle, per the propagation rules.
+  const shareCard = {
+    eyebrow: '国会交易 · 跟单模拟',
+    title: `跟着 ${memberName} 买 ${memberPct}`,
+    subtitle: `vs 标普 SPY ${spyPct} · 近 ${months} 个月 · 模拟复盘非投资建议`,
+    stat: memberPct,
+    tone: (beat ? 'up' : 'down') as 'up' | 'down',
+  };
 
   return (
     <section className="mb-8">
@@ -49,7 +62,7 @@ export function FollowTradeSim({bt}: {bt: Backtest}) {
 
       <div className="rounded-2xl border border-slate-200 p-4 dark:border-slate-800 sm:p-5">
         {/* Headline stat: follow vs SPY, colored by who won. */}
-        <div className="flex flex-wrap items-end gap-x-6 gap-y-2">
+        <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
           <div>
             <div className="flex items-baseline gap-2">
               <span
@@ -59,17 +72,19 @@ export function FollowTradeSim({bt}: {bt: Backtest}) {
                     : 'text-rose-600 dark:text-rose-400'
                 }`}
               >
-                {fmtPct(bt.member_return_pct)}
+                {memberPct}
               </span>
               <span className="flex items-center gap-1 text-[13px] font-semibold text-slate-400 dark:text-slate-500">
                 {beat ? <TrendingUp size={15} /> : <TrendingDown size={15} />}
-                {tr('sim.vs')} {fmtPct(bt.spy_return_pct)}
+                {tr('sim.vs')} {spyPct}
               </span>
             </div>
             <p className="mt-1.5 text-[12px] font-medium uppercase tracking-wide text-slate-400 dark:text-slate-500">
               {tr('sim.statSuffix')}
             </p>
           </div>
+          {/* propagation organ: save a branded follow-result card */}
+          <ShareCardButton card={shareCard} />
         </div>
 
         {/* Net-value comparison curve (member vs SPY), both indexed to 0%. */}
