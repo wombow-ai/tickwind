@@ -3,7 +3,12 @@
 import {Activity, Gauge} from 'lucide-react';
 import Link from 'next/link';
 import {useEffect, useMemo, useState} from 'react';
-import {getStockIndicators, type StockIndicator, type StockIndicatorsResponse} from '@/lib/api';
+import {
+  getStockIndicators,
+  indicatorSlug,
+  type StockIndicator,
+  type StockIndicatorsResponse,
+} from '@/lib/api';
 import {useLang, useT} from '@/lib/i18n';
 import {useDark} from '@/lib/theme';
 import {cx, fmtPrice, tok} from '@/lib/ui';
@@ -234,7 +239,7 @@ function IndicatorRow({ind, dark, t}: {ind: StockIndicator; dark: boolean; t: To
     <div className="flex items-start justify-between gap-3 px-3 py-2.5">
       <div className="min-w-0 flex-1">
         <Link
-          href={`/indicators#${encodeURIComponent(ind.id)}`}
+          href={`/indicators/${indicatorSlug(ind.id)}`}
           className={cx('text-[13px] font-semibold hover:underline', t.text)}
         >
           {name}

@@ -1618,6 +1618,29 @@ export function getIndicators(
   return getJson<IndicatorsResponse>(`/v1/indicators${q ? `?${q}` : ''}`, signal);
 }
 
+/**
+ * Maps an indicator id to its clean, extension-safe URL slug for the
+ * `/indicators/{slug}` pSEO pages: the dotted id has its `.` replaced by `-`
+ * (e.g. `technical.rsi` → `technical-rsi`, `fundamental.pe-ttm` →
+ * `fundamental-pe-ttm`). The raw id stays the stable key; a slug is never
+ * reverse-engineered by un-replacing `-` (ids may already contain hyphens, e.g.
+ * `pe-ttm`) — resolve a slug back to a record via {@link indicatorBySlug}, which
+ * slugifies every catalog id and compares.
+ */
+export function indicatorSlug(id: string): string {
+  return id.replace(/\./g, '-');
+}
+
+/**
+ * Finds the catalog record whose slugified id equals `slug`, by slugifying every
+ * id and comparing (NOT a naive un-replace, since ids can contain hyphens). The
+ * `.`→`-` map is collision-free across the current 282-record catalog. Returns
+ * `undefined` when no record matches (the caller then 404s).
+ */
+export function indicatorBySlug(indicators: Indicator[], slug: string): Indicator | undefined {
+  return indicators.find(ind => indicatorSlug(ind.id) === slug);
+}
+
 /** One dated value in an indicator series (Phase 1 returns latest values only). */
 export interface IndicatorPoint {
   date: string;

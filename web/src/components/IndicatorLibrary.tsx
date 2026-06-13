@@ -1,8 +1,9 @@
 'use client';
 
 import {ChevronDown, Search} from 'lucide-react';
+import Link from 'next/link';
 import {useMemo, useState} from 'react';
-import type {Indicator, IndicatorFacets} from '@/lib/api';
+import {indicatorSlug, type Indicator, type IndicatorFacets} from '@/lib/api';
 import {useLang, useT} from '@/lib/i18n';
 import {useDark} from '@/lib/theme';
 import {cx, tok} from '@/lib/ui';
@@ -49,7 +50,10 @@ function IndicatorCard({ind}: {ind: Indicator}) {
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div className="min-w-0">
           <h3 className={cx('text-[14.5px] font-semibold leading-tight', t.text)}>
-            {primary}
+            {/* Links to the indicator's own pSEO detail page (internal linking). */}
+            <Link href={`/indicators/${indicatorSlug(ind.id)}`} className="hover:underline">
+              {primary}
+            </Link>
             {ind.abbr && (
               <span className={cx('ml-2 text-[12px] font-medium', t.sub)}>{ind.abbr}</span>
             )}
