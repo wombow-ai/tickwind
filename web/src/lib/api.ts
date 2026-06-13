@@ -1445,6 +1445,87 @@ export function getScreen(
   return getJson<ScreenResponse>(`/v1/screen${q ? `?${q}` : ''}`, signal);
 }
 
+/**
+ * One indicator-catalog record, as returned by `GET /v1/indicators`. Mirrors the
+ * backend dataset schema (see docs/indicators/SPEC.md). All fields are English
+ * except `name_zh`. `formula` is shown verbatim (math/symbols preserved).
+ */
+export interface Indicator {
+  id: string;
+  /** `technical` | `fundamental` | `sentiment` (onchain is crypto-only, excluded). */
+  domain: string;
+  domain_name: string;
+  subcategory: string;
+  /** `P0` (MVP core) | `P1` (advanced) | `P2` (pro/long-tail). */
+  priority: string;
+  /** `stock` | `both` (crypto-only indicators are excluded server-side). */
+  applies_to: string;
+  name_en: string;
+  name_zh: string;
+  abbr: string;
+  definition: string;
+  formula: string;
+  inputs?: string[] | null;
+  /** Suggested default parameters; shape varies per indicator. */
+  default_params?: unknown;
+  /** TA-Lib function or library hint, where one exists. */
+  talib_or_lib?: string;
+  /** Render/served shape hint: overlay | oscillator | volume | ratio/value | … */
+  output_type?: string;
+  data_source: string;
+  interpretation: string;
+}
+
+/** A value and how many catalog records carry it (for filter chips). */
+export interface IndicatorFacet {
+  value: string;
+  count: number;
+}
+
+/** Facet counts over the whole stock-applicable catalog. */
+export interface IndicatorFacets {
+  domains: IndicatorFacet[];
+  priorities: IndicatorFacet[];
+  subcategories: IndicatorFacet[];
+}
+
+/** Envelope returned by `GET /v1/indicators`. */
+export interface IndicatorsResponse {
+  /** Number of indicators after filtering. */
+  count: number;
+  /** Total stock-applicable indicators in the catalog (unfiltered). */
+  total: number;
+  indicators: Indicator[];
+  facets: IndicatorFacets;
+}
+
+/** Filters accepted by the indicator catalog (all optional). */
+export interface IndicatorParams {
+  domain?: string;
+  priority?: string;
+  subcategory?: string;
+  /** Free-text query matched against names, abbreviation, and definition. */
+  q?: string;
+}
+
+/**
+ * Fetches the stock-applicable indicator catalog (static, embedded metadata).
+ * Only non-empty filters are sent. Public endpoint — used by the `/indicators`
+ * library page for SSR; client-side filtering then works over the embedded set.
+ */
+export function getIndicators(
+  params: IndicatorParams = {},
+  signal?: AbortSignal,
+): Promise<IndicatorsResponse> {
+  const p = new URLSearchParams();
+  if (params.domain) p.set('domain', params.domain);
+  if (params.priority) p.set('priority', params.priority);
+  if (params.subcategory) p.set('subcategory', params.subcategory);
+  if (params.q) p.set('q', params.q);
+  const q = p.toString();
+  return getJson<IndicatorsResponse>(`/v1/indicators${q ? `?${q}` : ''}`, signal);
+}
+
 /** A link a user saved to a ticker (private, per-user). */
 export interface Clip {
   id: string;

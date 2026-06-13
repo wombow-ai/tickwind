@@ -96,6 +96,7 @@ export function TopNav() {
   const my: NavItem = {href: '/me', label: tr('nav.my')};
   const secondary: NavItem[] = [
     {href: '/screen', label: tr('nav.screen')},
+    {href: '/indicators', label: tr('nav.indicators')},
     {href: '/smart-money', label: tr('nav.smartMoney')},
     {href: '/unusual', label: tr('nav.unusual')},
     {href: '/calendar/earnings', label: tr('nav.calendar')},

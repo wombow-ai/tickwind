@@ -96,6 +96,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     {url: `${SITE_URL}/discussion`, lastModified: now, changeFrequency: 'hourly', priority: 0.6},
     {url: `${SITE_URL}/calendar/macro`, lastModified: now, changeFrequency: 'daily', priority: 0.6},
     {url: `${SITE_URL}/unusual`, lastModified: now, changeFrequency: 'daily', priority: 0.6},
+    {url: `${SITE_URL}/indicators`, lastModified: now, changeFrequency: 'monthly', priority: 0.6},
     {url: `${SITE_URL}/guide`, lastModified: now, changeFrequency: 'weekly', priority: 0.6},
     {url: `${SITE_URL}/announcements`, lastModified: now, changeFrequency: 'weekly', priority: 0.5},
   ];

@@ -33,6 +33,7 @@ import (
 	"github.com/wombow-ai/tickwind/internal/finra"
 	"github.com/wombow-ai/tickwind/internal/finrashvol"
 	"github.com/wombow-ai/tickwind/internal/guru"
+	"github.com/wombow-ai/tickwind/internal/indicators"
 	"github.com/wombow-ai/tickwind/internal/ingest"
 	"github.com/wombow-ai/tickwind/internal/nasdaq"
 	"github.com/wombow-ai/tickwind/internal/opportunity"
@@ -223,6 +224,15 @@ type IPOSource interface {
 	Calendar() (nasdaq.Calendar, time.Time)
 }
 
+// IndicatorSource serves the stock-applicable indicator catalog (static,
+// embedded metadata) for the browsable indicator library. nil-safe — a nil
+// source yields an empty catalog. Satisfied by *indicators.Catalog.
+type IndicatorSource interface {
+	Filter(q indicators.Query) []indicators.Indicator
+	Facets() indicators.Facets
+	Len() int
+}
+
 type Server struct {
 	store         store.Store
 	hub           QuoteStream
@@ -252,6 +262,7 @@ type Server struct {
 	rateCut       RateCutSource     // injected post-New via SetRateCut
 	congressTx    CongressTxSource  // injected post-New via SetCongressTx
 	ipo           IPOSource         // injected post-New via SetIPO
+	indicators    IndicatorSource   // injected post-New via SetIndicators (static catalog)
 	admins        map[string]bool   // user UUIDs and/or emails (lowercased) allowed to delete any comment
 	commentRL     *rateLimiter      // per-user comment-post throttle
 	// AI digest cache: one LLM generation per (ticker, ET day), then served from
@@ -367,6 +378,7 @@ func New(st store.Store, hub QuoteStream, enricher enrich.Enricher, verifier *au
 	mux.HandleFunc("GET /v1/13f", s.getThirteenF)
 	mux.HandleFunc("GET /v1/13f/{slug}", s.getThirteenFFund)
 	mux.HandleFunc("GET /v1/stocks/{ticker}/whales", s.getWhales)
+	mux.HandleFunc("GET /v1/indicators", s.getIndicators)
 	mux.HandleFunc("GET /v1/stream", s.getStream)
 
 	// auth.Middleware attaches the user when a valid bearer token is present;
@@ -1897,6 +1909,45 @@ func (s *Server) SetCongressTx(src CongressTxSource) { s.congressTx = src }
 // SetIPO injects the US IPO-calendar source after New. nil-safe: /v1/ipo stays
 // empty (200 with empty sections) until set / first refreshed.
 func (s *Server) SetIPO(src IPOSource) { s.ipo = src }
+
+// SetIndicators injects the static stock-applicable indicator catalog after New.
+// nil-safe: /v1/indicators returns an empty catalog until set.
+func (s *Server) SetIndicators(src IndicatorSource) { s.indicators = src }
+
+// getIndicators returns the stock-applicable indicator catalog, optionally
+// filtered by `domain`, `priority`, `subcategory`, and a free-text `q` (matched
+// against the English/Chinese names, abbreviation, and definition). The response
+// carries the filtered indicator array, the filtered `count`, the catalog `total`
+// (unfiltered, stock-applicable), and `facets` (domain/priority/subcategory
+// counts over the whole catalog) so the client can build filter chips. Always
+// 200 with a well-formed (possibly empty) shape; nil-safe when unset.
+func (s *Server) getIndicators(w http.ResponseWriter, r *http.Request) {
+	if s.indicators == nil {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"count":      0,
+			"total":      0,
+			"indicators": []indicators.Indicator{},
+			"facets":     indicators.Facets{},
+		})
+		return
+	}
+	q := r.URL.Query()
+	list := s.indicators.Filter(indicators.Query{
+		Domain:      strings.TrimSpace(q.Get("domain")),
+		Priority:    strings.TrimSpace(q.Get("priority")),
+		Subcategory: strings.TrimSpace(q.Get("subcategory")),
+		Text:        strings.TrimSpace(q.Get("q")),
+	})
+	if list == nil {
+		list = []indicators.Indicator{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"count":      len(list),
+		"total":      s.indicators.Len(),
+		"indicators": list,
+		"facets":     s.indicators.Facets(),
+	})
+}
 
 // getIPO returns the US IPO calendar — recently priced, upcoming, and newly
 // filed offerings (Nasdaq, delayed/display-only). Always 200 with well-formed

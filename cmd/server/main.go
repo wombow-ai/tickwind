@@ -32,6 +32,7 @@ import (
 	"github.com/wombow-ai/tickwind/internal/finra"
 	"github.com/wombow-ai/tickwind/internal/finrashvol"
 	"github.com/wombow-ai/tickwind/internal/guru"
+	"github.com/wombow-ai/tickwind/internal/indicators"
 	"github.com/wombow-ai/tickwind/internal/ingest"
 	"github.com/wombow-ai/tickwind/internal/institutional"
 	"github.com/wombow-ai/tickwind/internal/krx"
@@ -448,6 +449,17 @@ func main() {
 	apiServer.SetRateCut(rateCutIngestor.Cache())
 	apiServer.SetCongressTx(congressCache) // ticker-level / member PTR detail
 	apiServer.SetIPO(ipoIngestor)          // US IPO calendar (Nasdaq via residential proxy)
+
+	// Stock-applicable indicator catalog: a static, embedded metadata library
+	// (Phase 0 of the indicator engine — browse/filter only). Loaded once at
+	// startup; a malformed embedded dataset is fatal.
+	indicatorCatalog, err := indicators.Load()
+	if err != nil {
+		log.Error("indicator catalog load", "err", err)
+		os.Exit(1)
+	}
+	apiServer.SetIndicators(indicatorCatalog)
+	log.Info("indicator catalog loaded", "stock_applicable", indicatorCatalog.Len())
 
 	srv := &http.Server{
 		Addr:              ":" + cfg.Port,
