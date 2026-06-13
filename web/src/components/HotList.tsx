@@ -3,7 +3,12 @@
 import {Flame, TrendingDown, TrendingUp} from 'lucide-react';
 import Link from 'next/link';
 import {useCallback, useEffect, useState} from 'react';
-import {getHot, type HotStock} from '@/lib/api';
+import {
+  getHot,
+  getShortVolume,
+  type HotStock,
+  type ShortVolumeStock,
+} from '@/lib/api';
 import {useT} from '@/lib/i18n';
 import {useDark} from '@/lib/theme';
 import {cx, tok} from '@/lib/ui';
@@ -12,15 +17,20 @@ import {EmptyState, ErrorState, FeedSkeleton} from '@/components/ui/states';
 type Tokens = ReturnType<typeof tok>;
 type Status = 'loading' | 'ready' | 'error';
 
+// Buzz boards (HotStock shape) plus the short-volume board (its own shape,
+// fetched separately) — all surfaced as sibling tabs so the squeeze crowd has
+// one home alongside the discussion leaderboards.
 const BOARDS = [
   {key: 'hot', labelKey: 'nav.hot', blurbKey: 'hot.blurbHot'},
   {key: 'surging', labelKey: 'hot.surging', blurbKey: 'hot.blurbSurging'},
+  {key: 'shortvol', labelKey: 'shortvol.tab', blurbKey: 'shortvol.blurb'},
 ] as const;
 
 /**
- * The trending leaderboards: the most-discussed US stocks (Hot) and the biggest
- * 24h attention risers (Surging), market-wide. Buzz data from ApeWisdom (Reddit
- * mentions); each row links through to the full stock page.
+ * The trending leaderboards: the most-discussed US stocks (Hot), the biggest
+ * 24h attention risers (Surging), and today's highest short-volume names
+ * (Short volume). Buzz from ApeWisdom (Reddit mentions); short volume from
+ * FINRA. Each row links through to the full stock page.
  */
 export function HotList({initialBoard = 'hot'}: {initialBoard?: string}) {
   const dark = useDark();
@@ -29,9 +39,24 @@ export function HotList({initialBoard = 'hot'}: {initialBoard?: string}) {
   const [board, setBoard] = useState<string>(initialBoard);
   const [status, setStatus] = useState<Status>('loading');
   const [stocks, setStocks] = useState<HotStock[]>([]);
+  const [shortVol, setShortVol] = useState<ShortVolumeStock[]>([]);
+  const [shortAsOf, setShortAsOf] = useState<string>('');
+
+  const isShort = board === 'shortvol';
 
   const load = useCallback((b: string) => {
     setStatus('loading');
+    if (b === 'shortvol') {
+      getShortVolume(50).then(
+        r => {
+          setShortVol(r.stocks ?? []);
+          setShortAsOf(r.as_of ?? '');
+          setStatus('ready');
+        },
+        () => setStatus('error'),
+      );
+      return;
+    }
     getHot(b, 40).then(
       r => {
         setStocks(r.stocks ?? []);
@@ -46,6 +71,10 @@ export function HotList({initialBoard = 'hot'}: {initialBoard?: string}) {
   }, [board, load]);
 
   const blurb = tr(BOARDS.find(b => b.key === board)?.blurbKey ?? 'hot.blurbHot');
+  const empty = isShort
+    ? {label: tr('shortvol.empty'), sub: tr('shortvol.emptySub')}
+    : {label: tr('mod.noData'), sub: tr('hot.emptySub')};
+  const list = isShort ? shortVol : stocks;
 
   return (
     <div className="mx-auto max-w-3xl">
@@ -57,7 +86,7 @@ export function HotList({initialBoard = 'hot'}: {initialBoard?: string}) {
           )}
         >
           <Flame size={22} className={dark ? 'text-amber-300' : 'text-amber-500'} />
-          {tr('mod.hotStocks')}
+          {tr(isShort ? 'shortvol.title' : 'mod.hotStocks')}
         </h1>
         <p className={cx('mt-1 text-[13.5px]', t.sub)}>{blurb}</p>
       </header>
@@ -91,10 +120,10 @@ export function HotList({initialBoard = 'hot'}: {initialBoard?: string}) {
 
       {status === 'loading' && <FeedSkeleton />}
       {status === 'error' && <ErrorState onRetry={() => load(board)} />}
-      {status === 'ready' && stocks.length === 0 && (
-        <EmptyState label={tr('mod.noData')} sub={tr('hot.emptySub')} icon={Flame} />
+      {status === 'ready' && list.length === 0 && (
+        <EmptyState label={empty.label} sub={empty.sub} icon={Flame} />
       )}
-      {status === 'ready' && stocks.length > 0 && (
+      {status === 'ready' && list.length > 0 && (
         <div
           className={cx(
             'tw-fade overflow-hidden rounded-2xl border',
@@ -103,20 +132,107 @@ export function HotList({initialBoard = 'hot'}: {initialBoard?: string}) {
             t.soft,
           )}
         >
-          {stocks.map((s, i) => (
-            <HotRow
-              key={s.ticker}
-              s={s}
-              dark={dark}
-              t={t}
-              last={i === stocks.length - 1}
-            />
-          ))}
+          {isShort
+            ? shortVol.map((s, i) => (
+                <ShortVolRow
+                  key={s.symbol}
+                  s={s}
+                  rank={i + 1}
+                  dark={dark}
+                  t={t}
+                  last={i === shortVol.length - 1}
+                />
+              ))
+            : stocks.map((s, i) => (
+                <HotRow
+                  key={s.ticker}
+                  s={s}
+                  dark={dark}
+                  t={t}
+                  last={i === stocks.length - 1}
+                />
+              ))}
         </div>
       )}
 
-      <p className={cx('mt-4 text-center text-[11px]', t.faint)}>{tr('hot.footer')}</p>
+      <p className={cx('mt-4 text-center text-[11px]', t.faint)}>
+        {tr(isShort ? 'shortvol.footer' : 'hot.footer')}
+      </p>
     </div>
+  );
+}
+
+/** Compact volume: 1_234_567 → "1.2M"; 12_345 → "12K". */
+function fmtVol(n: number): string {
+  if (n >= 1e9) return `${(n / 1e9).toFixed(2)}B`;
+  if (n >= 1e6) return `${(n / 1e6).toFixed(1)}M`;
+  if (n >= 1e3) return `${(n / 1e3).toFixed(0)}K`;
+  return String(n);
+}
+
+function ShortVolRow({
+  s,
+  rank,
+  dark,
+  t,
+  last,
+}: {
+  s: ShortVolumeStock;
+  rank: number;
+  dark: boolean;
+  t: Tokens;
+  last: boolean;
+}) {
+  const tr = useT();
+  // Heavily-shorted share reads hot; bar fills to short_pct.
+  const high = s.short_pct >= 50;
+  const pctColor = high
+    ? dark
+      ? 'text-rose-300'
+      : 'text-rose-600'
+    : dark
+      ? 'text-amber-300'
+      : 'text-amber-600';
+  const barColor = high ? (dark ? 'bg-rose-400/70' : 'bg-rose-400') : dark ? 'bg-amber-400/70' : 'bg-amber-400';
+  const pct = Math.max(0, Math.min(100, s.short_pct));
+  return (
+    <Link
+      href={`/stock/${encodeURIComponent(s.symbol)}`}
+      className={cx(
+        'flex items-center gap-3 px-4 py-3 transition',
+        dark ? 'hover:bg-white/5' : 'hover:bg-slate-50',
+        !last && cx('border-b', t.hair),
+      )}
+    >
+      <span
+        className={cx(
+          'w-6 shrink-0 text-center text-[13px] font-bold tabular-nums',
+          rank <= 3 ? (dark ? 'text-amber-300' : 'text-amber-500') : t.faint,
+        )}
+      >
+        {rank}
+      </span>
+
+      <span className={cx('w-16 shrink-0 text-[14px] font-bold', t.text)}>{s.symbol}</span>
+
+      {/* short-% bar fills the middle */}
+      <div className="min-w-0 flex-1">
+        <div className={cx('h-2 w-full overflow-hidden rounded-full', dark ? 'bg-slate-800' : 'bg-slate-100')}>
+          <div className={cx('h-full rounded-full', barColor)} style={{width: `${pct}%`}} />
+        </div>
+      </div>
+
+      <div className="hidden shrink-0 text-right sm:block">
+        <div className={cx('text-[12px] font-medium tabular-nums', t.faint)}>
+          {fmtVol(s.short_volume)} / {fmtVol(s.total_volume)}
+        </div>
+        <div className={cx('text-[10.5px]', t.faint)}>{tr('shortvol.colVolume')}</div>
+      </div>
+
+      <span className={cx('w-[58px] shrink-0 text-right text-[14px] font-bold tabular-nums', pctColor)}>
+        {s.short_pct.toFixed(1)}%
+      </span>
+    </Link>
   );
 }
 

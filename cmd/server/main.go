@@ -29,6 +29,7 @@ import (
 	"github.com/wombow-ai/tickwind/internal/events"
 	"github.com/wombow-ai/tickwind/internal/finnhub"
 	"github.com/wombow-ai/tickwind/internal/finra"
+	"github.com/wombow-ai/tickwind/internal/finrashvol"
 	"github.com/wombow-ai/tickwind/internal/guru"
 	"github.com/wombow-ai/tickwind/internal/ingest"
 	"github.com/wombow-ai/tickwind/internal/institutional"
@@ -36,7 +37,9 @@ import (
 	"github.com/wombow-ai/tickwind/internal/market"
 	"github.com/wombow-ai/tickwind/internal/openfigi"
 	"github.com/wombow-ai/tickwind/internal/opportunity"
+	"github.com/wombow-ai/tickwind/internal/ratecut"
 	"github.com/wombow-ai/tickwind/internal/sec"
+	"github.com/wombow-ai/tickwind/internal/sentiment"
 	"github.com/wombow-ai/tickwind/internal/stocktwits"
 	"github.com/wombow-ai/tickwind/internal/store"
 	"github.com/wombow-ai/tickwind/internal/store/memory"
@@ -298,6 +301,35 @@ func main() {
 	shortCache := ingest.NewShortCache(finra.New(), 24*time.Hour, log)
 	go shortCache.Run(ctx)
 
+	// Daily short volume: FINRA's free whole-universe RegSHO daily file (keyless,
+	// display-only — only the ranked Top is exposed). Backs the /v1/short-volume
+	// leaderboard + the per-stock daily short-pressure curve on /v1/stocks/{t}/short.
+	// Published only on trading days and lagging the close, so the ingestor walks
+	// back over prior business days until it finds the newest published file.
+	shortVolumeCache := finrashvol.NewCache()
+	go ingest.NewShortVolumeIngestor(finrashvol.New(), shortVolumeCache, 24*time.Hour, log).Run(ctx)
+	log.Info("daily short-volume ingestor enabled (FINRA RegSHO daily)")
+
+	// Fed rate-cut odds: keyless Kalshi (post-FOMC rate ladder) + Polymarket
+	// (count-of-cuts) prediction markets, aggregated side by side (macro rate
+	// markets only — never political). Odds drift slowly between meetings, so a
+	// 20-min cadence is ample; a per-source failure keeps that source's last good
+	// snapshot. Backs /v1/ratecut.
+	rateCutIngestor := ingest.NewRateCutIngestor(
+		ratecut.NewAggregator(ratecut.NewKalshi(), ratecut.NewPolymarket()),
+		20*time.Minute, log)
+	go rateCutIngestor.Run(ctx)
+	log.Info("rate-cut markets ingestor enabled (Kalshi + Polymarket)")
+
+	// Fear & Greed sentiment index: a daily reading from a handful of optional
+	// market-mood inputs (sentiment.Compute re-weights whatever is present). Wired
+	// inputs: VIX (Yahoo ^VIX), the SPY put/call proxy (Cboe) and the FINRA daily
+	// short-pressure average; breadth / new-highs-lows / social-heat are TODO once
+	// those whole-market inputs are easy to source. Keyless. Backs /v1/sentiment.
+	sentimentCache := sentiment.NewCache()
+	go ingest.NewSentimentIngestor(yahoo.New(), cboe.New(), shortVolumeCache, sentimentCache, 24*time.Hour, log).Run(ctx)
+	log.Info("sentiment index ingestor enabled (VIX + put/call + short pressure)")
+
 	// Options overview (squeeze/sentiment): Cboe ~15-min delayed chains, fetched
 	// on demand and cached 15 min per ticker. Keyless public CDN.
 	optionsCache := ingest.NewOptionsCache(cboe.New())
@@ -367,9 +399,16 @@ func main() {
 		log.Warn("ALPACA_API_KEY/SECRET not set — price polling + opportunity board disabled")
 	}
 
+	apiServer := api.New(st, hub, enricher, verifier, bars, topicCache, oppCache, universeCache, guruCache, scheduler, symbolCache, eventsCache, fundCache, st, congressCache, institutionalCache, liveSub, indicesCache, shortCache, briefingSrc, optionsCache, thirteenFCache, cfg.AdminUserIDs, log)
+	// Inject the setter-based sources (keeps api.New's signature stable). nil-safe:
+	// each endpoint serves an empty-but-200 shape until its cache is first filled.
+	apiServer.SetShortVolume(shortVolumeCache)
+	apiServer.SetSentiment(sentimentCache)
+	apiServer.SetRateCut(rateCutIngestor.Cache())
+
 	srv := &http.Server{
 		Addr:              ":" + cfg.Port,
-		Handler:           api.New(st, hub, enricher, verifier, bars, topicCache, oppCache, universeCache, guruCache, scheduler, symbolCache, eventsCache, fundCache, st, congressCache, institutionalCache, liveSub, indicesCache, shortCache, briefingSrc, optionsCache, thirteenFCache, cfg.AdminUserIDs, log),
+		Handler:           apiServer,
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 

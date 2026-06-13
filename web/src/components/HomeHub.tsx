@@ -34,6 +34,7 @@ import {cx, timeAgo, tok} from '@/lib/ui';
 import {useQuotes} from '@/lib/useQuotes';
 import {BriefingCard} from '@/components/BriefingCard';
 import {IndicesStrip} from '@/components/IndicesStrip';
+import {SentimentChip} from '@/components/SentimentChip';
 import {
   changePct,
   sortSecurities,
@@ -137,6 +138,9 @@ export function HomeHub() {
       <TopicsStrip />
 
       <IndicesStrip />
+
+      {/* Fear & Greed index (own composite; self-hides until available) */}
+      <SentimentChip />
 
       {/* Markets strip (hero) */}
       <div className="mb-8">

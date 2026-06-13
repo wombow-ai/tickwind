@@ -984,19 +984,129 @@ export interface ShortInterest {
   change_pct: number;
 }
 
+/** One day's short-volume share, for the daily short trend sparkline. */
+export interface DailyShortPoint {
+  date: string; // YYYY-MM-DD
+  short_pct: number; // % of the day's reported volume that was short
+}
+
 /**
- * Fetches the latest FINRA short-interest row for a stock (squeeze radar).
- * Rejects with 404 when the symbol has no row (non-US, brand-new listings —
- * note ETFs ARE covered, e.g. SPY).
+ * Daily short-volume facet (FINRA short-sale volume) for a stock — the latest
+ * day's short % plus a short recent history. A faster-cadence companion to the
+ * twice-monthly {@link ShortInterest} settlement; absent (`null`) when the
+ * symbol has no daily row.
+ */
+export interface DailyShort {
+  short_pct: number;
+  as_of: string; // YYYY-MM-DD
+  history: DailyShortPoint[];
+}
+
+/**
+ * Fetches the latest FINRA short data for a stock (squeeze radar). The
+ * twice-monthly settlement {@link ShortInterest} (`short`) and the daily
+ * short-volume facet ({@link DailyShort}, `daily`) are each `null` when the
+ * symbol has no row (non-US, brand-new listings — note ETFs ARE covered, e.g.
+ * SPY). Rejects with 404 only when the symbol is wholly unknown.
  */
 export function getShort(
   ticker: string,
   signal?: AbortSignal,
-): Promise<{ticker: string; short: ShortInterest}> {
-  return getJson<{ticker: string; short: ShortInterest}>(
+): Promise<{ticker: string; short: ShortInterest | null; daily?: DailyShort | null}> {
+  return getJson<{ticker: string; short: ShortInterest | null; daily?: DailyShort | null}>(
     `/v1/stocks/${encodeURIComponent(normalizeTicker(ticker))}/short`,
     signal,
   );
+}
+
+/** One row of the market-wide "today's short volume" board. */
+export interface ShortVolumeStock {
+  symbol: string;
+  /** Short volume as a % of the day's total reported volume. */
+  short_pct: number;
+  short_volume: number;
+  total_volume: number;
+}
+
+/** Envelope returned by `GET /v1/short-volume`. */
+export interface ShortVolumeResponse {
+  as_of: string; // YYYY-MM-DD
+  count: number;
+  stocks: ShortVolumeStock[];
+}
+
+/**
+ * Fetches the market-wide "today's short volume" leaderboard (FINRA short-sale
+ * volume), ranked highest short-% first and filtered to liquid names. Public
+ * endpoint; the list is `[]` until the data source is ready.
+ */
+export function getShortVolume(
+  limit = 50,
+  signal?: AbortSignal,
+): Promise<ShortVolumeResponse> {
+  const q = limit > 0 ? `?limit=${encodeURIComponent(String(limit))}` : '';
+  return getJson<ShortVolumeResponse>(`/v1/short-volume${q}`, signal);
+}
+
+/** One component (sub-indicator) feeding the fear & greed index. */
+export interface SentimentComponent {
+  name: string;
+  score: number; // 0–100
+  note: string;
+}
+
+/** One day's historical fear & greed score, for the trend sparkline. */
+export interface SentimentPoint {
+  date: string; // YYYY-MM-DD
+  score: number; // 0–100
+}
+
+/** The Tickwind fear & greed index from `GET /v1/sentiment`. */
+export interface Sentiment {
+  score: number; // 0–100 (0 = extreme fear, 100 = extreme greed)
+  label: string; // English label, e.g. "Greed"
+  label_zh: string; // Chinese label, e.g. "贪婪"
+  components: SentimentComponent[];
+  updated_at: string; // RFC 3339
+  history: SentimentPoint[];
+}
+
+/**
+ * Fetches the Tickwind fear & greed index (own composite over VIX, momentum,
+ * breadth, etc.). Public endpoint; component/history lists are `[]` until the
+ * data source is ready.
+ */
+export function getSentiment(signal?: AbortSignal): Promise<Sentiment> {
+  return getJson<Sentiment>('/v1/sentiment', signal);
+}
+
+/** One probability outcome (e.g. a rate-cut size) within a prediction market. */
+export interface RateCutOutcome {
+  label: string; // e.g. "-25bps"
+  probability: number; // 0–1
+}
+
+/** One prediction market's rate-cut odds (e.g. from Kalshi / Polymarket). */
+export interface RateCutMarket {
+  source: string; // "Kalshi" | "Polymarket" | …
+  question: string;
+  as_of: string; // RFC 3339 / source-supplied
+  outcomes: RateCutOutcome[];
+}
+
+/** Envelope returned by `GET /v1/ratecut`. */
+export interface RateCutResponse {
+  markets: RateCutMarket[];
+  updated_at: string; // RFC 3339
+}
+
+/**
+ * Fetches Fed rate-cut odds from prediction markets (Kalshi / Polymarket).
+ * Public endpoint; `markets` is `[]` until the data source is ready. These are
+ * prediction-market prices, not investment advice.
+ */
+export function getRateCut(signal?: AbortSignal): Promise<RateCutResponse> {
+  return getJson<RateCutResponse>('/v1/ratecut', signal);
 }
 
 /** A U.S. House Periodic Transaction Report filing (official Clerk disclosure). */

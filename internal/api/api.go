@@ -30,10 +30,13 @@ import (
 	"github.com/wombow-ai/tickwind/internal/enrich"
 	"github.com/wombow-ai/tickwind/internal/events"
 	"github.com/wombow-ai/tickwind/internal/finra"
+	"github.com/wombow-ai/tickwind/internal/finrashvol"
 	"github.com/wombow-ai/tickwind/internal/guru"
 	"github.com/wombow-ai/tickwind/internal/ingest"
 	"github.com/wombow-ai/tickwind/internal/opportunity"
+	"github.com/wombow-ai/tickwind/internal/ratecut"
 	"github.com/wombow-ai/tickwind/internal/sec"
+	"github.com/wombow-ai/tickwind/internal/sentiment"
 	"github.com/wombow-ai/tickwind/internal/store"
 	"github.com/wombow-ai/tickwind/internal/symbols"
 	"github.com/wombow-ai/tickwind/internal/thirteenf"
@@ -163,6 +166,40 @@ type ThirteenFSource interface {
 	Board() (thirteenf.Board, bool)
 }
 
+// ShortVolumeSource serves FINRA daily short-volume data: a ranked "most-shorted
+// today" leaderboard (Top) and one symbol's latest row + short rolling history
+// for the per-stock daily short-pressure curve. FINRA's terms are display-only
+// (no bulk raw-row redistribution), so only the ranked Top is exposed in bulk.
+// nil-safe — a nil source yields empty endpoints. Satisfied by *finrashvol.Cache.
+type ShortVolumeSource interface {
+	// Top returns the latest day's symbols ranked by short percentage, capped at
+	// n, considering only rows with TotalVolume >= minTotalVolume.
+	Top(n int, minTotalVolume int64) []finrashvol.ShortVol
+	// Latest returns one symbol's latest day's short volume (ok=false if absent).
+	Latest(sym string) (finrashvol.ShortVol, bool)
+	// History returns one symbol's retained short-volume history (oldest first).
+	History(sym string) []finrashvol.ShortVol
+	// AsOf is the report date of the latest day held (YYYY-MM-DD), "" if never set.
+	AsOf() string
+}
+
+// SentimentSource serves the latest Fear & Greed Result plus a daily history of
+// scores for the chart. nil-safe — a nil source yields an empty index.
+// Satisfied by *sentiment.Cache.
+type SentimentSource interface {
+	Latest() (sentiment.Result, bool)
+	History() []sentiment.Point
+	UpdatedAt() time.Time
+}
+
+// RateCutSource serves the aggregated Fed rate-cut prediction markets (Kalshi +
+// Polymarket). nil-safe — a nil source yields an empty market list. Satisfied by
+// *ratecut.Cache.
+type RateCutSource interface {
+	Get() []ratecut.Market
+	UpdatedAt() time.Time
+}
+
 type Server struct {
 	store         store.Store
 	hub           QuoteStream
@@ -187,8 +224,11 @@ type Server struct {
 	briefing      BriefingSource
 	options       OptionsSource
 	thirteenf     ThirteenFSource
-	admins        map[string]bool // user UUIDs and/or emails (lowercased) allowed to delete any comment
-	commentRL     *rateLimiter    // per-user comment-post throttle
+	shortVolume   ShortVolumeSource // injected post-New via SetShortVolume (avoids growing the New signature)
+	sentiment     SentimentSource   // injected post-New via SetSentiment
+	rateCut       RateCutSource     // injected post-New via SetRateCut
+	admins        map[string]bool   // user UUIDs and/or emails (lowercased) allowed to delete any comment
+	commentRL     *rateLimiter      // per-user comment-post throttle
 	// AI digest cache: one LLM generation per (ticker, ET day), then served from
 	// memory — token spend stays bounded no matter the traffic. Guarded by sumMu;
 	// sumInflight dedupes concurrent first requests; sumDay* enforce a global
@@ -199,9 +239,20 @@ type Server struct {
 	sumDayDate  string
 	sumDayCount int
 	log         *slog.Logger
+	handler     http.Handler // the assembled mux + middleware chain (set in New)
 }
 
-func New(st store.Store, hub QuoteStream, enricher enrich.Enricher, verifier *auth.Verifier, bars BarSource, topicSrc TopicSource, oppSrc OpportunitySource, universeSrc UniverseSource, guruSrc GuruSource, ingestor TickerIngestor, symbolSrc SymbolSearcher, eventSrc EventSource, fundSrc FundamentalsSource, earningsSrc EarningsSource, congressSrc CongressSource, institutionalSrc InstitutionalSource, liveSub LiveSubscriber, indicesSrc IndicesSource, shortSrc ShortSource, briefingSrc BriefingSource, optionsSrc OptionsSource, thirteenfSrc ThirteenFSource, adminIDs []string, log *slog.Logger) http.Handler {
+// ServeHTTP dispatches to the assembled mux + middleware chain, so *Server is an
+// http.Handler. (New returns *Server so callers can inject the setter-based
+// sources before serving; the handler chain itself is built once in New.)
+func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	s.handler.ServeHTTP(w, r)
+}
+
+// New builds the API server. It returns a *Server (an http.Handler) so callers
+// can inject additional sources via the Set* methods before serving — this keeps
+// the already-long positional signature stable as new optional sources are added.
+func New(st store.Store, hub QuoteStream, enricher enrich.Enricher, verifier *auth.Verifier, bars BarSource, topicSrc TopicSource, oppSrc OpportunitySource, universeSrc UniverseSource, guruSrc GuruSource, ingestor TickerIngestor, symbolSrc SymbolSearcher, eventSrc EventSource, fundSrc FundamentalsSource, earningsSrc EarningsSource, congressSrc CongressSource, institutionalSrc InstitutionalSource, liveSub LiveSubscriber, indicesSrc IndicesSource, shortSrc ShortSource, briefingSrc BriefingSource, optionsSrc OptionsSource, thirteenfSrc ThirteenFSource, adminIDs []string, log *slog.Logger) *Server {
 	admins := make(map[string]bool, len(adminIDs))
 	for _, id := range adminIDs {
 		if id = strings.ToLower(strings.TrimSpace(id)); id != "" {
@@ -266,6 +317,9 @@ func New(st store.Store, hub QuoteStream, enricher enrich.Enricher, verifier *au
 	mux.HandleFunc("GET /v1/indices", s.getIndices)
 	mux.HandleFunc("GET /v1/briefing", s.getBriefing)
 	mux.HandleFunc("GET /v1/stocks/{ticker}/short", s.getShort)
+	mux.HandleFunc("GET /v1/short-volume", s.getShortVolume)
+	mux.HandleFunc("GET /v1/sentiment", s.getSentiment)
+	mux.HandleFunc("GET /v1/ratecut", s.getRateCut)
 	mux.HandleFunc("GET /v1/stocks/{ticker}/options", s.getOptions)
 	mux.HandleFunc("GET /v1/options/unusual", s.getUnusualOptions)
 	mux.HandleFunc("GET /v1/13f", s.getThirteenF)
@@ -273,7 +327,8 @@ func New(st store.Store, hub QuoteStream, enricher enrich.Enricher, verifier *au
 
 	// auth.Middleware attaches the user when a valid bearer token is present;
 	// the outer middleware adds CORS + logging.
-	return s.middleware(verifier.Middleware(mux))
+	s.handler = s.middleware(verifier.Middleware(mux))
+	return s
 }
 
 func (s *Server) middleware(next http.Handler) http.Handler {
@@ -1593,21 +1648,163 @@ func (s *Server) getCongress(w http.ResponseWriter, r *http.Request) {
 // filings (13D = active/activist stake, higher signal; 13G = passive, e.g. the
 // index giants), newest first. ?type=13d|13g filters by activist flag; ?limit=
 // caps (default 60). Always 200 with a (possibly empty) list. nil source → empty.
-// getShort returns the symbol's latest FINRA short-interest row (squeeze
-// radar): 404 when the table has no row for it (ETFs, new listings, non-US).
+// dailyShortPoint is one dated point on the per-stock daily short-pressure curve.
+type dailyShortPoint struct {
+	Date     string  `json:"date"`
+	ShortPct float64 `json:"short_pct"`
+}
+
+// dailyShort is the FINRA daily short-volume view for one symbol: the latest
+// day's short percentage + a rolling history for the curve. It is additive to
+// the existing bi-monthly short-interest object (see getShort).
+type dailyShort struct {
+	ShortPct float64           `json:"short_pct"`
+	AsOf     string            `json:"as_of"`
+	History  []dailyShortPoint `json:"history"`
+}
+
+// dailyShortFor builds the daily-short view for a symbol from the short-volume
+// source, or nil when the source is absent or has no row for the symbol.
+func (s *Server) dailyShortFor(ticker string) *dailyShort {
+	if s.shortVolume == nil {
+		return nil
+	}
+	latest, ok := s.shortVolume.Latest(ticker)
+	if !ok {
+		return nil
+	}
+	hist := s.shortVolume.History(ticker)
+	points := make([]dailyShortPoint, 0, len(hist))
+	for _, h := range hist {
+		points = append(points, dailyShortPoint{Date: h.Date, ShortPct: h.ShortPct})
+	}
+	return &dailyShort{ShortPct: latest.ShortPct, AsOf: latest.Date, History: points}
+}
+
+// getShort returns the symbol's short data: the existing bi-monthly FINRA
+// short-interest object (or null) plus an additive `daily` object carrying the
+// FINRA daily short-volume percentage + rolling history (or null). It always
+// returns 200 as long as either source has a row; 404 only when neither does, so
+// the existing bi-monthly shape is preserved and the daily view is purely
+// additive.
 func (s *Server) getShort(w http.ResponseWriter, r *http.Request) {
 	ticker := strings.ToUpper(strings.TrimSpace(r.PathValue("ticker")))
-	if s.short == nil {
+
+	var si *finra.ShortInterest
+	if s.short != nil {
+		if v, ok := s.short.ShortInterest(ticker); ok {
+			si = &v
+		}
+	}
+	daily := s.dailyShortFor(ticker)
+
+	if si == nil && daily == nil {
 		writeJSON(w, http.StatusNotFound, errBody("no short-interest data"))
 		return
 	}
-	si, ok := s.short.ShortInterest(ticker)
-	if !ok {
-		writeJSON(w, http.StatusNotFound, errBody("no short-interest data"))
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"ticker": ticker, "short": si})
+	// `short` and `daily` are pointers so they marshal as JSON null when absent,
+	// matching the A/B contract (existing bi-monthly shape unchanged when present).
+	writeJSON(w, http.StatusOK, map[string]any{"ticker": ticker, "short": si, "daily": daily})
 }
+
+// minShortVolume is the floor on a symbol's total reported volume to appear on
+// the daily short-volume leaderboard, filtering out thin names whose short
+// percentage is noisy (a single odd lot can read as 100% short).
+const minShortVolume = 1_000_000
+
+// getShortVolume returns the FINRA daily short-volume leaderboard — the latest
+// trading day's symbols ranked by short percentage, capped at ?limit (default
+// 50). Only the ranked Top is exposed (FINRA display-only terms forbid bulk
+// raw-row redistribution). Always 200 with a (possibly empty) list — never null;
+// an unready source yields an empty board.
+func (s *Server) getShortVolume(w http.ResponseWriter, r *http.Request) {
+	stocks := []finrashvol.ShortVol{}
+	asOf := ""
+	if s.shortVolume != nil {
+		if top := s.shortVolume.Top(queryLimit(r, 50), minShortVolume); top != nil {
+			stocks = top
+		}
+		asOf = s.shortVolume.AsOf()
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"as_of":  asOf,
+		"count":  len(stocks),
+		"stocks": stocks,
+	})
+}
+
+// sentimentComponent is one scored Fear & Greed component in the response.
+type sentimentComponent struct {
+	Name  string `json:"name"`
+	Score int    `json:"score"`
+	Note  string `json:"note"`
+}
+
+// sentimentPoint is one dated headline-score sample for the history chart.
+type sentimentPoint struct {
+	Date  string `json:"date"`
+	Score int    `json:"score"`
+}
+
+// getSentiment returns the latest Fear & Greed index — headline score + band
+// label (English and Chinese), the scored components, the last-updated time and
+// a daily history for charting. Always 200; an unready source yields a neutral
+// 50 with empty components/history so the frontend always has a well-formed shape.
+func (s *Server) getSentiment(w http.ResponseWriter, _ *http.Request) {
+	res := sentiment.Result{Score: 50, Label: "Neutral", LabelZh: "中性", Components: []sentiment.Component{}}
+	var updatedAt time.Time
+	points := []sentimentPoint{}
+	if s.sentiment != nil {
+		if r, ok := s.sentiment.Latest(); ok {
+			res = r
+		}
+		updatedAt = s.sentiment.UpdatedAt()
+		for _, p := range s.sentiment.History() {
+			points = append(points, sentimentPoint{Date: p.Date, Score: p.Score})
+		}
+	}
+	comps := make([]sentimentComponent, 0, len(res.Components))
+	for _, c := range res.Components {
+		comps = append(comps, sentimentComponent{Name: c.Name, Score: c.Score, Note: c.Note})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"score":      res.Score,
+		"label":      res.Label,
+		"label_zh":   res.LabelZh,
+		"components": comps,
+		"updated_at": updatedAt.UTC().Format(time.RFC3339),
+		"history":    points,
+	})
+}
+
+// getRateCut returns the aggregated Fed rate-cut prediction markets (Kalshi +
+// Polymarket), each with its mutually-exclusive outcomes and implied
+// probabilities. Macro interest-rate markets only (never political). Always 200
+// with a (possibly empty) market list — never null.
+func (s *Server) getRateCut(w http.ResponseWriter, _ *http.Request) {
+	markets := []ratecut.Market{}
+	var updatedAt time.Time
+	if s.rateCut != nil {
+		if got := s.rateCut.Get(); got != nil {
+			markets = got
+		}
+		updatedAt = s.rateCut.UpdatedAt()
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"markets":    markets,
+		"updated_at": updatedAt.UTC().Format(time.RFC3339),
+	})
+}
+
+// SetShortVolume injects the FINRA daily short-volume source after New (keeping
+// New's signature stable). nil-safe: the short-volume endpoints stay empty until set.
+func (s *Server) SetShortVolume(src ShortVolumeSource) { s.shortVolume = src }
+
+// SetSentiment injects the Fear & Greed sentiment source after New. nil-safe.
+func (s *Server) SetSentiment(src SentimentSource) { s.sentiment = src }
+
+// SetRateCut injects the Fed rate-cut markets source after New. nil-safe.
+func (s *Server) SetRateCut(src RateCutSource) { s.rateCut = src }
 
 // getIndices returns the latest major-market-index levels (homepage strip).
 // getOptions returns the ticker's delayed options overview (P/C, max pain, OI
