@@ -67,6 +67,12 @@ feature-flagged plugin, never on the critical path. Web only.
   managed Supabase (backed up there), so only the user DB needs local dumps. **SSH transfer note:** held-open
   / `cat|ssh` stdin transfers DROP on this box — push small files via **base64 embedded in the command**
   (`B64=$(base64<f|tr -d '\n'); ssh host "echo '$B64'|base64 -d > /path"`); long ops nohup-backgrounded.
+- **v7 unlocks (2026-06-13, owner-provided; secrets live ONLY in the VPS `.env`, never git):**
+  `TELEGRAM_BOT_TOKEN` (for the planned morning-briefing/alert Telegram push) and `RESIDENTIAL_PROXY_URL`
+  (dataimpulse `http://…@gw.dataimpulse.com:823`, to reach datacenter-IP-blocked sources: HKEXnews, Xueqiu,
+  Nasdaq IPO API) are appended to the VPS `.env`. **Google OAuth** provider is configured in Supabase; the
+  frontend flag now defaults ON (`GOOGLE_OAUTH_ENABLED = NEXT_PUBLIC_GOOGLE_OAUTH !== '0'`). KRX key still
+  pending (Korea market deferred).
 
 ## Owner habits & preferences (keep this current — context gets compacted)
 - **Workflow**: drives development via `/loop` (autonomous, self-paced). Each iteration =
