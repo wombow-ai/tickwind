@@ -627,3 +627,4 @@ verifies (build/vet/lint), updates this file + `CLAUDE.md`, and commits._
 ## 🔄 v8 转化/留存(owner 2026-06-14:增长漏斗下一环)
 > owner 选定=转化/留存(把 pSEO/分享带进来的流量转成活跃用户;守 data-first 无营销页)。
 > **✅ pSEO→产品 激活漏斗(本 commit,纯前端)**:每指标词条页 /indicators/[id] 原"在个股页查看"CTA 只回链目录(弱),改为**具体激活漏斗**——热门美股 chips(POPULAR_TICKERS 前5)深链到 `/stock/{ticker}#indicators`(F3 锚点,落到该股个股页的实时指标面板看到本指标的计算值)+ "全部美股→"链 /screen。把 282 个搜索流量入口转成"看实时数据→探索产品"的激活路径(data-first:导向数据非营销)。配合个股页 IndicatorsPanel 已反向链回词条页=双向闭环。lint 0/build 绿。
+> **✅ 注册价值传达(本 commit,纯前端)= 转化漏斗收口**:发现个股页对匿名用户**已有**"+加自选→/login"入口(转化入口在),但 /signup 页是 7 行裸表单(无价值传达,易弃单)。给 AuthForm signup 模式在副标题下加**真实免费功能清单**(✓自选股追踪 ✓每日 AI 中文晨报 ✓价格&财报提醒 ✓私人投资笔记;data-first 诚实功能非营销),副标题改"创建免费账户,即可解锁:"。降低注册弃单率(用户已到 /signup=高意向,告诉其解锁什么→提高完成率),不在数据页加任何打扰式 nudge。仅 signup 显示(login 不显)。i18n auth.perk* en+zh。lint 0/build 绿。**转化漏斗闭环**:pSEO 搜索流量→指标词条页→激活 chips 看个股实时数据→个股页"+自选"→/signup 价值传达→注册留存。

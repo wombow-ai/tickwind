@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import {useRouter} from 'next/navigation';
 import {useState} from 'react';
+import {Check} from 'lucide-react';
 import {useAuth} from '@/lib/auth';
 import {GOOGLE_OAUTH_ENABLED} from '@/lib/config';
 import {useT} from '@/lib/i18n';
@@ -84,6 +85,24 @@ export function AuthForm({mode}: {mode: 'login' | 'signup'}) {
       <p className={cx('mt-1 text-[13.5px]', t.sub)}>
         {isSignup ? tr('auth.subSignup') : tr('auth.subLogin')}
       </p>
+
+      {/* What a free account unlocks — honest value communication (all real,
+          free features), shown only on signup to reduce abandonment. */}
+      {isSignup && (
+        <ul className="mt-4 space-y-1.5">
+          {[
+            tr('auth.perkWatch'),
+            tr('auth.perkDigest'),
+            tr('auth.perkAlerts'),
+            tr('auth.perkNotes'),
+          ].map(perk => (
+            <li key={perk} className={cx('flex items-center gap-2 text-[13px]', t.sub)}>
+              <Check size={14} className={dark ? 'text-teal-300' : 'text-teal-600'} />
+              {perk}
+            </li>
+          ))}
+        </ul>
+      )}
 
       {GOOGLE_OAUTH_ENABLED && (
         <div className="mt-6">
