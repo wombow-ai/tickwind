@@ -48,6 +48,7 @@ import (
 	"github.com/wombow-ai/tickwind/internal/stream"
 	"github.com/wombow-ai/tickwind/internal/substack"
 	"github.com/wombow-ai/tickwind/internal/symbols"
+	"github.com/wombow-ai/tickwind/internal/telegram"
 	"github.com/wombow-ai/tickwind/internal/thirteenf"
 	"github.com/wombow-ai/tickwind/internal/tickertick"
 	"github.com/wombow-ai/tickwind/internal/topics"
@@ -360,6 +361,16 @@ func main() {
 		go briefingCache.Run(ctx)
 		briefingSrc = briefingCache
 		log.Info("morning briefing enabled (daily, ET >= 07:00)")
+
+		// Telegram broadcast: push the day's Chinese briefing to the channel once
+		// per ET day. Disabled (graceful no-op) without TELEGRAM_BOT_TOKEN.
+		tg := telegram.New(cfg.TelegramBotToken, cfg.TelegramChannel, nil)
+		if tg.Enabled() {
+			go ingest.NewBriefingBroadcaster(tg, briefingCache, cfg.PublicSiteURL, log).Run(ctx)
+			log.Info("telegram briefing broadcast enabled", "channel", cfg.TelegramChannel, "card_origin", cfg.PublicSiteURL)
+		} else {
+			log.Warn("telegram briefing broadcast disabled — TELEGRAM_BOT_TOKEN not set")
+		}
 	} else {
 		log.Warn("morning briefing disabled — no LLM configured")
 	}

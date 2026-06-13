@@ -46,6 +46,16 @@ type Config struct {
 	// Finnhub company news. Empty token disables news ingestion.
 	FinnhubToken string
 
+	// Telegram broadcast (optional): an empty TelegramBotToken disables the
+	// daily-briefing push. TelegramChannel is the destination (a public
+	// @username like "@tickwind" or a numeric chat ID); the bot must be an
+	// admin of the channel with permission to post. PublicSiteURL is the
+	// public origin used to build OG share-card image URLs that Telegram
+	// fetches server-side, so it must be reachable from the public internet.
+	TelegramBotToken string
+	TelegramChannel  string
+	PublicSiteURL    string
+
 	// Social sources (optional; empty disables that source). Reddit needs a
 	// "script" app + a bot account; Bluesky needs a handle + an app password.
 	RedditClientID     string
@@ -137,6 +147,9 @@ func Load() Config {
 		CongressSweepEvery:      envDur("CONGRESS_SWEEP_EVERY", 8*time.Hour),
 		InstitutionalSweepEvery: envDur("INSTITUTIONAL_SWEEP_EVERY", 8*time.Hour),
 		FinnhubToken:            env("FINNHUB_TOKEN", ""),
+		TelegramBotToken:        env("TELEGRAM_BOT_TOKEN", ""),
+		TelegramChannel:         env("TELEGRAM_CHANNEL", ""),
+		PublicSiteURL:           strings.TrimRight(env("PUBLIC_SITE_URL", "https://tickwind.com"), "/"),
 		RedditClientID:          env("REDDIT_CLIENT_ID", ""),
 		RedditSecret:            env("REDDIT_CLIENT_SECRET", ""),
 		RedditUsername:          env("REDDIT_USERNAME", ""),
