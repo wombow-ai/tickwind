@@ -59,6 +59,7 @@ import {AISummaryCard} from '@/components/AISummaryCard';
 import {EarningsChip} from '@/components/EarningsChip';
 import {OptionsCard} from '@/components/OptionsCard';
 import {ShortChip} from '@/components/ShortChip';
+import {CongressChip} from '@/components/CongressChip';
 import {CommentsPanel} from '@/components/CommentsPanel';
 
 type Status = 'loading' | 'ready' | 'error';
@@ -492,6 +493,10 @@ export function StockView({ticker}: {ticker: string}) {
 
       {/* FINRA short pressure (squeeze radar; hides when the symbol has no row) */}
       <ShortChip ticker={norm} />
+
+      {/* Congress trades in this ticker (House Clerk PTRs; hides when none) —
+          each member links to their /congress/member/{slug} detail page */}
+      <CongressChip ticker={norm} />
 
       {/* Fundamentals + AI digest, each full-width, above the chart. (They were
           briefly a 2-col grid, but the AI digest's variable length left the

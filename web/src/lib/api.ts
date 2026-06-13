@@ -1138,6 +1138,103 @@ export function getCongress(limit = 60, signal?: AbortSignal): Promise<CongressR
   return getJson<CongressResponse>(`/v1/congress${q}`, signal);
 }
 
+/**
+ * One congressional trade in a ticker, from `GET /v1/stocks/{ticker}/congress`.
+ * `type` is the disclosed transaction direction ("purchase" / "sale" /
+ * "exchange" / …); `slug` deep-links to the member's detail page.
+ */
+export interface CongressTrade {
+  member: string; // "Chip Roy"
+  slug: string; // "chip-roy" — links to /congress/member/{slug}
+  type: string; // "purchase" | "sale" | "exchange" | …
+  amount_range: string; // e.g. "$1,001 - $15,000"
+  tx_date: string; // transaction date (ISO-8601 / source-supplied)
+}
+
+/** Envelope returned by `GET /v1/stocks/{ticker}/congress`. */
+export interface StockCongressResponse {
+  ticker: string;
+  trades: CongressTrade[];
+}
+
+/**
+ * Fetches the congressional trades disclosed in a single ticker (House Clerk
+ * PTRs), most recent first. Public endpoint; an empty disclosure history returns
+ * `trades: []` with a 200, so callers should hide the section when empty.
+ */
+export function getStockCongress(
+  ticker: string,
+  signal?: AbortSignal,
+): Promise<StockCongressResponse> {
+  return getJson<StockCongressResponse>(
+    `/v1/stocks/${encodeURIComponent(normalizeTicker(ticker))}/congress`,
+    signal,
+  );
+}
+
+/**
+ * One transaction in a member's disclosure history, from
+ * `GET /v1/congress/member/{slug}`. Fields mirror the House Clerk PTR columns.
+ * Note: the live API serializes these in snake_case (verified against
+ * `/v1/congress/member/mike-kelly`), so the keys are snake_case here despite the
+ * PascalCase column names. `ticker` may be empty (the asset is a fund, bond, or
+ * has no listed symbol).
+ */
+export interface MemberTx {
+  owner: string; // "self" | "spouse" | "joint" | …
+  asset: string; // human asset name
+  ticker: string; // "" when the asset has no listed symbol
+  asset_type: string; // "Stock" | "Bond" | …
+  type: string; // "purchase" | "sale" | "exchange" | …
+  partial: boolean;
+  amount_low: number;
+  amount_high: number;
+  amount_range: string; // e.g. "$1,001 - $15,000"
+  tx_date: string; // transaction date (ISO-8601 / source-supplied)
+  notify_date: string; // filing / notification date
+}
+
+/** Envelope returned by `GET /v1/congress/member/{slug}`. */
+export interface MemberResponse {
+  slug: string;
+  name: string;
+  state: string;
+  transactions: MemberTx[];
+}
+
+/**
+ * Fetches one congressional member's full disclosure history by slug
+ * ({@link congressSlug}). Resolves to `null` when the slug is unknown (the API
+ * 404s), so SSR callers can render `notFound()`; other errors reject.
+ */
+export async function getCongressMember(
+  slug: string,
+  signal?: AbortSignal,
+): Promise<MemberResponse | null> {
+  try {
+    return await getJson<MemberResponse>(
+      `/v1/congress/member/${encodeURIComponent(slug)}`,
+      signal,
+    );
+  } catch (e) {
+    if (e instanceof ApiError && e.status === 404) return null;
+    throw e;
+  }
+}
+
+/**
+ * Builds a member's URL slug from their display name, matching the backend's
+ * Slugify exactly: lowercase, then collapse each run of non-alphanumeric
+ * characters to a single `-`, then trim leading/trailing `-`. E.g.
+ * "Suzan K. DelBene" → "suzan-k-delbene"; "Mike Kelly" → "mike-kelly".
+ */
+export function congressSlug(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
 /** A SEC Schedule 13D/13G beneficial-ownership filing (institutional/activist stake). */
 export interface InstitutionalFiling {
   form_type: string; // "SC 13D" | "SC 13D/A" | "SC 13G" | "SC 13G/A"

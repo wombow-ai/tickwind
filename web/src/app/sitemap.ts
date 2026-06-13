@@ -1,5 +1,5 @@
 import type {MetadataRoute} from 'next';
-import {getHot, getOpportunities} from '@/lib/api';
+import {congressSlug, getCongress, getHot, getOpportunities} from '@/lib/api';
 import {POPULAR_TICKERS, SITE_URL} from '@/lib/config';
 import {GUIDES} from '@/lib/guides';
 
@@ -29,6 +29,25 @@ async function indexableTickers(): Promise<string[]> {
     }
   }
   return [...set];
+}
+
+/**
+ * The indexable Congress members: every filer of a Periodic Transaction Report
+ * (filing_type "P") in the recent feed, deduped by their canonical slug. These
+ * back the `/congress/member/{slug}` pSEO pages. Tolerant — a slow/down API just
+ * yields an empty list, never breaking sitemap generation.
+ */
+async function congressMemberSlugs(): Promise<string[]> {
+  const slugs = new Set<string>();
+  try {
+    const r = await getCongress(250, AbortSignal.timeout(5000));
+    for (const f of r.filings ?? []) {
+      if (f.filing_type === 'P' && f.name) slugs.add(congressSlug(f.name));
+    }
+  } catch {
+    // API hiccup → skip member pages this build; the rest of the sitemap stands.
+  }
+  return [...slugs];
 }
 
 /**
@@ -68,13 +87,23 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     changeFrequency: 'monthly',
     priority: 0.6,
   }));
-  const stockPages: MetadataRoute.Sitemap = (await indexableTickers()).map(ticker => ({
+  const [tickers, memberSlugs] = await Promise.all([
+    indexableTickers(),
+    congressMemberSlugs(),
+  ]);
+  const stockPages: MetadataRoute.Sitemap = tickers.map(ticker => ({
     url: `${SITE_URL}/stock/${encodeURIComponent(ticker)}`,
     lastModified: now,
     changeFrequency: 'hourly',
     priority: 0.8,
   }));
-  return [...staticPages, ...guidePages, ...stockPages].map(entry => ({
+  const memberPages: MetadataRoute.Sitemap = memberSlugs.map(slug => ({
+    url: `${SITE_URL}/congress/member/${encodeURIComponent(slug)}`,
+    lastModified: now,
+    changeFrequency: 'daily',
+    priority: 0.6,
+  }));
+  return [...staticPages, ...guidePages, ...stockPages, ...memberPages].map(entry => ({
     ...entry,
     alternates: langAlt(entry.url),
   }));

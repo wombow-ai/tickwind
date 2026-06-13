@@ -1,8 +1,9 @@
 'use client';
 
 import {FileText, Landmark, Users} from 'lucide-react';
+import Link from 'next/link';
 import {useCallback, useEffect, useState} from 'react';
-import {getCongress, type CongressFiling} from '@/lib/api';
+import {congressSlug, getCongress, type CongressFiling} from '@/lib/api';
 import {useLang, useT} from '@/lib/i18n';
 import {useDark} from '@/lib/theme';
 import {cx, tok} from '@/lib/ui';
@@ -114,7 +115,12 @@ function CongressCard({
   return (
     <section className={cx('rounded-2xl border p-4', t.card, t.border, t.soft)}>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
-        <span className={cx('text-[15px] font-bold', t.text)}>{f.name}</span>
+        <Link
+          href={`/congress/member/${congressSlug(f.name)}`}
+          className={cx('text-[15px] font-bold hover:underline', t.text)}
+        >
+          {f.name}
+        </Link>
         {place && (
           <span
             className={cx(
