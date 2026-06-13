@@ -35,6 +35,9 @@ func (f *fakeEnricher) TranslateTitles(context.Context, []string) ([]string, err
 func (f *fakeEnricher) Brief(context.Context, string, string) (string, error) {
 	return "", enrich.ErrDisabled
 }
+func (f *fakeEnricher) ComposeReport(context.Context, string, string) (map[string]string, error) {
+	return nil, enrich.ErrDisabled
+}
 
 // newDigestServer builds an API server backed by a memory store (which also
 // serves as the earnings source) and the given enricher.

@@ -1027,6 +1027,98 @@ export function getSummary(
   );
 }
 
+/**
+ * One labeled, source-attributed datum in a research section. `value` is the
+ * already-formatted display string set in Go (e.g. "41.2x", "亏损", "$4.5T",
+ * "—", or "数据不足" when `status !== 'ok'`) — the frontend never recomputes it.
+ * `raw` is the underlying number when present. `source`/`source_url` are the
+ * citation; `as_of` a freshness stamp. The numbers come exclusively from public
+ * structured data — the LLM never sets a value (anti-hallucination contract).
+ */
+export interface ResearchFact {
+  key: string;
+  label_zh: string;
+  label_en: string;
+  /** Formatted display string; "数据不足" when not `ok`. */
+  value: string;
+  raw?: number;
+  /** "%" | "x" | "price" | "USD" | "" (empty). */
+  unit?: string;
+  status: 'ok' | 'insufficient' | 'unsupported';
+  /** Why the fact is not `ok`; verbatim from the source. Absent when `ok`. */
+  reason?: string;
+  /** Citation label, e.g. "SEC XBRL FY2024". */
+  source: string;
+  source_url?: string;
+  /** Freshness stamp, e.g. "2024-09-28". */
+  as_of?: string;
+}
+
+/** A source citation for a section: an in-page anchor and/or an external URL. */
+export interface ResearchCitation {
+  label: string;
+  /** In-page section id, e.g. "#fundamentals". */
+  anchor?: string;
+  /** External source (SEC filing, member page, …). */
+  url?: string;
+}
+
+/**
+ * One report section: a bilingual title, its pre-formatted {@link ResearchFact}s,
+ * the LLM's qualitative `prose` (empty when the LLM is off / over the daily cap /
+ * the call failed), and a citations footer. The numbers live in `facts`; the
+ * prose adds only words.
+ */
+export interface ResearchSection {
+  key: string;
+  title_zh: string;
+  title_en: string;
+  facts: ResearchFact[];
+  /** Qualitative prose (Markdown); "" in the data-only report. */
+  prose: string;
+  citations: ResearchCitation[];
+}
+
+/** Envelope returned by `GET /v1/stocks/{ticker}/research`. */
+export interface ResearchReportResponse {
+  ticker: string;
+  name?: string;
+  /** Newest underlying data date across sources (may be empty). */
+  as_of: string;
+  /** "$190.12 · alpaca · delayed · regular". */
+  price_label: string;
+  generated_at: string;
+  /** The configured model id; "" when the LLM is disabled. */
+  model: string;
+  /** Whether prose is present (true) or this is the data-only report (false). */
+  llm: boolean;
+  disclaimer: string;
+  sections: ResearchSection[];
+}
+
+/**
+ * Fetches the structured deep-research report for a ticker in the given UI
+ * language ("zh"|"en"). Always 200 with a data-only report when the LLM is off /
+ * over the daily cap (prose empty, `llm:false`); resolves to `null` only when the
+ * symbol is unknown (the API 404s) so callers can hide the tab. Other errors reject.
+ */
+export async function getResearch(
+  ticker: string,
+  lang?: string,
+  signal?: AbortSignal,
+): Promise<ResearchReportResponse | null> {
+  const q = lang === 'en' ? '?lang=en' : '';
+  try {
+    return await getJson<ResearchReportResponse>(
+      `/v1/stocks/${encodeURIComponent(normalizeTicker(ticker))}/research${q}`,
+      signal,
+    );
+  } catch (e) {
+    if (e instanceof ApiError && e.status === 404) return null;
+    throw e;
+  }
+}
+
 /** A symbol's latest FINRA short-interest row (twice-monthly settlement). */
 export interface ShortInterest {
   symbol: string;

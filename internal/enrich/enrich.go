@@ -35,6 +35,14 @@ type Enricher interface {
 	// movers, earnings, smart money) in the given language ("zh"|"en"; anything
 	// else falls back to zh). ErrDisabled when no LLM.
 	Brief(ctx context.Context, material, lang string) (string, error)
+	// ComposeReport writes per-section research prose from a pre-built material
+	// string, returning a section-key→prose map (keys are the section keys present
+	// in the material, e.g. "valuation"/"fundamentals"/"technical"). The prose is
+	// qualitative only, in Simplified Chinese by default ("en" produces English):
+	// material-only, never inventing or recomputing a number, no buy/sell/target/
+	// valuation call, neutral, attributing source types, "数据不足" for a thin
+	// section. Returns ErrDisabled when no LLM is configured.
+	ComposeReport(ctx context.Context, material, lang string) (map[string]string, error)
 }
 
 // Config configures the LLM enricher. An empty APIKey yields a disabled Noop.
@@ -82,6 +90,10 @@ func (Noop) TranslateTitles(context.Context, []string) ([]string, error) {
 
 func (Noop) Brief(context.Context, string, string) (string, error) {
 	return "", ErrDisabled
+}
+
+func (Noop) ComposeReport(context.Context, string, string) (map[string]string, error) {
+	return nil, ErrDisabled
 }
 
 // systemPrompt drives the per-stock digest. Chinese-first product → Chinese
@@ -227,6 +239,108 @@ func (l *llm) Brief(ctx context.Context, material, lang string) (string, error) 
 		return "", errors.New("enrich: empty brief response")
 	}
 	return strings.TrimSpace(out.Choices[0].Message.Content), nil
+}
+
+// composePrompt drives the per-stock research report — the LLM writes ONLY
+// qualitative prose, never a number. The Go assembler owns every figure (the
+// anti-hallucination contract): the model receives a section-keyed material
+// string and returns a JSON object whose keys are the section keys present in
+// the material and whose values are the prose for that section.
+const composePrompt = "你是股票研报撰稿助手。用户提供按板块组织的结构化材料(每个板块带数字事实)。" +
+	"只返回一个 JSON 对象,键为材料中出现的板块标识(如 valuation/fundamentals/technical),值为对应板块的简体中文定性分析文字。" +
+	"严格要求:只依据材料中已给出的数字与事实撰写,绝不自行计算、推断或编造任何数字;不要在文字里重复罗列原始数字,而是做定性解读(偏高/偏低、增长/下滑、超买/超卖等)。" +
+	"严禁任何买卖建议、目标价、估值结论或预测;注明信息来源类型;语气中性客观。某板块材料过于单薄时,该板块的值写\"数据不足\"。只输出该 JSON 对象,不要解释或代码块。"
+
+// composePromptEN is the English-output counterpart, same guardrails. The
+// product is Chinese-first (zh default); en is served when the UI is English.
+const composePromptEN = "You are a stock research-report writer. The user provides structured material organized by section (each section carries numeric facts). " +
+	"Return ONLY a JSON object whose keys are the section ids present in the material (e.g. valuation/fundamentals/technical) and whose values are qualitative English analysis prose for that section. " +
+	"Strict requirements: write only from the numbers and facts already given in the material; never compute, infer or fabricate any number, and do not merely re-list the raw numbers — give a qualitative read (high/low, growing/shrinking, overbought/oversold, etc.). " +
+	"Absolutely no buy/sell advice, price targets, valuation calls or forecasts; attribute the source type; keep a neutral, objective tone. When a section's material is too thin, set that section's value to \"Not enough data\". Output only the JSON object, no explanation or code fences."
+
+// composeSystemPrompt picks the report-composition system prompt for a language.
+func composeSystemPrompt(lang string) string {
+	if lang == "en" {
+		return composePromptEN
+	}
+	return composePrompt
+}
+
+// ComposeReport writes per-section research prose from a pre-built material
+// string and returns the section-key→prose map. Cloned from Brief, but asks for
+// a JSON object via response_format (the TranslateTitles idiom) so one call
+// fills every section; the reply is parsed tolerant of code fences.
+func (l *llm) ComposeReport(ctx context.Context, material, lang string) (map[string]string, error) {
+	body, err := json.Marshal(map[string]any{
+		"model":           l.model,
+		"temperature":     0.3,
+		"response_format": map[string]string{"type": "json_object"},
+		"messages": []map[string]string{
+			{"role": "system", "content": composeSystemPrompt(lang)},
+			{"role": "user", "content": material},
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, l.baseURL+"/chat/completions", bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+l.apiKey)
+
+	resp, err := l.http.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("enrich: compose request: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("enrich: compose status %s", resp.Status)
+	}
+	var out struct {
+		Choices []struct {
+			Message struct {
+				Content string `json:"content"`
+			} `json:"message"`
+		} `json:"choices"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return nil, fmt.Errorf("enrich: compose decode: %w", err)
+	}
+	if len(out.Choices) == 0 {
+		return nil, errors.New("enrich: empty compose response")
+	}
+	return parseSectionProse(out.Choices[0].Message.Content)
+}
+
+// parseSectionProse maps the model's section-keyed JSON reply back onto a
+// map[string]string. Tolerant of Markdown code fences (stripFence) and of an
+// object wrapped in surrounding prose ({...} extracted by brace span), mirroring
+// parseIndexedTranslations. Values are trimmed; empty/blank values are dropped so
+// a missing key leaves that section's prose "" (the composer's degrade path).
+func parseSectionProse(content string) (map[string]string, error) {
+	s := stripFence(content)
+	var m map[string]string
+	if err := json.Unmarshal([]byte(s), &m); err != nil || len(m) == 0 {
+		// Fallback: an object embedded in surrounding prose.
+		if a, b := strings.Index(s, "{"), strings.LastIndex(s, "}"); a >= 0 && b > a {
+			_ = json.Unmarshal([]byte(s[a:b+1]), &m)
+		}
+	}
+	if len(m) == 0 {
+		return nil, errors.New("enrich: parse section prose: no sections")
+	}
+	out := make(map[string]string, len(m))
+	for k, v := range m {
+		if t := strings.TrimSpace(v); t != "" {
+			out[k] = t
+		}
+	}
+	if len(out) == 0 {
+		return nil, errors.New("enrich: parse section prose: all sections empty")
+	}
+	return out, nil
 }
 
 const translatePrompt = "你是金融新闻标题翻译器。用户给出 JSON 对象 {\"items\":[{\"i\":序号,\"t\":英文标题}...]}。" +

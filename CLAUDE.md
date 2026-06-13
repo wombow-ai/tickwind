@@ -143,11 +143,16 @@ feature-flagged plugin, never on the critical path. Web only.
 - Full stack (server): `docker compose up -d --build`.
 
 ## Current state (update each iteration)
-- **Session status (2026-06):** dev driven by a 5-min `/loop`, **currently PAUSED by owner**.
-  Recently shipped: Financials tab, full SEO structured data, CI security, **Alerts v1**, mobile
-  nav, session-badge i18n, HomeHub skeletons. Owner directives: **monetization deferred**,
-  **web-push deferred**. Next when resumed: **FINRA short-interest "squeeze radar"** (verify VPS
-  data access first; SEC-13F fallback). See `ROADMAP.md` for the live status + backlog.
+- **Session status (2026-06-14):** dev driven by an autonomous `/loop` (multi-subagent workflows).
+  **v8 重点收费路线 R1 + R2 P0 shipped + live-verified this session:** **R1 indicator engine** —
+  catalog `/v1/indicators` (282 stock-applicable, dataset-driven) + `/indicators` page; per-stock
+  `/v1/stocks/{t}/indicators` (28 P0 = 19 computed + 2 market-context + 7 crypto-unsupported) +
+  `IndicatorsPanel` on StockView. **R2 AI deep-research report** — `internal/research` anti-hallucination
+  fact-sheet (Go owns every number, LLM writes prose only via `enrich.ComposeReport`, LLM-off → 200
+  data-only) at `GET /v1/stocks/{t}/research` + public Research tab (3 sections: 估值/基本面/技术面).
+  Owner directives still in force: **monetization deferred** (R1/R2 free, only cache+daily-cap plumbing),
+  **web-push deferred**. **Next:** R2 follow-ups (F1 资金面/情绪面 sections, F2 overview) and/or R1 P1/P2
+  indicator expansion. See `ROADMAP.md` (v8 section) for the live status + backlog.
 - Phase 0 ✅ · Phase 1 ✅ · Phase 2 ✅ (prices REST + SSE live stream + frontend
   live price + Finnhub news; all auto-disable without keys). Alpaca prices
   LIVE-VERIFIED end-to-end with paper keys (local `.env`, gitignored). Finnhub

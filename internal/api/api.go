@@ -38,6 +38,7 @@ import (
 	"github.com/wombow-ai/tickwind/internal/nasdaq"
 	"github.com/wombow-ai/tickwind/internal/opportunity"
 	"github.com/wombow-ai/tickwind/internal/ratecut"
+	"github.com/wombow-ai/tickwind/internal/research"
 	"github.com/wombow-ai/tickwind/internal/sec"
 	"github.com/wombow-ai/tickwind/internal/sentiment"
 	"github.com/wombow-ai/tickwind/internal/store"
@@ -242,6 +243,19 @@ type IndicatorComputeSource interface {
 	StockIndicators(ctx context.Context, ticker string) indicators.StockIndicatorsResult
 }
 
+// ResearchSource produces the per-ticker deep-research report. Report assembles
+// the data-only fact sheet (no LLM, cheap, never errors); Compose fills per-section
+// qualitative prose via the optional LLM (degrades to the unchanged data-only sheet);
+// Enabled reports whether the LLM backend is configured; Model is its name ("" when
+// disabled). nil-safe — a nil source makes /v1/stocks/{ticker}/research 404.
+// Satisfied by *research.Service.
+type ResearchSource interface {
+	Report(ctx context.Context, ticker string) research.FactSheet
+	Compose(ctx context.Context, fs research.FactSheet, lang string) research.FactSheet
+	Enabled() bool
+	Model() string
+}
+
 type Server struct {
 	store         store.Store
 	hub           QuoteStream
@@ -273,6 +287,7 @@ type Server struct {
 	ipo           IPOSource              // injected post-New via SetIPO
 	indicators    IndicatorSource        // injected post-New via SetIndicators (static catalog)
 	indicatorCalc IndicatorComputeSource // injected post-New via SetIndicatorCompute (per-stock compute)
+	researchCalc  ResearchSource         // injected post-New via SetResearch (deep-research report)
 	admins        map[string]bool        // user UUIDs and/or emails (lowercased) allowed to delete any comment
 	commentRL     *rateLimiter           // per-user comment-post throttle
 	// AI digest cache: one LLM generation per (ticker, ET day), then served from
@@ -284,6 +299,16 @@ type Server struct {
 	sumInflight map[string]chan struct{}
 	sumDayDate  string
 	sumDayCount int
+	// Deep-research report cache: the data-only fact sheet is cheap, but the LLM
+	// prose is one bigger generation per (ticker, ET day, lang), then served from
+	// memory — mirrors the AI digest cache. Guarded by researchMu; researchInflight
+	// dedupes concurrent first requests; researchDay* enforce a global per-day prose
+	// generation cap (the cap gates PROSE only — the data-only report always serves).
+	researchMu       sync.Mutex
+	researchCache    map[string]researchEntry
+	researchInflight map[string]chan struct{}
+	researchDayDate  string
+	researchDayCount int
 	// Follow-trade backtest cache: the simulation is deterministic for a given
 	// (member, price-day), so compute once per slug per UTC day and serve from
 	// memory (the per-ticker DailyCandles fetch is the only cost). Guarded by btMu.
@@ -317,7 +342,7 @@ func New(st store.Store, hub QuoteStream, enricher enrich.Enricher, verifier *au
 			admins[id] = true
 		}
 	}
-	s := &Server{store: st, hub: hub, clip: clip.NewFetcher(), enrich: enricher, auth: verifier, bars: bars, topics: topicSrc, opps: oppSrc, universe: universeSrc, gurus: guruSrc, ingestor: ingestor, symbols: symbolSrc, events: eventSrc, fundamentals: fundSrc, earnings: earningsSrc, congress: congressSrc, institutional: institutionalSrc, live: liveSub, indices: indicesSrc, short: shortSrc, briefing: briefingSrc, options: optionsSrc, thirteenf: thirteenfSrc, admins: admins, commentRL: newRateLimiter(10, 10*time.Minute), sumCache: map[string]summaryEntry{}, sumInflight: map[string]chan struct{}{}, btCache: map[string]backtestEntry{}, digestCache: map[string]digestEntry{}, log: log}
+	s := &Server{store: st, hub: hub, clip: clip.NewFetcher(), enrich: enricher, auth: verifier, bars: bars, topics: topicSrc, opps: oppSrc, universe: universeSrc, gurus: guruSrc, ingestor: ingestor, symbols: symbolSrc, events: eventSrc, fundamentals: fundSrc, earnings: earningsSrc, congress: congressSrc, institutional: institutionalSrc, live: liveSub, indices: indicesSrc, short: shortSrc, briefing: briefingSrc, options: optionsSrc, thirteenf: thirteenfSrc, admins: admins, commentRL: newRateLimiter(10, 10*time.Minute), sumCache: map[string]summaryEntry{}, sumInflight: map[string]chan struct{}{}, researchCache: map[string]researchEntry{}, researchInflight: map[string]chan struct{}{}, btCache: map[string]backtestEntry{}, digestCache: map[string]digestEntry{}, log: log}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", s.health)
 
@@ -389,6 +414,7 @@ func New(st store.Store, hub QuoteStream, enricher enrich.Enricher, verifier *au
 	mux.HandleFunc("GET /v1/13f/{slug}", s.getThirteenFFund)
 	mux.HandleFunc("GET /v1/stocks/{ticker}/whales", s.getWhales)
 	mux.HandleFunc("GET /v1/stocks/{ticker}/indicators", s.getStockIndicators)
+	mux.HandleFunc("GET /v1/stocks/{ticker}/research", s.getResearch)
 	mux.HandleFunc("GET /v1/indicators", s.getIndicators)
 	mux.HandleFunc("GET /v1/stream", s.getStream)
 
@@ -2026,6 +2052,153 @@ func (s *Server) getStockIndicators(w http.ResponseWriter, r *http.Request) {
 		out.MarketContext = &marketContextResp{VIX: res.VIX, FearGreed: res.FearGreed}
 	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+// SetResearch injects the deep-research report source after New (keeps api.New's
+// positional signature stable). nil-safe: /v1/stocks/{ticker}/research 404s until set.
+func (s *Server) SetResearch(src ResearchSource) { s.researchCalc = src }
+
+// researchDailyCap bounds research-prose LLM generations per day across ALL
+// tickers — a hard token-budget backstop, smaller than summaryDailyCap since R2
+// is a bigger call. The cap gates PROSE only: the data-only fact sheet (assemble
+// is cheap, no LLM) always serves, so over-cap requests still return a 200 report.
+const researchDailyCap = 80
+
+// researchEntry is one cached research report (per ticker per ET day per language).
+// It holds the (possibly prose-filled) fact sheet, whether prose is present, the
+// LLM model name, and the generation timestamp.
+type researchEntry struct {
+	fs    research.FactSheet
+	llm   bool
+	model string
+	at    time.Time
+}
+
+// getResearch serves the per-ticker deep-research report: a Go-assembled, source-
+// attributed fact sheet (every number set in Go) plus optional per-section LLM
+// prose. The LLM is OFF THE CRITICAL PATH — the data-only fact sheet always serves
+// 200, even when the LLM is disabled, over the daily cap, or the call errors. Prose
+// is generated at most once per (ticker, ET day, lang) and served from memory; the
+// data-only report is reassembled cheaply on every cache miss. 404 only for an
+// unknown/invalid ticker (the assembled fact sheet has nothing at all to show).
+func (s *Server) getResearch(w http.ResponseWriter, r *http.Request) {
+	if s.researchCalc == nil {
+		writeJSON(w, http.StatusNotFound, errBody("research unavailable"))
+		return
+	}
+	ticker := strings.ToUpper(strings.TrimSpace(r.PathValue("ticker")))
+	if ticker == "" {
+		writeJSON(w, http.StatusNotFound, errBody("no ticker"))
+		return
+	}
+	lang := "zh" // Chinese-first default; English UI requests ?lang=en
+	if r.URL.Query().Get("lang") == "en" {
+		lang = "en"
+	}
+	day := summaryDay() // ET trading day, shared with the AI digest cache
+	key := ticker + "|" + day + "|" + lang
+
+	for {
+		s.researchMu.Lock()
+		if e, ok := s.researchCache[key]; ok {
+			s.researchMu.Unlock()
+			s.writeResearch(w, e)
+			return
+		}
+		ch, busy := s.researchInflight[key]
+		if !busy {
+			break // we'll generate
+		}
+		s.researchMu.Unlock()
+		select { // someone else is generating: wait, then re-check the cache
+		case <-ch:
+		case <-r.Context().Done():
+			return
+		}
+	}
+	// We hold researchMu and are the generator for this key.
+	if s.researchDayDate != day {
+		s.researchDayDate, s.researchDayCount = day, 0
+		for k := range s.researchCache { // yesterday's reports are dead weight
+			if !strings.Contains(k, "|"+day+"|") { // key = ticker|day|lang
+				delete(s.researchCache, k)
+			}
+		}
+	}
+	// Reserve a prose-generation slot only if the LLM is enabled and under cap; the
+	// data-only report is always assembled regardless (off the critical path).
+	wantProse := s.researchCalc.Enabled() && s.researchDayCount < researchDailyCap
+	if wantProse {
+		s.researchDayCount++
+	}
+	ch := make(chan struct{})
+	s.researchInflight[key] = ch
+	s.researchMu.Unlock()
+
+	finish := func(e *researchEntry) {
+		s.researchMu.Lock()
+		if e != nil {
+			s.researchCache[key] = *e
+		}
+		delete(s.researchInflight, key)
+		close(ch)
+		s.researchMu.Unlock()
+	}
+
+	// Always assemble the data-only fact sheet first (cheap, no LLM, never errors).
+	fs := s.researchCalc.Report(r.Context(), ticker)
+	// "Nothing at all": no sections and no underlying date → unknown/invalid ticker.
+	if len(fs.Sections) == 0 && fs.AsOf == "" {
+		if wantProse {
+			s.researchMu.Lock()
+			s.researchDayCount-- // didn't generate prose — don't burn budget
+			s.researchMu.Unlock()
+		}
+		finish(nil) // don't cache an empty miss; let a later visit reassemble
+		s.maybeCollect(ticker)
+		writeJSON(w, http.StatusNotFound, errBody("no research for "+ticker))
+		return
+	}
+
+	hasProse := false
+	if wantProse {
+		fs = s.researchCalc.Compose(r.Context(), fs, lang)
+		for _, sec := range fs.Sections {
+			if strings.TrimSpace(sec.Prose) != "" {
+				hasProse = true
+				break
+			}
+		}
+		if !hasProse {
+			s.researchMu.Lock()
+			s.researchDayCount-- // empty prose (disabled mid-flight / error) refunds budget
+			s.researchMu.Unlock()
+		}
+	}
+
+	e := researchEntry{fs: fs, llm: hasProse, model: s.researchCalc.Model(), at: time.Now().UTC()}
+	finish(&e)
+	s.writeResearch(w, e)
+}
+
+// writeResearch marshals a cached research entry into the design §3.4 wire shape:
+// the fact sheet fields plus generated_at / model / llm chrome. Always 200.
+func (s *Server) writeResearch(w http.ResponseWriter, e researchEntry) {
+	sections := e.fs.Sections
+	if sections == nil {
+		sections = []research.SectionFacts{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ticker":       e.fs.Ticker,
+		"name":         e.fs.Name,
+		"as_of":        e.fs.AsOf,
+		"price_label":  e.fs.PriceLabel,
+		"generated_at": e.at,
+		"model":        e.model,
+		"llm":          e.llm,
+		"disclaimer":   e.fs.Disclaimer,
+		"sections":     sections,
+	})
 }
 
 // getIPO returns the US IPO calendar — recently priced, upcoming, and newly

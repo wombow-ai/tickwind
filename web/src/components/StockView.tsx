@@ -63,6 +63,7 @@ import {ShortChip} from '@/components/ShortChip';
 import {CongressChip} from '@/components/CongressChip';
 import {WhalesChip} from '@/components/WhalesChip';
 import {CommentsPanel} from '@/components/CommentsPanel';
+import {ResearchReport} from '@/components/ResearchReport';
 import {ShareCardButton} from '@/components/ShareCardButton';
 
 type Status = 'loading' | 'ready' | 'error';
@@ -78,10 +79,11 @@ function guessMarket(ticker: string): string {
   return 'US';
 }
 
-const TABS_ANON = ['News', 'Discussion', 'Comments', 'Filings'] as const;
-const TABS_AUTH = ['News', 'Discussion', 'Comments', 'Notes', 'Alerts', 'Holdings', 'Saved links', 'Filings'] as const;
+const TABS_ANON = ['Research', 'News', 'Discussion', 'Comments', 'Filings'] as const;
+const TABS_AUTH = ['Research', 'News', 'Discussion', 'Comments', 'Notes', 'Alerts', 'Holdings', 'Saved links', 'Filings'] as const;
 // Tab keys stay English (they're the state values); only the display is translated.
 const TAB_LABELS: Record<string, string> = {
+  Research: 'research.tab',
   News: 'mod.news',
   Discussion: 'mod.discussion',
   Comments: 'comments.tab',
@@ -620,6 +622,9 @@ export function StockView({ticker}: {ticker: string}) {
       </div>
 
       <div className="min-h-[280px]">
+        {/* Research is lazy: it mounts (and fires its LLM-backed fetch) only when
+            the tab is opened, so the heavy call never runs on page load. */}
+        {tab === 'Research' && <ResearchReport ticker={norm} />}
         {tab === 'News' && (
           <FeedList
             feed={news}

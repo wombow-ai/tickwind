@@ -41,6 +41,7 @@ import (
 	"github.com/wombow-ai/tickwind/internal/openfigi"
 	"github.com/wombow-ai/tickwind/internal/opportunity"
 	"github.com/wombow-ai/tickwind/internal/ratecut"
+	"github.com/wombow-ai/tickwind/internal/research"
 	"github.com/wombow-ai/tickwind/internal/sec"
 	"github.com/wombow-ai/tickwind/internal/sentiment"
 	"github.com/wombow-ai/tickwind/internal/stocktwits"
@@ -475,6 +476,19 @@ func main() {
 		computer := indicators.NewComputer(indicatorCatalog, ohlcv, fundProvider, priceProvider, marketProvider)
 		apiServer.SetIndicatorCompute(computer)
 		log.Info("per-stock indicator compute enabled")
+
+		// Deep-research report (R2): a Go-assembled, source-attributed fact sheet
+		// (indicator set + SEC fundamentals + delayed quote) plus optional per-section
+		// LLM prose. The data-only report serves regardless of the LLM — gate NOTHING
+		// on enricher.Enabled() (off the critical path). priceProvider doubles as the
+		// QuoteProvider (its Quote method = GetQuote then BarCache.LatestQuote fallback).
+		researchSvc := research.NewService(research.Sources{
+			Indicators:   computer,
+			Fundamentals: fundCache,
+			Quote:        priceProvider,
+		}, enricher, cfg.LLMModel)
+		apiServer.SetResearch(researchSvc)
+		log.Info("deep-research report enabled", "llm", enricher.Enabled())
 	} else {
 		log.Warn("per-stock indicator compute disabled — no price feed (Alpaca) for daily candles")
 	}
@@ -512,15 +526,26 @@ type latestPriceProvider struct {
 
 // Price returns the ticker's latest price and true, or 0/false when unavailable.
 func (p *latestPriceProvider) Price(ctx context.Context, ticker string) (float64, bool) {
-	if q, ok, _ := p.store.GetQuote(ctx, ticker); ok && q.Price > 0 {
+	if q, ok := p.Quote(ctx, ticker); ok && q.Price > 0 {
 		return q.Price, true
+	}
+	return 0, false
+}
+
+// Quote returns the ticker's latest full quote (price + source + session) and true,
+// or a zero Quote and false when unavailable. It satisfies research.QuoteProvider,
+// using the same polled-quote-then-on-demand fallback as Price (and getFundamentals),
+// so the research report sees the same number the fundamentals card shows.
+func (p *latestPriceProvider) Quote(ctx context.Context, ticker string) (store.Quote, bool) {
+	if q, ok, _ := p.store.GetQuote(ctx, ticker); ok && q.Price > 0 {
+		return q, true
 	}
 	if p.bars != nil {
 		if oq, found, err := p.bars.LatestQuote(ctx, ticker); err == nil && found && oq.Price > 0 {
-			return oq.Price, true
+			return oq, true
 		}
 	}
-	return 0, false
+	return store.Quote{}, false
 }
 
 // marketContextProvider satisfies indicators.MarketContextProvider, exposing the
