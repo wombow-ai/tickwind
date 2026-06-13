@@ -515,27 +515,38 @@ export function StockView({ticker}: {ticker: string}) {
       )}
 
       {/* pulse: Reddit buzz + news sentiment (renders nothing when empty) */}
-      <PulseBar signals={signals} />
+      {/* id anchors below let research-report citations deep-link to each card */}
+      <div id="signals" className="scroll-mt-20">
+        <PulseBar signals={signals} />
+      </div>
 
       {/* next earnings date (Finnhub calendar; hides when none upcoming) */}
       <EarningsChip ticker={norm} />
 
       {/* FINRA short pressure (squeeze radar; hides when the symbol has no row) */}
-      <ShortChip ticker={norm} />
+      <div id="short" className="scroll-mt-20">
+        <ShortChip ticker={norm} />
+      </div>
 
       {/* Congress trades in this ticker (House Clerk PTRs; hides when none) —
           each member links to their /congress/member/{slug} detail page */}
-      <CongressChip ticker={norm} />
+      <div id="congress" className="scroll-mt-20">
+        <CongressChip ticker={norm} />
+      </div>
 
       {/* Which famous 13F funds hold this ticker (reverse whale lookup; hides
           when none) — each fund links to its /fund/{slug} page */}
-      <WhalesChip ticker={norm} />
+      <div id="whales" className="scroll-mt-20">
+        <WhalesChip ticker={norm} />
+      </div>
 
       {/* Fundamentals + AI digest, each full-width, above the chart. (They were
           briefly a 2-col grid, but the AI digest's variable length left the
           fundamentals card with a tall empty gap beside it — owner 2026-06-12.) */}
       {/* fundamentals: market cap / P/E / revenue / net income (SEC XBRL; hides for non-US) */}
-      <FundamentalsCard ticker={norm} />
+      <div id="fundamentals" className="scroll-mt-20">
+        <FundamentalsCard ticker={norm} />
+      </div>
       {/* AI digest: daily-cached bullets from news+social (hides when LLM off/empty) */}
       <AISummaryCard ticker={norm} />
 
@@ -548,10 +559,14 @@ export function StockView({ticker}: {ticker: string}) {
       {/* Computed per-stock indicators (latest values, grouped by domain) — the
           readout companion to the chart's client-side overlays + FundamentalsCard;
           hides entirely when no indicators are computable */}
-      <IndicatorsPanel ticker={norm} />
+      <div id="indicators" className="scroll-mt-20">
+        <IndicatorsPanel ticker={norm} />
+      </div>
 
       {/* Options overview: delayed Cboe P/C, max pain, OI leaders (hides for non-US/no options) */}
-      <OptionsCard ticker={norm} />
+      <div id="options" className="scroll-mt-20">
+        <OptionsCard ticker={norm} />
+      </div>
 
       {/* login gate */}
       {!isAuthed && (
