@@ -30,10 +30,11 @@ export const SITE_URL: string = (
 ).replace(/\/+$/, '');
 
 /**
- * Whether to show the "Continue with Google" button. Hidden by default; set
- * `NEXT_PUBLIC_GOOGLE_OAUTH=1` once the Google provider is enabled in Supabase.
+ * Whether to show the "Continue with Google" button. The Google provider is now
+ * configured in Supabase, so it's ON by default; set `NEXT_PUBLIC_GOOGLE_OAUTH=0`
+ * to hide it again (e.g. if the provider is temporarily disabled).
  */
-export const GOOGLE_OAUTH_ENABLED = process.env.NEXT_PUBLIC_GOOGLE_OAUTH === '1';
+export const GOOGLE_OAUTH_ENABLED = process.env.NEXT_PUBLIC_GOOGLE_OAUTH !== '0';
 
 /** Product name, used in the header and document title. */
 export const APP_NAME = 'Tickwind';
