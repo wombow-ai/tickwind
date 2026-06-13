@@ -31,6 +31,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
@@ -166,9 +167,9 @@ func parseFile(raw []byte) ([]ShortVol, error) {
 		if sym == "" || strings.EqualFold(sym, "Total") {
 			continue
 		}
-		short, err1 := strconv.ParseInt(strings.TrimSpace(fields[idxShort]), 10, 64)
-		total, err2 := strconv.ParseInt(strings.TrimSpace(fields[idxTotal]), 10, 64)
-		if err1 != nil || err2 != nil {
+		short, ok1 := parseVol(fields[idxShort])
+		total, ok2 := parseVol(fields[idxTotal])
+		if !ok1 || !ok2 {
 			continue // malformed numeric cell — skip the row
 		}
 		out = append(out, ShortVol{
@@ -194,6 +195,18 @@ func hasHeader(fields []string) bool {
 		}
 	}
 	return false
+}
+
+// parseVol parses a volume cell as a whole-share count. FINRA's consolidated
+// file carries fractional volumes (e.g. "380098.039916", from odd-lot/fractional
+// aggregation), so parse as float and round — the prior int-only parse silently
+// dropped almost every row.
+func parseVol(s string) (int64, bool) {
+	f, err := strconv.ParseFloat(strings.TrimSpace(s), 64)
+	if err != nil || f < 0 || math.IsNaN(f) || math.IsInf(f, 0) {
+		return 0, false
+	}
+	return int64(math.Round(f)), true
 }
 
 // shortPct is ShortVolume/TotalVolume*100, or 0 when TotalVolume is 0.

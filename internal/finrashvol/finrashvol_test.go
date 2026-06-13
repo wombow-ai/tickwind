@@ -10,11 +10,12 @@ import (
 	"time"
 )
 
-// sampleFile mirrors a real CNMSshvol file: a header row, data rows (one thin
-// name with TotalVolume 0, one with a zero-padded date), a blank line, and the
-// trailing "Total" summary row that must be skipped.
+// sampleFile mirrors a real CNMSshvol file: a header row, data rows (AAPL with
+// FRACTIONAL volumes — the real 2026 file reports fractional shares, which the
+// parser must round, not reject; one thin name with TotalVolume 0), a blank
+// line, and the trailing "Total" summary row that must be skipped.
 const sampleFile = `Date|Symbol|ShortVolume|ShortExemptVolume|TotalVolume|Market
-20260605|AAPL|24250000|10000|50000000|Q
+20260605|AAPL|24250000.42|10000|49999999.6|Q
 20260605|GME|6130000|5000|10000000|N
 20260605|MSTR|4030000|0|10000000|Q
 20260605|THIN|0|0|0|N
