@@ -30,7 +30,7 @@ func TestCompute(t *testing.T) {
 				NewHighs:     ip(90),
 				NewLows:      ip(10),
 				Heat:         fp(95),
-				ShortPct:     fp(10),
+				ShortPct:     fp(32), // light short activity (below the ~48% norm) -> 80
 			},
 			wantScore:     89, // mean of 90,85,95,90,95,80 = 89.17 -> 89
 			wantLabel:     "Extreme Greed",
@@ -49,9 +49,9 @@ func TestCompute(t *testing.T) {
 				NewHighs:     ip(10),
 				NewLows:      ip(90),
 				Heat:         fp(5),
-				ShortPct:     fp(50),
+				ShortPct:     fp(70), // heavily elevated short volume (well above ~48%) -> 9
 			},
-			wantScore:     9, // mean of 10,15,5,10,5,10 = 9.17 -> 9
+			wantScore:     9, // mean of 10,15,5,10,5,9 = 9.0 -> 9
 			wantLabel:     "Extreme Fear",
 			wantLabelZh:   "极度恐惧",
 			wantAvailable: 6,
@@ -67,9 +67,9 @@ func TestCompute(t *testing.T) {
 				NewHighs:     ip(50),
 				NewLows:      ip(50), // 50
 				Heat:         fp(50), // 50
-				ShortPct:     fp(30), // mid of [10,50] -> 45
+				ShortPct:     fp(48), // the structural baseline ~48% -> 50 (neutral)
 			},
-			wantScore:     49, // mean 50,50,50,50,50,45 = 49.17 -> 49
+			wantScore:     50, // mean 50,50,50,50,50,50 = 50 -> 50
 			wantLabel:     "Neutral",
 			wantLabelZh:   "中性",
 			wantAvailable: 6,
@@ -145,9 +145,9 @@ func TestCompute(t *testing.T) {
 			wantAvailable: 1,
 		},
 		{
-			name: "short pct clamps low fear",
-			// Short interest 60% maps below 10 (negative) but clamps to 0.
-			in:            Inputs{ShortPct: fp(60)},
+			name: "short pct clamps low",
+			// An extreme 80% short volume maps below 0 and clamps to 0.
+			in:            Inputs{ShortPct: fp(80)},
 			wantScore:     0,
 			wantLabel:     "Extreme Fear",
 			wantLabelZh:   "极度恐惧",

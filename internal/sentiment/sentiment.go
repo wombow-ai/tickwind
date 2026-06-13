@@ -87,7 +87,9 @@ type Result struct {
 //   - Breadth: Advancers/(Advancers+Decliners)*100, already a greed share.
 //   - Momentum (high/low): NewHighs/(NewHighs+NewLows)*100, already a greed share.
 //   - Heat: used directly as the greed score (caller pre-normalises to 0–100).
-//   - Short %: higher is more fearful. Linearly maps [10,50] reversed to [80,10].
+//   - Short %: daily short VOLUME is structurally ~48%, so the range is centred
+//     on that baseline — [40,56] reversed to [65,35] (≈48%→50) — and reads as a
+//     deviation from the norm rather than treating all shorting as fear.
 func Compute(in Inputs) Result {
 	comps := make([]Component, 0, 6)
 
@@ -175,11 +177,21 @@ func scorePutCall(r float64) int {
 	return clampInt(roundHalfUp(linMap(r, 0.7, 1.2, 85, 15)))
 }
 
-// scoreShortPct maps short interest (% of volume) onto the greed scale: more
-// shorting is more fearful. [10,50] is reversed onto [80,10] and clamped to
-// [0,100].
+// scoreShortPct maps FINRA daily short-VOLUME (% of the day's volume) onto the
+// greed scale: elevated short selling is more fearful. The key calibration fact
+// is that daily short volume is STRUCTURALLY high — market-wide it sits around
+// ~45–50% (it counts every short-marked print, including market-maker hedging,
+// not directional short positioning), so the neutral baseline is ~48%, NOT 0.
+// The range is therefore centred on the baseline: [40,56] is reversed onto
+// [65,35] (≈48%→50 neutral) and clamped to [0,100], so the component reads as a
+// gentle DEVIATION from the structural norm rather than treating all shorting as
+// fear. (Earlier it mapped [10,50]→[80,10], which scored a normal ~48% as ~13 —
+// extreme fear — and persistently biased the headline index toward Fear.)
+// TODO: a trailing self-baseline (deviation vs the symbol's/market's own recent
+// short-volume average) would be more robust than a fixed centre; revisit when
+// short-volume history is retained.
 func scoreShortPct(pct float64) int {
-	return clampInt(roundHalfUp(linMap(pct, 10, 50, 80, 10)))
+	return clampInt(roundHalfUp(linMap(pct, 40, 56, 65, 35)))
 }
 
 // linMap linearly maps x from the input range [inLo,inHi] to the output range
