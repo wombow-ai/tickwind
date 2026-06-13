@@ -120,6 +120,22 @@ func (c *OptionsCache) Options(ctx context.Context, ticker string) (OptionsView,
 	return view, ok
 }
 
+// Cached returns a ticker's options view from the in-memory cache ONLY, without
+// triggering a live Cboe chain fetch on a miss. It is for latency-sensitive
+// readers on the request path (e.g. the deep-research report's data-only
+// assembler, which must stay cheap) that must not block on a multi-MB fetch: a
+// cold or stale entry returns ok=false and the caller simply omits the options
+// data. The background Run scan and the on-demand Options path keep the cache
+// warm for liquid names.
+func (c *OptionsCache) Cached(ticker string) (OptionsView, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if e, fresh := c.cache[ticker]; fresh && time.Since(e.at) < optionsTTL {
+		return e.view, e.ok
+	}
+	return OptionsView{}, false
+}
+
 // Unusual returns the latest whole-market unusual-activity board (top contracts
 // by single-contract volume) and when it was built. nil before the first scan.
 func (c *OptionsCache) Unusual() ([]UnusualContract, time.Time) {

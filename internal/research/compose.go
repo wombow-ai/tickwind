@@ -47,9 +47,13 @@ func Compose(ctx context.Context, fs FactSheet, enr ResearchEnricher, lang strin
 // buildMaterial assembles the single pre-formatted material string the LLM sees,
 // in the briefing.buildMaterial style: a header, then one block per section keyed
 // by its stable Key, listing each ok fact as "Label: Value" and noting thin
-// (insufficient) facts. The LLM is instructed to key its JSON reply by these
-// section keys. Only formatted values appear — never raw structs — so the model
-// cannot recompute a number.
+// (insufficient) facts. A section may also carry attributed CONTEXT lines (news /
+// social backdrop for the sentiment section) — these are quotable, ATTRIBUTED
+// material ("据新闻/据社区讨论"), explicitly marked as non-numeric so the model
+// reports them with attribution and never derives a sentiment number from them.
+// The LLM is instructed to key its JSON reply by these section keys. Only
+// formatted values appear — never raw structs — so the model cannot recompute a
+// number.
 func buildMaterial(fs FactSheet, lang string) string {
 	var sb strings.Builder
 	name := fs.Name
@@ -88,6 +92,14 @@ func buildMaterial(fs FactSheet, lang string) string {
 		}
 		if len(thin) > 0 {
 			fmt.Fprintf(&sb, "- (数据不足 / insufficient: %s)\n", strings.Join(thin, ", "))
+		}
+		// Attributed, NON-NUMERIC context (news/social) — quote with attribution,
+		// never restate as fact, never derive a number from it.
+		if len(sec.Context) > 0 {
+			fmt.Fprintf(&sb, "- (背景材料 / attributed context — quote with source, do NOT treat as fact or derive a number:)\n")
+			for _, c := range sec.Context {
+				fmt.Fprintf(&sb, "  · %s\n", c)
+			}
 		}
 	}
 	return sb.String()

@@ -478,14 +478,43 @@ func main() {
 		log.Info("per-stock indicator compute enabled")
 
 		// Deep-research report (R2): a Go-assembled, source-attributed fact sheet
-		// (indicator set + SEC fundamentals + delayed quote) plus optional per-section
-		// LLM prose. The data-only report serves regardless of the LLM — gate NOTHING
-		// on enricher.Enabled() (off the critical path). priceProvider doubles as the
-		// QuoteProvider (its Quote method = GetQuote then BarCache.LatestQuote fallback).
+		// plus optional per-section LLM prose. The data-only report serves regardless
+		// of the LLM — gate NOTHING on enricher.Enabled() (off the critical path).
+		//
+		// Provider→handle map (each is nil-safe; a nil/empty provider omits its facts
+		// and its section degrades to "数据不足" or is dropped — the report never 500s):
+		//   Indicators/Fundamentals/Quote → 估值/基本面/技术面 (P0, already wired).
+		//     priceProvider doubles as the QuoteProvider (its Quote method = GetQuote
+		//     then BarCache.LatestQuote fallback).
+		//   资金面 / flows:
+		//     Congress  ← congressCache    (*congress.Cache.ByTicker)
+		//     ThirteenF ← thirteenFCache   (*thirteenf.Cache.Holders)
+		//     Options   ← optionsCache     (*ingest.OptionsCache.Options)
+		//     ShortVol  ← shortVolumeCache (*finrashvol.Cache.Latest/History)
+		//     ShortInt  ← shortCache       (*ingest.ShortCache.ShortInterest)
+		//     Store     ← st (RecentInsiderBuys for the insider-buy facts)
+		//   情绪面 / sentiment:
+		//     Market ← sentimentCache (*sentiment.Cache.Latest — guarded Available>0)
+		//     Store  ← st (ListSignals/HotList/ListNews/ListSocial — buzz, hot-list,
+		//       and the attributed news/social corpus). Read-only over the Market store.
+		// Every handle satisfies its research provider interface directly, so NO
+		// adapter types are needed beyond the existing latestPriceProvider.
 		researchSvc := research.NewService(research.Sources{
 			Indicators:   computer,
 			Fundamentals: fundCache,
 			Quote:        priceProvider,
+
+			// 资金面 / flows providers.
+			Congress:  congressCache,
+			ThirteenF: thirteenFCache,
+			Options:   cachedOptionsProvider{optionsCache}, // cache-only: never block assemble on a live Cboe fetch
+			ShortVol:  shortVolumeCache,
+			ShortInt:  shortCache,
+
+			// 情绪面 / sentiment providers + the shared store reader (insider buys,
+			// per-ticker signals, hot-list presence, attributed news/social corpus).
+			Market: sentimentCache,
+			Store:  st,
 		}, enricher, cfg.LLMModel)
 		apiServer.SetResearch(researchSvc)
 		log.Info("deep-research report enabled", "llm", enricher.Enabled())
@@ -571,6 +600,23 @@ func (m *marketContextProvider) FearGreed() (int, string, bool) {
 		return r.Score, r.Label, true
 	}
 	return 0, "", false
+}
+
+// cachedOptionsProvider satisfies research.OptionsProvider with a CACHE-ONLY read,
+// so assembling a research report never blocks on a live (multi-MB) Cboe chain
+// fetch — the data-only assembler must stay cheap on the request path. A cold
+// name simply omits its options facts; the background scan + the on-demand
+// /options path keep liquid names warm.
+type cachedOptionsProvider struct {
+	c *ingest.OptionsCache
+}
+
+// Options returns the ticker's cached options view (no live fetch on a miss).
+func (p cachedOptionsProvider) Options(_ context.Context, ticker string) (ingest.OptionsView, bool) {
+	if p.c == nil {
+		return ingest.OptionsView{}, false
+	}
+	return p.c.Cached(ticker)
 }
 
 // newStore builds the configured store and a cleanup func. A "postgres" backend

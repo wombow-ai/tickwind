@@ -247,16 +247,20 @@ func (l *llm) Brief(ctx context.Context, material, lang string) (string, error) 
 // string and returns a JSON object whose keys are the section keys present in
 // the material and whose values are the prose for that section.
 const composePrompt = "你是股票研报撰稿助手。用户提供按板块组织的结构化材料(每个板块带数字事实)。" +
-	"只返回一个 JSON 对象,键为材料中出现的板块标识(如 valuation/fundamentals/technical),值为对应板块的简体中文定性分析文字。" +
-	"严格要求:只依据材料中已给出的数字与事实撰写,绝不自行计算、推断或编造任何数字;不要在文字里重复罗列原始数字,而是做定性解读(偏高/偏低、增长/下滑、超买/超卖等)。" +
-	"严禁任何买卖建议、目标价、估值结论或预测;注明信息来源类型;语气中性客观。某板块材料过于单薄时,该板块的值写\"数据不足\"。只输出该 JSON 对象,不要解释或代码块。"
+	"只返回一个 JSON 对象,键为材料中出现的板块标识(如 valuation/fundamentals/technical/flows/sentiment),值为对应板块的简体中文定性分析文字。" +
+	"严格要求:只依据材料中已给出的数字与事实撰写,绝不自行计算、推断或编造任何数字;不要在文字里重复罗列原始数字,而是做定性解读(偏高/偏低、增长/下滑、超买/超卖、资金流入/流出、关注上升/下降等)。" +
+	"资金面(flows):描述国会披露、机构13F、内部人买入、期权、做空等信号方向是否一致;金额区间按材料原样引用,绝不折算成具体数字;13F为季度滞后数据,需注明披露季度。" +
+	"情绪面(sentiment):新闻与社区内容(标有\"背景材料/据新闻/据社区讨论\")仅作有出处的引用,绝不当作事实陈述,更不得据此编造任何情绪分值;若有市场恐惧贪婪指数仅作大盘背景。" +
+	"严禁任何买卖建议、目标价、估值结论或预测,严禁\"跟着某议员买\"之类表述;注明信息来源类型;语气中性客观。某板块材料过于单薄时,该板块的值写\"数据不足\"。只输出该 JSON 对象,不要解释或代码块。"
 
 // composePromptEN is the English-output counterpart, same guardrails. The
 // product is Chinese-first (zh default); en is served when the UI is English.
 const composePromptEN = "You are a stock research-report writer. The user provides structured material organized by section (each section carries numeric facts). " +
-	"Return ONLY a JSON object whose keys are the section ids present in the material (e.g. valuation/fundamentals/technical) and whose values are qualitative English analysis prose for that section. " +
-	"Strict requirements: write only from the numbers and facts already given in the material; never compute, infer or fabricate any number, and do not merely re-list the raw numbers — give a qualitative read (high/low, growing/shrinking, overbought/oversold, etc.). " +
-	"Absolutely no buy/sell advice, price targets, valuation calls or forecasts; attribute the source type; keep a neutral, objective tone. When a section's material is too thin, set that section's value to \"Not enough data\". Output only the JSON object, no explanation or code fences."
+	"Return ONLY a JSON object whose keys are the section ids present in the material (e.g. valuation/fundamentals/technical/flows/sentiment) and whose values are qualitative English analysis prose for that section. " +
+	"Strict requirements: write only from the numbers and facts already given in the material; never compute, infer or fabricate any number, and do not merely re-list the raw numbers — give a qualitative read (high/low, growing/shrinking, overbought/oversold, inflow/outflow, attention rising/falling, etc.). " +
+	"flows: describe whether the congressional, 13F, insider-buy, options and short signals point the same or opposite directions; quote any disclosed amount range VERBATIM, never converting it to a point figure; 13F is quarter-lagged data — note the disclosed quarter. " +
+	"sentiment: news and community items (marked \"attributed context / per news / per community discussion\") may ONLY be quoted with attribution, never restated as fact, and you must NOT derive any sentiment number from them; a market Fear & Greed reading, if present, is broad-market backdrop only. " +
+	"Absolutely no buy/sell advice, price targets, valuation calls or forecasts, and no \"follow member X's trade\" framing; attribute the source type; keep a neutral, objective tone. When a section's material is too thin, set that section's value to \"Not enough data\". Output only the JSON object, no explanation or code fences."
 
 // composeSystemPrompt picks the report-composition system prompt for a language.
 func composeSystemPrompt(lang string) string {

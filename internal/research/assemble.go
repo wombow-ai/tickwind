@@ -4,10 +4,17 @@ import (
 	"context"
 	"net/url"
 	"strings"
+	"time"
 
+	"github.com/wombow-ai/tickwind/internal/congress"
 	"github.com/wombow-ai/tickwind/internal/edgar"
+	"github.com/wombow-ai/tickwind/internal/finra"
+	"github.com/wombow-ai/tickwind/internal/finrashvol"
 	"github.com/wombow-ai/tickwind/internal/indicators"
+	"github.com/wombow-ai/tickwind/internal/ingest"
+	"github.com/wombow-ai/tickwind/internal/sentiment"
 	"github.com/wombow-ai/tickwind/internal/store"
+	"github.com/wombow-ai/tickwind/internal/thirteenf"
 )
 
 // IndicatorCalc computes the full P0 stock-applicable indicator set for a ticker.
@@ -34,14 +41,113 @@ type QuoteProvider interface {
 	Quote(ctx context.Context, ticker string) (store.Quote, bool)
 }
 
+// CongressProvider returns the recent congressional (House/Senate PTR) trades in
+// a ticker, newest first. nil-safe; an empty slice means no DISCLOSED trades were
+// found (which also covers the PTR-parsing-disabled case) — the assembler never
+// asserts "no member traded this". Satisfied by *congress.Cache (ByTicker).
+type CongressProvider interface {
+	// ByTicker returns the recent congressional trades in a ticker (newest first),
+	// or nil when none / PTR parsing is unavailable.
+	ByTicker(ticker string) []congress.TickerTrade
+}
+
+// WhalesProvider returns the tracked 13F funds that hold a ticker (the reverse
+// "which whales own this" index), largest position first. 13F is quarterly and
+// filed ~45 days after quarter-end, so each Holder carries its as-of Period (the
+// assembler always shows it — the data is intentionally stale). nil-safe.
+// Satisfied by *thirteenf.Cache (Holders).
+type WhalesProvider interface {
+	// Holders returns the tracked funds holding a ticker, largest first, or nil
+	// when none of the tracked funds hold it / the board is unbuilt.
+	Holders(ticker string) []thirteenf.Holder
+}
+
+// OptionsProvider returns a ticker's delayed (Cboe ~15-min) options overview.
+// ok=false when the symbol has no listed options (the assembler omits the options
+// facts entirely). Satisfied by *ingest.OptionsCache (Options).
+type OptionsProvider interface {
+	// Options returns the per-stock options summary and whether the symbol has
+	// listed options.
+	Options(ctx context.Context, ticker string) (ingest.OptionsView, bool)
+}
+
+// ShortVolProvider returns FINRA daily short-volume data for a symbol: the latest
+// day's derived ShortPct + date, and the retained history (oldest first) for a
+// qualitative trend read. Only the DERIVED percentage is exposed (FINRA's terms
+// are display-only — no bulk raw rows). nil-safe. Satisfied by *finrashvol.Cache.
+type ShortVolProvider interface {
+	// Latest returns one symbol's latest day's short volume (ok=false if absent).
+	Latest(sym string) (finrashvol.ShortVol, bool)
+	// History returns one symbol's retained short-volume history (oldest first).
+	History(sym string) []finrashvol.ShortVol
+}
+
+// ShortIntProvider returns a symbol's latest-settlement FINRA short-interest row
+// (the bi-monthly settlement data: days-to-cover, change vs prior settlement).
+// ok=false when none. Derived values only. nil-safe. Satisfied by
+// *ingest.ShortCache (ShortInterest).
+type ShortIntProvider interface {
+	// ShortInterest returns the latest-settlement short-interest row for a symbol
+	// (ok=false when absent).
+	ShortInterest(ticker string) (finra.ShortInterest, bool)
+}
+
+// MarketSentiment returns the latest market-wide Fear & Greed Result (NOT
+// per-ticker — context only). The assembler injects it only when the Result has
+// participating components (Available>0), so the neutral-50 fallback is never
+// presented as a real reading. nil-safe. Satisfied by *sentiment.Cache (Latest).
+type MarketSentiment interface {
+	// Latest returns the latest Fear & Greed Result and whether one has been
+	// computed.
+	Latest() (sentiment.Result, bool)
+}
+
+// StoreReader is the narrow slice of store.Store the assembler reads for the
+// per-ticker buzz/news-sentiment signals, hot-list presence, and the news +
+// social corpus (the corpus feeds the LLM as ATTRIBUTED context — it is never
+// turned into a numeric Fact). Every method is read-only. nil-safe. Satisfied by
+// the in-process store.Store.
+type StoreReader interface {
+	// ListSignals returns every source's latest signal for one ticker (buzz +
+	// news-sentiment facets).
+	ListSignals(ctx context.Context, ticker string) ([]store.Signal, error)
+	// HotList returns a board's (e.g. "hot" / "wsb") top rows by rank.
+	HotList(ctx context.Context, board string, limit int) ([]store.HotStock, error)
+	// ListNews returns a ticker's recent news, newest first.
+	ListNews(ctx context.Context, ticker string, limit int) ([]store.News, error)
+	// ListSocial returns a ticker's recent social posts, newest first.
+	ListSocial(ctx context.Context, ticker string, limit int) ([]store.Post, error)
+	// RecentInsiderBuys returns insider open-market buys filed on/after since
+	// (across all tickers; the assembler filters to this ticker).
+	RecentInsiderBuys(ctx context.Context, since time.Time) ([]store.InsiderBuy, error)
+}
+
 // Sources is the narrow slice of in-process providers the assembler needs. Each
 // is an interface so the assembler is unit-testable with fakes, and each is
-// nil-safe (a nil provider omits its dependent facts/section). For P0 these are
-// the three richest already-wired sources.
+// nil-safe (a nil provider omits its dependent facts/section).
+//
+// The first three (Indicators/Fundamentals/Quote) drive the P0 valuation /
+// fundamentals / technical sections. The remainder drive the 资金面 (flows) and
+// 情绪面 (sentiment) sections: Congress/ThirteenF/Insider/Options/ShortVol/ShortInt
+// for flows, Market/Store for sentiment. A nil provider simply omits its facts;
+// a section that ends up with zero usable facts is omitted entirely.
 type Sources struct {
 	Indicators   IndicatorCalc
 	Fundamentals FundProvider
 	Quote        QuoteProvider
+
+	// 资金面 / flows providers.
+	Congress  CongressProvider
+	ThirteenF WhalesProvider
+	Options   OptionsProvider
+	ShortVol  ShortVolProvider
+	ShortInt  ShortIntProvider
+
+	// 情绪面 / sentiment providers. Market is the market-wide Fear & Greed context;
+	// Store reads the per-ticker buzz/news signals, hot-list presence and the
+	// news/social corpus (the corpus is ATTRIBUTED LLM context, never a Fact).
+	Market MarketSentiment
+	Store  StoreReader
 }
 
 // Source labels and URLs set in Go from the known provenance. The LLM never
@@ -51,9 +157,43 @@ const (
 	srcSECQuote     = "SEC XBRL × delayed quote"
 	srcDelayedQuote = "delayed quote"
 	srcIndicators   = "computed from daily bars"
+
+	// 资金面 / flows source labels.
+	srcCongress    = "House/Senate PTR (公开披露)"
+	srcThirteenF   = "SEC 13F (季度披露)"
+	srcInsiderSEC  = "SEC Form 4 (内部人买入)"
+	srcOptions     = "Cboe · delayed ~15min"
+	srcShortVol    = "FINRA daily short volume (display-only)"
+	srcShortInt    = "FINRA settlement short interest (display-only)"
+	srcFearGreed   = "Fear & Greed (market-wide)"
+	srcBuzz        = "ApeWisdom (Reddit/WSB buzz)"
+	srcNewsSent    = "AlphaVantage news sentiment"
+	srcHotList     = "ApeWisdom trending"
+	srcSECInsiders = "SEC EDGAR · Form 4"
 )
 
 const secEdgarLabel = "SEC EDGAR · companyfacts"
+
+// insiderLookback bounds the insider-buy window the assembler reads (the
+// Opportunity corpus retains ~90d; a 90-day window keeps the "recent buying"
+// claim honest).
+const insiderLookback = 90 * 24 * time.Hour
+
+// congressDeepLink builds the per-member page deep-link from a member slug.
+func congressDeepLink(slug string) string {
+	if slug == "" {
+		return ""
+	}
+	return "/congress/member/" + slug
+}
+
+// fundDeepLink builds the per-fund pSEO page deep-link from a fund slug.
+func fundDeepLink(slug string) string {
+	if slug == "" {
+		return ""
+	}
+	return "/fund/" + slug
+}
 
 // secEdgarURL builds the EDGAR company-search deep-link for a ticker.
 func secEdgarURL(ticker string) string {
@@ -241,6 +381,12 @@ func Assemble(ctx context.Context, ticker string, src Sources) FactSheet {
 		technical.Facts = append(technical.Facts, extraFacts(spec.key, si)...)
 	}
 	addSection(&fs, technical)
+
+	// --- §1.4 资金面 / Smart Money & Flows ---
+	addSection(&fs, assembleFlows(ctx, ticker, src))
+
+	// --- §1.5 情绪面 / Sentiment ---
+	addSection(&fs, assembleSentiment(ctx, ticker, src))
 
 	return fs
 }

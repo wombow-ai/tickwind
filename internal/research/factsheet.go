@@ -47,13 +47,20 @@ type Fact struct {
 // SectionFacts is one report section's pre-LLM data: its facts plus the citations
 // they collapse to. Title carries both languages; Prose is filled by the composer
 // (empty when the LLM is off — the data-only report).
+//
+// Context carries ATTRIBUTED, non-numeric material (e.g. news headlines, social
+// post snippets) for the sentiment section. It is fed to the LLM as quotable
+// backdrop ("据新闻/据社区讨论") and is NEVER a Fact: it carries no number, sets no
+// Value, and never alters the report's numeric backbone. It does NOT, on its own,
+// keep a section alive (a section still needs at least one ok Fact to be shown).
 type SectionFacts struct {
-	Key       string     `json:"key"` // "valuation" | "fundamentals" | "technical"
+	Key       string     `json:"key"` // "valuation" | "fundamentals" | "technical" | "flows" | "sentiment"
 	TitleZH   string     `json:"title_zh"`
 	TitleEN   string     `json:"title_en"`
 	Facts     []Fact     `json:"facts"` // only Status==ok facts carry a Value
 	Citations []Citation `json:"citations"`
-	Prose     string     `json:"prose"` // qualitative LLM prose; "" when LLM off
+	Context   []string   `json:"context,omitempty"` // attributed UGC/news backdrop for the LLM (never a number)
+	Prose     string     `json:"prose"`             // qualitative LLM prose; "" when LLM off
 }
 
 // Citation maps a section's claim space to a source. The frontend turns Anchor
