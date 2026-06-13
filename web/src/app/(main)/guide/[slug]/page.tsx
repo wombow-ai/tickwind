@@ -3,6 +3,7 @@ import Link from 'next/link';
 import {notFound} from 'next/navigation';
 import {SITE_URL, langAlternates} from '@/lib/config';
 import {GUIDES, guideBySlug} from '@/lib/guides';
+import {ogImageMeta} from '@/lib/og';
 import {LocalizedTitle} from '@/components/LocalizedTitle';
 
 /** Pre-render every guide at build time. */
@@ -25,7 +26,13 @@ export async function generateMetadata({
     description: g.descZh,
     keywords: g.keywords,
     alternates: langAlternates(`/guide/${g.slug}`),
-    openGraph: {type: 'article', title: g.titleEn, description: g.descEn, url: `${SITE_URL}/guide/${g.slug}`},
+    openGraph: {
+      type: 'article',
+      title: g.titleEn,
+      description: g.descEn,
+      url: `${SITE_URL}/guide/${g.slug}`,
+      images: [ogImageMeta({eyebrow: '指南', title: g.h1Zh, subtitle: g.descZh.slice(0, 54)})],
+    },
   };
 }
 

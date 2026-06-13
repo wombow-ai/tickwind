@@ -1,5 +1,6 @@
 import type {Metadata} from 'next';
 import {langAlternates} from '@/lib/config';
+import {ogImageMeta} from '@/lib/og';
 import {LocalizedTitle} from '@/components/LocalizedTitle';
 import {SmartMoneyTabs, type SmartMoneyTab} from '@/components/SmartMoneyTabs';
 
@@ -14,6 +15,15 @@ export const metadata: Metadata = {
     '国会山股神来了：美国国会议员股票交易披露（佩洛西等）+ SEC 13D/13G 机构举牌与维权持仓，中英对照、逐条链接官方申报。Track U.S. congressional stock trades and institutional 13D/13G stakes side by side. 公开数据，不构成投资建议。',
   keywords: ['国会山股神', '佩洛西持仓', '美国国会议员股票交易', '13D 举牌', '机构持仓', 'congress trading tracker', '13D 13G filings'],
   alternates: langAlternates('/smart-money'),
+  openGraph: {
+    images: [
+      ogImageMeta({
+        eyebrow: '聪明钱',
+        title: '国会山股神 · 13F 大佬持仓 · 机构举牌',
+        subtitle: '跟踪美国国会议员交易与机构持仓变动',
+      }),
+    ],
+  },
 };
 
 /** Merged institutional (13D/13G) + Congress trading board. */

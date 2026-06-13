@@ -2,6 +2,7 @@ import type {Metadata} from 'next';
 import './globals.css';
 import {AuthProvider} from '@/lib/auth';
 import {APP_NAME, APP_TAGLINE, SITE_URL} from '@/lib/config';
+import {ogImageMeta} from '@/lib/og';
 import {langNoFlashScript} from '@/lib/i18n';
 import {ThemeProvider, themeNoFlashScript} from '@/lib/theme';
 import {ToastProvider} from '@/components/ui/Toast';
@@ -24,11 +25,19 @@ export const metadata: Metadata = {
     url: SITE_URL,
     title: `${APP_NAME} — ${APP_TAGLINE}`,
     description: DESCRIPTION,
+    images: [
+      ogImageMeta({
+        eyebrow: '中文美股数据台',
+        title: '美股实时行情 · 国会交易 · 13F · 期权异动',
+        subtitle: '数据优先,免费看清美股 — 行情/SEC内部人/国会山股神/财报',
+      }),
+    ],
   },
   twitter: {
-    card: 'summary',
+    card: 'summary_large_image',
     title: `${APP_NAME} — ${APP_TAGLINE}`,
     description: DESCRIPTION,
+    images: [ogImageMeta({eyebrow: '中文美股数据台', title: '美股实时行情 · 国会交易 · 13F · 期权异动'}).url],
   },
 };
 
