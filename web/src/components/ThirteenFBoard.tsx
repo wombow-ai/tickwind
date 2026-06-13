@@ -81,8 +81,12 @@ function FundCard({f, t, dark, tr}: {f: FundHoldings; t: Tokens; dark: boolean; 
   return (
     <section className={cx('rounded-2xl border p-4', t.card, t.border, t.soft)}>
       <div className="mb-3 flex flex-wrap items-baseline gap-x-2 gap-y-1">
-        <span className={cx('text-[15px] font-bold', t.text)}>{f.manager}</span>
-        <span className={cx('text-[12.5px]', t.sub)}>{f.name}</span>
+        <Link href={`/fund/${encodeURIComponent(f.slug)}`} className={cx('text-[15px] font-bold hover:underline', t.accentText)}>
+          {f.manager}
+        </Link>
+        <Link href={`/fund/${encodeURIComponent(f.slug)}`} className={cx('text-[12.5px] hover:underline', t.sub)}>
+          {f.name}
+        </Link>
         <span className="ml-auto flex items-center gap-2">
           <span className={cx('rounded-full px-2 py-0.5 text-[10.5px] font-semibold', dark ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600')}>
             {tr('13f.asOf')} {asOfQuarter(f.period)}

@@ -60,6 +60,7 @@ import {EarningsChip} from '@/components/EarningsChip';
 import {OptionsCard} from '@/components/OptionsCard';
 import {ShortChip} from '@/components/ShortChip';
 import {CongressChip} from '@/components/CongressChip';
+import {WhalesChip} from '@/components/WhalesChip';
 import {CommentsPanel} from '@/components/CommentsPanel';
 
 type Status = 'loading' | 'ready' | 'error';
@@ -497,6 +498,10 @@ export function StockView({ticker}: {ticker: string}) {
       {/* Congress trades in this ticker (House Clerk PTRs; hides when none) —
           each member links to their /congress/member/{slug} detail page */}
       <CongressChip ticker={norm} />
+
+      {/* Which famous 13F funds hold this ticker (reverse whale lookup; hides
+          when none) — each fund links to its /fund/{slug} page */}
+      <WhalesChip ticker={norm} />
 
       {/* Fundamentals + AI digest, each full-width, above the chart. (They were
           briefly a 2-col grid, but the AI digest's variable length left the

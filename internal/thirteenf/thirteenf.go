@@ -7,6 +7,7 @@ package thirteenf
 import (
 	"context"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -72,6 +73,19 @@ type Board struct {
 	At    time.Time      `json:"updated_at"`
 }
 
+// Holder is one fund that holds a given ticker, for the "which whales own this
+// stock" reverse lookup. It carries enough to render a chip and deep-link to the
+// fund's page without a second fetch.
+type Holder struct {
+	FundSlug string  `json:"fund_slug"`
+	FundName string  `json:"fund_name"`
+	Manager  string  `json:"manager"`
+	Value    int64   `json:"value"`  // position value in this fund (whole USD)
+	Weight   float64 `json:"weight"` // % of the fund's 13F portfolio
+	Change   string  `json:"change"` // new | add | trim | hold
+	Period   string  `json:"period"` // the fund's filing quarter-end (as-of), YYYY-MM-DD
+}
+
 // Filer fetches 13F filings and holdings (satisfied by *sec.Client).
 type Filer interface {
 	ThirteenFFilings(ctx context.Context, cik, n int) ([]sec.Filing13F, error)
@@ -83,13 +97,18 @@ type Mapper interface {
 	Map(ctx context.Context, cusips []string) (map[string]string, error)
 }
 
-// Cache builds and serves the whale-holdings board, refreshed by Run.
+// Cache builds and serves the whale-holdings board, refreshed by Run. Alongside
+// the board it keeps two derived indexes rebuilt atomically with it: byTicker
+// (ticker → funds holding it, for the per-stock "whales" chip) and bySlug (fund
+// slug → its holdings, for the fund pSEO page).
 type Cache struct {
 	filer  Filer
 	mapper Mapper
 
-	mu    sync.RWMutex
-	board Board
+	mu       sync.RWMutex
+	board    Board
+	byTicker map[string][]Holder     // upper-cased ticker → funds holding it
+	bySlug   map[string]FundHoldings // fund slug → its holdings
 }
 
 // NewCache builds the cache.
@@ -102,6 +121,32 @@ func (c *Cache) Board() (Board, bool) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.board, !c.board.At.IsZero()
+}
+
+// Holders returns the funds on the whitelist that hold ticker, newest/largest
+// first (sorted by position value). Returns nil when the ticker is held by none
+// of the tracked funds or the board has not been built yet. Case-insensitive.
+func (c *Cache) Holders(ticker string) []Holder {
+	ticker = strings.ToUpper(strings.TrimSpace(ticker))
+	if ticker == "" {
+		return nil
+	}
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.byTicker[ticker]
+}
+
+// Fund returns one fund's holdings by slug (ok=false when the slug is unknown or
+// the board has not been built yet). Case-insensitive on the slug.
+func (c *Cache) Fund(slug string) (FundHoldings, bool) {
+	slug = strings.ToLower(strings.TrimSpace(slug))
+	if slug == "" {
+		return FundHoldings{}, false
+	}
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	fh, ok := c.bySlug[slug]
+	return fh, ok
 }
 
 // Run builds the board immediately, then rebuilds every refreshEvery until ctx
@@ -137,9 +182,44 @@ func (c *Cache) Recompute(ctx context.Context) {
 	if len(funds) == 0 {
 		return
 	}
+	byTicker, bySlug := buildIndexes(funds)
 	c.mu.Lock()
 	c.board = Board{Funds: funds, At: time.Now().UTC()}
+	c.byTicker = byTicker
+	c.bySlug = bySlug
 	c.mu.Unlock()
+}
+
+// buildIndexes derives the reverse (ticker → holders) and per-slug (slug →
+// holdings) lookups from the freshly built fund list. The ticker index skips
+// positions with no resolved ticker (CUSIPs OpenFIGI couldn't map) and sorts
+// each ticker's holders by position value, largest first.
+func buildIndexes(funds []FundHoldings) (map[string][]Holder, map[string]FundHoldings) {
+	byTicker := make(map[string][]Holder)
+	bySlug := make(map[string]FundHoldings, len(funds))
+	for _, fh := range funds {
+		bySlug[strings.ToLower(fh.Slug)] = fh
+		for _, p := range fh.Positions {
+			if p.Ticker == "" {
+				continue
+			}
+			t := strings.ToUpper(p.Ticker)
+			byTicker[t] = append(byTicker[t], Holder{
+				FundSlug: fh.Slug,
+				FundName: fh.Name,
+				Manager:  fh.Manager,
+				Value:    p.Value,
+				Weight:   p.Pct,
+				Change:   p.Change,
+				Period:   fh.Period,
+			})
+		}
+	}
+	for t := range byTicker {
+		hs := byTicker[t]
+		sort.Slice(hs, func(i, j int) bool { return hs[i].Value > hs[j].Value })
+	}
+	return byTicker, bySlug
 }
 
 // computeFund builds one fund's holdings: latest filing's top positions, each

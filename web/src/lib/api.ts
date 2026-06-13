@@ -945,6 +945,62 @@ export function getThirteenF(signal?: AbortSignal): Promise<ThirteenFBoard> {
   return getJson<ThirteenFBoard>('/v1/13f', signal);
 }
 
+/**
+ * One famous fund that holds a given ticker, from the per-stock reverse 13F
+ * lookup (`GET /v1/stocks/{t}/whales`). `weight` is the position's share of the
+ * fund's 13F portfolio; `change` is the quarter-over-quarter move.
+ */
+export interface WhaleHolder {
+  fund_slug: string; // links to /fund/{slug}
+  fund_name: string; // firm, e.g. "Berkshire Hathaway"
+  manager: string; // the person it's known for, e.g. "Warren Buffett"
+  value: number; // position value in this fund (whole USD)
+  weight: number; // % of the fund's 13F portfolio
+  change: 'new' | 'add' | 'trim' | 'hold';
+  period: string; // the fund's filing quarter-end (as-of), YYYY-MM-DD
+}
+
+/** Envelope returned by `GET /v1/stocks/{ticker}/whales`. */
+export interface WhalesResponse {
+  ticker: string;
+  holders: WhaleHolder[];
+}
+
+/**
+ * Fetches which tracked 13F funds hold a given ticker (the reverse "which whales
+ * own this stock" lookup), largest position first. Public endpoint; an empty
+ * `holders` list returns a 200, so callers should hide the chip when empty.
+ */
+export function getWhales(
+  ticker: string,
+  signal?: AbortSignal,
+): Promise<WhalesResponse> {
+  return getJson<WhalesResponse>(
+    `/v1/stocks/${encodeURIComponent(normalizeTicker(ticker))}/whales`,
+    signal,
+  );
+}
+
+/**
+ * Fetches one fund's latest 13F holdings by slug, for the fund pSEO page.
+ * Resolves to `null` when the slug is unknown (the API 404s), so SSR callers can
+ * render `notFound()`; other errors reject.
+ */
+export async function getFund(
+  slug: string,
+  signal?: AbortSignal,
+): Promise<FundHoldings | null> {
+  try {
+    return await getJson<FundHoldings>(
+      `/v1/13f/${encodeURIComponent(slug)}`,
+      signal,
+    );
+  } catch (e) {
+    if (e instanceof ApiError && e.status === 404) return null;
+    throw e;
+  }
+}
+
 /** The AI digest for a stock from `GET /v1/stocks/{t}/summary` (cached daily). */
 export interface AISummary {
   ticker: string;

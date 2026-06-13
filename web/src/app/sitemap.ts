@@ -1,5 +1,5 @@
 import type {MetadataRoute} from 'next';
-import {congressSlug, getCongress, getHot, getOpportunities} from '@/lib/api';
+import {congressSlug, getCongress, getHot, getOpportunities, getThirteenF} from '@/lib/api';
 import {POPULAR_TICKERS, SITE_URL} from '@/lib/config';
 import {GUIDES} from '@/lib/guides';
 
@@ -51,6 +51,24 @@ async function congressMemberSlugs(): Promise<string[]> {
 }
 
 /**
+ * The indexable 13F funds: every famous-manager slug on the whale-holdings
+ * board. These back the `/fund/{slug}` pSEO pages. Tolerant — a slow/down API
+ * just yields an empty list, never breaking sitemap generation.
+ */
+async function fundSlugs(): Promise<string[]> {
+  const slugs = new Set<string>();
+  try {
+    const r = await getThirteenF(AbortSignal.timeout(5000));
+    for (const f of r.funds ?? []) {
+      if (f.slug) slugs.add(f.slug);
+    }
+  } catch {
+    // API hiccup → skip fund pages this build; the rest of the sitemap stands.
+  }
+  return [...slugs];
+}
+
+/**
  * Bilingual hreflang alternates for a sitemap URL. Every page is served in both
  * languages via a `?lang=zh|en` param, so each entry advertises its en / zh
  * variants — letting search engines index and language-target both.
@@ -87,9 +105,10 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     changeFrequency: 'monthly',
     priority: 0.6,
   }));
-  const [tickers, memberSlugs] = await Promise.all([
+  const [tickers, memberSlugs, funds] = await Promise.all([
     indexableTickers(),
     congressMemberSlugs(),
+    fundSlugs(),
   ]);
   const stockPages: MetadataRoute.Sitemap = tickers.map(ticker => ({
     url: `${SITE_URL}/stock/${encodeURIComponent(ticker)}`,
@@ -103,7 +122,13 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     changeFrequency: 'daily',
     priority: 0.6,
   }));
-  return [...staticPages, ...guidePages, ...stockPages, ...memberPages].map(entry => ({
+  const fundPages: MetadataRoute.Sitemap = funds.map(slug => ({
+    url: `${SITE_URL}/fund/${encodeURIComponent(slug)}`,
+    lastModified: now,
+    changeFrequency: 'weekly',
+    priority: 0.6,
+  }));
+  return [...staticPages, ...guidePages, ...stockPages, ...memberPages, ...fundPages].map(entry => ({
     ...entry,
     alternates: langAlt(entry.url),
   }));

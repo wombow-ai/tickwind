@@ -81,6 +81,72 @@ func TestComputeFund(t *testing.T) {
 	}
 }
 
+func TestBuildIndexes(t *testing.T) {
+	funds := []FundHoldings{
+		{
+			Slug: "alpha", Name: "Alpha Capital", Manager: "A", Period: "2026-03-31",
+			Positions: []Position{
+				{Ticker: "AAPL", Value: 300, Pct: 60, Change: "add"},
+				{Ticker: "", Value: 100, Change: "trim"}, // unmapped → skipped in reverse index
+			},
+		},
+		{
+			Slug: "beta", Name: "Beta Partners", Manager: "B", Period: "2026-03-31",
+			Positions: []Position{
+				{Ticker: "AAPL", Value: 500, Pct: 25, Change: "new"},
+			},
+		},
+	}
+	byTicker, bySlug := buildIndexes(funds)
+
+	// Reverse index: AAPL held by both, largest position first (Beta 500 > Alpha 300).
+	aapl := byTicker["AAPL"]
+	if len(aapl) != 2 {
+		t.Fatalf("AAPL holders = %d, want 2", len(aapl))
+	}
+	if aapl[0].FundSlug != "beta" || aapl[0].Value != 500 || aapl[0].Change != "new" {
+		t.Errorf("aapl[0] = %+v (want beta/500/new)", aapl[0])
+	}
+	if aapl[1].FundSlug != "alpha" || aapl[1].Weight != 60 {
+		t.Errorf("aapl[1] = %+v (want alpha/weight 60)", aapl[1])
+	}
+	// Unmapped position is not indexed under any ticker key.
+	if _, ok := byTicker[""]; ok {
+		t.Error("empty ticker should not be indexed")
+	}
+	// Per-slug index is keyed lower-case.
+	if fh, ok := bySlug["alpha"]; !ok || fh.Name != "Alpha Capital" {
+		t.Errorf("bySlug[alpha] = %+v ok=%v", fh, ok)
+	}
+}
+
+func TestCacheLookups(t *testing.T) {
+	c := &Cache{
+		byTicker: map[string][]Holder{"AAPL": {{FundSlug: "alpha", Value: 1}}},
+		bySlug:   map[string]FundHoldings{"alpha": {Slug: "alpha", Name: "Alpha"}},
+	}
+	if got := c.Holders("aapl"); len(got) != 1 { // case-insensitive
+		t.Errorf("Holders(aapl) = %v, want 1 holder", got)
+	}
+	if got := c.Holders("ZZZZ"); got != nil {
+		t.Errorf("Holders(ZZZZ) = %v, want nil", got)
+	}
+	if fh, ok := c.Fund("ALPHA"); !ok || fh.Name != "Alpha" { // case-insensitive
+		t.Errorf("Fund(ALPHA) = %+v ok=%v", fh, ok)
+	}
+	if _, ok := c.Fund("nope"); ok {
+		t.Error("Fund(nope) ok=true, want false")
+	}
+	// Empty cache (never built) yields no panics, empty results.
+	var empty Cache
+	if empty.Holders("AAPL") != nil {
+		t.Error("empty cache Holders should be nil")
+	}
+	if _, ok := empty.Fund("alpha"); ok {
+		t.Error("empty cache Fund should be ok=false")
+	}
+}
+
 func TestClassify(t *testing.T) {
 	prev := map[string]int64{"A": 100}
 	for _, c := range []struct {

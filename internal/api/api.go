@@ -170,10 +170,14 @@ type OptionsSource interface {
 }
 
 // ThirteenFSource serves the 13F whale-holdings board — famous funds' quarterly
-// holdings + quarter-over-quarter changes (nil-safe). Satisfied by
+// holdings + quarter-over-quarter changes (nil-safe). Board powers the
+// smart-money board; Holders powers the per-stock "which whales own this" chip
+// (reverse index); Fund powers a single fund's pSEO page. Satisfied by
 // *thirteenf.Cache.
 type ThirteenFSource interface {
 	Board() (thirteenf.Board, bool)
+	Holders(ticker string) []thirteenf.Holder
+	Fund(slug string) (thirteenf.FundHoldings, bool)
 }
 
 // ShortVolumeSource serves FINRA daily short-volume data: a ranked "most-shorted
@@ -336,6 +340,8 @@ func New(st store.Store, hub QuoteStream, enricher enrich.Enricher, verifier *au
 	mux.HandleFunc("GET /v1/stocks/{ticker}/options", s.getOptions)
 	mux.HandleFunc("GET /v1/options/unusual", s.getUnusualOptions)
 	mux.HandleFunc("GET /v1/13f", s.getThirteenF)
+	mux.HandleFunc("GET /v1/13f/{slug}", s.getThirteenFFund)
+	mux.HandleFunc("GET /v1/stocks/{ticker}/whales", s.getWhales)
 	mux.HandleFunc("GET /v1/stream", s.getStream)
 
 	// auth.Middleware attaches the user when a valid bearer token is present;
@@ -1903,6 +1909,37 @@ func (s *Server) getThirteenF(w http.ResponseWriter, _ *http.Request) {
 		}
 	}
 	writeJSON(w, http.StatusOK, board)
+}
+
+// getWhales serves the per-stock reverse 13F lookup: which tracked funds hold
+// this ticker, with each fund's position value, portfolio weight, and QoQ
+// change. Always 200 — an empty holders list when nothing matches (so the
+// frontend chip can self-hide) — and nil-safe when the source is unset.
+func (s *Server) getWhales(w http.ResponseWriter, r *http.Request) {
+	ticker := strings.ToUpper(strings.TrimSpace(r.PathValue("ticker")))
+	holders := []thirteenf.Holder{}
+	if s.thirteenf != nil {
+		if got := s.thirteenf.Holders(ticker); got != nil {
+			holders = got
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ticker": ticker, "holders": holders})
+}
+
+// getThirteenFFund serves one fund's latest 13F holdings by slug, for the fund
+// pSEO page. 404 when the slug is unknown or the board has not been built yet.
+func (s *Server) getThirteenFFund(w http.ResponseWriter, r *http.Request) {
+	slug := strings.ToLower(strings.TrimSpace(r.PathValue("slug")))
+	if s.thirteenf == nil {
+		writeJSON(w, http.StatusNotFound, errBody("no 13F data"))
+		return
+	}
+	fh, ok := s.thirteenf.Fund(slug)
+	if !ok {
+		writeJSON(w, http.StatusNotFound, errBody("unknown fund"))
+		return
+	}
+	writeJSON(w, http.StatusOK, fh)
 }
 
 // getBriefing returns today's AI pre-market briefing; 404 until generated.
