@@ -171,6 +171,89 @@ func TestComposeReport(t *testing.T) {
 	}
 }
 
+// TestComposeDeepReport asserts the deep compose parses the section-keyed reply
+// (sharing parseSectionProse), uses the deep model + a larger token budget, and
+// sends the json_object response_format — the same safety wiring as ComposeReport.
+func TestComposeDeepReport(t *testing.T) {
+	var gotModel string
+	var gotMaxTokens float64
+	var gotFormat string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Model          string         `json:"model"`
+			MaxTokens      float64        `json:"max_tokens"`
+			ResponseFormat map[string]any `json:"response_format"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		gotModel = req.Model
+		gotMaxTokens = req.MaxTokens
+		if req.ResponseFormat != nil {
+			gotFormat, _ = req.ResponseFormat["type"].(string)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{
+				{"message": map[string]string{"content": `{"valuation":"估值偏高,需结合行业背景看待。","overview":"综合梳理。以上为基于公开数据的客观梳理,非投资建议。"}`}},
+			},
+		})
+	}))
+	defer srv.Close()
+
+	// DeepModel set → the deep compose must use it (cost control: stronger model
+	// only when configured).
+	enr := New(Config{APIKey: "test-key", BaseURL: srv.URL, Model: "normal-model", DeepModel: "strong-model"})
+	got, err := enr.ComposeDeepReport(context.Background(), "valuation: PE 31.2x", "zh")
+	if err != nil {
+		t.Fatalf("ComposeDeepReport: %v", err)
+	}
+	if got["valuation"] == "" || got["overview"] == "" {
+		t.Fatalf("missing prose: %v", got)
+	}
+	if gotModel != "strong-model" {
+		t.Errorf("model = %q, want the deep model", gotModel)
+	}
+	if gotMaxTokens != composeDeepMaxTokens {
+		t.Errorf("max_tokens = %v, want %d", gotMaxTokens, composeDeepMaxTokens)
+	}
+	if gotFormat != "json_object" {
+		t.Errorf("response_format type = %q, want json_object", gotFormat)
+	}
+}
+
+// TestComposeDeepReportFallbackModel asserts an empty DeepModel falls back to the
+// normal Model — ZERO behavior change until LLM_DEEP_MODEL is set.
+func TestComposeDeepReportFallbackModel(t *testing.T) {
+	var gotModel string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Model string `json:"model"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		gotModel = req.Model
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{{"message": map[string]string{"content": `{"valuation":"x"}`}}},
+		})
+	}))
+	defer srv.Close()
+
+	enr := New(Config{APIKey: "test-key", BaseURL: srv.URL, Model: "normal-model"}) // no DeepModel
+	if _, err := enr.ComposeDeepReport(context.Background(), "valuation: PE 31.2x", "zh"); err != nil {
+		t.Fatalf("ComposeDeepReport: %v", err)
+	}
+	if gotModel != "normal-model" {
+		t.Errorf("model = %q, want fallback to the normal model", gotModel)
+	}
+}
+
+func TestComposeDeepReportNoop(t *testing.T) {
+	got, err := Noop{}.ComposeDeepReport(context.Background(), "anything", "zh")
+	if !errors.Is(err, ErrDisabled) {
+		t.Fatalf("err = %v, want ErrDisabled", err)
+	}
+	if got != nil {
+		t.Fatalf("got = %v, want nil", got)
+	}
+}
+
 func TestComposeReportNoop(t *testing.T) {
 	got, err := Noop{}.ComposeReport(context.Background(), "anything", "zh")
 	if !errors.Is(err, ErrDisabled) {

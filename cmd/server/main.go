@@ -147,7 +147,7 @@ func main() {
 	}
 
 	// Optional LLM enrichment (disabled without LLM_API_KEY).
-	enricher := enrich.New(enrich.Config{APIKey: cfg.LLMAPIKey, BaseURL: cfg.LLMBaseURL, Model: cfg.LLMModel})
+	enricher := enrich.New(enrich.Config{APIKey: cfg.LLMAPIKey, BaseURL: cfg.LLMBaseURL, Model: cfg.LLMModel, DeepModel: cfg.LLMDeepModel})
 	if enricher.Enabled() {
 		log.Info("llm enrichment enabled", "model", cfg.LLMModel)
 		// Chinese headline translation: one small batch per sweep, newest news
@@ -579,9 +579,9 @@ func main() {
 			// per-ticker signals, hot-list presence, attributed news/social corpus).
 			Market: sentimentCache,
 			Store:  st,
-		}, enricher, cfg.LLMModel)
+		}, enricher, cfg.LLMModel, cfg.LLMDeepModel)
 		apiServer.SetResearch(researchSvc)
-		log.Info("deep-research report enabled", "llm", enricher.Enabled())
+		log.Info("deep-research report enabled", "llm", enricher.Enabled(), "deep_model", cfg.LLMDeepModel)
 	} else {
 		log.Warn("per-stock indicator compute disabled — no price feed (Alpaca) for daily candles")
 	}

@@ -17,14 +17,18 @@ import (
 )
 
 // fakeResearch is a controllable ResearchSource. Report returns the held data-only
-// fact sheet; Compose fills prose on each section when enabled; Enabled/Model are
-// fixed. It records how many times Compose ran so the cache/cap can be asserted.
+// fact sheet; Compose / ComposeDeep fill prose on each section when enabled (the
+// deep path prefixes "[deep] " so the test can tell the paths apart); Enabled /
+// Model / DeepModel are fixed. It records how many times Compose / ComposeDeep ran
+// so the cache/cap and the depth routing can be asserted.
 type fakeResearch struct {
-	fs       research.FactSheet
-	enabled  bool
-	model    string
-	prose    map[string]string
-	composes int
+	fs           research.FactSheet
+	enabled      bool
+	model        string
+	deepModel    string
+	prose        map[string]string
+	composes     int
+	deepComposes int
 }
 
 func (f *fakeResearch) Report(context.Context, string) research.FactSheet { return f.fs }
@@ -42,11 +46,34 @@ func (f *fakeResearch) Compose(_ context.Context, fs research.FactSheet, _ strin
 	return fs
 }
 
+func (f *fakeResearch) ComposeDeep(_ context.Context, fs research.FactSheet, _ string) research.FactSheet {
+	f.deepComposes++
+	if !f.enabled {
+		return fs
+	}
+	for i := range fs.Sections {
+		if p, ok := f.prose[fs.Sections[i].Key]; ok {
+			fs.Sections[i].Prose = "[deep] " + p
+		}
+	}
+	return fs
+}
+
 func (f *fakeResearch) Enabled() bool { return f.enabled }
 
 func (f *fakeResearch) Model() string {
 	if !f.enabled {
 		return ""
+	}
+	return f.model
+}
+
+func (f *fakeResearch) DeepModel() string {
+	if !f.enabled {
+		return ""
+	}
+	if f.deepModel != "" {
+		return f.deepModel
 	}
 	return f.model
 }
@@ -190,6 +217,51 @@ func TestGetResearch_EnabledHappyPath(t *testing.T) {
 	// runs exactly once.
 	if _, _ = getResearch(t, srv.URL+"/v1/stocks/AAPL/research"); fake.composes != 1 {
 		t.Errorf("Compose ran %d times; want 1 (second request served from cache)", fake.composes)
+	}
+}
+
+func TestGetResearch_DeepDepth(t *testing.T) {
+	fake := &fakeResearch{
+		fs:        sampleSheet(),
+		enabled:   true,
+		model:     "deepseek-chat",
+		deepModel: "anthropic/claude-opus",
+		prose:     map[string]string{"valuation": "估值处于其历史区间偏高位。"},
+	}
+	srv := serverWithResearch(fake)
+	defer srv.Close()
+
+	// depth=deep routes to ComposeDeep (not Compose) and reports the deep model.
+	resp, body := getResearch(t, srv.URL+"/v1/stocks/AAPL/research?depth=deep")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d; want 200", resp.StatusCode)
+	}
+	if fake.deepComposes != 1 || fake.composes != 0 {
+		t.Fatalf("deepComposes=%d composes=%d; want ComposeDeep to run once and Compose never", fake.deepComposes, fake.composes)
+	}
+	if body.Model != "anthropic/claude-opus" {
+		t.Errorf("model = %q; want the deep model", body.Model)
+	}
+	if len(body.Sections) != 1 || body.Sections[0].Prose != "[deep] 估值处于其历史区间偏高位。" {
+		t.Errorf("want the richer (deep) prose; got %+v", body.Sections)
+	}
+	// Facts are Go-owned and identical to the normal path — the deep compose only
+	// touches prose.
+	if len(body.Sections[0].Facts) != 1 || body.Sections[0].Facts[0].Value != "31.2x" {
+		t.Errorf("facts = %+v; want the unchanged Go-owned 31.2x", body.Sections[0].Facts)
+	}
+
+	// The deep report caches under its own key: a normal request still hits the
+	// normal Compose path (separate cache entry), so the two never collide.
+	if _, normal := getResearch(t, srv.URL+"/v1/stocks/AAPL/research"); normal.Model != "deepseek-chat" {
+		t.Errorf("normal model = %q; want deepseek-chat", normal.Model)
+	}
+	if fake.composes != 1 {
+		t.Errorf("Compose ran %d times; want 1 (deep request used a separate cache key)", fake.composes)
+	}
+	// A second deep request is served from the deep cache — ComposeDeep runs once.
+	if _, _ = getResearch(t, srv.URL+"/v1/stocks/AAPL/research?depth=deep"); fake.deepComposes != 1 {
+		t.Errorf("ComposeDeep ran %d times; want 1 (second deep request from cache)", fake.deepComposes)
 	}
 }
 

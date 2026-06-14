@@ -3,6 +3,7 @@ package research
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/wombow-ai/tickwind/internal/edgar"
@@ -44,14 +45,19 @@ type fakeQuote struct {
 
 func (f fakeQuote) Quote(context.Context, string) (store.Quote, bool) { return f.q, f.ok }
 
-// fakeEnricher is a controllable ResearchEnricher. When enabled, ComposeReport
-// returns prose (or err). It records the material it was handed.
+// fakeEnricher is a controllable ResearchEnricher. When enabled, ComposeReport /
+// ComposeDeepReport return prose (or err). It records the material it was handed
+// and how many normal vs deep calls were made (so the deep routing can be
+// asserted). deepProse, when set, is returned by ComposeDeepReport instead of
+// prose.
 type fakeEnricher struct {
-	enabled  bool
-	prose    map[string]string
-	err      error
-	material string
-	calls    int
+	enabled   bool
+	prose     map[string]string
+	deepProse map[string]string
+	err       error
+	material  string
+	calls     int
+	deepCalls int
 }
 
 func (f *fakeEnricher) Enabled() bool { return f.enabled }
@@ -61,6 +67,18 @@ func (f *fakeEnricher) ComposeReport(_ context.Context, material, _ string) (map
 	f.material = material
 	if f.err != nil {
 		return nil, f.err
+	}
+	return f.prose, nil
+}
+
+func (f *fakeEnricher) ComposeDeepReport(_ context.Context, material, _ string) (map[string]string, error) {
+	f.deepCalls++
+	f.material = material
+	if f.err != nil {
+		return nil, f.err
+	}
+	if f.deepProse != nil {
+		return f.deepProse, nil
 	}
 	return f.prose, nil
 }
@@ -499,6 +517,57 @@ func TestComposeNeverMutatesNumbers(t *testing.T) {
 	assertSameFacts(t, data, composed)
 }
 
+// TestComposeDeepReportNeverMutatesNumbers is the deep-path twin of
+// TestComposeNeverMutatesNumbers: the richer ComposeDeepReport compose must obey
+// the SAME anti-hallucination contract — it only ever fills Prose, every
+// Fact.Value/Raw is byte-for-byte identical before and after, stray numeric keys
+// in the reply are ignored, and the LLM never sees a raw number in the material.
+func TestComposeDeepReportNeverMutatesNumbers(t *testing.T) {
+	src := Sources{
+		Indicators: &fakeIndicators{res: indicators.StockIndicatorsResult{
+			Indicators: []indicators.StockIndicator{
+				okIndicator("technical.rsi", 56.3, ""),
+				okIndicator("fundamental.fcf", 4.5e9, ""),
+			},
+		}},
+		Fundamentals: fakeFund{f: edgar.Fundamentals{Revenue: 1e11, NetIncome: 9e10, EPSDiluted: 6.1, Shares: 15e9, Period: "FY2024"}},
+		Quote:        fakeQuote{q: store.Quote{Price: 190.12, Source: "alpaca", Session: "regular"}, ok: true},
+	}
+	data := Assemble(context.Background(), "X", src)
+
+	// The deep model returns richer prose AND tries to inject numbers via stray
+	// keys — ComposeDeep must ignore everything except matching section-key prose.
+	enr := &fakeEnricher{enabled: true, deepProse: map[string]string{
+		"technical":    "动量信号中性,RSI 处于其历史区间的中段,未显示超买或超卖。",
+		"fundamentals": "据最新年报,营收规模可观且现金生成稳健,但需注意这是滞后的年度数据。",
+		"overview":     "综合来看,基本面稳健而估值需结合行业背景看待。以上为基于公开数据的客观梳理,非投资建议。",
+		"market_cap":   "9999999",    // not a section key → ignored
+		"fcf":          "0% (bogus)", // not a section key → ignored
+		"pe":           "重算的市盈率 12x", // a number the model tried to assert → ignored
+	}}
+	composed := ComposeDeep(context.Background(), Assemble(context.Background(), "X", src), enr, "zh")
+
+	if enr.deepCalls != 1 || enr.calls != 0 {
+		t.Fatalf("deepCalls=%d calls=%d; want ComposeDeep to use ComposeDeepReport exactly once", enr.deepCalls, enr.calls)
+	}
+	// Prose was filled for matching section keys.
+	if sec, ok := section(composed, "technical"); !ok || sec.Prose == "" {
+		t.Errorf("technical prose = %q, want the richer deep prose", sec.Prose)
+	}
+	// The deep compose adds the same overview-synthesis section the normal path does.
+	if _, ok := section(composed, overviewKey); !ok {
+		t.Error("deep compose produced no overview section; want one when the model returns an overview")
+	}
+	// The material handed to the LLM carries only formatted strings — never a raw
+	// number. Assert the raw FCF (4500000000) and the raw RSI (56.3) do NOT appear
+	// verbatim; only their formatted forms ($4.50B / 56.3) are present.
+	if strings.Contains(enr.material, "4500000000") {
+		t.Errorf("material leaked a raw number (4500000000): %q", enr.material)
+	}
+	// Numbers untouched: every Fact.Value/Raw/Unit/Status is identical to data-only.
+	assertSameFacts(t, data, composed)
+}
+
 // assertSameFacts checks every Fact's Key/Value/Raw/Unit/Status matches between
 // two sheets (order-independent by key) — the anti-hallucination invariant.
 func assertSameFacts(t *testing.T, want, got FactSheet) {
@@ -580,14 +649,36 @@ func TestServiceDataOnly(t *testing.T) {
 			Indicators: []indicators.StockIndicator{okIndicator("technical.rsi", 56.3, "")},
 		}},
 	}
-	svc := NewService(src, &fakeEnricher{enabled: false}, "deepseek-chat")
+	svc := NewService(src, &fakeEnricher{enabled: false}, "deepseek-chat", "")
 	if svc.Enabled() {
 		t.Error("Enabled() = true, want false for a disabled enricher")
 	}
 	if svc.Model() != "" {
 		t.Errorf("Model() = %q, want \"\" when disabled", svc.Model())
 	}
+	if svc.DeepModel() != "" {
+		t.Errorf("DeepModel() = %q, want \"\" when disabled", svc.DeepModel())
+	}
 	rep := svc.Report(context.Background(), "X")
 	composed := svc.Compose(context.Background(), rep, "zh")
 	assertSameFacts(t, rep, composed)
+	deepComposed := svc.ComposeDeep(context.Background(), rep, "zh")
+	assertSameFacts(t, rep, deepComposed)
+}
+
+// TestServiceDeepModelFallback asserts an empty deepModel falls back to the normal
+// model (and to "" when the LLM is disabled), so depth=deep costs/behaves exactly
+// like the normal path until LLM_DEEP_MODEL is set.
+func TestServiceDeepModelFallback(t *testing.T) {
+	src := Sources{Indicators: &fakeIndicators{}}
+	// Empty deepModel → falls back to the normal model when enabled.
+	svc := NewService(src, &fakeEnricher{enabled: true}, "deepseek-chat", "")
+	if got := svc.DeepModel(); got != "deepseek-chat" {
+		t.Errorf("DeepModel() = %q, want the fallback to the normal model", got)
+	}
+	// An explicit deepModel is surfaced as-is.
+	svc2 := NewService(src, &fakeEnricher{enabled: true}, "deepseek-chat", "anthropic/claude-opus")
+	if got := svc2.DeepModel(); got != "anthropic/claude-opus" {
+		t.Errorf("DeepModel() = %q, want the configured deep model", got)
+	}
 }

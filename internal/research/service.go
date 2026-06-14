@@ -6,17 +6,23 @@ import "context"
 // and the (optional) enricher, exposing a cheap data-only Report and an
 // LLM-prose Compose. It is the type api.SetResearch wires in.
 type Service struct {
-	src   Sources
-	enr   ResearchEnricher
-	model string
+	src       Sources
+	enr       ResearchEnricher
+	model     string
+	deepModel string
 }
 
 // NewService builds a research Service from the data sources and the enricher.
 // The enricher may be a disabled Noop (LLM_API_KEY empty); the service serves the
 // data-only report regardless — the LLM is never on the critical path. model is
-// the configured LLM model name surfaced for transparency ("" when disabled).
-func NewService(src Sources, enr ResearchEnricher, model string) *Service {
-	return &Service{src: src, enr: enr, model: model}
+// the configured LLM model name surfaced for transparency ("" when disabled);
+// deepModel is the model the deep (depth=deep) compose reports — pass "" to fall
+// back to model (the same default the enricher itself applies).
+func NewService(src Sources, enr ResearchEnricher, model, deepModel string) *Service {
+	if deepModel == "" {
+		deepModel = model
+	}
+	return &Service{src: src, enr: enr, model: model, deepModel: deepModel}
 }
 
 // Report assembles the data-only fact sheet (no LLM, cheap, never errors).
@@ -31,6 +37,15 @@ func (s *Service) Compose(ctx context.Context, fs FactSheet, lang string) FactSh
 	return Compose(ctx, fs, s.enr, lang)
 }
 
+// ComposeDeep is the deep-research counterpart of Compose: it fills richer
+// per-section prose via the enricher's ComposeDeepReport (stronger model + Fable-5
+// harness) over the SAME Go-owned facts, degrading identically to the data-only
+// sheet when the LLM is disabled/errors. The anti-hallucination contract is
+// unchanged — the LLM only ever touches Prose. It never errors.
+func (s *Service) ComposeDeep(ctx context.Context, fs FactSheet, lang string) FactSheet {
+	return ComposeDeep(ctx, fs, s.enr, lang)
+}
+
 // Enabled reports whether the held enricher has a real LLM backend configured.
 func (s *Service) Enabled() bool {
 	return s.enr != nil && s.enr.Enabled()
@@ -42,4 +57,14 @@ func (s *Service) Model() string {
 		return ""
 	}
 	return s.model
+}
+
+// DeepModel returns the configured deep-compose model name (the stronger model
+// when LLM_DEEP_MODEL is set, otherwise the normal model), or "" when the LLM is
+// disabled.
+func (s *Service) DeepModel() string {
+	if !s.Enabled() {
+		return ""
+	}
+	return s.deepModel
 }

@@ -43,6 +43,15 @@ type Enricher interface {
 	// valuation call, neutral, attributing source types, "数据不足" for a thin
 	// section. Returns ErrDisabled when no LLM is configured.
 	ComposeReport(ctx context.Context, material, lang string) (map[string]string, error)
+	// ComposeDeepReport is the richer, Fable-5-harnessed sibling of ComposeReport:
+	// it writes LONGER per-section research prose (a report, not a one-paragraph
+	// digest) plus an executive "overview", over the SAME Go-owned facts, using a
+	// (possibly stronger) model. The anti-hallucination contract is IDENTICAL: the
+	// material carries only formatted strings, the model writes ONLY prose, and any
+	// stray numeric key in the reply is ignored by the caller — a stronger model
+	// writes richer prose, it never computes or asserts a number. Returns the same
+	// section-key→prose map shape (and ErrDisabled when no LLM is configured).
+	ComposeDeepReport(ctx context.Context, material, lang string) (map[string]string, error)
 	// ExplainMove writes ONE short (1-2 sentence) hedged explanation of a notable
 	// daily price move from a pre-built material string (the Go-computed move % +
 	// direction + attributed evidence headlines). The move number and direction are
@@ -67,6 +76,11 @@ type Config struct {
 	APIKey  string
 	BaseURL string // OpenAI-compatible base; default https://api.openai.com/v1
 	Model   string // default gpt-4o-mini
+	// DeepModel is the (optionally stronger) model used ONLY by ComposeDeepReport.
+	// When empty it falls back to Model, so the deep path costs/behaves exactly
+	// like the normal compose until a stronger model id is configured (cost
+	// control: the owner enables the pricier model via env when the paywall lands).
+	DeepModel string
 }
 
 // New returns a real Enricher when cfg.APIKey is set, otherwise a Noop.
@@ -82,13 +96,20 @@ func New(cfg Config) Enricher {
 	if model == "" {
 		model = "gpt-4o-mini"
 	}
+	// The deep-research compose uses a (possibly stronger) model; falling back to
+	// the normal model keeps cost/behavior identical until LLM_DEEP_MODEL is set.
+	deepModel := cfg.DeepModel
+	if deepModel == "" {
+		deepModel = model
+	}
 	return &llm{
 		// Generous ceiling: batch translation streams many tokens and some
 		// OpenRouter providers are slow; per-call context keeps tighter bounds.
-		http:    &http.Client{Timeout: 90 * time.Second},
-		apiKey:  cfg.APIKey,
-		baseURL: strings.TrimRight(base, "/"),
-		model:   model,
+		http:      &http.Client{Timeout: 90 * time.Second},
+		apiKey:    cfg.APIKey,
+		baseURL:   strings.TrimRight(base, "/"),
+		model:     model,
+		deepModel: deepModel,
 	}
 }
 
@@ -110,6 +131,10 @@ func (Noop) Brief(context.Context, string, string) (string, error) {
 }
 
 func (Noop) ComposeReport(context.Context, string, string) (map[string]string, error) {
+	return nil, ErrDisabled
+}
+
+func (Noop) ComposeDeepReport(context.Context, string, string) (map[string]string, error) {
 	return nil, ErrDisabled
 }
 
@@ -145,10 +170,11 @@ func summarySystemPrompt(lang string) string {
 }
 
 type llm struct {
-	http    *http.Client
-	apiKey  string
-	baseURL string
-	model   string
+	http      *http.Client
+	apiKey    string
+	baseURL   string
+	model     string
+	deepModel string // model for ComposeDeepReport (falls back to model)
 }
 
 func (l *llm) Enabled() bool { return true }
@@ -505,6 +531,109 @@ func (l *llm) ComposeReport(ctx context.Context, material, lang string) (map[str
 	}
 	if len(out.Choices) == 0 {
 		return nil, errors.New("enrich: empty compose response")
+	}
+	return parseSectionProse(out.Choices[0].Message.Content)
+}
+
+// composeDeepMaxTokens is the longer output ceiling for the deep research report
+// — a multi-section report with an executive overview needs more room than the
+// one-paragraph digest. Generous, but bounded so a runaway reply can't blow the
+// token budget.
+const composeDeepMaxTokens = 6000
+
+// composeDeepPrompt is the Fable-5-derived system prompt for the AI Deep Research
+// report (zh). It mirrors composePrompt's UNBREAKABLE anti-hallucination contract
+// (Go owns every number; the model writes ONLY prose; output is a section-keyed
+// JSON object), but organizes the constraints HIERARCHICALLY by concern — research
+// standards, citation discipline, hedging, scope, format, anti-fabrication, and an
+// in-prompt self-check — so a stronger model writes RICHER, longer prose over the
+// SAME facts without ever asserting a number. Tone: analytical detachment.
+const composeDeepPrompt = "你是严谨的股票研究分析撰稿人,基于用户提供的、按板块组织的结构化材料(每个板块带已格式化的数字事实)撰写一份深度研究报告。" +
+	"只返回一个 JSON 对象,键为材料中出现的板块标识(如 valuation/fundamentals/technical/flows/sentiment),值为该板块的简体中文深度定性分析。\n" +
+	"<research_standards>分析要有深度、成体系:对每个板块,解读其信号的方向与含义、与其它板块是否相互印证或背离、揭示其中的张力与不确定性;比一段话的速览更充分、更具分析性,但始终是对已给事实的解读,不是罗列。</research_standards>\n" +
+	"<citation_discipline>每一处论断都要追溯到材料中给出的事实,并注明来源类型(如\"据公司最新季度披露\"\"据13F披露\"\"据新闻/社区\");以转述为主,任何直接引用都不超过约20字、每个来源至多引用一次;材料里没有的,不得引用。</citation_discipline>\n" +
+	"<hedging_requirements>使用推测性、对冲的措辞(\"数据显示/或暗示/可能\"),不要用\"将会/必然\";涉及区间的按材料原样引用区间,不要编造精确点值制造虚假精度;明确区分\"已披露的事实\"与\"由此做出的推断\"。</hedging_requirements>\n" +
+	"<scope_boundaries>这是分析性梳理,不是投资建议:不得给出买入/卖出/目标价/评级;遇到缺乏支撑的假设要点明其为假设;不得在没有声明\"情景假设\"的前提下做远期预测。</scope_boundaries>\n" +
+	"<format_rules>以连贯的分析性散文为主;仅当一处简短的结构化对比(如多期或同业的几项对照)能让表述更清晰时才使用,且只用文字描述、不要堆砌表格符号;不要过度格式化,不要无意义的项目符号。</format_rules>\n" +
+	"<anti_fabrication>绝不发明、内插或推算任何数字、估计值、分析师一致预期或价格;材料中给出的事实是唯一存在的事实;某项事实缺失时写\"数据不足\",绝不猜测或折算成具体数字;也绝不在文字里重算或改动材料中的任何数字。</anti_fabrication>\n" +
+	"资金面(flows):描述国会披露、机构13F、内部人买卖、期权、做空等信号方向是否一致;金额区间按材料原样引用;13F为季度滞后数据,注明披露季度。" +
+	"情绪面(sentiment):新闻与社区内容仅作有出处的引用,绝不当作事实陈述,更不得据此编造任何情绪分值。\n" +
+	"此外必须额外输出一个 \"overview\" 键:综合全部板块写 3-6 句中文执行摘要,优势与风险两面均衡,语气客观克制(用\"逆风/顺风/结构性\"等中性描述,不用营销语言),结尾固定用一句\"以上为基于公开数据的客观梳理,非投资建议\"。\n" +
+	"<self_check>定稿前自检:每一个出现的数字/事实是否都能追溯到材料中给出的事实?是否没有任何买卖建议或目标价?不确定处是否都已对冲?是否没有任何编造的数字?任一项不满足就修正后再输出。</self_check>\n" +
+	"只输出该 JSON 对象,不要解释或代码块。"
+
+// composeDeepPromptEN is the English-output counterpart of composeDeepPrompt, same
+// hierarchical Fable-5 harness and same anti-hallucination contract.
+const composeDeepPromptEN = "You are a rigorous equity-research writer producing a DEEP research report from the user's structured material, organized by section (each section carries pre-formatted numeric facts). " +
+	"Return ONLY a JSON object whose keys are the section ids present in the material (e.g. valuation/fundamentals/technical/flows/sentiment) and whose values are in-depth qualitative English analysis for that section.\n" +
+	"<research_standards>Be analytical and comprehensive: for each section, interpret the direction and meaning of its signals, whether sections corroborate or diverge, and surface the tensions and uncertainties; go deeper than a one-paragraph digest, but always as interpretation of the GIVEN facts, never a re-listing.</research_standards>\n" +
+	"<citation_discipline>Tie every claim to a fact provided in the material and attribute the source type (e.g. \"per the company's latest quarterly disclosure\", \"per 13F filings\", \"per news/community\"); paraphrase rather than quote, keep any single quote under ~20 words and at most one per source; never cite anything not in the material.</citation_discipline>\n" +
+	"<hedging_requirements>Use modal, hedged language (\"the data shows/suggests/may\"), not \"will\"; quote any disclosed range verbatim rather than inventing a false-precision point value; clearly separate disclosed facts from inferences drawn from them.</hedging_requirements>\n" +
+	"<scope_boundaries>This is analytical, NOT investment advice: no buy/sell/price target/rating; flag any assumption that lacks support as an assumption; do not project far into the future without explicitly naming it a scenario.</scope_boundaries>\n" +
+	"<format_rules>Prose for analysis; use a short structured comparison (e.g. a few multi-period or peer figures side by side) ONLY when it materially clarifies, and describe it in words rather than piling up table markup; no over-formatting, no gratuitous bullet lists.</format_rules>\n" +
+	"<anti_fabrication>NEVER invent, interpolate or estimate a number, an analyst consensus, or a price; the facts given in the material are the ONLY facts that exist; when a fact is absent write \"not disclosed\", never guess or convert to a point figure; and never recompute or alter any number from the material in your prose.</anti_fabrication>\n" +
+	"flows: describe whether the congressional, 13F, insider, options and short signals point the same or opposite directions; quote any disclosed amount range verbatim; 13F is quarter-lagged — note the disclosed quarter. " +
+	"sentiment: news and community items may ONLY be quoted with attribution, never restated as fact, and you must not derive any sentiment number from them.\n" +
+	"Additionally you MUST output an \"overview\" key: a 3-6 sentence executive summary synthesizing all sections, balancing strengths and risks, in a detached, neutral tone (use neutral descriptors like \"headwinds/tailwinds/secular\", no marketing language), ending with the fixed line \"The above is an objective summary of public data, not investment advice\".\n" +
+	"<self_check>Before finalizing, re-read: does every figure trace to a fact provided in the material? is there no recommendation or price target? is everything uncertain hedged? is there no fabricated number? Fix any failing item before you output.</self_check>\n" +
+	"Output only the JSON object, no explanation or code fences."
+
+// composeDeepSystemPrompt picks the deep-report system prompt for a language.
+func composeDeepSystemPrompt(lang string) string {
+	if lang == "en" {
+		return composeDeepPromptEN
+	}
+	return composeDeepPrompt
+}
+
+// ComposeDeepReport writes richer per-section research prose (plus an executive
+// overview) from the pre-built material string, returning the section-key→prose
+// map. It is the deep sibling of ComposeReport with IDENTICAL safety wiring —
+// json_object response_format, prose-only output, stray numeric keys ignored by
+// the caller — differing only in (1) the stronger deepModel, (2) a larger token
+// budget, and (3) the Fable-5 hierarchical system prompt. Returns ErrDisabled via
+// Noop when no LLM is configured.
+func (l *llm) ComposeDeepReport(ctx context.Context, material, lang string) (map[string]string, error) {
+	body, err := json.Marshal(map[string]any{
+		"model":           l.deepModel,
+		"temperature":     0.3,
+		"max_tokens":      composeDeepMaxTokens,
+		"response_format": map[string]string{"type": "json_object"},
+		"messages": []map[string]string{
+			{"role": "system", "content": composeDeepSystemPrompt(lang)},
+			{"role": "user", "content": material},
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, l.baseURL+"/chat/completions", bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+l.apiKey)
+
+	resp, err := l.http.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("enrich: compose-deep request: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("enrich: compose-deep status %s", resp.Status)
+	}
+	var out struct {
+		Choices []struct {
+			Message struct {
+				Content string `json:"content"`
+			} `json:"message"`
+		} `json:"choices"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return nil, fmt.Errorf("enrich: compose-deep decode: %w", err)
+	}
+	if len(out.Choices) == 0 {
+		return nil, errors.New("enrich: empty compose-deep response")
 	}
 	return parseSectionProse(out.Choices[0].Message.Content)
 }

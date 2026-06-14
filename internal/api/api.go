@@ -286,8 +286,14 @@ type IndicatorComputeSource interface {
 type ResearchSource interface {
 	Report(ctx context.Context, ticker string) research.FactSheet
 	Compose(ctx context.Context, fs research.FactSheet, lang string) research.FactSheet
+	// ComposeDeep fills RICHER per-section prose (the AI Deep Research report,
+	// depth=deep) via a possibly stronger model + a Fable-5 harness, over the SAME
+	// Go-owned facts. Same off-the-critical-path degradation and same
+	// never-touch-a-number contract as Compose. DeepModel is its model name.
+	ComposeDeep(ctx context.Context, fs research.FactSheet, lang string) research.FactSheet
 	Enabled() bool
 	Model() string
+	DeepModel() string
 }
 
 // MovementSource produces the move-triggered "why did this stock move today?"
@@ -2494,8 +2500,17 @@ func (s *Server) getResearch(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Query().Get("lang") == "en" {
 		lang = "en"
 	}
+	// depth=deep selects the richer AI Deep Research compose (stronger model +
+	// Fable-5 harness) over the SAME Go-owned facts. The deep report caches under a
+	// separate "|deep" key suffix so deep and normal reports never collide. The
+	// default (no/unknown depth) is the unchanged normal research path. This is the
+	// only gate in this increment — NO login/quota (that is increment 2).
+	deep := r.URL.Query().Get("depth") == "deep"
 	day := summaryDay() // ET trading day, shared with the AI digest cache
 	key := ticker + "|" + day + "|" + lang
+	if deep {
+		key += "|deep"
+	}
 
 	for {
 		s.researchMu.Lock()
@@ -2561,7 +2576,11 @@ func (s *Server) getResearch(w http.ResponseWriter, r *http.Request) {
 
 	hasProse := false
 	if wantProse {
-		fs = s.researchCalc.Compose(r.Context(), fs, lang)
+		if deep {
+			fs = s.researchCalc.ComposeDeep(r.Context(), fs, lang)
+		} else {
+			fs = s.researchCalc.Compose(r.Context(), fs, lang)
+		}
 		for _, sec := range fs.Sections {
 			if strings.TrimSpace(sec.Prose) != "" {
 				hasProse = true
@@ -2575,7 +2594,13 @@ func (s *Server) getResearch(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	e := researchEntry{fs: fs, llm: hasProse, model: s.researchCalc.Model(), at: time.Now().UTC()}
+	// Surface the model that actually wrote the prose: the (possibly stronger)
+	// deep model for depth=deep, else the normal model.
+	model := s.researchCalc.Model()
+	if deep {
+		model = s.researchCalc.DeepModel()
+	}
+	e := researchEntry{fs: fs, llm: hasProse, model: model, at: time.Now().UTC()}
 	finish(&e)
 	s.writeResearch(w, e)
 }

@@ -17,6 +17,12 @@ type ResearchEnricher interface {
 	// string, returning a section-key→prose map (qualitative only, no numbers).
 	// Returns an error when disabled or on failure.
 	ComposeReport(ctx context.Context, material, lang string) (map[string]string, error)
+	// ComposeDeepReport is the richer, Fable-5-harnessed sibling of ComposeReport:
+	// longer per-section prose plus an executive overview, over the SAME material
+	// (only formatted strings — no numbers), using a possibly stronger model. Same
+	// prose-only, section-key→prose contract; returns an error when disabled or on
+	// failure.
+	ComposeDeepReport(ctx context.Context, material, lang string) (map[string]string, error)
 }
 
 // Compose returns the FactSheet with per-section prose filled in. It builds ONE
@@ -26,6 +32,27 @@ type ResearchEnricher interface {
 // returned UNCHANGED (every prose stays "") and NO error is returned. The LLM can
 // only ever touch Prose — it never sees or sets a Fact's Value or Raw.
 func Compose(ctx context.Context, fs FactSheet, enr ResearchEnricher, lang string) FactSheet {
+	return compose(ctx, fs, enr, lang, false)
+}
+
+// ComposeDeep is the deep-research counterpart of Compose: it fills per-section
+// prose via the enricher's richer ComposeDeepReport (stronger model + Fable-5
+// harness) over the SAME material. The anti-hallucination contract is IDENTICAL —
+// the LLM sees only formatted strings and can only ever touch Prose; it never sees
+// or sets a Fact's Value or Raw, and a stray numeric key in its reply is ignored.
+// A stronger model writes richer prose over the same Go-owned facts; it never
+// computes or asserts a number. Same off-the-critical-path degradation.
+func ComposeDeep(ctx context.Context, fs FactSheet, enr ResearchEnricher, lang string) FactSheet {
+	return compose(ctx, fs, enr, lang, true)
+}
+
+// compose is the shared implementation behind Compose / ComposeDeep. The ONLY
+// difference between the two paths is which enricher method writes the prose
+// (ComposeReport vs the richer ComposeDeepReport) — the material build, the
+// prose-only fill, the overview/bull/bear synthesis, and the never-touch-a-number
+// invariant are identical, so both paths share the same anti-hallucination
+// guarantees.
+func compose(ctx context.Context, fs FactSheet, enr ResearchEnricher, lang string, deep bool) FactSheet {
 	if enr == nil || !enr.Enabled() {
 		return fs
 	}
@@ -33,7 +60,11 @@ func Compose(ctx context.Context, fs FactSheet, enr ResearchEnricher, lang strin
 	if strings.TrimSpace(material) == "" {
 		return fs
 	}
-	prose, err := enr.ComposeReport(ctx, material, lang)
+	composeFn := enr.ComposeReport
+	if deep {
+		composeFn = enr.ComposeDeepReport
+	}
+	prose, err := composeFn(ctx, material, lang)
 	if err != nil || len(prose) == 0 {
 		return fs // degrade to data-only; never propagate the error
 	}

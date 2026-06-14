@@ -39,6 +39,9 @@ func (c *countingEnricher) Brief(context.Context, string, string) (string, error
 func (c *countingEnricher) ComposeReport(context.Context, string, string) (map[string]string, error) {
 	return nil, enrich.ErrDisabled
 }
+func (c *countingEnricher) ComposeDeepReport(context.Context, string, string) (map[string]string, error) {
+	return nil, enrich.ErrDisabled
+}
 func (c *countingEnricher) ExplainMove(context.Context, string, string) (string, error) {
 	return "", enrich.ErrDisabled
 }

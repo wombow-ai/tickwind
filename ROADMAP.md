@@ -668,6 +668,7 @@ verifies (build/vet/lint), updates this file + `CLAUDE.md`, and commits._
 - prompt(user/system)参考 Claude Fable 5 system prompt(github asgeirtj/system_prompts_leaks .../claude-fable-5.md)。
 - **更强模型**(OpenRouter)→ 因更贵:**必须登录 + 全站每用户每天 1 次**(非每股一次)。
 - 做法:先 DESIGN(研究 Fable 5 prompt + 定固定数据/图表/引用架构 + 模型/配额/登录门控)再分增量;建立在已上线的 R2 6 节研报之上。
+- **✅增量1:深度 compose harness**(Go,本批):`enrich.ComposeDeepReport`(Fable5 分层 prompt:research_standards/citation_discipline/hedging/scope_boundaries/format_rules/anti_fabrication/self_check + exec overview,zh+en)over 现有 R2 FactSheet;模型 `cfg.LLMDeepModel`(env `LLM_DEEP_MODEL`)默认 fallback 现 `LLMModel`=**零成本/行为变化直到 owner 设贵模型**;更长 token(6000);API `GET /v1/stocks/{t}/research?depth=deep`(独立 `|deep` cache key 不撞 normal;LLM off→data-only 不 503;cap+single-flight)。**反幻觉=结构性安全**:复用 buildMaterial(只格式化字符串无 Raw)+ parseSectionProse(丢弃 stray numeric key)→ 即使 LLM 乱填也注不进错数;`TestComposeDeepReportNeverMutatesNumbers` 断言 facts byte-identical。normal /research 不变。Go gate+ -race 全绿。**增量2-4 待做**:②登录+全站每用户每天1次配额(store 计数器,Supabase token)③固定排版报告页+AI Digest 右上角入口按钮(表/图/引用)④付费 paywall(待 owner Yahoo 取舍;贵模型届时经 LLM_DEEP_MODEL 启用)。
 
 ### C. 拉新:核心功能登录门控
 - 核心(如指标)未登录只看部分,完整需登录;未登录"部分视图"样式我设计(诚实预览 + 引导登录,不打扰式,守 data-first)。

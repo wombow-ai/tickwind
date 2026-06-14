@@ -97,6 +97,12 @@ type Config struct {
 	LLMAPIKey  string
 	LLMBaseURL string // default https://api.openai.com/v1
 	LLMModel   string // default gpt-4o-mini
+	// LLMDeepModel is the (optionally stronger) model used ONLY by the AI Deep
+	// Research compose (depth=deep). It is empty by default → the deep path falls
+	// back to LLMModel, so there is ZERO cost/behavior change until the owner sets
+	// LLM_DEEP_MODEL (deliberate cost control: the pricey model stays off until the
+	// paywall goes live).
+	LLMDeepModel string
 
 	// Supabase auth. SupabaseURL (e.g. https://<ref>.supabase.co) enables ES256
 	// verification via the project's JWKS — required because Supabase now signs
@@ -174,6 +180,7 @@ func Load() Config {
 		LLMAPIKey:               env("LLM_API_KEY", ""),
 		LLMBaseURL:              env("LLM_BASE_URL", ""),
 		LLMModel:                env("LLM_MODEL", ""),
+		LLMDeepModel:            env("LLM_DEEP_MODEL", ""),
 		SupabaseURL:             strings.TrimRight(env("SUPABASE_URL", ""), "/"),
 		SupabaseJWTSecret:       env("SUPABASE_JWT_SECRET", ""),
 		AdminUserIDs:            splitCSVRaw(env("ADMIN_USER_IDS", "")),
