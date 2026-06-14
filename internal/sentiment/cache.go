@@ -53,6 +53,23 @@ func (c *Cache) Set(r Result, date string) {
 	c.history = append(c.history, Point{Date: date, Score: r.Score})
 }
 
+// Seed initializes the in-memory history from a chronological (oldest→newest)
+// slice of Points, replacing whatever history was there. It is meant to be called
+// once at startup — after loading the durable history from the store and before
+// the ingestor's first Set — so History() returns the accumulated series
+// immediately. Points is copied, so the caller may retain and mutate it. A nil or
+// empty slice clears the history.
+func (c *Cache) Seed(points []Point) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if len(points) == 0 {
+		c.history = nil
+		return
+	}
+	c.history = make([]Point, len(points))
+	copy(c.history, points)
+}
+
 // Latest returns the most recent Result and true, or the zero Result and false
 // before any Set.
 func (c *Cache) Latest() (Result, bool) {

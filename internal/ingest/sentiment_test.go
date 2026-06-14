@@ -9,6 +9,7 @@ import (
 	"github.com/wombow-ai/tickwind/internal/cboe"
 	"github.com/wombow-ai/tickwind/internal/finrashvol"
 	"github.com/wombow-ai/tickwind/internal/sentiment"
+	"github.com/wombow-ai/tickwind/internal/store/memory"
 	"github.com/wombow-ai/tickwind/internal/yahoo"
 )
 
@@ -49,7 +50,7 @@ func TestSentimentGatherAllComponents(t *testing.T) {
 			{Symbol: "GME", ShortPct: 60, TotalVolume: 2_000_000},
 			{Symbol: "AMC", ShortPct: 40, TotalVolume: 2_000_000},
 		}},
-		sentiment.NewCache(), time.Hour, nil)
+		sentiment.NewCache(), nil, time.Hour, nil)
 
 	in := ing.gather(context.Background())
 	if in.VIX == nil || *in.VIX != 18.0 {
@@ -70,7 +71,7 @@ func TestSentimentGatherSkipsFailingSources(t *testing.T) {
 		fakeVIX{err: errors.New("boom")},
 		fakeChainSource{ok: false},
 		fakeAverager{rows: []finrashvol.ShortVol{{Symbol: "GME", ShortPct: 30}}},
-		sentiment.NewCache(), time.Hour, nil)
+		sentiment.NewCache(), nil, time.Hour, nil)
 
 	in := ing.gather(context.Background())
 	if in.VIX != nil {
@@ -86,9 +87,10 @@ func TestSentimentGatherSkipsFailingSources(t *testing.T) {
 
 func TestSentimentComputeStoresDailyPoint(t *testing.T) {
 	cache := sentiment.NewCache()
+	st := memory.New()
 	ing := NewSentimentIngestor(
 		fakeVIX{q: yahoo.Quote{Price: 15.0}, ok: true}, nil, nil,
-		cache, time.Hour, nil)
+		cache, st, time.Hour, nil)
 	ing.now = func() time.Time { return time.Date(2026, 6, 12, 12, 0, 0, 0, time.UTC) }
 
 	ing.compute(context.Background())
@@ -100,6 +102,14 @@ func TestSentimentComputeStoresDailyPoint(t *testing.T) {
 	hist := cache.History()
 	if len(hist) != 1 || hist[0].Date != "2026-06-12" {
 		t.Fatalf("history = %+v, want one point dated 2026-06-12", hist)
+	}
+	// The score is also persisted to the durable store.
+	got, err := st.FearGreedHistory(context.Background(), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0].Date != "2026-06-12" || got[0].Score != res.Score {
+		t.Fatalf("persisted history = %+v, want one 2026-06-12 point with score %d", got, res.Score)
 	}
 }
 

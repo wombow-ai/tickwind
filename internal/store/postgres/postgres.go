@@ -604,6 +604,52 @@ func (s *Store) SeenForm4Since(ctx context.Context, since time.Time) ([]string, 
 	return out, nil
 }
 
+// SaveFearGreed upserts one day's headline Fear & Greed score, idempotent on the
+// day ("2006-01-02") — a same-day re-save replaces the score and bumps updated_at.
+func (s *Store) SaveFearGreed(ctx context.Context, date string, score int) error {
+	const q = `INSERT INTO fear_greed (day, score) VALUES ($1, $2)
+ON CONFLICT (day) DO UPDATE SET score = $2, updated_at = now()`
+	if _, err := s.pool.Exec(ctx, q, date, score); err != nil {
+		return fmt.Errorf("postgres: save fear_greed: %w", err)
+	}
+	return nil
+}
+
+// FearGreedHistory returns the daily scores in CHRONOLOGICAL order (oldest→newest).
+// When limit>0 it returns only the most recent `limit` days (still chronological);
+// limit<=0 returns all days. Always a non-nil (possibly empty) slice.
+func (s *Store) FearGreedHistory(ctx context.Context, limit int) ([]store.FearGreedPoint, error) {
+	// Fetch the most recent `limit` days (DESC + LIMIT), then reverse to
+	// chronological order; limit<=0 fetches everything.
+	q := `SELECT day::text, score FROM fear_greed ORDER BY day DESC`
+	args := []any{}
+	if limit > 0 {
+		q += ` LIMIT $1`
+		args = append(args, limit)
+	}
+	rows, err := s.pool.Query(ctx, q, args...)
+	if err != nil {
+		return nil, fmt.Errorf("postgres: fear_greed history: %w", err)
+	}
+	defer rows.Close()
+	out := make([]store.FearGreedPoint, 0)
+	for rows.Next() {
+		var p store.FearGreedPoint
+		if err := rows.Scan(&p.Date, &p.Score); err != nil {
+			return nil, fmt.Errorf("postgres: scan fear_greed: %w", err)
+		}
+		out = append(out, p)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("postgres: iterate fear_greed: %w", err)
+	}
+	// Reverse DESC → chronological (oldest→newest).
+	for i, j := 0, len(out)-1; i < j; i, j = i+1, j-1 {
+		out[i], out[j] = out[j], out[i]
+	}
+	return out, nil
+}
+
 // Watchlist returns one user's tracked tickers, in insertion order.
 func (s *Store) Watchlist(ctx context.Context, userID string) ([]string, error) {
 	rows, err := s.pool.Query(ctx, `SELECT ticker FROM watchlist WHERE user_id = $1 ORDER BY added_at`, userID)

@@ -360,7 +360,20 @@ func main() {
 	// short-pressure average; breadth / new-highs-lows / social-heat are TODO once
 	// those whole-market inputs are easy to source. Keyless. Backs /v1/sentiment.
 	sentimentCache := sentiment.NewCache()
-	go ingest.NewSentimentIngestor(yahoo.New(), cboe.New(), shortVolumeCache, sentimentCache, 24*time.Hour, log).Run(ctx)
+	// Backfill the in-memory history from the durable Market store so the chart
+	// shows the accumulated series immediately after a redeploy (the cache itself
+	// resets on every restart). The ingestor then persists each new day's score.
+	if pts, err := st.FearGreedHistory(ctx, 120); err != nil {
+		log.Warn("sentiment: load fear&greed history failed", "err", err)
+	} else if len(pts) > 0 {
+		seed := make([]sentiment.Point, len(pts))
+		for i, p := range pts {
+			seed[i] = sentiment.Point{Date: p.Date, Score: p.Score}
+		}
+		sentimentCache.Seed(seed)
+		log.Info("sentiment history seeded from store", "points", len(seed))
+	}
+	go ingest.NewSentimentIngestor(yahoo.New(), cboe.New(), shortVolumeCache, sentimentCache, st, 24*time.Hour, log).Run(ctx)
 	log.Info("sentiment index ingestor enabled (VIX + put/call + short pressure)")
 
 	// Options overview (squeeze/sentiment): Cboe ~15-min delayed chains, fetched

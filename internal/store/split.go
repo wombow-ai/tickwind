@@ -124,6 +124,16 @@ func (s Split) SeenForm4Since(ctx context.Context, since time.Time) ([]string, e
 	return s.Market.SeenForm4Since(ctx, since)
 }
 
+// Fear & Greed history is public market data → the durable Market store.
+
+func (s Split) SaveFearGreed(ctx context.Context, date string, score int) error {
+	return s.Market.SaveFearGreed(ctx, date, score)
+}
+
+func (s Split) FearGreedHistory(ctx context.Context, limit int) ([]FearGreedPoint, error) {
+	return s.Market.FearGreedHistory(ctx, limit)
+}
+
 // ── User: per-user state (local/ephemeral) ───────────────────────────────
 
 func (s Split) Watchlist(ctx context.Context, userID string) ([]string, error) {

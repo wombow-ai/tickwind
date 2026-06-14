@@ -147,6 +147,15 @@ CREATE TABLE IF NOT EXISTS seen_form4 (
 
 CREATE INDEX IF NOT EXISTS seen_form4_filed_idx ON seen_form4 (filed_date DESC);
 
+-- Daily headline Fear & Greed score, persisted so the sentiment-history curve
+-- survives redeploys (the live index is computed into an in-memory cache).
+-- Public market data → durable Market store. One row per calendar day.
+CREATE TABLE IF NOT EXISTS fear_greed (
+    day        date PRIMARY KEY,
+    score      int NOT NULL,
+    updated_at timestamptz NOT NULL DEFAULT now()
+);
+
 -- Migrate the legacy single-tenant watchlist (ticker PK, no user) to per-user.
 -- Runs at most once: the condition is false after user_id exists.
 DO $$

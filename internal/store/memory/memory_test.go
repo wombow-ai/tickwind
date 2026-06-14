@@ -296,6 +296,67 @@ func TestSeenForm4(t *testing.T) {
 	}
 }
 
+func TestFearGreedHistory(t *testing.T) {
+	s := New()
+	ctx := context.Background()
+
+	// Empty store → non-nil, empty slice.
+	if got, err := s.FearGreedHistory(ctx, 0); err != nil {
+		t.Fatalf("history (empty): %v", err)
+	} else if got == nil || len(got) != 0 {
+		t.Fatalf("history (empty) = %#v, want non-nil empty slice", got)
+	}
+
+	// Save out of order; a blank date is ignored.
+	for _, p := range []store.FearGreedPoint{
+		{Date: "2026-06-12", Score: 40},
+		{Date: "2026-06-10", Score: 20},
+		{Date: "2026-06-11", Score: 30},
+		{Date: "", Score: 99},
+	} {
+		if err := s.SaveFearGreed(ctx, p.Date, p.Score); err != nil {
+			t.Fatalf("save %q: %v", p.Date, err)
+		}
+	}
+
+	// All days, chronological (oldest→newest); the blank date never stored.
+	got, err := s.FearGreedHistory(ctx, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []store.FearGreedPoint{
+		{Date: "2026-06-10", Score: 20},
+		{Date: "2026-06-11", Score: 30},
+		{Date: "2026-06-12", Score: 40},
+	}
+	if len(got) != len(want) {
+		t.Fatalf("history = %+v, want %+v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("history[%d] = %+v, want %+v", i, got[i], want[i])
+		}
+	}
+
+	// Upsert: re-saving the same date replaces the score, not appends.
+	if err := s.SaveFearGreed(ctx, "2026-06-11", 35); err != nil {
+		t.Fatal(err)
+	}
+	got, _ = s.FearGreedHistory(ctx, 0)
+	if len(got) != 3 {
+		t.Fatalf("len after upsert = %d, want 3 (no new row)", len(got))
+	}
+	if got[1].Date != "2026-06-11" || got[1].Score != 35 {
+		t.Fatalf("upserted point = %+v, want {2026-06-11 35}", got[1])
+	}
+
+	// Limit is a tail: the most recent N days, still chronological.
+	got, _ = s.FearGreedHistory(ctx, 2)
+	if len(got) != 2 || got[0].Date != "2026-06-11" || got[1].Date != "2026-06-12" {
+		t.Fatalf("limited history = %+v, want the last two days chronologically", got)
+	}
+}
+
 func mustUpsertQuote(t *testing.T, s *Store, q store.Quote) {
 	t.Helper()
 	if err := s.UpsertQuote(context.Background(), q); err != nil {

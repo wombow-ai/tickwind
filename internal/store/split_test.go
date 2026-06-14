@@ -44,4 +44,18 @@ func TestSplitRoutesMarketAndUser(t *testing.T) {
 	if _, ok, _ := s.GetSecurity(ctx, "AAPL"); !ok {
 		t.Error("Split.GetSecurity should find AAPL via Market")
 	}
+
+	// Fear & Greed history is public market data → it must route to Market.
+	if err := s.SaveFearGreed(ctx, "2026-06-14", 55); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := market.FearGreedHistory(ctx, 0); len(got) != 1 || got[0].Score != 55 {
+		t.Errorf("fear&greed should be in the Market store; got %v", got)
+	}
+	if got, _ := user.FearGreedHistory(ctx, 0); len(got) != 0 {
+		t.Errorf("fear&greed must NOT be in the User store; got %v", got)
+	}
+	if got, _ := s.FearGreedHistory(ctx, 0); len(got) != 1 || got[0].Date != "2026-06-14" {
+		t.Errorf("Split.FearGreedHistory = %v; want one 2026-06-14 point via Market", got)
+	}
 }

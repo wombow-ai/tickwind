@@ -274,6 +274,45 @@ func TestCache(t *testing.T) {
 	}
 }
 
+func TestCacheSeed(t *testing.T) {
+	c := NewCache()
+
+	pts := []Point{
+		{Date: "2026-06-10", Score: 20},
+		{Date: "2026-06-11", Score: 30},
+		{Date: "2026-06-12", Score: 40},
+	}
+	c.Seed(pts)
+
+	got := c.History()
+	if len(got) != 3 {
+		t.Fatalf("History() len = %d after Seed, want 3", len(got))
+	}
+	for i := range pts {
+		if got[i] != pts[i] {
+			t.Fatalf("History()[%d] = %+v, want %+v", i, got[i], pts[i])
+		}
+	}
+
+	// Seed copies its input: mutating the source slice must not affect the cache.
+	pts[0].Score = -999
+	if c.History()[0].Score == -999 {
+		t.Error("Seed aliased its input; mutation leaked into the cache")
+	}
+
+	// A Set after Seed appends a new day to the seeded history.
+	c.Set(Compute(Inputs{Heat: fp(50)}), "2026-06-13")
+	if h := c.History(); len(h) != 4 || h[3].Date != "2026-06-13" {
+		t.Fatalf("History() = %+v after post-Seed Set, want a 4th point dated 2026-06-13", h)
+	}
+
+	// Seeding again replaces the history; an empty seed clears it.
+	c.Seed(nil)
+	if h := c.History(); h != nil {
+		t.Fatalf("History() = %+v after Seed(nil), want nil", h)
+	}
+}
+
 func TestCacheConcurrent(t *testing.T) {
 	c := NewCache()
 	var wg sync.WaitGroup

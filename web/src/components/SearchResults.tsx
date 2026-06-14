@@ -40,6 +40,12 @@ export function SearchResults({q}: {q: string}) {
   }, [query]);
 
   const upper = query.toUpperCase();
+  // Only offer the "open it directly" fallback when the query actually LOOKS like
+  // a ticker (so an unindexed OTC/foreign symbol stays reachable) — never for a
+  // plain word like "hreflang", which would otherwise open a phantom detail page
+  // for a stock that doesn't exist. US/OTC ≤5-6 alphanumerics, optional .HK / .B
+  // style suffix; no spaces.
+  const looksLikeTicker = /^[A-Za-z0-9]{1,6}([.\-][A-Za-z0-9]{1,4})?$/.test(query);
 
   return (
     <div className="mx-auto max-w-2xl">
@@ -57,16 +63,24 @@ export function SearchResults({q}: {q: string}) {
           <p className={cx('text-[14px] font-medium', t.text)}>
             {tr('search.empty').replace('{q}', query)}
           </p>
-          <p className={cx('mx-auto mt-1 max-w-sm text-[12.5px]', t.sub)}>{tr('search.emptyHint')}</p>
-          <Link
-            href={`/stock/${encodeURIComponent(upper)}`}
-            className={cx(
-              'mt-4 inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-[13px] font-semibold',
-              btnPrimary(dark),
-            )}
-          >
-            {tr('search.gotoAnyway').replace('{q}', upper)} →
-          </Link>
+          {/* The "open it directly" fallback only when the query looks like a real
+              ticker — never for a plain word, which would open a phantom page. */}
+          {looksLikeTicker && (
+            <>
+              <p className={cx('mx-auto mt-1 max-w-sm text-[12.5px]', t.sub)}>
+                {tr('search.emptyHint')}
+              </p>
+              <Link
+                href={`/stock/${encodeURIComponent(upper)}`}
+                className={cx(
+                  'mt-4 inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-[13px] font-semibold',
+                  btnPrimary(dark),
+                )}
+              >
+                {tr('search.gotoAnyway').replace('{q}', upper)} →
+              </Link>
+            </>
+          )}
         </div>
       )}
 

@@ -228,6 +228,8 @@ const dict: Record<Lang, Record<string, string>> = {
     'sentiment.greed': 'Greed',
     'sentiment.extremeGreed': 'Extreme Greed',
     'sentiment.components': 'What goes into it',
+    'sentiment.trend': 'Recent trend',
+    'sentiment.trendDays': '{n} days',
     'sentiment.updated': 'updated {t} ago',
     'sentiment.footer': 'Tickwind composite index. Methodology — not investment advice.',
     // share card ("propagation organ") — save/share a branded image card
@@ -881,6 +883,8 @@ const dict: Record<Lang, Record<string, string>> = {
     'sentiment.greed': '贪婪',
     'sentiment.extremeGreed': '极度贪婪',
     'sentiment.components': '指数构成',
+    'sentiment.trend': '近期走势',
+    'sentiment.trendDays': '{n} 天',
     'sentiment.updated': '{t}前更新',
     'sentiment.footer': '潮汐自有综合指数。方法论 —— 非投资建议。',
     // share card ("propagation organ") — save/share a branded image card

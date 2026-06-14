@@ -80,6 +80,10 @@ export function SentimentChip() {
   const label = lang === 'zh' ? data.label_zh || data.label : data.label || tr(b.labelKey);
   const pos = Math.max(0, Math.min(100, data.score));
   const components = data.components ?? [];
+  const history = data.history ?? [];
+  const hasTrend = history.length >= 2;
+  // The chip expands to reveal the trend line and/or the scored components.
+  const canExpand = components.length > 0 || hasTrend;
   const score = Math.round(data.score);
 
   // Share card: today's market mood for 小红书 / 微信. Chrome + copy follow the UI
@@ -108,11 +112,11 @@ export function SentimentChip() {
       <div className="flex items-center">
         <button
           type="button"
-          onClick={() => components.length > 0 && setOpen(o => !o)}
-          aria-expanded={components.length > 0 ? open : undefined}
+          onClick={() => canExpand && setOpen(o => !o)}
+          aria-expanded={canExpand ? open : undefined}
           className={cx(
             'flex flex-1 items-center gap-3 px-4 py-3 text-left',
-            components.length > 0 && 'cursor-pointer',
+            canExpand && 'cursor-pointer',
           )}
         >
         <Gauge size={18} className={dark ? 'text-teal-300' : 'text-teal-600'} />
@@ -140,7 +144,7 @@ export function SentimentChip() {
             />
           </div>
         </div>
-        {components.length > 0 && (
+        {canExpand && (
           <ChevronDown
             size={16}
             className={cx('shrink-0 transition-transform', t.faint, open && 'rotate-180')}
@@ -153,8 +157,24 @@ export function SentimentChip() {
         </div>
       </div>
 
-      {open && components.length > 0 && (
+      {open && canExpand && (
         <div className={cx('tw-fade border-t px-4 py-3', t.hair)}>
+          {/* Fear & Greed trend over the recorded daily history (chart #2). */}
+          {hasTrend && (
+            <div className="mb-3">
+              <div className="mb-1.5 flex items-baseline justify-between">
+                <p className={cx('text-[11px] font-semibold uppercase tracking-wide', t.faint)}>
+                  {tr('sentiment.trend')}
+                </p>
+                <span className={cx('text-[10.5px] tabular-nums', t.faint)}>
+                  {tr('sentiment.trendDays').replace('{n}', String(history.length))}
+                </span>
+              </div>
+              <FearGreedTrend points={history} dark={dark} />
+            </div>
+          )}
+          {components.length > 0 && (
+            <>
           <p className={cx('mb-2 text-[11px] font-semibold uppercase tracking-wide', t.faint)}>
             {tr('sentiment.components')}
           </p>
@@ -177,9 +197,63 @@ export function SentimentChip() {
               );
             })}
           </div>
+            </>
+          )}
           <p className={cx('mt-3 text-[10.5px]', t.faint)}>{tr('sentiment.footer')}</p>
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * A compact Fear & Greed history line chart (0–100, greed at top). Renders the
+ * recorded daily score series; the line is coloured by the latest band (greed
+ * green / fear red / neutral sky). A dashed 50 line marks neutral. Stretches to
+ * its container width; the stroke stays crisp via vector-effect.
+ */
+function FearGreedTrend({
+  points,
+  dark,
+}: {
+  points: {date: string; score: number}[];
+  dark: boolean;
+}) {
+  const W = 100;
+  const H = 34;
+  const n = points.length;
+  const x = (i: number) => (n <= 1 ? W / 2 : (i / (n - 1)) * W);
+  const y = (s: number) => H - (Math.max(0, Math.min(100, s)) / 100) * H;
+  const d = points
+    .map((p, i) => `${i === 0 ? 'M' : 'L'}${x(i).toFixed(2)},${y(p.score).toFixed(2)}`)
+    .join(' ');
+  const last = points[n - 1].score;
+  const stroke = last >= 55 ? '#10b981' : last < 45 ? '#ef4444' : '#0ea5e9';
+  const scores = points.map(p => p.score);
+  const hi = Math.max(...scores);
+  const lo = Math.min(...scores);
+  return (
+    <div>
+      <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="h-12 w-full">
+        <line
+          x1="0"
+          y1={y(50)}
+          x2={W}
+          y2={y(50)}
+          stroke={dark ? '#334155' : '#e2e8f0'}
+          strokeWidth="1"
+          strokeDasharray="2 2"
+          vectorEffect="non-scaling-stroke"
+        />
+        <path d={d} fill="none" stroke={stroke} strokeWidth="1.6" vectorEffect="non-scaling-stroke" strokeLinejoin="round" strokeLinecap="round" />
+      </svg>
+      <div className={cx('mt-1 flex justify-between text-[10px] tabular-nums', dark ? 'text-slate-500' : 'text-slate-400')}>
+        <span>{points[0].date}</span>
+        <span>
+          {lo}–{hi}
+        </span>
+        <span>{points[n - 1].date}</span>
+      </div>
     </div>
   );
 }

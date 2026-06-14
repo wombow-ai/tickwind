@@ -47,6 +47,14 @@ type ShortPctAverager interface {
 	AsOf() string
 }
 
+// FearGreedStore persists each day's headline Fear & Greed score so the history
+// curve survives redeploys (the live index lives only in the in-memory cache).
+// Implemented by *store.Split / any store.Store. The ingestor is nil-safe: when
+// no store is wired, it just skips the durable write.
+type FearGreedStore interface {
+	SaveFearGreed(ctx context.Context, date string, score int) error
+}
+
 // SentimentIngestor computes a Fear & Greed index once per cycle from whatever
 // market-mood inputs are wired up and stores the Result + a daily history point
 // in a *sentiment.Cache.
@@ -62,14 +70,17 @@ type SentimentIngestor struct {
 	options  OptionChainSource
 	shortAvg ShortPctAverager
 	cache    *sentiment.Cache
+	fgStore  FearGreedStore // durable history; nil → skip the persist
 	every    time.Duration
 	now      func() time.Time // injectable clock for deterministic tests
 	log      *slog.Logger
 }
 
 // NewSentimentIngestor builds the ingestor. Any source may be nil, which drops
-// the corresponding component; the index uses whatever remains. Call Run to start.
-func NewSentimentIngestor(vix VIXQuoter, options OptionChainSource, shortAvg ShortPctAverager, cache *sentiment.Cache, every time.Duration, log *slog.Logger) *SentimentIngestor {
+// the corresponding component; the index uses whatever remains. fgStore persists
+// each day's score for the durable history and may be nil (the persist is then
+// skipped). Call Run to start.
+func NewSentimentIngestor(vix VIXQuoter, options OptionChainSource, shortAvg ShortPctAverager, cache *sentiment.Cache, fgStore FearGreedStore, every time.Duration, log *slog.Logger) *SentimentIngestor {
 	if log == nil {
 		log = slog.Default()
 	}
@@ -78,6 +89,7 @@ func NewSentimentIngestor(vix VIXQuoter, options OptionChainSource, shortAvg Sho
 		options:  options,
 		shortAvg: shortAvg,
 		cache:    cache,
+		fgStore:  fgStore,
 		every:    every,
 		now:      func() time.Time { return time.Now().UTC() },
 		log:      log,
@@ -109,6 +121,14 @@ func (i *SentimentIngestor) compute(ctx context.Context) {
 	res := sentiment.Compute(in)
 	date := i.now().Format("2006-01-02")
 	i.cache.Set(res, date)
+	// Persist today's headline score to the durable Market store so the history
+	// survives redeploys (the cache is in-memory). Best-effort: a write failure is
+	// logged, not fatal — the in-memory point is already recorded.
+	if i.fgStore != nil {
+		if err := i.fgStore.SaveFearGreed(ctx, date, res.Score); err != nil {
+			i.log.Warn("sentiment: persist fear&greed failed", "err", err)
+		}
+	}
 	i.log.Info("sentiment computed", "score", res.Score, "label", res.Label, "components", res.Available)
 }
 

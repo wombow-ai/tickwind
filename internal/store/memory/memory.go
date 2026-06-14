@@ -24,6 +24,7 @@ type Store struct {
 	insiders  map[string]store.InsiderBuy         // accession -> insider buy
 	earnings  map[string]store.Earning            // "TICKER|YYYY-MM-DD" -> Earning
 	seenF4    map[string]time.Time                // form-4 accession -> filed date
+	fearGreed map[string]int                      // "YYYY-MM-DD" -> headline F&G score
 	watchlist map[string][]string                 // userID -> ordered tickers
 	clips     map[string]map[string]store.Clip    // userID -> clipID -> Clip
 	notes     map[string]map[string]store.Note    // userID -> noteID -> Note
@@ -45,6 +46,7 @@ func New() *Store {
 		insiders:  make(map[string]store.InsiderBuy),
 		earnings:  make(map[string]store.Earning),
 		seenF4:    make(map[string]time.Time),
+		fearGreed: make(map[string]int),
 		watchlist: make(map[string][]string),
 		clips:     make(map[string]map[string]store.Clip),
 		notes:     make(map[string]map[string]store.Note),
@@ -333,6 +335,31 @@ func (s *Store) SeenForm4Since(_ context.Context, since time.Time) ([]string, er
 		if !d.Before(since) {
 			out = append(out, a)
 		}
+	}
+	return out, nil
+}
+
+func (s *Store) SaveFearGreed(_ context.Context, date string, score int) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if date != "" {
+		s.fearGreed[date] = score // upsert by date
+	}
+	return nil
+}
+
+func (s *Store) FearGreedHistory(_ context.Context, limit int) ([]store.FearGreedPoint, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([]store.FearGreedPoint, 0, len(s.fearGreed))
+	for d, sc := range s.fearGreed {
+		out = append(out, store.FearGreedPoint{Date: d, Score: sc})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Date < out[j].Date })
+	// Apply the limit as a tail: keep the most recent `limit` days, still in
+	// chronological order.
+	if limit > 0 && len(out) > limit {
+		out = out[len(out)-limit:]
 	}
 	return out, nil
 }

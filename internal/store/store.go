@@ -257,6 +257,15 @@ type Comment struct {
 	IP       string   `json:"-"`
 }
 
+// FearGreedPoint is one calendar day's headline Fear & Greed score, persisted so
+// the sentiment-history curve survives redeploys. Date is the calendar day in
+// "2006-01-02" form. It mirrors sentiment.Point but lives in store so the store
+// package never imports sentiment (avoiding an import cycle).
+type FearGreedPoint struct {
+	Date  string `json:"date"`
+	Score int    `json:"score"`
+}
+
 // Store is the persistence boundary. Every backend (memory, postgres)
 // implements this so the rest of the app never depends on a driver.
 type Store interface {
@@ -313,6 +322,15 @@ type Store interface {
 	// accessions seen on/after `since` (the only window the ingestor rescans).
 	MarkForm4Seen(ctx context.Context, accessions []string, filedDate time.Time) error
 	SeenForm4Since(ctx context.Context, since time.Time) ([]string, error)
+
+	// FearGreed is the durable daily history of the headline Fear & Greed score
+	// (public market data → Market store). SaveFearGreed upserts one day's score,
+	// idempotent on the date ("2006-01-02"); a same-day re-save replaces the
+	// score. FearGreedHistory returns the most recent `limit` days in
+	// CHRONOLOGICAL order (oldest→newest), or all days when limit<=0; it always
+	// returns a non-nil (possibly empty) slice.
+	SaveFearGreed(ctx context.Context, date string, score int) error
+	FearGreedHistory(ctx context.Context, limit int) ([]FearGreedPoint, error)
 
 	// Watchlist is one user's tracked tickers, in insertion order.
 	Watchlist(ctx context.Context, userID string) ([]string, error)
