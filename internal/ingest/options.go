@@ -175,6 +175,16 @@ func (c *OptionsCache) scanUnusual(ctx context.Context) {
 		if err != nil || !ok {
 			continue
 		}
+		// Reuse this SINGLE fetch to also warm the per-ticker cache, so the
+		// research report's options block is reliably present for these liquid
+		// names without waiting for an on-demand /options hit (and without a
+		// second Cboe pull). Same map, same optionsEntry shape, same at/TTL
+		// semantics that Cached/Options use, so the on-demand path is unchanged.
+		if view, vok := viewFromChain(tk, chain); vok {
+			c.mu.Lock()
+			c.cache[tk] = optionsEntry{view: view, ok: vok, at: time.Now()}
+			c.mu.Unlock()
+		}
 		for _, ct := range chain.Contracts {
 			if ct.Volume <= 0 {
 				continue
@@ -206,6 +216,18 @@ func (c *OptionsCache) compute(ctx context.Context, ticker string) (OptionsView,
 	if err != nil || !ok {
 		return OptionsView{}, false
 	}
+	return viewFromChain(ticker, chain)
+}
+
+// viewFromChain builds the per-stock OptionsView from an already-fetched chain.
+// It performs NO network fetch — callers pass a chain they have already pulled
+// (compute on the on-demand path, scanUnusual on the background path), so a
+// ticker's chain is fetched exactly once and the same chain feeds both the
+// per-ticker cache and the unusual board. ok mirrors compute's contract: a
+// non-empty chain always yields ok=true (PCVolume/PCOI/TopOI are always
+// derivable; MaxPain may legitimately be 0 and Expiry "" when the chain is thin,
+// and callers gate on those per-field, exactly as before).
+func viewFromChain(ticker string, chain cboe.Chain) (OptionsView, bool) {
 	pv, po := cboe.PutCallRatio(chain.Contracts)
 	today := time.Now().UTC().Format("2006-01-02")
 	exp := cboe.NearestExpiry(chain.Contracts, today)
