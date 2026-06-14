@@ -272,8 +272,20 @@ feature-flagged plugin, never on the critical path. Web only.
   EXCLUDES S&P mega-caps (AAPL/MSFT/NVDA absent from `/v1/universe/symbols` + `/v1/screen`, though `/v1/stocks/
   AAPL/quote` works on-demand) — a pre-existing data quirk that also means the **screener can't surface mega-caps**
   (flagged as a separate task to root-cause; pSEO sitemap unaffected — mega-caps come via the popular union).
-  **Next:** `/screen/[preset]` preset landing pages, `/topic/[key]` → static pSEO, optional A-Z `/stocks`
-  directory from `/v1/symbols`; lift `MAX_STOCK_URLS` toward 6,695 as the domain gains crawl authority.
+- **Shipped 2026-06-14 (pSEO Stage 3④ — /screen/[preset] landing pages):** a new `/screen/[preset]` family —
+  **9 curated screener landing pages × 2 locales = 18 prerendered** (`top-gainers`, `top-losers`,
+  `penny-movers`, `penny-losers`, `small-cap-breakouts`, `big-decliners`, `premarket-movers`,
+  `afterhours-movers`, `overnight-movers`) for high-intent queries ("美股今日涨幅榜 / Top Gaining US Stocks
+  Today"). Each runs a fixed `getScreen` query (params verified against the Go handler: `sort` ∈ change/price
+  asc·desc, `session` ∈ pre/regular/post/overnight; **no volume sort → "most-active" dropped**) and renders a
+  ranked, internally-linked table into `/stock/{t}`. Clones the proven pSEO shape: `generateStaticParams`
+  (preset×locale), per-locale `generateMetadata` + `langAlternates`, single-locale render, ItemList +
+  BreadcrumbList JSON-LD (locale-prefixed `item` URLs), `revalidate=600`, graceful empty-state (session presets
+  are empty off-hours, ISR refills). `web/src/lib/presets.ts` config + a preset cross-link hub on `/screen`.
+  Built-HTML verified: single-locale, canonical+3 hreflang, 0 bare-path JSON-LD leak; sitemap +18. Note: the
+  preset universe inherits the mega-cap exclusion (movers are mid/small-cap — fine for gainers/losers intent).
+  **Next:** `/topic/[key]` → static pSEO (last increment), optional A-Z `/stocks` directory from `/v1/symbols`;
+  lift `MAX_STOCK_URLS` toward 6,695 as the domain gains crawl authority.
 - **Ops (2026-06-14):** the new 4 GB VPS lacked the old box's fail2ban deploy-IP whitelist → a burst of
   deploy connects banned `154.29.158.47`; fixed durably via `/etc/fail2ban/jail.d/tickwind-ignore.conf`
   (owner VNC). The ssh unit on this box is **`ssh`, NOT `sshd`**. Box has 2 G swap + healthy RAM (not OOM).

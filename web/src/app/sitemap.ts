@@ -8,6 +8,7 @@ import {
 } from '@/lib/api';
 import {SITE_URL} from '@/lib/config';
 import {GUIDES} from '@/lib/guides';
+import {SCREEN_PRESETS} from '@/lib/presets';
 import {popularTickers, quoteBearingTickers} from '@/lib/pseo';
 
 // Regenerate hourly so newly-trending tickers enter the sitemap without a deploy.
@@ -144,6 +145,13 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     changeFrequency: 'monthly',
     priority: 0.6,
   }));
+  // Curated screener landing pages (`/screen/{preset}`) — intraday movers, so a
+  // daily change frequency mirrors the interactive /screen hub.
+  const presetPages: Page[] = SCREEN_PRESETS.map(p => ({
+    path: `/screen/${p.key}`,
+    changeFrequency: 'daily',
+    priority: 0.6,
+  }));
   const [tickers, memberSlugs, funds, indicators] = await Promise.all([
     indexableTickers(),
     congressMemberSlugs(),
@@ -173,6 +181,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const pages: Page[] = [
     ...staticPages,
     ...guidePages,
+    ...presetPages,
     ...stockPages,
     ...memberPages,
     ...fundPages,
