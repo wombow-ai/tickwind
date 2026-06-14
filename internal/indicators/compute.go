@@ -392,6 +392,9 @@ func NewComputer(catalog *Catalog, ohlcv OHLCVSource, fund FundamentalsProvider,
 	for id, fn := range fundamentalRegistryInc2() {
 		reg[id] = fn
 	}
+	for id, fn := range fundamentalRegistryInc3() {
+		reg[id] = fn
+	}
 	return &Computer{
 		catalog:  catalog,
 		ohlcv:    ohlcv,

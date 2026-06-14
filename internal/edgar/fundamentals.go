@@ -61,6 +61,7 @@ type Fundamentals struct {
 	AccountsReceivable float64 `json:"accounts_receivable,omitempty"`  // us-gaap:AccountsReceivableNetCurrent (latest instant)
 	AccountsPayable    float64 `json:"accounts_payable,omitempty"`     // us-gaap:AccountsPayableCurrent (latest instant)
 	PropertyPlantNet   float64 `json:"property_plant_net,omitempty"`   // us-gaap:PropertyPlantAndEquipmentNet (latest instant)
+	RetainedEarnings   float64 `json:"retained_earnings,omitempty"`    // us-gaap:RetainedEarningsAccumulatedDeficit (latest instant); can be <0; Altman-Z X2
 
 	// Group 4 — debt / EV / capital-structure instants + flows.
 	LongTermDebt          float64 `json:"long_term_debt,omitempty"`          // us-gaap:LongTermDebtNoncurrent, else LiabilitiesNoncurrent (latest instant)
@@ -329,6 +330,9 @@ func extractFundamentals(resp factsResp) Fundamentals {
 	}
 	if p, ok := latestInstant(pick(gaap, "USD", "LiabilitiesCurrent")); ok {
 		f.LiabilitiesCurrent = p.Val
+	}
+	if p, ok := latestInstant(pick(gaap, "USD", "RetainedEarningsAccumulatedDeficit")); ok {
+		f.RetainedEarnings = p.Val // can be negative (accumulated deficit / heavy buybacks); for Altman-Z X2
 	}
 	if p, ok := latestInstant(pick(gaap, "USD",
 		"InventoryNet", "InventoryFinishedGoodsNetOfReserves")); ok {
