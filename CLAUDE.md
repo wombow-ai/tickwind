@@ -182,6 +182,20 @@ feature-flagged plugin, never on the critical path. Web only.
   the price marker). **K-line crosshair OHLC legend** (hover readout). **US Treasury yield-curve macro strip**
   `GET /v1/macro` (`internal/treasury`, keyless Treasury.gov, 2Y/10Y + 2s10s recession signal, server-driven
   12h ingestor, home MacroStrip; tenors matched by header-name, spread null unless both legs present).
+  **Crypto market-mood strip** `GET /v1/crypto` (`internal/cryptofg`, keyless alternative.me Fear & Greed +
+  best-effort CoinGecko BTC/ETH spot, server-driven ingestor, home CryptoStrip). **Market beta + 1-year TSR**
+  (Phase C risk/return): `fundamental.beta` (vs SPY, date-aligned daily-return covariance/variance, ≥60 pairs +
+  var>0) + `fundamental.tsr` (total shareholder return %, price appreciation + dividends over ~1y, ≥240
+  candles) → **161 emitted ids**; AAPL beta 1.20 / TSR 46.9% live-verified. **8-K material-event filings**
+  `GET /v1/stocks/{t}/material-events` (`internal/materialevents` + `internal/edgar/material_events.go`) — a
+  company's recent current-report filings (≤120 days, ≤10, newest-first). **Go owns** the canonical item-code→
+  bilingual-label map (33 standard 8-K codes — 1.01 material agreement, 2.02 earnings, 5.02 officer changes,
+  5.07 vote results, 9.01 exhibits, …; unknown codes → generic `Item X.XX`, never fabricated), form/dates/
+  accession URL. **LLM writes only** a short factual per-filing summary over the primary-doc text (HTML→text,
+  ~7k-rune cap); degrades to labels-only when LLM off / over daily cap / source too thin — never invents facts,
+  never on the critical path. Per-ticker/ET-day/lang in-memory cache + daily LLM-report cap; on-demand
+  server-driven refresh; StockView `FilingsCard` (bilingual, SEC EDGAR attribution + as-of). v2: EX-99.1
+  exhibit fetch when the primary doc is thin.
 - **Ops (2026-06-14):** the new 4 GB VPS lacked the old box's fail2ban deploy-IP whitelist → a burst of
   deploy connects banned `154.29.158.47`; fixed durably via `/etc/fail2ban/jail.d/tickwind-ignore.conf`
   (owner VNC). The ssh unit on this box is **`ssh`, NOT `sshd`**. Box has 2 G swap + healthy RAM (not OOM).

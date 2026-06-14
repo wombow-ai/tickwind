@@ -1197,6 +1197,85 @@ export async function getMovement(
   }
 }
 
+/**
+ * One parsed 8-K item code with its canonical labels. The labels are OWNED BY GO
+ * (the item-code → meaning map lives server-side) — the anti-hallucination anchor.
+ * Pick `label_en` / `label_zh` based on the current UI language.
+ */
+export interface MaterialEventItem {
+  code: string;
+  label_en: string;
+  label_zh: string;
+}
+
+/**
+ * One 8-K (current report) filing — a material corporate event. Every field
+ * except `summary` is a Go-owned fact (form/dates/accession URL + parsed item
+ * codes & labels). `summary` is the OPTIONAL LLM plain-language summary (absent
+ * when the LLM is off / the source was too thin — the item labels alone still
+ * render).
+ */
+export interface MaterialEvent {
+  /** "8-K" or "8-K/A" (the amendment variant). */
+  form: string;
+  /** Whether this is an 8-K/A amendment to a prior 8-K. */
+  amendment: boolean;
+  /** SEC filing date (YYYY-MM-DD). */
+  filed_date: string;
+  /** Period-of-report / event date (YYYY-MM-DD), when present. */
+  report_date?: string;
+  /** Human-readable SEC filing index page. */
+  accession_url: string;
+  /** Parsed 8-K item codes with their canonical bilingual labels. */
+  items: MaterialEventItem[];
+  /** Optional LLM plain-language summary; absent when none was written. */
+  summary?: string;
+}
+
+/**
+ * Envelope returned by `GET /v1/stocks/{ticker}/material-events`. `filings` is
+ * ALWAYS present and non-null (an existing company with no recent 8-Ks yields
+ * `[]`). `llm` reports whether any summary was AI-written; `disclaimer` is present
+ * only then. `source` is the data attribution ("SEC EDGAR"). 404 → null (the card
+ * hides) only when the ticker/CIK can't be resolved.
+ */
+export interface MaterialEventsResponse {
+  ticker: string;
+  filings: MaterialEvent[];
+  count: number;
+  llm: boolean;
+  model: string;
+  source: string;
+  /** RFC3339 generation timestamp (the as-of for the data). */
+  generated_at: string;
+  /** "AI 生成 · 仅供参考 · 非投资建议" — present only when `llm`. */
+  disclaimer?: string;
+}
+
+/**
+ * Fetches a company's recent 8-K material-event filings (with an optional AI
+ * summary per filing) for a ticker in the given UI language ("zh"|"en"). Always
+ * 200 with the Go-owned facts; resolves to `null` only when the symbol is unknown
+ * (the API 404s) so the caller hides the card. An existing company with zero
+ * recent 8-Ks resolves with `filings: []`.
+ */
+export async function getMaterialEvents(
+  ticker: string,
+  lang?: string,
+  signal?: AbortSignal,
+): Promise<MaterialEventsResponse | null> {
+  const q = lang === 'en' ? '?lang=en' : '';
+  try {
+    return await getJson<MaterialEventsResponse>(
+      `/v1/stocks/${encodeURIComponent(normalizeTicker(ticker))}/material-events${q}`,
+      signal,
+    );
+  } catch (e) {
+    if (e instanceof ApiError && e.status === 404) return null;
+    throw e;
+  }
+}
+
 /** A symbol's latest FINRA short-interest row (twice-monthly settlement). */
 export interface ShortInterest {
   symbol: string;

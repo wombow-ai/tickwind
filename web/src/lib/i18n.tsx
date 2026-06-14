@@ -199,6 +199,16 @@ const dict: Record<Lang, Record<string, string>> = {
     'move.type.insider': 'Insider buy',
     'move.disclaimer': 'AI generated · for reference only · not investment advice. The move % is computed from data; the explanation is a hedged guess, not a confirmed cause.',
     'move.disclaimerData': 'Move % computed from data · for reference only · not investment advice. No confirmed cause.',
+    // 8-K material events + AI summary card
+    'filings.title': 'Material events (8-K)',
+    'filings.aiBadge': 'AI summary',
+    'filings.amendment': 'Amendment',
+    'filings.viewSource': 'View on SEC',
+    'filings.reportDate': 'Event date',
+    'filings.empty': 'No recent material events',
+    'filings.source': 'Source: SEC EDGAR',
+    'filings.asOf': 'as of',
+    'filings.disclaimer': 'Filing facts (form, dates, item categories) are from SEC EDGAR. The summary is AI-generated for reference only, not investment advice.',
     // R2 deep-research report (chrome English-default; the report body is zh-by-design)
     'research.tab': 'Research',
     'research.title': 'Deep research',
@@ -893,6 +903,16 @@ const dict: Record<Lang, Record<string, string>> = {
     'move.type.insider': '内部人买入',
     'move.disclaimer': 'AI 生成 · 仅供参考 · 非投资建议。涨跌幅由数据计算，解读为对冲性推测，非确定原因。',
     'move.disclaimerData': '涨跌幅由数据计算 · 仅供参考 · 非投资建议。暂无确定催化原因。',
+    // 8-K 重大事件公告 + AI 摘要卡片
+    'filings.title': '重大事件公告 (8-K)',
+    'filings.aiBadge': 'AI 摘要',
+    'filings.amendment': '修订',
+    'filings.viewSource': '查看 SEC 原文',
+    'filings.reportDate': '事件日期',
+    'filings.empty': '近期无重大公告',
+    'filings.source': '数据来源：SEC EDGAR',
+    'filings.asOf': '截至',
+    'filings.disclaimer': '公告事实（类型、日期、事项类别）来自 SEC EDGAR；摘要由 AI 生成，仅供参考，非投资建议。',
     // R2 深度研报（界面文案中英默认英文；报告正文按设计为中文）
     'research.tab': '深度研报',
     'research.title': '深度研报',

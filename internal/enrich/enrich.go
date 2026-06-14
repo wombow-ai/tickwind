@@ -51,6 +51,15 @@ type Enricher interface {
 	// NOT assert a definitive cause, invent a catalyst, or give any price target /
 	// advice. Returns ErrDisabled when no LLM is configured.
 	ExplainMove(ctx context.Context, material, lang string) (string, error)
+	// SummarizeFiling writes a short (1-3 sentence) plain-language summary of an
+	// 8-K material-event filing in the given language ("zh"|"en"; anything else
+	// falls back to zh). The material is the Go-supplied source text of the filing
+	// (the canonical item-code labels are owned by Go and given as context). The
+	// model summarizes ONLY what the source text says happened: it must stay
+	// factual, must NOT invent numbers/dates/names absent from the text, and must
+	// NOT give any investment advice or price target. Returns ErrDisabled when no
+	// LLM is configured (the caller then serves the filing with item labels only).
+	SummarizeFiling(ctx context.Context, material, lang string) (string, error)
 }
 
 // Config configures the LLM enricher. An empty APIKey yields a disabled Noop.
@@ -105,6 +114,10 @@ func (Noop) ComposeReport(context.Context, string, string) (map[string]string, e
 }
 
 func (Noop) ExplainMove(context.Context, string, string) (string, error) {
+	return "", ErrDisabled
+}
+
+func (Noop) SummarizeFiling(context.Context, string, string) (string, error) {
 	return "", ErrDisabled
 }
 
@@ -328,6 +341,87 @@ func (l *llm) ExplainMove(ctx context.Context, material, lang string) (string, e
 	}
 	if len(out.Choices) == 0 {
 		return "", errors.New("enrich: empty explain-move response")
+	}
+	return strings.TrimSpace(out.Choices[0].Message.Content), nil
+}
+
+// summarizeFilingPrompt drives the 8-K material-event summary — the LLM writes a
+// short (1-3 sentence) plain-language summary of what the filing says happened.
+// The Go assembler owns ALL the facts (form type, dates, accession URL, the
+// parsed item codes AND their canonical labels — given as context); the model
+// writes ONLY the prose summary over the supplied source text. Hard guardrails:
+// summarize only what the source text states, never invent a number/date/name not
+// in it, no investment advice / price target, and a factual neutral tone.
+const summarizeFilingPrompt = "你是美股公司公告(SEC 8-K 重大事件报告)摘要助手。" +
+	"材料中给出了该 8-K 的官方事项类别(由系统提供,不得改动)以及公告正文的纯文本节选。" +
+	"请用简体中文写 1-3 句话的通俗摘要,说明这份公告实际披露了什么事情。必须遵守:" +
+	"1)只根据材料中正文节选与给定事项类别陈述,绝不编造材料中没有的数字、日期、人名、金额或事件;" +
+	"2)语气客观中性,不做任何买卖建议、目标价、估值判断或后市预测;" +
+	"3)若正文节选信息过于稀薄、无法据此写出可靠摘要,只输出\"暂无足够信息\"。" +
+	"只输出这段摘要本身,不要前言、不要罗列事项代码、不要代码块。"
+
+// summarizeFilingPromptEN is the English-output counterpart, same guardrails. The
+// product is Chinese-first (zh default); en is served when the UI is English.
+const summarizeFilingPromptEN = "You are an SEC 8-K material-event filing summarizer. " +
+	"The material gives the filing's official item categories (system-provided, not to be altered) and a plain-text excerpt of the filing body. " +
+	"Write a 1-3 sentence plain-language summary in English of what the filing actually discloses. You MUST: " +
+	"1) state only what the body excerpt and given item categories support — never invent a number, date, name, amount or event absent from the material; " +
+	"2) keep a neutral, factual tone — no buy/sell advice, price target, valuation call or forecast; " +
+	"3) output only \"Not enough information\" when the excerpt is too thin to summarize reliably. " +
+	"Output only the summary itself — no preamble, no listing of item codes, no code fences."
+
+// summarizeFilingSystemPrompt picks the filing-summary system prompt for a language.
+func summarizeFilingSystemPrompt(lang string) string {
+	if lang == "en" {
+		return summarizeFilingPromptEN
+	}
+	return summarizeFilingPrompt
+}
+
+// SummarizeFiling writes a short plain-language summary of an 8-K filing from the
+// pre-built material string (item-category context + body excerpt), in the
+// requested language ("zh"|"en"). Cloned from ExplainMove: the Go assembler owns
+// every fact (form/dates/URL/item labels), the model only writes the prose over
+// the supplied source text.
+func (l *llm) SummarizeFiling(ctx context.Context, material, lang string) (string, error) {
+	body, err := json.Marshal(map[string]any{
+		"model":       l.model,
+		"temperature": 0.2,
+		"messages": []map[string]string{
+			{"role": "system", "content": summarizeFilingSystemPrompt(lang)},
+			{"role": "user", "content": material},
+		},
+	})
+	if err != nil {
+		return "", err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, l.baseURL+"/chat/completions", bytes.NewReader(body))
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+l.apiKey)
+
+	resp, err := l.http.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("enrich: summarize-filing request: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("enrich: summarize-filing status %s", resp.Status)
+	}
+	var out struct {
+		Choices []struct {
+			Message struct {
+				Content string `json:"content"`
+			} `json:"message"`
+		} `json:"choices"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return "", fmt.Errorf("enrich: summarize-filing decode: %w", err)
+	}
+	if len(out.Choices) == 0 {
+		return "", errors.New("enrich: empty summarize-filing response")
 	}
 	return strings.TrimSpace(out.Choices[0].Message.Content), nil
 }

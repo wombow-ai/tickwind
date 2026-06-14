@@ -36,6 +36,7 @@ import (
 	"github.com/wombow-ai/tickwind/internal/guru"
 	"github.com/wombow-ai/tickwind/internal/indicators"
 	"github.com/wombow-ai/tickwind/internal/ingest"
+	"github.com/wombow-ai/tickwind/internal/materialevents"
 	"github.com/wombow-ai/tickwind/internal/movement"
 	"github.com/wombow-ai/tickwind/internal/nasdaq"
 	"github.com/wombow-ai/tickwind/internal/opportunity"
@@ -295,6 +296,24 @@ type MovementSource interface {
 	Model() string
 }
 
+// MaterialEventsSource produces a company's recent 8-K (current report) filings
+// with an optional AI plain-language summary. Report assembles the facts-only
+// report (Go-owned form/dates/accession URL + parsed item codes & canonical
+// labels; no LLM); Summarize optionally overlays a short LLM summary per filing
+// (degrading to facts-only when the LLM is off/over-cap/errors — never the LLM's
+// facts). Both error only when the ticker/CIK can't be resolved or the SEC feed
+// fetch fails (the handler 404s on that); an existing company with zero recent
+// 8-Ks returns an empty (non-nil) Filings slice. Enabled reports whether the LLM
+// backend is configured; Model is its name ("" when disabled). nil-safe — a nil
+// source makes /v1/stocks/{ticker}/material-events 404. Satisfied by
+// *materialevents.Service.
+type MaterialEventsSource interface {
+	Report(ctx context.Context, ticker string) (materialevents.Report, error)
+	Summarize(ctx context.Context, ticker, lang string) (materialevents.Report, error)
+	Enabled() bool
+	Model() string
+}
+
 type Server struct {
 	store         store.Store
 	hub           QuoteStream
@@ -330,6 +349,7 @@ type Server struct {
 	indicatorCalc IndicatorComputeSource // injected post-New via SetIndicatorCompute (per-stock compute)
 	researchCalc  ResearchSource         // injected post-New via SetResearch (deep-research report)
 	movementCalc  MovementSource         // injected post-New via SetMovement (move-explainer)
+	materialCalc  MaterialEventsSource   // injected post-New via SetMaterialEvents (8-K material events + AI summary)
 	admins        map[string]bool        // user UUIDs and/or emails (lowercased) allowed to delete any comment
 	commentRL     *rateLimiter           // per-user comment-post throttle
 	// AI digest cache: one LLM generation per (ticker, ET day), then served from
@@ -363,6 +383,18 @@ type Server struct {
 	moveInflight map[string]chan struct{}
 	moveDayDate  string
 	moveDayCount int
+	// Material-events (8-K) cache: the facts (form/dates/items+labels) are cheap to
+	// fetch, but the per-filing LLM summaries are the cost, so a full assembled
+	// report (facts + optional summaries) is generated at most once per (ticker, ET
+	// day, lang) and served from memory — mirrors the move-explainer cache. Guarded
+	// by meMu; meInflight dedupes concurrent first requests; meDay* enforce a global
+	// per-day report-generation cap (the cap gates the LLM-summary path only — a
+	// facts-only report still serves over cap). Old days are swept on a new ET day.
+	meMu       sync.Mutex
+	meCache    map[string]materialEventsEntry
+	meInflight map[string]chan struct{}
+	meDayDate  string
+	meDayCount int
 	// Follow-trade backtest cache: the simulation is deterministic for a given
 	// (member, price-day), so compute once per slug per UTC day and serve from
 	// memory (the per-ticker DailyCandles fetch is the only cost). Guarded by btMu.
@@ -396,7 +428,7 @@ func New(st store.Store, hub QuoteStream, enricher enrich.Enricher, verifier *au
 			admins[id] = true
 		}
 	}
-	s := &Server{store: st, hub: hub, clip: clip.NewFetcher(), enrich: enricher, auth: verifier, bars: bars, topics: topicSrc, opps: oppSrc, universe: universeSrc, gurus: guruSrc, ingestor: ingestor, symbols: symbolSrc, events: eventSrc, fundamentals: fundSrc, earnings: earningsSrc, congress: congressSrc, institutional: institutionalSrc, live: liveSub, indices: indicesSrc, short: shortSrc, briefing: briefingSrc, options: optionsSrc, thirteenf: thirteenfSrc, admins: admins, commentRL: newRateLimiter(10, 10*time.Minute), sumCache: map[string]summaryEntry{}, sumInflight: map[string]chan struct{}{}, researchCache: map[string]researchEntry{}, researchInflight: map[string]chan struct{}{}, moveCache: map[string]movementEntry{}, moveInflight: map[string]chan struct{}{}, btCache: map[string]backtestEntry{}, digestCache: map[string]digestEntry{}, log: log}
+	s := &Server{store: st, hub: hub, clip: clip.NewFetcher(), enrich: enricher, auth: verifier, bars: bars, topics: topicSrc, opps: oppSrc, universe: universeSrc, gurus: guruSrc, ingestor: ingestor, symbols: symbolSrc, events: eventSrc, fundamentals: fundSrc, earnings: earningsSrc, congress: congressSrc, institutional: institutionalSrc, live: liveSub, indices: indicesSrc, short: shortSrc, briefing: briefingSrc, options: optionsSrc, thirteenf: thirteenfSrc, admins: admins, commentRL: newRateLimiter(10, 10*time.Minute), sumCache: map[string]summaryEntry{}, sumInflight: map[string]chan struct{}{}, researchCache: map[string]researchEntry{}, researchInflight: map[string]chan struct{}{}, moveCache: map[string]movementEntry{}, moveInflight: map[string]chan struct{}{}, meCache: map[string]materialEventsEntry{}, meInflight: map[string]chan struct{}{}, btCache: map[string]backtestEntry{}, digestCache: map[string]digestEntry{}, log: log}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", s.health)
 
@@ -474,6 +506,7 @@ func New(st store.Store, hub QuoteStream, enricher enrich.Enricher, verifier *au
 	mux.HandleFunc("GET /v1/stocks/{ticker}/indicators", s.getStockIndicators)
 	mux.HandleFunc("GET /v1/stocks/{ticker}/research", s.getResearch)
 	mux.HandleFunc("GET /v1/stocks/{ticker}/movement", s.getMovement)
+	mux.HandleFunc("GET /v1/stocks/{ticker}/material-events", s.getMaterialEvents)
 	mux.HandleFunc("GET /v1/indicators", s.getIndicators)
 	mux.HandleFunc("GET /v1/stream", s.getStream)
 
@@ -2640,6 +2673,160 @@ func (s *Server) writeMovement(w http.ResponseWriter, e movementEntry) {
 		out["explanation"] = exp.Text
 		out["evidence"] = ev
 		out["disclaimer"] = exp.Disclaimer
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+// SetMaterialEvents injects the 8-K material-events source after New (keeps
+// api.New's positional signature stable). nil-safe: the endpoint 404s until set.
+func (s *Server) SetMaterialEvents(src MaterialEventsSource) { s.materialCalc = src }
+
+// materialEventsDailyCap bounds material-events LLM-summary REPORTS per day across
+// ALL tickers — a hard token-budget backstop. The cap gates the LLM-summary path
+// only: a facts-only report (the parsed 8-K items + canonical labels + source
+// links) is cheap and always serves, so over-cap requests still return 200 with
+// the filings and no summaries.
+const materialEventsDailyCap = 80
+
+// materialEventsEntry is one cached material-events report (per ticker per ET day
+// per language). It holds the assembled Report and the generation timestamp.
+type materialEventsEntry struct {
+	rep materialevents.Report
+	at  time.Time
+}
+
+// getMaterialEvents serves a company's recent 8-K (current report) filings with an
+// optional AI plain-language summary. Go owns every FACT — the form type, filing /
+// report dates, accession URL, and the parsed item codes AND their canonical
+// labels (the item-code → meaning map lives in internal/edgar, NEVER the LLM). The
+// LLM, when on and under the daily cap, writes ONLY a short factual summary of what
+// each filing's source text says happened; it never invents numbers/dates/names and
+// never gives advice. The LLM is OFF THE CRITICAL PATH — the endpoint always serves
+// the filings + item labels + source links, never 500/503. The full report (facts +
+// optional summaries) is generated at most once per (ticker, ET day, lang) and
+// served from memory. 404 only when the ticker/CIK can't be resolved at all; an
+// existing company with zero recent 8-Ks returns {"filings":[]} with 200.
+func (s *Server) getMaterialEvents(w http.ResponseWriter, r *http.Request) {
+	if s.materialCalc == nil {
+		writeJSON(w, http.StatusNotFound, errBody("material events unavailable"))
+		return
+	}
+	ticker := strings.ToUpper(strings.TrimSpace(r.PathValue("ticker")))
+	if ticker == "" {
+		writeJSON(w, http.StatusNotFound, errBody("no ticker"))
+		return
+	}
+	lang := "zh" // Chinese-first default; English UI requests ?lang=en
+	if r.URL.Query().Get("lang") == "en" {
+		lang = "en"
+	}
+	day := summaryDay() // ET trading day, shared with the other per-ticker caches
+	key := ticker + "|" + day + "|" + lang
+
+	for {
+		s.meMu.Lock()
+		if e, ok := s.meCache[key]; ok {
+			s.meMu.Unlock()
+			s.writeMaterialEvents(w, e)
+			return
+		}
+		ch, busy := s.meInflight[key]
+		if !busy {
+			break // we'll generate
+		}
+		s.meMu.Unlock()
+		select { // someone else is generating: wait, then re-check the cache
+		case <-ch:
+		case <-r.Context().Done():
+			return
+		}
+	}
+	// We hold meMu and are the generator for this key.
+	if s.meDayDate != day {
+		s.meDayDate, s.meDayCount = day, 0
+		for k := range s.meCache { // yesterday's reports are dead weight
+			if !strings.Contains(k, "|"+day+"|") { // key = ticker|day|lang
+				delete(s.meCache, k)
+			}
+		}
+	}
+	// Reserve an LLM-summary slot only if the LLM is enabled and under cap; the
+	// facts-only report is always assembled regardless (off the critical path).
+	wantLLM := s.materialCalc.Enabled() && s.meDayCount < materialEventsDailyCap
+	if wantLLM {
+		s.meDayCount++
+	}
+	ch := make(chan struct{})
+	s.meInflight[key] = ch
+	s.meMu.Unlock()
+
+	finish := func(e *materialEventsEntry) {
+		s.meMu.Lock()
+		if e != nil {
+			s.meCache[key] = *e
+		}
+		delete(s.meInflight, key)
+		close(ch)
+		s.meMu.Unlock()
+	}
+
+	var (
+		rep materialevents.Report
+		err error
+	)
+	if wantLLM {
+		rep, err = s.materialCalc.Summarize(r.Context(), ticker, lang)
+	} else {
+		rep, err = s.materialCalc.Report(r.Context(), ticker)
+	}
+	if err != nil {
+		// The ticker/CIK couldn't be resolved or the SEC feed fetch failed → no
+		// cache entry (let a later visit retry), refund any reserved LLM budget,
+		// and 404 (mirrors getMovement's "nothing at all" path).
+		if wantLLM {
+			s.meMu.Lock()
+			s.meDayCount--
+			s.meMu.Unlock()
+		}
+		finish(nil)
+		s.maybeCollect(ticker)
+		writeJSON(w, http.StatusNotFound, errBody("no material events for "+ticker))
+		return
+	}
+	// If we reserved an LLM slot but no summary was actually written (LLM off
+	// mid-flight, all sources too thin, or every summary errored), refund the budget.
+	if wantLLM && !rep.LLM {
+		s.meMu.Lock()
+		s.meDayCount--
+		s.meMu.Unlock()
+	}
+
+	e := materialEventsEntry{rep: rep, at: time.Now().UTC()}
+	finish(&e)
+	s.writeMaterialEvents(w, e)
+}
+
+// writeMaterialEvents marshals a cached material-events report into the wire shape.
+// Always 200. The filings array is ALWAYS present and non-null (an existing company
+// with no recent 8-Ks serializes "filings":[]); each filing carries the Go-owned
+// facts + item labels, and an AI summary only when one was written.
+func (s *Server) writeMaterialEvents(w http.ResponseWriter, e materialEventsEntry) {
+	rep := e.rep
+	filings := rep.Filings
+	if filings == nil {
+		filings = []materialevents.Filing{}
+	}
+	out := map[string]any{
+		"ticker":       rep.Ticker,
+		"filings":      filings,
+		"count":        len(filings),
+		"llm":          rep.LLM,
+		"model":        rep.Model,
+		"source":       "SEC EDGAR",
+		"generated_at": e.at,
+	}
+	if rep.LLM {
+		out["disclaimer"] = rep.Disclaimer
 	}
 	writeJSON(w, http.StatusOK, out)
 }

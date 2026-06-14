@@ -58,6 +58,7 @@ import {FundamentalsCard} from '@/components/FundamentalsCard';
 import {IndicatorsPanel} from '@/components/IndicatorsPanel';
 import {AISummaryCard} from '@/components/AISummaryCard';
 import {MovementCard} from '@/components/MovementCard';
+import {FilingsCard} from '@/components/FilingsCard';
 import {EarningsChip} from '@/components/EarningsChip';
 import {OptionsCard} from '@/components/OptionsCard';
 import {ShortChip} from '@/components/ShortChip';
@@ -588,6 +589,14 @@ export function StockView({ticker}: {ticker: string}) {
       </div>
       {/* AI digest: daily-cached bullets from news+social (hides when LLM off/empty) */}
       <AISummaryCard ticker={norm} />
+
+      {/* 8-K material events (current reports) + optional AI summary. Go owns every
+          fact (form/dates/item-code labels/source link); only the per-filing summary
+          is AI-written (omitted when LLM off / source too thin). Hides on an unknown
+          symbol; shows a subtle empty line when a known company has no recent 8-Ks. */}
+      <div id="material-events" className="scroll-mt-20">
+        <FilingsCard ticker={norm} />
+      </div>
 
       {/* K-line candlestick chart + indicators — the price-and-indicators anchor,
           with the options panel directly below it */}

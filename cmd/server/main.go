@@ -38,6 +38,7 @@ import (
 	"github.com/wombow-ai/tickwind/internal/institutional"
 	"github.com/wombow-ai/tickwind/internal/krx"
 	"github.com/wombow-ai/tickwind/internal/market"
+	"github.com/wombow-ai/tickwind/internal/materialevents"
 	"github.com/wombow-ai/tickwind/internal/movement"
 	"github.com/wombow-ai/tickwind/internal/nasdaq"
 	"github.com/wombow-ai/tickwind/internal/openfigi"
@@ -600,6 +601,21 @@ func main() {
 	}
 	apiServer.SetMovement(movement.NewService(st, moveQuote, enricher, cfg.LLMModel))
 	log.Info("move-explainer enabled", "llm", enricher.Enabled(), "quote_fallback", bars != nil)
+
+	// 8-K material events + AI summary: a company's recent 8-K (current report)
+	// filings — material corporate events (M&A, exec changes, earnings pre-
+	// announcements, bankruptcies, …) — with an optional plain-language LLM summary.
+	// Go owns every FACT (form/dates/accession URL + the parsed item codes AND their
+	// canonical English/Chinese labels — the item-code→meaning map lives in
+	// internal/edgar, never the LLM, the anti-hallucination anchor); the LLM, when
+	// on, writes ONLY a short factual summary of each filing's source text. The
+	// facts-only report serves regardless of the LLM (off the critical path), so it
+	// is wired UNCONDITIONALLY, reusing the existing EDGAR client (CIK lookup +
+	// SEC-compliant fetch + rate-limit handling). The per-ticker report is cached in
+	// the API handler (once per ticker/ET-day/lang) — server-driven, refreshed on
+	// access when stale, never by an external operator.
+	apiServer.SetMaterialEvents(materialevents.NewService(edgarClient, enricher, cfg.LLMModel))
+	log.Info("material-events (8-K) enabled", "llm", enricher.Enabled())
 
 	srv := &http.Server{
 		Addr:              ":" + cfg.Port,
