@@ -1430,14 +1430,43 @@ func (s *Server) subscribeLive(w http.ResponseWriter, r *http.Request) {
 func (s *Server) getBars(w http.ResponseWriter, r *http.Request) {
 	ticker := strings.ToUpper(strings.TrimSpace(r.PathValue("ticker")))
 	closes := []float64{}
+	resp := map[string]any{"ticker": ticker}
 	if s.bars != nil {
 		if got, err := s.bars.DailyBars(r.Context(), ticker); err != nil {
 			s.log.Debug("bars fetch failed", "ticker", ticker, "err", err)
 		} else if got != nil {
 			closes = got
 		}
+		// 52-week high/low from the daily candle cache (same cache the K-line uses;
+		// a hit is cheap). Omitted when unavailable so the frontend hides the range.
+		if cs, err := s.bars.DailyCandles(r.Context(), ticker); err == nil {
+			if hi, lo := yearHighLow(cs); hi > 0 && lo > 0 {
+				resp["year_high"] = hi
+				resp["year_low"] = lo
+			}
+		}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"ticker": ticker, "closes": closes})
+	resp["closes"] = closes
+	writeJSON(w, http.StatusOK, resp)
+}
+
+// yearHighLow returns the highest High and lowest Low over the last ~252 trading
+// days (≈52 weeks) of daily candles. Returns 0,0 for an empty series or all-zero
+// data (so the caller can omit the range rather than show a fake 0).
+func yearHighLow(candles []store.Candle) (high, low float64) {
+	start := 0
+	if len(candles) > 252 {
+		start = len(candles) - 252
+	}
+	for i := start; i < len(candles); i++ {
+		if h := candles[i].High; h > high {
+			high = h
+		}
+		if l := candles[i].Low; l > 0 && (low == 0 || l < low) {
+			low = l
+		}
+	}
+	return high, low
 }
 
 // getCandles returns daily OHLC candles for the K-line chart. Degrades to an

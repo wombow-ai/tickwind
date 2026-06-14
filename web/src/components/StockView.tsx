@@ -115,6 +115,7 @@ export function StockView({ticker}: {ticker: string}) {
   const quotes = useQuotes([norm]);
   const quote = quotes.get(norm);
   const [bars, setBars] = useState<number[]>([]);
+  const [yearRange, setYearRange] = useState<{high: number; low: number} | null>(null);
   const [signals, setSignals] = useState<Signal[]>([]);
 
   const [news, setNews] = useState<Feed<NewsItem>>({status: 'loading', items: []});
@@ -176,8 +177,14 @@ export function StockView({ticker}: {ticker: string}) {
   useEffect(() => {
     const c = new AbortController();
     getBars(norm, c.signal).then(
-      r => setBars(r.closes ?? []),
-      () => setBars([]),
+      r => {
+        setBars(r.closes ?? []);
+        setYearRange(r.year_high && r.year_low ? {high: r.year_high, low: r.year_low} : null);
+      },
+      () => {
+        setBars([]);
+        setYearRange(null);
+      },
     );
     return () => c.abort();
   }, [norm]);
@@ -490,6 +497,26 @@ export function StockView({ticker}: {ticker: string}) {
                 w={300}
                 h={56}
               />
+            )}
+            {yearRange && yearRange.high > yearRange.low && primaryPrice > 0 && (
+              <div className="mt-1.5 w-[300px]">
+                <div className={cx('mb-1 flex items-center justify-between text-[11px] tabular-nums', t.faint)}>
+                  <span>{fmtPrice(cur, yearRange.low)}</span>
+                  <span className={cx('font-semibold', t.sub)}>{tr('stock.yearRange')}</span>
+                  <span>{fmtPrice(cur, yearRange.high)}</span>
+                </div>
+                <div className={cx('relative h-1.5 rounded-full', dark ? 'bg-slate-800' : 'bg-slate-100')}>
+                  <span
+                    className={cx(
+                      'absolute top-1/2 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white shadow',
+                      dark ? 'bg-teal-400' : 'bg-teal-500',
+                    )}
+                    style={{
+                      left: `${Math.max(0, Math.min(100, ((primaryPrice - yearRange.low) / (yearRange.high - yearRange.low)) * 100))}%`,
+                    }}
+                  />
+                </div>
+              </div>
             )}
           </div>
         </div>

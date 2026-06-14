@@ -423,6 +423,9 @@ export interface BarsResponse {
   ticker: string;
   /** Recent daily closing prices, oldest first. Empty when unavailable. */
   closes: number[];
+  /** 52-week high / low (from the daily candle cache); absent when unavailable. */
+  year_high?: number;
+  year_low?: number;
 }
 
 /** Fetches recent daily closes for a ticker's trend sparkline. */

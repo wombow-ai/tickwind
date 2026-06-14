@@ -194,3 +194,22 @@ func TestGetBarsSingle(t *testing.T) {
 		t.Errorf("got %+v; want AAPL with 3 closes", body)
 	}
 }
+
+func TestYearHighLow(t *testing.T) {
+	cs := []store.Candle{{High: 10, Low: 8}, {High: 12, Low: 7}, {High: 11, Low: 9}}
+	if hi, lo := yearHighLow(cs); hi != 12 || lo != 7 {
+		t.Fatalf("yearHighLow = %v/%v, want 12/7", hi, lo)
+	}
+	if hi, lo := yearHighLow(nil); hi != 0 || lo != 0 {
+		t.Fatalf("yearHighLow(nil) = %v/%v, want 0/0 (caller omits)", hi, lo)
+	}
+	// Only the last 252 bars count: an early spike outside the window is ignored.
+	big := make([]store.Candle, 300)
+	big[0] = store.Candle{High: 9999, Low: 0.01}
+	for i := 1; i < 300; i++ {
+		big[i] = store.Candle{High: 50, Low: 40}
+	}
+	if hi, lo := yearHighLow(big); hi != 50 || lo != 40 {
+		t.Fatalf("yearHighLow(300→last 252) = %v/%v, want 50/40 (early spike excluded)", hi, lo)
+	}
+}
