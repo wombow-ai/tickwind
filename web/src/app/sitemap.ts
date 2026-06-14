@@ -10,7 +10,7 @@ import {
 import {SITE_URL} from '@/lib/config';
 import {GUIDES} from '@/lib/guides';
 import {SCREEN_PRESETS} from '@/lib/presets';
-import {popularTickers, quoteBearingTickers} from '@/lib/pseo';
+import {popularTickers, quoteBearingTickers, STOCK_DIRECTORY_LETTERS} from '@/lib/pseo';
 
 // Regenerate hourly so newly-trending tickers enter the sitemap without a deploy.
 export const revalidate = 3600;
@@ -155,8 +155,16 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     {path: '/unusual', changeFrequency: 'daily', priority: 0.6},
     {path: '/indicators', changeFrequency: 'monthly', priority: 0.6},
     {path: '/guide', changeFrequency: 'weekly', priority: 0.6},
+    {path: '/stocks', changeFrequency: 'weekly', priority: 0.6},
     {path: '/announcements', changeFrequency: 'weekly', priority: 0.5},
   ];
+  // The A–Z stock directory: the hub (above) + one page per letter, aiding crawl
+  // discovery of the thousands of `/stock/{t}` pages they internally link.
+  const stockDirectoryPages: Page[] = STOCK_DIRECTORY_LETTERS.map(letter => ({
+    path: `/stocks/${letter}`,
+    changeFrequency: 'weekly',
+    priority: 0.5,
+  }));
   const guidePages: Page[] = GUIDES.map(g => ({
     path: `/guide/${g.slug}`,
     changeFrequency: 'monthly',
@@ -205,6 +213,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     ...staticPages,
     ...guidePages,
     ...presetPages,
+    ...stockDirectoryPages,
     ...stockPages,
     ...memberPages,
     ...fundPages,

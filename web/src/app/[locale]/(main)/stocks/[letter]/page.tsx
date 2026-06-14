@@ -1,0 +1,249 @@
+import type {Metadata} from 'next';
+import Link from '@/components/LocalLink';
+import {notFound} from 'next/navigation';
+import {LayoutGrid} from 'lucide-react';
+import {SITE_URL, langAlternates} from '@/lib/config';
+import {isLocale, LOCALES} from '@/lib/locale';
+import {ogImageMeta} from '@/lib/og';
+import {STOCK_DIRECTORY_LETTERS, tickersForLetter} from '@/lib/pseo';
+
+// Mirrors the /stocks hub + sitemap cadence: the per-letter bucket only shifts as
+// the price universe is swept, so an hourly ISR window keeps it fresh deploy-free.
+export const revalidate = 3600;
+
+/**
+ * Below this many tickers a letter page is treated as THIN (e.g. a sparse letter
+ * like Q/X/Z, or an empty/error fetch) → noindex (follow). Fail-open: only a
+ * definitively-sparse letter is deindexed; a real, populated letter stays
+ * indexable. Mirrors the `/stock/[ticker]` thin-content guard's intent.
+ */
+const MIN_TICKERS_FOR_INDEX = 3;
+
+/** Pre-render every letter a..z × locale (= 52 pages). */
+export function generateStaticParams(): {locale: string; letter: string}[] {
+  return LOCALES.flatMap(locale =>
+    STOCK_DIRECTORY_LETTERS.map(letter => ({locale, letter})),
+  );
+}
+
+/** Narrows an arbitrary segment to a supported a..z directory letter. */
+function isLetter(x: string): boolean {
+  return x.length === 1 && x >= 'a' && x <= 'z';
+}
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{locale: string; letter: string}>;
+}): Promise<Metadata> {
+  const {locale, letter} = await params;
+  const loc = isLocale(locale) ? locale : 'en';
+  const zh = loc === 'zh';
+  const lc = letter.toLowerCase();
+
+  // Out-of-range segment (not a..z) → keep it out of the index; notFound() in the
+  // body serves the 404 page.
+  if (!isLetter(lc)) {
+    return {
+      title: zh ? '个股目录 · Tickwind' : 'Stock directory · Tickwind',
+      robots: {index: false, follow: true},
+    };
+  }
+
+  const up = lc.toUpperCase();
+  const tickers = await tickersForLetter(lc);
+  const path = `/stocks/${lc}`;
+  const title = zh
+    ? `以 ${up} 开头的美股代码 | Tickwind`
+    : `US Stocks Starting With ${up} | Tickwind`;
+  const description = zh
+    ? `按字母浏览:所有以 ${up} 开头、有实时报价的美股代码,每个代码链接到其实时价格、SEC 文件、基本面与新闻页面。延迟数据,仅供参考,不构成投资建议。`
+    : `Every quote-bearing US stock ticker starting with ${up} — each links to its live price, SEC filings, fundamentals and news. Delayed data, for reference only, not investment advice.`;
+
+  return {
+    title: {absolute: title},
+    description,
+    alternates: langAlternates(path, loc),
+    // noindex-when-thin: a sparse/empty letter is kept out of the index but still
+    // followable. A real, populated letter gets the default (indexable).
+    ...(tickers.length < MIN_TICKERS_FOR_INDEX ? {robots: {index: false, follow: true}} : {}),
+    openGraph: {
+      type: 'website',
+      title,
+      description: description.slice(0, 110),
+      url: `${SITE_URL}/${loc}${path}`,
+      images: [
+        ogImageMeta({
+          lang: loc,
+          eyebrow: zh ? '个股目录' : 'Stock directory',
+          title: zh ? `以 ${up} 开头的美股` : `US stocks starting with ${up}`,
+          subtitle: zh ? '点击任意代码查看详情' : 'Pick a ticker for its full page',
+        }),
+      ],
+    },
+  };
+}
+
+/**
+ * One A–Z letter page (pSEO): lists every quote-bearing ticker starting with the
+ * letter, each an internal link into `/stock/{t}`. Server-rendered single-locale
+ * (chosen from the route segment) so /en and /zh are distinct, crawlable HTML.
+ * Company names are intentionally NOT fetched (they're absent from the universe
+ * endpoint and a per-ticker name fetch would be thousands of calls — the /stock
+ * page already carries the name). Best-effort fetch — a slow/down or empty API
+ * renders the graceful empty state (+ noindex via generateMetadata), never a 500.
+ * An out-of-range segment (not a..z) → notFound().
+ */
+export default async function StocksLetterRoute({
+  params,
+}: {
+  params: Promise<{locale: string; letter: string}>;
+}) {
+  const {locale, letter} = await params;
+  const loc = isLocale(locale) ? locale : 'en';
+  const zh = loc === 'zh';
+  const lc = letter.toLowerCase();
+  if (!isLetter(lc)) notFound();
+
+  const up = lc.toUpperCase();
+  const path = `/stocks/${lc}`;
+  // Best-effort: any failure → empty list → graceful empty state (ISR refills on
+  // the next revalidate). Never throws to the route.
+  const tickers = await tickersForLetter(lc);
+
+  // JSON-LD: a CollectionPage wrapping an ItemList of this letter's tickers (each
+  // a locale-prefixed /stock URL) + a BreadcrumbList (Tickwind → All stocks →
+  // letter). All `item`/`url` locale-prefixed to match the canonical (the FIXED
+  // pattern, NOT the old bare-path bug).
+  const pageUrl = `${SITE_URL}/${loc}${path}`;
+  const ld = {
+    '@context': 'https://schema.org',
+    '@graph': [
+      {
+        '@type': 'CollectionPage',
+        name: zh ? `以 ${up} 开头的美股` : `US stocks starting with ${up}`,
+        url: pageUrl,
+        mainEntity: {
+          '@type': 'ItemList',
+          name: zh ? `以 ${up} 开头的美股代码` : `US stock tickers starting with ${up}`,
+          numberOfItems: tickers.length,
+          itemListElement: tickers.map((tk, i) => ({
+            '@type': 'ListItem',
+            position: i + 1,
+            name: tk,
+            url: `${SITE_URL}/${loc}/stock/${encodeURIComponent(tk)}`,
+          })),
+        },
+      },
+      {
+        '@type': 'BreadcrumbList',
+        itemListElement: [
+          {'@type': 'ListItem', position: 1, name: 'Tickwind', item: `${SITE_URL}/${loc}`},
+          {
+            '@type': 'ListItem',
+            position: 2,
+            name: zh ? '个股目录' : 'All stocks',
+            item: `${SITE_URL}/${loc}/stocks`,
+          },
+          {'@type': 'ListItem', position: 3, name: up, item: pageUrl},
+        ],
+      },
+    ],
+  };
+
+  return (
+    <article className="mx-auto max-w-3xl">
+      <script type="application/ld+json" dangerouslySetInnerHTML={{__html: JSON.stringify(ld)}} />
+
+      <nav className="mb-4 text-[12px] text-slate-500 dark:text-slate-400" aria-label="Breadcrumb">
+        <Link href="/" className="hover:underline">
+          {zh ? '首页' : 'Home'}
+        </Link>
+        <span className="mx-1.5">/</span>
+        <Link href="/stocks" className="hover:underline">
+          {zh ? '个股目录' : 'All stocks'}
+        </Link>
+      </nav>
+
+      <header className="mb-5">
+        <h1 className="flex items-center gap-2 text-[24px] font-bold tracking-tight text-slate-900 dark:text-slate-100">
+          <LayoutGrid size={20} className="text-sky-600 dark:text-sky-300" />
+          {zh ? `以 ${up} 开头的美股` : `US stocks starting with ${up}`}
+        </h1>
+        <p className="mt-1.5 text-[13.5px] leading-relaxed text-slate-600 dark:text-slate-300">
+          {zh
+            ? `所有以 ${up} 开头、有实时报价的美股代码。点击任意代码查看其实时价格、SEC 文件、基本面与讨论。`
+            : `Every quote-bearing US stock ticker starting with ${up}. Pick a ticker for its live price, SEC filings, fundamentals and discussion.`}
+        </p>
+        {tickers.length > 0 && (
+          <p className="mt-2 text-[12.5px] text-slate-500 dark:text-slate-400">
+            {zh ? `共 ${tickers.length.toLocaleString()} 只` : `${tickers.length.toLocaleString()} stocks`}
+          </p>
+        )}
+      </header>
+
+      {tickers.length > 0 ? (
+        <section>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4">
+            {tickers.map(tk => (
+              <Link
+                key={tk}
+                href={`/stock/${encodeURIComponent(tk)}`}
+                className="flex items-center justify-center rounded-xl border border-slate-200 px-3 py-2.5 text-[14px] font-bold text-slate-900 transition hover:border-sky-300 hover:bg-slate-50 dark:border-slate-800 dark:text-slate-100 dark:hover:border-sky-500/40 dark:hover:bg-slate-900"
+              >
+                {tk}
+              </Link>
+            ))}
+          </div>
+        </section>
+      ) : (
+        <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-10 text-center dark:border-slate-800 dark:bg-slate-900">
+          <LayoutGrid size={22} className="mx-auto mb-2 text-slate-300 dark:text-slate-600" />
+          <p className="text-[14px] font-semibold text-slate-700 dark:text-slate-200">
+            {zh ? `暂无以 ${up} 开头的股票` : `No stocks starting with ${up} right now`}
+          </p>
+          <p className="mt-1 text-[12.5px] text-slate-500 dark:text-slate-400">
+            {zh
+              ? '稍后再来查看,或浏览其他字母。'
+              : 'Check back shortly, or browse another letter.'}
+          </p>
+          <Link
+            href="/stocks"
+            className="mt-3 inline-block rounded-lg bg-sky-600 px-3 py-1.5 text-[12.5px] font-semibold text-white transition hover:bg-sky-700 dark:bg-sky-500 dark:hover:bg-sky-600"
+          >
+            {zh ? '返回 A–Z 目录 →' : 'Back to the A–Z directory →'}
+          </Link>
+        </div>
+      )}
+
+      {/* Cross-link hub: the full A–Z strip, for internal linking. */}
+      <section className="mt-8">
+        <h2 className="mb-2.5 text-[12px] font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">
+          {zh ? '浏览其他字母' : 'Browse other letters'}
+        </h2>
+        <div className="flex flex-wrap gap-1.5">
+          {STOCK_DIRECTORY_LETTERS.map(other => (
+            <Link
+              key={other}
+              href={`/stocks/${other}`}
+              aria-current={other === lc ? 'page' : undefined}
+              className={`flex h-9 w-9 items-center justify-center rounded-lg border text-[13px] font-semibold uppercase transition ${
+                other === lc
+                  ? 'border-sky-300 bg-sky-50 text-sky-700 dark:border-sky-500/40 dark:bg-sky-500/15 dark:text-sky-300'
+                  : 'border-slate-200 text-slate-600 hover:border-sky-300 hover:bg-slate-50 dark:border-slate-800 dark:text-slate-300 dark:hover:border-sky-500/40 dark:hover:bg-slate-900'
+              }`}
+            >
+              {other}
+            </Link>
+          ))}
+        </div>
+      </section>
+
+      <p className="mt-6 text-center text-[11px] text-slate-400 dark:text-slate-500">
+        {zh
+          ? '数据延迟 · 仅供参考 · 非投资建议'
+          : 'Delayed data · For reference only · Not investment advice'}
+      </p>
+    </article>
+  );
+}

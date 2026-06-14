@@ -13,6 +13,7 @@ const COLUMNS: Array<[string, Array<[string, string]>]> = [
     'footer.product',
     [
       ['nav.markets', '/'],
+      ['nav.stocks', '/stocks'],
       ['mod.hotStocks', '/hot'],
       ['nav.opportunities', '/opportunities'],
       ['nav.news', '/news'],

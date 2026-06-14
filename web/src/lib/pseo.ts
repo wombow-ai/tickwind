@@ -58,3 +58,59 @@ export async function quoteBearingTickers(): Promise<string[]> {
     return [];
   }
 }
+
+/** The A–Z bucket letters of the `/stocks` directory, in display order. */
+export const STOCK_DIRECTORY_LETTERS = [
+  'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm',
+  'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
+] as const;
+
+/** A single A–Z letter bucket: its lowercase letter + its sorted tickers. */
+export interface LetterBucket {
+  letter: string;
+  tickers: string[];
+}
+
+/**
+ * Groups the quote-bearing universe into A–Z buckets keyed by each ticker's
+ * UPPERCASED first character. Tickers whose first char is non-alpha (digits or
+ * symbols) are OMITTED — the directory stays a clean A–Z, and those names still
+ * reach the index via the sitemap's `/stock/{t}` URLs. Class-suffixed tickers
+ * (e.g. `BRK.B`) bucket under their leading letter (`B`). Each bucket's tickers
+ * are sorted alphabetically. Returns a Map keyed by the LOWERCASE letter (the
+ * route-segment form), so an absent letter simply has no entry.
+ */
+export function bucketByFirstLetter(tickers: string[]): Map<string, string[]> {
+  const buckets = new Map<string, string[]>();
+  for (const t of tickers) {
+    if (!t) continue;
+    const first = t[0].toUpperCase();
+    // A–Z only; digits/symbols are skipped (kept off the clean A–Z pages).
+    if (first < 'A' || first > 'Z') continue;
+    const key = first.toLowerCase();
+    const arr = buckets.get(key);
+    if (arr) arr.push(t);
+    else buckets.set(key, [t]);
+  }
+  for (const arr of buckets.values()) arr.sort((a, b) => a.localeCompare(b));
+  return buckets;
+}
+
+/**
+ * The quote-bearing tickers starting with `letter` (a..z), sorted alphabetically.
+ * Best-effort: a slow/down API yields `[]` (the page degrades to its empty state
+ * + noindex). The single A–Z bucket avoids re-bucketing the whole universe when
+ * only one letter is needed.
+ */
+export async function tickersForLetter(letter: string): Promise<string[]> {
+  const lc = letter.toLowerCase();
+  const all = await quoteBearingTickers();
+  const out: string[] = [];
+  for (const t of all) {
+    if (t && t[0].toLowerCase() === lc && t[0].toUpperCase() >= 'A' && t[0].toUpperCase() <= 'Z') {
+      out.push(t);
+    }
+  }
+  out.sort((a, b) => a.localeCompare(b));
+  return out;
+}
