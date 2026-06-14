@@ -237,11 +237,16 @@ feature-flagged plugin, never on the critical path. Web only.
   report's options block is absent — and the per-day report cache then freezes that options-less sheet
   for the ET-day (confirmed: AAPL's 3 fetches shared one `generated_at`, assembled cold post-restart;
   `/options` showed max_pain 292.5 the whole time). NOT a regression from the audit fixes (cboe works).
-  **Fix (next tick, cheap):** have `scanUnusual` compute + cache the per-ticker `OptionsView` into
-  `c.cache` for the ~40 scanned mega-caps (it already fetches their chains), so their research reports
-  reliably include options; the post-restart cold window shrinks to the first scan (~40s). Non-scan
-  thin names stay on-demand-only (acceptable). `internal/ingest/options.go` scanUnusual + a research
-  no-regression check (AAPL report includes options after).
+  **FIXED + LIVE-verified (commit 3b0cb3d):** extracted the chain→`OptionsView` build into a pure
+  `viewFromChain` helper (no fetch); `compute()` delegates to it (byte-identical), and `scanUnusual`
+  reuses its SINGLE existing chain fetch to also build the view and write `c.cache[tk]` (same map/
+  optionsEntry/TTL the on-demand path uses) — **no second Cboe pull**. The ~40 scanned mega-caps are
+  now continuously warm, so their reports reliably include options; the post-restart cold window
+  shrinks to the first scan (~40s). Non-scan thin names stay on-demand-only. **LIVE: AAPL report now
+  shows max pain $292.50 + p/c 0.63/0.71; TSLA $400; NVDA $205 — all with Cboe ~15min-delayed
+  attribution** (was: options block entirely absent). cboe MaxPain + the unusual board untouched.
+  (Deploy SSH dropped mid-launch but the nohup'd script completed; verified container restart +
+  DEPLOY_DONE before confirming the business result — no double build.)
 - **Shipped 2026-06-14 (owner batch + greenlit follow-ups, all live-verified):** R2 now has all **6
   sections** (估值/基本面/技术面/资金面/情绪面/概览) + a **two-sided 看多/看空 (bull/bear)** reading on the
   overview (one ComposeReport call gains `bull`/`bear` keys; a deterministic Go advice-guard strips any
