@@ -365,9 +365,10 @@ func main() {
 
 	// Fear & Greed sentiment index: a daily reading from a handful of optional
 	// market-mood inputs (sentiment.Compute re-weights whatever is present). Wired
-	// inputs: VIX (Yahoo ^VIX), the SPY put/call proxy (Cboe) and the FINRA daily
-	// short-pressure average; breadth / new-highs-lows / social-heat are TODO once
-	// those whole-market inputs are easy to source. Keyless. Backs /v1/sentiment.
+	// inputs: VIX (Yahoo ^VIX), the SPY put/call proxy (Cboe), the FINRA daily
+	// short-pressure average, market breadth (advancers/decliners over the universe
+	// price cache) and social heat (the trending hot-list). New-highs/new-lows is
+	// deferred — the universe cache has no 52-week range. Keyless. Backs /v1/sentiment.
 	sentimentCache := sentiment.NewCache()
 	// Backfill the in-memory history from the durable Market store so the chart
 	// shows the accumulated series immediately after a redeploy (the cache itself
@@ -382,8 +383,15 @@ func main() {
 		sentimentCache.Seed(seed)
 		log.Info("sentiment history seeded from store", "points", len(seed))
 	}
-	go ingest.NewSentimentIngestor(yahoo.New(), cboe.New(), shortVolumeCache, sentimentCache, st, 24*time.Hour, log).Run(ctx)
-	log.Info("sentiment index ingestor enabled (VIX + put/call + short pressure)")
+	sentimentIngestor := ingest.NewSentimentIngestor(yahoo.New(), cboe.New(), shortVolumeCache, sentimentCache, st, 24*time.Hour, log)
+	// Server-driven extra components, computed from caches the app already maintains
+	// (never fetched on the fly): breadth from the universe price cache, social heat
+	// from the trending hot-list store. Both are nil-safe — an unswept cache / empty
+	// board reports ok=false and the component is simply dropped.
+	sentimentIngestor.SetBreadthSource(ingest.NewUniverseBreadth(universeCache))
+	sentimentIngestor.SetHeatSource(ingest.NewHotListHeat(st))
+	go sentimentIngestor.Run(ctx)
+	log.Info("sentiment index ingestor enabled (VIX + put/call + short pressure + breadth + heat)")
 
 	// Options overview (squeeze/sentiment): Cboe ~15-min delayed chains, fetched
 	// on demand and cached 15 min per ticker. Keyless public CDN.
