@@ -167,6 +167,21 @@ feature-flagged plugin, never on the critical path. Web only.
   today's-move + allocation %. **Already-shipped (verified this session, were stale in the roadmap):**
   Alerts Center (TopNav bell + `/me?tab=alerts` global list, triggered/active split + re-arm) and Chinese
   search (苹果→AAPL via the curated alias table + CJK routing).
+- **Shipped 2026-06-14 (cont. — fast-cadence ~2-min loop, all live-verified):**
+  **Indicators Increment 3 — composite scores**: `fundamental.altman-z-score` (bankruptcy Z; +RetainedEarnings
+  field) + `fundamental.piotroski-f-score` (9-pt quality; +4 prior-FY fields) → **159 emitted ids**;
+  all-or-nothing anti-fabrication (any missing input → insufficient, never a partial score). AAPL Z=12.09
+  (safe) / F=7 verified. Beneish-M deliberately unsupported. **F&G index** now feeds **breadth** (advancers/
+  decliners from the universe price cache) + **social heat** (hot-list mention momentum) → up to 5/6 components
+  (new-highs/lows deferred — no 52w range in the universe snapshot); refresh changed 24h→**hourly** (intraday
+  signals + boot-race fix; breadth populates within ~1h of an undisturbed box). **AI movement explainer**
+  `GET /v1/stocks/{t}/movement` — move-triggered (|chg|>=5% → significant), Go owns change_pct, LLM writes ONE
+  hedged Chinese sentence (`enrich.ExplainMove`) over attributed evidence (news/filings/insider), canned
+  data-only fallback; `internal/movement` + research-pattern cache/cap/setter + StockView MovementCard.
+  **52-week high/low** on the stock header (`getBars` year_high/low from the candle cache + a range bar with
+  the price marker). **K-line crosshair OHLC legend** (hover readout). **US Treasury yield-curve macro strip**
+  `GET /v1/macro` (`internal/treasury`, keyless Treasury.gov, 2Y/10Y + 2s10s recession signal, server-driven
+  12h ingestor, home MacroStrip; tenors matched by header-name, spread null unless both legs present).
 - **Ops (2026-06-14):** the new 4 GB VPS lacked the old box's fail2ban deploy-IP whitelist → a burst of
   deploy connects banned `154.29.158.47`; fixed durably via `/etc/fail2ban/jail.d/tickwind-ignore.conf`
   (owner VNC). The ssh unit on this box is **`ssh`, NOT `sshd`**. Box has 2 G swap + healthy RAM (not OOM).
