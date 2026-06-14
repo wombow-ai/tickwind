@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"encoding/json"
 	"time"
 )
 
@@ -197,6 +198,15 @@ func (s Split) ListHoldings(ctx context.Context, userID string) ([]Holding, erro
 }
 func (s Split) DeleteHolding(ctx context.Context, userID, id string) (bool, error) {
 	return s.User.DeleteHolding(ctx, userID, id)
+}
+
+// Prefs are per-user UI state → the cheap-to-rebuild User store.
+
+func (s Split) GetPrefs(ctx context.Context, userID string) (json.RawMessage, bool, error) {
+	return s.User.GetPrefs(ctx, userID)
+}
+func (s Split) PutPrefs(ctx context.Context, userID string, blob json.RawMessage) error {
+	return s.User.PutPrefs(ctx, userID, blob)
 }
 
 // Comments are public, valuable community content → the durable Market store.

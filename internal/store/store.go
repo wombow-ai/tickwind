@@ -5,6 +5,7 @@ package store
 
 import (
 	"context"
+	"encoding/json"
 	"time"
 )
 
@@ -370,6 +371,15 @@ type Store interface {
 	SaveHolding(ctx context.Context, h Holding) error
 	ListHoldings(ctx context.Context, userID string) ([]Holding, error)
 	DeleteHolding(ctx context.Context, userID, id string) (bool, error)
+
+	// Prefs is a per-user JSON preferences blob (small UI state: selected
+	// indicators, future view prefs). Opaque to the store — the API owns the
+	// shape and caps the size. Routed to the User store via Split (cheap to
+	// rebuild, same class as watchlist/notes/alerts). GetPrefs returns ok=false
+	// when the user has none (the caller then falls back to defaults, so nothing
+	// regresses); PutPrefs overwrites the whole blob.
+	GetPrefs(ctx context.Context, userID string) (json.RawMessage, bool, error)
+	PutPrefs(ctx context.Context, userID string, blob json.RawMessage) error
 
 	// Comments are PUBLIC user posts on a stock (Ticker) or the global board
 	// (Ticker == ""). Durable (Market store). List excludes soft-deleted rows;

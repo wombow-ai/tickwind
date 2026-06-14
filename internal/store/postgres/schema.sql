@@ -236,6 +236,15 @@ CREATE TABLE IF NOT EXISTS holdings (
 );
 CREATE INDEX IF NOT EXISTS holdings_user_idx ON holdings (user_id);
 
+-- Per-user opaque JSON preferences blob (selected indicators, future UI prefs).
+-- The API owns the shape (namespaced top-level keys) and caps the size; the
+-- store treats it as opaque jsonb. One row per user, upserted on the PK.
+CREATE TABLE IF NOT EXISTS user_prefs (
+    user_id    text PRIMARY KEY,
+    prefs      jsonb NOT NULL,
+    updated_at timestamptz NOT NULL DEFAULT now()
+);
+
 -- Public user comments on a stock (ticker) or the global community board
 -- (ticker IS NULL). Durable (Market store). Soft-deleted (deleted=true) for
 -- moderation audit; ip + flagged/reports support takedown/abuse handling.

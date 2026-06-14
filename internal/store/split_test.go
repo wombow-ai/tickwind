@@ -2,6 +2,7 @@ package store_test
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 
 	"github.com/wombow-ai/tickwind/internal/store"
@@ -57,5 +58,20 @@ func TestSplitRoutesMarketAndUser(t *testing.T) {
 	}
 	if got, _ := s.FearGreedHistory(ctx, 0); len(got) != 1 || got[0].Date != "2026-06-14" {
 		t.Errorf("Split.FearGreedHistory = %v; want one 2026-06-14 point via Market", got)
+	}
+
+	// Per-user prefs are cheap-to-rebuild UI state → they must route to User.
+	blob := json.RawMessage(`{"indicators":{"ids":["technical.rsi"]}}`)
+	if err := s.PutPrefs(ctx, uid, blob); err != nil {
+		t.Fatal(err)
+	}
+	if got, ok, _ := user.GetPrefs(ctx, uid); !ok || string(got) != string(blob) {
+		t.Errorf("prefs should be in the User store; got (%s, %v)", got, ok)
+	}
+	if _, ok, _ := market.GetPrefs(ctx, uid); ok {
+		t.Error("prefs must NOT be in the Market store")
+	}
+	if got, ok, _ := s.GetPrefs(ctx, uid); !ok || string(got) != string(blob) {
+		t.Errorf("Split.GetPrefs = (%s, %v); want the blob via User", got, ok)
 	}
 }

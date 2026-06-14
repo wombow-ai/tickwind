@@ -2,6 +2,7 @@ package memory
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -439,5 +440,55 @@ func TestLikeComment(t *testing.T) {
 	// Unknown comment → ok=false.
 	if _, _, ok, _ := s.LikeComment(ctx, "nope", "u2"); ok {
 		t.Error("like unknown comment should be ok=false")
+	}
+}
+
+func TestPrefsRoundTrip(t *testing.T) {
+	s := New()
+	ctx := context.Background()
+
+	// Before any PutPrefs → ok=false, nil blob.
+	if blob, ok, err := s.GetPrefs(ctx, "u1"); err != nil || ok || blob != nil {
+		t.Fatalf("GetPrefs before any set = (%s, %v, %v); want (nil, false, nil)", blob, ok, err)
+	}
+
+	// Set → get returns the stored blob.
+	first := json.RawMessage(`{"indicators":{"ids":["technical.rsi"]}}`)
+	if err := s.PutPrefs(ctx, "u1", first); err != nil {
+		t.Fatal(err)
+	}
+	got, ok, err := s.GetPrefs(ctx, "u1")
+	if err != nil || !ok || string(got) != string(first) {
+		t.Fatalf("GetPrefs after set = (%s, %v, %v); want the stored blob, true, nil", got, ok, err)
+	}
+
+	// The returned slice is a COPY: mutating it must not corrupt the store.
+	got[0] = 'X'
+	if again, _, _ := s.GetPrefs(ctx, "u1"); string(again) != string(first) {
+		t.Fatalf("mutating the returned slice leaked into the store: %s", again)
+	}
+
+	// PutPrefs must store a COPY: mutating the caller's slice must not leak in.
+	src := json.RawMessage(`{"indicators":{"ids":["a"]}}`)
+	if err := s.PutPrefs(ctx, "u2", src); err != nil {
+		t.Fatal(err)
+	}
+	src[2] = 'Z' // mutate after the call
+	if got2, _, _ := s.GetPrefs(ctx, "u2"); string(got2) != `{"indicators":{"ids":["a"]}}` {
+		t.Fatalf("PutPrefs aliased the caller's slice: %s", got2)
+	}
+
+	// Overwrite replaces the whole blob.
+	second := json.RawMessage(`{"indicators":{"ids":["technical.macd","technical.boll"]}}`)
+	if err := s.PutPrefs(ctx, "u1", second); err != nil {
+		t.Fatal(err)
+	}
+	if got3, _, _ := s.GetPrefs(ctx, "u1"); string(got3) != string(second) {
+		t.Fatalf("after overwrite GetPrefs = %s; want %s", got3, second)
+	}
+
+	// Prefs are per-user: u2 is unaffected by u1's writes.
+	if got4, ok, _ := s.GetPrefs(ctx, "u2"); !ok || string(got4) != `{"indicators":{"ids":["a"]}}` {
+		t.Fatalf("u2 prefs = (%s, %v); want u2's own blob", got4, ok)
 	}
 }

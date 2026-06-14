@@ -13,7 +13,7 @@
  * touching the panel/picker.
  */
 
-import type {StockIndicator} from './api';
+import type {PrefsBlob, StockIndicator} from './api';
 
 /**
  * Versioned localStorage key holding the anonymous selection. Bump the suffix on
@@ -124,4 +124,26 @@ export function clearSelection(): void {
   } catch {
     // Ignore — nothing to clear if storage is unavailable.
   }
+}
+
+/**
+ * Extracts the selected indicator ids from a server prefs blob's `indicators`
+ * sub-key, or `null` when the blob has no (valid) indicator selection. Mirrors
+ * {@link loadSelection}'s shape contract so {@link resolveSelection} can consume
+ * either source. Defensive against a malformed blob (returns `null`).
+ */
+export function idsFromPrefs(prefs: PrefsBlob | null | undefined): string[] | null {
+  const ids = prefs?.indicators?.ids;
+  if (!Array.isArray(ids)) return null;
+  const clean = ids.filter((x): x is string => typeof x === 'string');
+  return clean.length > 0 ? clean : null;
+}
+
+/**
+ * Wraps a selection in the namespaced prefs shape the server stores
+ * (`{indicators: {ids}}`). Only the `indicators` sub-key is written; the backend
+ * shallow-merges, so a future sibling pref key is never clobbered.
+ */
+export function prefsFromIds(ids: string[]): PrefsBlob {
+  return {indicators: {ids}};
 }

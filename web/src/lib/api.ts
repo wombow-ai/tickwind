@@ -1711,6 +1711,68 @@ export async function getStockIndicators(
   }
 }
 
+// ── Per-user prefs (generic JSON UI-state blob) ──────────────────────────
+//
+// A small, generic per-user JSON-prefs surface. The blob is namespaced by
+// top-level key (`{"indicators":{"ids":[...]}}`); the backend shallow-merges a
+// PUT's top-level keys, so a client that only writes `indicators` never
+// clobbers a future sibling pref. GET returns `{}` when the user has none.
+
+/** The opaque per-user prefs blob. The indicators client owns the `indicators` key. */
+export interface PrefsBlob {
+  indicators?: {ids?: string[]};
+  // Future sibling pref keys slot in here without a migration.
+  [key: string]: unknown;
+}
+
+/**
+ * Fetches the caller's stored prefs blob. Returns `{}` when none are stored
+ * (the caller then falls back to localStorage / the default). Requires a token.
+ */
+export function getMyPrefs(
+  token: string | null,
+  signal?: AbortSignal,
+): Promise<PrefsBlob> {
+  return getJson<PrefsBlob>('/v1/me/prefs', signal, token);
+}
+
+/**
+ * Shallow-merges the given top-level keys into the caller's stored prefs (the
+ * backend merges and persists, returning 204 with no body). Pass only the keys
+ * you own (e.g. `{indicators: {ids}}`). Requires a token.
+ */
+export async function putMyPrefs(
+  token: string | null,
+  blob: PrefsBlob,
+  signal?: AbortSignal,
+): Promise<void> {
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}/v1/me/prefs`, {
+      method: 'PUT',
+      headers: authHeaders(
+        {'Content-Type': 'application/json', Accept: 'application/json'},
+        token,
+      ),
+      body: JSON.stringify(blob),
+      signal,
+    });
+  } catch {
+    throw new ApiError(`network error contacting ${API_BASE}/v1/me/prefs`, 0);
+  }
+  if (!res.ok) {
+    let detail = res.statusText;
+    try {
+      const data = (await res.json()) as ApiErrorBody;
+      if (data.error) detail = data.error;
+    } catch {
+      // Non-JSON / empty error body; fall back to the status text.
+    }
+    throw new ApiError(detail, res.status);
+  }
+  // 204 No Content — nothing to parse.
+}
+
 /** A link a user saved to a ticker (private, per-user). */
 export interface Clip {
   id: string;

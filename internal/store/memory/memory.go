@@ -4,6 +4,7 @@ package memory
 
 import (
 	"context"
+	"encoding/json"
 	"sort"
 	"strings"
 	"sync"
@@ -30,6 +31,7 @@ type Store struct {
 	notes     map[string]map[string]store.Note    // userID -> noteID -> Note
 	alerts    map[string]map[string]store.Alert   // userID -> alertID -> Alert
 	holdings  map[string]map[string]store.Holding // userID -> holdingID -> Holding
+	prefs     map[string]json.RawMessage          // userID -> opaque JSON prefs blob
 	comments  map[string]store.Comment            // commentID -> Comment (public)
 	cmtLikes  map[string]map[string]bool          // commentID -> set of userIDs who liked
 }
@@ -52,6 +54,7 @@ func New() *Store {
 		notes:     make(map[string]map[string]store.Note),
 		alerts:    make(map[string]map[string]store.Alert),
 		holdings:  make(map[string]map[string]store.Holding),
+		prefs:     make(map[string]json.RawMessage),
 		comments:  make(map[string]store.Comment),
 		cmtLikes:  make(map[string]map[string]bool),
 	}
@@ -595,6 +598,32 @@ func (s *Store) DeleteHolding(_ context.Context, userID, id string) (bool, error
 	}
 	delete(s.holdings[userID], id)
 	return true, nil
+}
+
+// GetPrefs returns the user's stored prefs blob (a defensive copy, so a later
+// mutation of the returned slice can't corrupt the map) and ok=false when the
+// user has none.
+func (s *Store) GetPrefs(_ context.Context, userID string) (json.RawMessage, bool, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	blob, ok := s.prefs[userID]
+	if !ok {
+		return nil, false, nil
+	}
+	cp := make(json.RawMessage, len(blob))
+	copy(cp, blob)
+	return cp, true, nil
+}
+
+// PutPrefs overwrites the user's prefs blob. It stores a copy (not the caller's
+// slice) so a later mutation by the caller can't leak into the map.
+func (s *Store) PutPrefs(_ context.Context, userID string, blob json.RawMessage) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	cp := make(json.RawMessage, len(blob))
+	copy(cp, blob)
+	s.prefs[userID] = cp
+	return nil
 }
 
 func (s *Store) ListActiveAlerts(_ context.Context) ([]store.Alert, error) {

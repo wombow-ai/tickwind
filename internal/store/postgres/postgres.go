@@ -6,6 +6,7 @@ package postgres
 import (
 	"context"
 	_ "embed"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -958,6 +959,33 @@ func (s *Store) DeleteHolding(ctx context.Context, userID, id string) (bool, err
 		return false, fmt.Errorf("postgres: delete holding: %w", err)
 	}
 	return tag.RowsAffected() == 1, nil
+}
+
+// GetPrefs returns the user's prefs blob (jsonb), or ok=false when the user has
+// no row yet (sql.ErrNoRows → the caller falls back to defaults).
+func (s *Store) GetPrefs(ctx context.Context, userID string) (json.RawMessage, bool, error) {
+	var blob json.RawMessage
+	err := s.pool.QueryRow(ctx, `SELECT prefs FROM user_prefs WHERE user_id = $1`, userID).Scan(&blob)
+	switch {
+	case errors.Is(err, pgx.ErrNoRows):
+		return nil, false, nil
+	case err != nil:
+		return nil, false, fmt.Errorf("postgres: get prefs: %w", err)
+	}
+	return blob, true, nil
+}
+
+// PutPrefs upserts the user's prefs blob, replacing it wholesale (the API does
+// the shallow-merge before calling this).
+func (s *Store) PutPrefs(ctx context.Context, userID string, blob json.RawMessage) error {
+	const query = `
+INSERT INTO user_prefs (user_id, prefs, updated_at)
+VALUES ($1, $2, now())
+ON CONFLICT (user_id) DO UPDATE SET prefs = $2, updated_at = now()`
+	if _, err := s.pool.Exec(ctx, query, userID, blob); err != nil {
+		return fmt.Errorf("postgres: put prefs: %w", err)
+	}
+	return nil
 }
 
 // SaveComment inserts a public comment (empty ticker → NULL = global board)

@@ -365,6 +365,8 @@ func New(st store.Store, hub QuoteStream, enricher enrich.Enricher, verifier *au
 	mux.HandleFunc("POST /v1/holdings", s.postHolding)
 	mux.HandleFunc("DELETE /v1/holdings/{id}", s.deleteHolding)
 	mux.HandleFunc("GET /v1/me/digest", s.getMyDigest)
+	mux.HandleFunc("GET /v1/me/prefs", s.getMyPrefs)
+	mux.HandleFunc("PUT /v1/me/prefs", s.putMyPrefs)
 	mux.HandleFunc("GET /v1/comments", s.getComments) // public read
 	mux.HandleFunc("POST /v1/comments", s.postComment)
 	mux.HandleFunc("PATCH /v1/comments/{id}", s.patchComment)
@@ -914,6 +916,93 @@ func (s *Server) deleteHolding(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"deleted": true})
+}
+
+// ── Per-user: prefs (generic JSON UI-state blob) ─────────────────────────
+//
+// A small, generic per-user JSON-prefs surface (selected indicators today,
+// future view prefs under sibling keys). The blob is opaque to the store; the
+// API owns the shape ({"indicators":{"ids":[...]}}) and caps the size so it
+// can't be abused as arbitrary storage. Routed to the cheap-to-rebuild User
+// store via Split — same class as watchlist/notes/alerts.
+
+// maxPrefsBytes caps an uploaded prefs blob (a tiny id list, well under 8 KB).
+const maxPrefsBytes = 8 << 10
+
+// getMyPrefs returns the caller's stored prefs blob, or 200 {} when they have
+// none (the client then falls back to localStorage / the default, so nothing
+// regresses). 401 without a token.
+func (s *Server) getMyPrefs(w http.ResponseWriter, r *http.Request) {
+	u, ok := s.requireUser(w, r)
+	if !ok {
+		return
+	}
+	blob, found, err := s.store.GetPrefs(r.Context(), u.ID)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, errBody(err.Error()))
+		return
+	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	if !found || len(blob) == 0 {
+		_, _ = w.Write([]byte("{}")) // empty object → client uses its default
+		return
+	}
+	_, _ = w.Write(blob) // the stored blob is already valid JSON
+}
+
+// putMyPrefs shallow-merges the posted top-level keys into the caller's stored
+// blob, then persists it (204). Merging in the handler keeps the client trivial
+// and ensures a PUT that only sets `indicators` never clobbers a future sibling
+// pref key. The body must be a JSON object and is capped at maxPrefsBytes.
+func (s *Server) putMyPrefs(w http.ResponseWriter, r *http.Request) {
+	u, ok := s.requireUser(w, r)
+	if !ok {
+		return
+	}
+	body, err := io.ReadAll(io.LimitReader(r.Body, maxPrefsBytes+1))
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, errBody("invalid request body"))
+		return
+	}
+	if len(body) > maxPrefsBytes {
+		writeJSON(w, http.StatusRequestEntityTooLarge, errBody("prefs too large"))
+		return
+	}
+	// Reject anything that is not a JSON object (arrays, strings, numbers, null).
+	var incoming map[string]json.RawMessage
+	if err := json.Unmarshal(body, &incoming); err != nil {
+		writeJSON(w, http.StatusBadRequest, errBody("prefs must be a JSON object"))
+		return
+	}
+	// Shallow-merge: load the existing blob, overlay the posted top-level keys,
+	// re-marshal. A missing/empty stored blob starts from {}.
+	merged := map[string]json.RawMessage{}
+	if existing, found, err := s.store.GetPrefs(r.Context(), u.ID); err != nil {
+		writeJSON(w, http.StatusInternalServerError, errBody(err.Error()))
+		return
+	} else if found && len(existing) > 0 {
+		// A previously stored blob is always a JSON object; ignore a decode error
+		// defensively (treat a corrupt blob as empty rather than 500).
+		_ = json.Unmarshal(existing, &merged)
+	}
+	for k, v := range incoming {
+		merged[k] = v
+	}
+	out, err := json.Marshal(merged)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, errBody(err.Error()))
+		return
+	}
+	if len(out) > maxPrefsBytes {
+		writeJSON(w, http.StatusRequestEntityTooLarge, errBody("prefs too large"))
+		return
+	}
+	if err := s.store.PutPrefs(r.Context(), u.ID, out); err != nil {
+		writeJSON(w, http.StatusInternalServerError, errBody(err.Error()))
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // ── Comments (PUBLIC read; authenticated write) ──────────────────────────

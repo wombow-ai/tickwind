@@ -4,18 +4,23 @@ import {Activity, Gauge, SlidersHorizontal} from 'lucide-react';
 import Link from 'next/link';
 import {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {
+  getMyPrefs,
   getStockIndicators,
   indicatorSlug,
+  putMyPrefs,
   type StockIndicator,
   type StockIndicatorsResponse,
 } from '@/lib/api';
+import {useAuth} from '@/lib/auth';
 import {useLang, useT} from '@/lib/i18n';
 import {useDark} from '@/lib/theme';
 import {cx, fmtCompactUSD, fmtPrice, tok} from '@/lib/ui';
 import {IndicatorPicker} from './IndicatorPicker';
 import {
   clearSelection,
+  idsFromPrefs,
   loadSelection,
+  prefsFromIds,
   resolveSelection,
   saveSelection,
 } from '@/lib/indicatorSelection';
@@ -71,12 +76,15 @@ export function IndicatorsPanel({ticker}: {ticker: string}) {
   const dark = useDark();
   const t = tok(dark);
   const tr = useT();
+  const {user, getToken} = useAuth();
+  const signedIn = !!user;
   const [data, setData] = useState<StockIndicatorsResponse | null>(null);
   const [status, setStatus] = useState<Status>('loading');
   // Selected ids in display order. A pure VIEW filter + ordering over the
   // already-computed payload (default = the payload's P0 set, derived so it
-  // equals today's panel and grows with the catalog). Global preference,
-  // resolved from anonymous localStorage once the payload lands.
+  // equals today's panel and grows with the catalog). Global preference: when
+  // signed-in the SERVER prefs win over anonymous localStorage; otherwise
+  // localStorage; else the P0 default.
   const [selected, setSelected] = useState<string[]>([]);
   const [resolved, setResolved] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -86,7 +94,7 @@ export function IndicatorsPanel({ticker}: {ticker: string}) {
     setStatus('loading');
     setResolved(false);
     getStockIndicators(ticker, c.signal).then(
-      r => {
+      async r => {
         // 404 (null) or nothing displayable → hide the whole panel.
         const displayable =
           r?.indicators.some(i => i.status === 'ok' || i.status === 'insufficient') ?? false;
@@ -94,9 +102,28 @@ export function IndicatorsPanel({ticker}: {ticker: string}) {
           setStatus('hidden');
           return;
         }
-        // Resolve the selection against THIS payload: saved (anon localStorage)
-        // filtered to available ids, else the P0 default.
-        setSelected(resolveSelection(r.indicators, loadSelection()));
+        // Resolve the selection against THIS payload. Signed-in: server prefs
+        // win; fall back to anon localStorage when the server has none, and
+        // migrate that local selection up once. Anonymous: localStorage only.
+        // Defensive: any prefs-call failure degrades silently to localStorage.
+        let saved = loadSelection();
+        if (signedIn) {
+          try {
+            const token = await getToken();
+            const serverIds = idsFromPrefs(await getMyPrefs(token, c.signal));
+            if (serverIds) {
+              saved = serverIds; // server wins
+            } else if (saved) {
+              // One-time migrate-up: the server has no selection yet but the
+              // user has a local one — push it so it follows them across devices.
+              void putMyPrefs(token, prefsFromIds(saved)).catch(() => {});
+            }
+          } catch {
+            // Network / auth hiccup → keep the localStorage fallback.
+          }
+        }
+        if (c.signal.aborted) return;
+        setSelected(resolveSelection(r.indicators, saved));
         setResolved(true);
         setData(r);
         setStatus('ready');
@@ -104,20 +131,33 @@ export function IndicatorsPanel({ticker}: {ticker: string}) {
       () => setStatus('hidden'),
     );
     return () => c.abort();
-  }, [ticker]);
+  }, [ticker, signedIn, getToken]);
 
-  // Persist the selection (anonymous localStorage), debounced ~500ms. Skipped
-  // until the selection is resolved so the initial resolve never overwrites a
-  // saved blob with the default.
+  // Persist the selection, debounced ~500ms. Anonymous localStorage is always
+  // written (so a signed-out session keeps it); when signed-in, also push to
+  // the server (which wins on the next load). Skipped until the selection is
+  // resolved so the initial resolve never overwrites a saved blob with the
+  // default. Server write is best-effort — a failure never breaks the UI.
   const persistTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     if (!resolved) return;
     if (persistTimer.current) clearTimeout(persistTimer.current);
-    persistTimer.current = setTimeout(() => saveSelection(selected), 500);
+    persistTimer.current = setTimeout(() => {
+      saveSelection(selected);
+      if (signedIn) {
+        void (async () => {
+          try {
+            await putMyPrefs(await getToken(), prefsFromIds(selected));
+          } catch {
+            // Degrade to localStorage-only; the selection still applies locally.
+          }
+        })();
+      }
+    }, 500);
     return () => {
       if (persistTimer.current) clearTimeout(persistTimer.current);
     };
-  }, [selected, resolved]);
+  }, [selected, resolved, signedIn, getToken]);
 
   // "Reset to default" — clear the saved blob and fall back to the payload's
   // P0 default. The persist effect re-saves the default, which is harmless.
