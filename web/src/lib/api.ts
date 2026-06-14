@@ -222,6 +222,80 @@ function authHeaders(
 }
 
 /**
+ * Wraps `fetch` to retry EXACTLY ONCE on a transient network failure.
+ *
+ * Background: a cold (never-warmed) ticker's first on-demand research request
+ * intermittently gets reset by the Cloudflare Tunnel hop at ~3s with an empty
+ * reply — `fetch()` itself rejects with a `TypeError` (the browser sees a
+ * network error, NOT an HTTP status). The fact sheet caches on/after that first
+ * attempt, so an immediate retry succeeds. This is an infra-layer behavior we
+ * can't fix from the app, so we mitigate it client-side here.
+ *
+ * Retry policy — deliberately narrow:
+ * - Retry ONLY when `fetch()` REJECTS with a transient network error. Once a
+ *   `Response` object is returned (ANY HTTP status, incl. 4xx/5xx) it is
+ *   returned unchanged — the caller maps it exactly as today (401 → anon,
+ *   429 → quota, 404 → notfound, …). A 429 is NEVER retried.
+ * - An `AbortError` (the signal aborted, or was already aborted) is a deliberate
+ *   cancel, not a transient failure — it is rethrown immediately, no retry.
+ * - At most ONE retry (2 total attempts), after a short fixed backoff. If the
+ *   signal aborts during the backoff wait, the timer is cleared and the
+ *   `AbortError` is rethrown instead of retrying.
+ *
+ * Restricted to idempotent GETs (it never re-sends a body/method), so a retry
+ * can't double-submit a mutation.
+ */
+async function fetchWithRetryOnce(
+  input: string,
+  init: RequestInit,
+  backoffMs = 500,
+): Promise<Response> {
+  const signal = init.signal ?? undefined;
+  try {
+    return await fetch(input, init);
+  } catch (e) {
+    // A deliberate cancel (already-aborted signal or abort mid-flight) surfaces
+    // as an AbortError / an aborted signal — rethrow, do NOT retry.
+    if (isAbort(e, signal)) throw e;
+    // Otherwise this is a transient network reject (TypeError / connection
+    // reset / empty reply). Wait a short backoff, then retry exactly once.
+    await abortableDelay(backoffMs, signal);
+    return await fetch(input, init);
+  }
+}
+
+/** True when a rejection represents a deliberate abort rather than a network error. */
+function isAbort(e: unknown, signal?: AbortSignal): boolean {
+  return (
+    (signal?.aborted ?? false) ||
+    (e instanceof DOMException && e.name === 'AbortError') ||
+    (e instanceof Error && e.name === 'AbortError')
+  );
+}
+
+/**
+ * Resolves after `ms`, or rejects with an `AbortError` as soon as `signal`
+ * aborts (clearing the timer). Used for the single retry backoff so a cancel
+ * during the wait never triggers the retry.
+ */
+function abortableDelay(ms: number, signal?: AbortSignal): Promise<void> {
+  if (signal?.aborted) {
+    return Promise.reject(new DOMException('Aborted', 'AbortError'));
+  }
+  return new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort);
+      resolve();
+    }, ms);
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(new DOMException('Aborted', 'AbortError'));
+    };
+    signal?.addEventListener('abort', onAbort, {once: true});
+  });
+}
+
+/**
  * Performs a typed GET against the API and parses the JSON body.
  *
  * @param path Absolute API path beginning with `/`.
@@ -241,6 +315,51 @@ async function getJson<T>(
       signal,
     });
   } catch {
+    throw new ApiError(`network error contacting ${API_BASE}${path}`, 0);
+  }
+
+  if (!res.ok) {
+    let detail = res.statusText;
+    try {
+      const body = (await res.json()) as ApiErrorBody;
+      if (body.error) {
+        detail = body.error;
+      }
+    } catch {
+      // Non-JSON error body; fall back to the status text.
+    }
+    throw new ApiError(detail, res.status);
+  }
+
+  return (await res.json()) as T;
+}
+
+/**
+ * Like {@link getJson}, but retries the request EXACTLY ONCE on a transient
+ * network failure (see {@link fetchWithRetryOnce}). Behaviorally identical to
+ * `getJson` otherwise: any returned HTTP status (401/429/404/5xx) is mapped the
+ * same way and is NEVER retried, and an `AbortError` propagates unchanged. Used
+ * by the on-demand research GETs, where a cold ticker's first request can be
+ * reset at the Cloudflare Tunnel hop and an immediate retry succeeds.
+ *
+ * @throws {ApiError} If the network call fails (after the single retry) or the
+ *   status is not 2xx.
+ */
+async function getJsonWithRetry<T>(
+  path: string,
+  signal?: AbortSignal,
+  token?: string | null,
+): Promise<T> {
+  let res: Response;
+  try {
+    res = await fetchWithRetryOnce(`${API_BASE}${path}`, {
+      headers: authHeaders({Accept: 'application/json'}, token),
+      signal,
+    });
+  } catch (e) {
+    // Re-throw a deliberate cancel so callers can ignore it; only a real
+    // transient network failure (both attempts rejected) becomes ApiError(0).
+    if (isAbort(e, signal)) throw e;
     throw new ApiError(`network error contacting ${API_BASE}${path}`, 0);
   }
 
@@ -1119,7 +1238,9 @@ export async function getResearch(
 ): Promise<ResearchReportResponse | null> {
   const q = lang === 'en' ? '?lang=en' : '';
   try {
-    return await getJson<ResearchReportResponse>(
+    // Retry-once: a cold ticker's first research request can be reset at the
+    // Cloudflare Tunnel hop; an immediate retry hits the now-cached fact sheet.
+    return await getJsonWithRetry<ResearchReportResponse>(
       `/v1/stocks/${encodeURIComponent(normalizeTicker(ticker))}/research${q}`,
       signal,
     );
@@ -1157,7 +1278,10 @@ export async function getDeepResearch(
   const p = new URLSearchParams({depth: 'deep'});
   if (lang === 'en') p.set('lang', 'en');
   try {
-    return await getJson<ResearchReportResponse>(
+    // Retry-once: same cold-ticker Tunnel-reset mitigation as getResearch. Only
+    // a transient network REJECT retries — a 401/429 Response is returned as-is
+    // (never retried), so the daily generation quota is never burned by a retry.
+    return await getJsonWithRetry<ResearchReportResponse>(
       `/v1/stocks/${encodeURIComponent(normalizeTicker(ticker))}/research?${p.toString()}`,
       signal,
       token,
@@ -1226,7 +1350,9 @@ export async function getMovement(
 ): Promise<MovementResponse | null> {
   const q = lang === 'en' ? '?lang=en' : '';
   try {
-    return await getJson<MovementResponse>(
+    // Retry-once: another on-demand cold-ticker GET subject to the same
+    // Cloudflare Tunnel reset as the research fetches.
+    return await getJsonWithRetry<MovementResponse>(
       `/v1/stocks/${encodeURIComponent(normalizeTicker(ticker))}/movement${q}`,
       signal,
     );
@@ -1305,7 +1431,9 @@ export async function getMaterialEvents(
 ): Promise<MaterialEventsResponse | null> {
   const q = lang === 'en' ? '?lang=en' : '';
   try {
-    return await getJson<MaterialEventsResponse>(
+    // Retry-once: another on-demand cold-ticker GET subject to the same
+    // Cloudflare Tunnel reset as the research fetches.
+    return await getJsonWithRetry<MaterialEventsResponse>(
       `/v1/stocks/${encodeURIComponent(normalizeTicker(ticker))}/material-events${q}`,
       signal,
     );
