@@ -290,6 +290,18 @@ feature-flagged plugin, never on the critical path. Web only.
   ALL filers. **→ THREE adversarial data audits this session (capital-flows + indicators +
   fundamentals-XBRL) = 14 real bugs fixed (7+6+1) + 9 subsystems/families certified clean; the paid
   flagship's data layer is thoroughly hardened. Audit phase closed — pivoting to feature/SEO/UX.**
+- **Shipped + LIVE-verified 2026-06-15 (pSEO A-Z `/stocks` directory — `0729777`, first post-audit pivot):**
+  a crawlable stock directory — `/stocks` hub (A-Z index) + `/stocks/[letter]` pages (26×2 locales)
+  listing the quote-bearing tickers per letter, each linking to `/stock/{ticker}` — aids Google crawl
+  discovery + internal linking for the ~6,695 quote-bearing pages + a browse-all-stocks UX. Cloned the
+  proven pSEO shape (topic/[key] hub + screen/[preset] list): generateStaticParams letters×locales
+  (+54 static pages → 972 total), per-locale generateMetadata + langAlternates, single-locale render,
+  BreadcrumbList + CollectionPage/ItemList JSON-LD with locale-prefixed item URLs (0 bare-path leak),
+  LocalLink, ISR, noindex-thin guard (<3 tickers or empty/error → noindex,follow; fail-open). Uses
+  `quoteBearingTickers()` (not the 16k /v1/symbols set → no thin/dead links); no per-ticker name fetch.
+  Added to the sitemap (+54) + a Footer + TopNav More entry point. **LIVE: /en/stocks + /en/stocks/{a,b,x}
+  + /zh/stocks all 200; /en/stocks/a carries 173 distinct /stock/{ticker} links; /zh/stocks single-locale
+  (`<html lang=zh>` + 美股代码大全); sitemap +54.**
 - **Shipped 2026-06-14 (owner batch + greenlit follow-ups, all live-verified):** R2 now has all **6
   sections** (估值/基本面/技术面/资金面/情绪面/概览) + a **two-sided 看多/看空 (bull/bear)** reading on the
   overview (one ComposeReport call gains `bull`/`bear` keys; a deterministic Go advice-guard strips any
