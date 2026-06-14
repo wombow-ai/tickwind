@@ -249,9 +249,21 @@ feature-flagged plugin, never on the critical path. Web only.
   OG card [was Chinese-only for both], fund + congress-member breadcrumb JSON-LD `item` URLs now locale-
   prefixed to match canonical). Left as a known data limitation: the indicator `definition`/`formula` catalog
   has no `_zh` field, so `/zh/indicators/[id]` DefinedTerm `description` stays English (name IS localized).
-  Meta `keywords`/`description` intentionally stay mixed (deferred). **Stage 3 next:** add `GET /v1/symbols`
-  (exposes `internal/symbols.USTickers()`) to mass-generate `/stock/[ticker]` (with thin-content guards),
-  build `/screen/[preset]` preset landing pages, upgrade `/topic/[key]` to static pSEO, expand the sitemap.
+  Meta `keywords`/`description` intentionally stay mixed (deferred).
+- **Shipped 2026-06-14 (pSEO Stage 3①+② — /stock scale-up):** **①** `GET /v1/symbols` (Go, additive
+  `SymbolSearcher.AllUSTickers()` → `symbols.Cache.Get().USTickers()`) enumerates the full US symbols index —
+  **LIVE count 16,118** (incl. AAPL + dotted BRK.B; `?limit=`; nil-safe). **②** `/stock/[ticker]` scaled with
+  **three thin-content guards**: (a) `generateStaticParams` pre-renders ONLY the popular subset (`POPULAR_TICKERS`
+  ∪ hot/surging/wsb ∪ opportunities, **130 pages = 65×2 locales**) — build stays bounded (762 pages, ~26 s) —
+  everything else stays dynamic ISR (`revalidate=600`); (b) the **sitemap** lists only QUOTE-BEARING tickers
+  (via `getScreen`, which drops price≤0) — **530 `/stock` URLs (265/locale)**, NOT the 16,118 (the ~9,400
+  quote-less names are excluded); (c) per-page **noindex-when-thin** (`robots:{index:false,follow:true}` only
+  when a ticker has NO quote AND NO fundamentals, **fail-open** — only a definitive 404 counts, so transient
+  errors never deindex a real page). Shared `web/src/lib/pseo.ts` keeps the page + sitemap DRY. **Known limiter:**
+  the backend `getScreen` hard-caps `limit` at 200, so the sitemap expansion is currently ~265/locale; reaching
+  the full ~6,695 quote-bearing universe needs a Go follow-up (a price-universe ticker endpoint or raising the
+  cap). **Next:** that price-universe endpoint → scale the sitemap to thousands; then `/screen/[preset]` preset
+  landing pages, `/topic/[key]` → static pSEO, optional A-Z `/stocks` directory from `/v1/symbols`.
 - **Ops (2026-06-14):** the new 4 GB VPS lacked the old box's fail2ban deploy-IP whitelist → a burst of
   deploy connects banned `154.29.158.47`; fixed durably via `/etc/fail2ban/jail.d/tickwind-ignore.conf`
   (owner VNC). The ssh unit on this box is **`ssh`, NOT `sshd`**. Box has 2 G swap + healthy RAM (not OOM).

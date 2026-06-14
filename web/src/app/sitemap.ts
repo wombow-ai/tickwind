@@ -2,41 +2,38 @@ import type {MetadataRoute} from 'next';
 import {
   congressSlug,
   getCongress,
-  getHot,
   getIndicators,
-  getOpportunities,
   getThirteenF,
   indicatorSlug,
 } from '@/lib/api';
-import {POPULAR_TICKERS, SITE_URL} from '@/lib/config';
+import {SITE_URL} from '@/lib/config';
 import {GUIDES} from '@/lib/guides';
+import {popularTickers, quoteBearingTickers} from '@/lib/pseo';
 
 // Regenerate hourly so newly-trending tickers enter the sitemap without a deploy.
 export const revalidate = 3600;
 
+/** Hard ceiling on `/stock/*` entries PER LOCALE — a sanity cap so a future,
+ *  larger quote universe can't bloat the sitemap (and we never dump the full
+ *  ~16k SEC+Nasdaq listing, only quote-bearing names). */
+const MAX_STOCK_URLS = 5000;
+
 /**
- * The indexable stock universe: the popular set ∪ every live-board ticker
- * (hot / surging / WSB / opportunities). These all have real ingested data, so
- * we avoid thin-content pages while covering far more than the static popular
- * list. Fetched with a short timeout + graceful fallback so a slow/down API
- * never breaks sitemap generation.
+ * The indexable stock universe: the popular set ∪ the quote-bearing screener
+ * universe (every symbol with a usable live price — the natural "has real
+ * content" set, so we avoid thin/delisted pages). Deduped, and capped at
+ * {@link MAX_STOCK_URLS} per locale. Both sub-fetches are best-effort (short
+ * timeout + graceful fallback) so a slow/down API never breaks sitemap
+ * generation; at worst we fall back to just the popular set.
  */
 async function indexableTickers(): Promise<string[]> {
-  const set = new Set<string>(POPULAR_TICKERS);
-  const signal = AbortSignal.timeout(5000);
-  const results = await Promise.allSettled([
-    getHot('hot', 40, signal),
-    getHot('surging', 40, signal),
-    getHot('wsb', 40, signal),
-    getOpportunities(40, signal),
+  const [popular, quoted] = await Promise.all([
+    popularTickers(),
+    quoteBearingTickers(MAX_STOCK_URLS),
   ]);
-  for (const r of results) {
-    if (r.status !== 'fulfilled') continue;
-    for (const s of r.value.stocks ?? []) {
-      if (s?.ticker) set.add(s.ticker);
-    }
-  }
-  return [...set];
+  const set = new Set<string>(popular);
+  for (const t of quoted) set.add(t);
+  return [...set].slice(0, MAX_STOCK_URLS);
 }
 
 /**
