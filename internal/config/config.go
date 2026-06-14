@@ -104,6 +104,14 @@ type Config struct {
 	// paywall goes live).
 	LLMDeepModel string
 
+	// DeepResearchDailyLimit is the per-user, per-ET-day GENERATION quota for the
+	// AI Deep Research report (depth=deep): how many genuinely-new deep reports a
+	// logged-in user may generate per day, site-wide (not per stock). Viewing an
+	// already-generated (globally cached) report is free and never counts. Default
+	// 1 (the owner's spec: "每个用户一天就一次生成机会"); env DEEP_RESEARCH_DAILY_LIMIT lets
+	// the owner tune it (e.g. raise it for a paid tier later).
+	DeepResearchDailyLimit int
+
 	// Supabase auth. SupabaseURL (e.g. https://<ref>.supabase.co) enables ES256
 	// verification via the project's JWKS — required because Supabase now signs
 	// user tokens with asymmetric keys. SupabaseJWTSecret keeps legacy HS256
@@ -181,6 +189,7 @@ func Load() Config {
 		LLMBaseURL:              env("LLM_BASE_URL", ""),
 		LLMModel:                env("LLM_MODEL", ""),
 		LLMDeepModel:            env("LLM_DEEP_MODEL", ""),
+		DeepResearchDailyLimit:  envInt("DEEP_RESEARCH_DAILY_LIMIT", 1),
 		SupabaseURL:             strings.TrimRight(env("SUPABASE_URL", ""), "/"),
 		SupabaseJWTSecret:       env("SUPABASE_JWT_SECRET", ""),
 		AdminUserIDs:            splitCSVRaw(env("ADMIN_USER_IDS", "")),

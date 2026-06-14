@@ -396,6 +396,20 @@ type Store interface {
 	GetPrefs(ctx context.Context, userID string) (json.RawMessage, bool, error)
 	PutPrefs(ctx context.Context, userID string, blob json.RawMessage) error
 
+	// DeepResearchQuota is the per-user, per-day generation counter that gates the
+	// AI Deep Research report (depth=deep): each user gets a small number of NEW
+	// deep-report generations per ET trading day, site-wide (not per stock). Viewing
+	// an already-generated (globally cached) report does NOT touch this — only a
+	// genuinely-new LLM generation increments it. Keyed by (userID, ET day); routed
+	// to the cheap-to-rebuild User store via Split (same class as prefs/holdings —
+	// losing it just resets the day's quota, never market data). GetDeepQuotaUsed
+	// returns the count used today (0 when no row); IncrDeepQuotaUsed upserts +1.
+	// Both are best-effort from the caller's view: a read error fails OPEN (the
+	// handler logs + allows, never locking a user out), and an increment error is
+	// logged, not fatal.
+	GetDeepQuotaUsed(ctx context.Context, userID, day string) (int, error)
+	IncrDeepQuotaUsed(ctx context.Context, userID, day string) error
+
 	// Comments are PUBLIC user posts on a stock (Ticker) or the global board
 	// (Ticker == ""). Durable (Market store). List excludes soft-deleted rows;
 	// Delete is author-or-admin (admin=true skips the author check); Report flags

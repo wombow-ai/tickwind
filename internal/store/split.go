@@ -219,6 +219,16 @@ func (s Split) PutPrefs(ctx context.Context, userID string, blob json.RawMessage
 	return s.User.PutPrefs(ctx, userID, blob)
 }
 
+// Deep-research per-user daily generation quota → the cheap-to-rebuild User store
+// (per-user state, same class as prefs/holdings; losing it just resets the quota).
+
+func (s Split) GetDeepQuotaUsed(ctx context.Context, userID, day string) (int, error) {
+	return s.User.GetDeepQuotaUsed(ctx, userID, day)
+}
+func (s Split) IncrDeepQuotaUsed(ctx context.Context, userID, day string) error {
+	return s.User.IncrDeepQuotaUsed(ctx, userID, day)
+}
+
 // Comments are public, valuable community content → the durable Market store.
 
 func (s Split) SaveComment(ctx context.Context, c Comment) error {

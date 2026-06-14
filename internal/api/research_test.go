@@ -232,7 +232,8 @@ func TestGetResearch_DeepDepth(t *testing.T) {
 	defer srv.Close()
 
 	// depth=deep routes to ComposeDeep (not Compose) and reports the deep model.
-	resp, body := getResearch(t, srv.URL+"/v1/stocks/AAPL/research?depth=deep")
+	// Deep is login-gated, so this (and every deep request below) carries a token.
+	resp, body := getResearchAs(t, srv.URL+"/v1/stocks/AAPL/research?depth=deep", "user-1")
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status = %d; want 200", resp.StatusCode)
 	}
@@ -251,17 +252,140 @@ func TestGetResearch_DeepDepth(t *testing.T) {
 		t.Errorf("facts = %+v; want the unchanged Go-owned 31.2x", body.Sections[0].Facts)
 	}
 
-	// The deep report caches under its own key: a normal request still hits the
-	// normal Compose path (separate cache entry), so the two never collide.
+	// The deep report caches under its own key: a normal (ungated, anon-OK) request
+	// still hits the normal Compose path (separate cache entry), so they never collide.
 	if _, normal := getResearch(t, srv.URL+"/v1/stocks/AAPL/research"); normal.Model != "deepseek-chat" {
 		t.Errorf("normal model = %q; want deepseek-chat", normal.Model)
 	}
 	if fake.composes != 1 {
 		t.Errorf("Compose ran %d times; want 1 (deep request used a separate cache key)", fake.composes)
 	}
-	// A second deep request is served from the deep cache — ComposeDeep runs once.
-	if _, _ = getResearch(t, srv.URL+"/v1/stocks/AAPL/research?depth=deep"); fake.deepComposes != 1 {
+	// A second deep request for AAPL (already cached) is served free from the deep
+	// cache — ComposeDeep stays at one run AND no quota is consumed, so user-1 can
+	// still re-view it even though the limit is 1.
+	if _, _ = getResearchAs(t, srv.URL+"/v1/stocks/AAPL/research?depth=deep", "user-1"); fake.deepComposes != 1 {
 		t.Errorf("ComposeDeep ran %d times; want 1 (second deep request from cache)", fake.deepComposes)
+	}
+}
+
+// getResearchAs issues GET url with an optional Bearer token (sub=="" → anonymous,
+// no Authorization header) and decodes the body on 200.
+func getResearchAs(t *testing.T, url, sub string) (*http.Response, researchResp) {
+	t.Helper()
+	req, err := http.NewRequest(http.MethodGet, url, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sub != "" {
+		req.Header.Set("Authorization", "Bearer "+token(sub))
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var body researchResp
+	if resp.StatusCode == http.StatusOK {
+		if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+	}
+	resp.Body.Close()
+	return resp, body
+}
+
+// TestGetResearch_DeepAnon401 — depth=deep requires login: an anonymous (no token)
+// deep request is rejected 401, while the normal (ungated) path stays open to anon.
+func TestGetResearch_DeepAnon401(t *testing.T) {
+	fake := &fakeResearch{fs: sampleSheet(), enabled: true, model: "deepseek-chat", deepModel: "deep-x", prose: map[string]string{"valuation": "估值处于其历史区间偏高位。"}}
+	srv := serverWithResearch(fake)
+	defer srv.Close()
+
+	// Anonymous deep → 401, and NO compose ran (gated before generation).
+	resp, _ := getResearchAs(t, srv.URL+"/v1/stocks/AAPL/research?depth=deep", "")
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("anon deep status = %d; want 401", resp.StatusCode)
+	}
+	if fake.deepComposes != 0 {
+		t.Errorf("ComposeDeep ran %d times for an anon deep request; want 0 (gated before generation)", fake.deepComposes)
+	}
+
+	// The normal path is unaffected by deep gating — anon still gets a 200.
+	if resp2, _ := getResearchAs(t, srv.URL+"/v1/stocks/AAPL/research", ""); resp2.StatusCode != http.StatusOK {
+		t.Errorf("anon normal status = %d; want 200 (normal /research stays public)", resp2.StatusCode)
+	}
+}
+
+// TestGetResearch_DeepQuota covers the full per-user generation quota:
+//   - first logged-in deep request generates + consumes the user's daily slot;
+//   - a SECOND, different-ticker deep request by the SAME user the same day is over
+//     quota (limit 1) and the new ticker isn't cached → 429;
+//   - a different user still has their own slot → 200;
+//   - viewing an ALREADY-cached deep report is free (no quota, no new compose) — even
+//     for a user who is over quota.
+func TestGetResearch_DeepQuota(t *testing.T) {
+	fake := &fakeResearch{fs: sampleSheet(), enabled: true, model: "deepseek-chat", deepModel: "deep-x", prose: map[string]string{"valuation": "估值处于其历史区间偏高位。"}}
+	srv := serverWithResearch(fake)
+	defer srv.Close()
+	// Default deep limit is 1 (the owner spec); the test server uses that default.
+
+	// user-1's first deep generation: 200, consumes the quota, ComposeDeep ran once.
+	if resp, body := getResearchAs(t, srv.URL+"/v1/stocks/AAPL/research?depth=deep", "user-1"); resp.StatusCode != http.StatusOK {
+		t.Fatalf("user-1 first deep status = %d; want 200", resp.StatusCode)
+	} else if !body.LLM || body.Model != "deep-x" {
+		t.Fatalf("user-1 first deep: llm=%v model=%q; want true / deep-x", body.LLM, body.Model)
+	}
+	if fake.deepComposes != 1 {
+		t.Fatalf("ComposeDeep ran %d times; want 1", fake.deepComposes)
+	}
+
+	// user-1, SAME day, DIFFERENT ticker (not cached) → over quota → 429, no compose.
+	if resp, _ := getResearchAs(t, srv.URL+"/v1/stocks/MSFT/research?depth=deep", "user-1"); resp.StatusCode != http.StatusTooManyRequests {
+		t.Fatalf("user-1 second-ticker deep status = %d; want 429 (over daily quota)", resp.StatusCode)
+	}
+	if fake.deepComposes != 1 {
+		t.Errorf("ComposeDeep ran %d times after the over-quota request; want still 1", fake.deepComposes)
+	}
+
+	// A DIFFERENT user has their own daily slot → MSFT deep generates for them: 200.
+	if resp, _ := getResearchAs(t, srv.URL+"/v1/stocks/MSFT/research?depth=deep", "user-2"); resp.StatusCode != http.StatusOK {
+		t.Fatalf("user-2 deep status = %d; want 200 (own quota)", resp.StatusCode)
+	}
+	if fake.deepComposes != 2 {
+		t.Errorf("ComposeDeep ran %d times; want 2 (user-2 generated MSFT)", fake.deepComposes)
+	}
+
+	// Viewing an ALREADY-cached deep report is free even for the over-quota user-1:
+	// MSFT is now globally cached (user-2 generated it) → user-1 gets it 200, NO new
+	// compose, NO quota touched (the served report benefits everyone).
+	if resp, body := getResearchAs(t, srv.URL+"/v1/stocks/MSFT/research?depth=deep", "user-1"); resp.StatusCode != http.StatusOK {
+		t.Fatalf("over-quota user-1 viewing cached MSFT deep = %d; want 200 (cache hit is free)", resp.StatusCode)
+	} else if !body.LLM {
+		t.Errorf("cached MSFT deep llm=false; want the cached prose served")
+	}
+	if fake.deepComposes != 2 {
+		t.Errorf("ComposeDeep ran %d times; want still 2 (cache hit, no new generation)", fake.deepComposes)
+	}
+}
+
+// TestGetResearch_DeepDataOnlyNoQuota — when the LLM is OFF, a deep request from a
+// logged-in user serves the data-only report (200) and does NOT consume the user's
+// quota (no LLM ran). So a second different-ticker deep request still succeeds.
+func TestGetResearch_DeepDataOnlyNoQuota(t *testing.T) {
+	fake := &fakeResearch{fs: sampleSheet(), enabled: false} // LLM off → data-only
+	srv := serverWithResearch(fake)
+	defer srv.Close()
+
+	for _, tk := range []string{"AAPL", "MSFT"} {
+		resp, body := getResearchAs(t, srv.URL+"/v1/stocks/"+tk+"/research?depth=deep", "user-1")
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("%s data-only deep status = %d; want 200 (no quota consumed when LLM off)", tk, resp.StatusCode)
+		}
+		if body.LLM {
+			t.Errorf("%s data-only deep llm=true; want false", tk)
+		}
+	}
+	if fake.deepComposes != 0 {
+		t.Errorf("ComposeDeep ran %d times with the LLM off; want 0", fake.deepComposes)
 	}
 }
 

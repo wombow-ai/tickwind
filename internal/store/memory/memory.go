@@ -33,6 +33,7 @@ type Store struct {
 	alerts    map[string]map[string]store.Alert   // userID -> alertID -> Alert
 	holdings  map[string]map[string]store.Holding // userID -> holdingID -> Holding
 	prefs     map[string]json.RawMessage          // userID -> opaque JSON prefs blob
+	deepQuota map[string]int                      // "userID|DAY" -> deep-research generations used
 	comments  map[string]store.Comment            // commentID -> Comment (public)
 	cmtLikes  map[string]map[string]bool          // commentID -> set of userIDs who liked
 }
@@ -57,6 +58,7 @@ func New() *Store {
 		alerts:    make(map[string]map[string]store.Alert),
 		holdings:  make(map[string]map[string]store.Holding),
 		prefs:     make(map[string]json.RawMessage),
+		deepQuota: make(map[string]int),
 		comments:  make(map[string]store.Comment),
 		cmtLikes:  make(map[string]map[string]bool),
 	}
@@ -655,6 +657,26 @@ func (s *Store) PutPrefs(_ context.Context, userID string, blob json.RawMessage)
 	cp := make(json.RawMessage, len(blob))
 	copy(cp, blob)
 	s.prefs[userID] = cp
+	return nil
+}
+
+// deepQuotaKey is the per-(user, ET day) deep-research quota counter key.
+func deepQuotaKey(userID, day string) string { return userID + "|" + day }
+
+// GetDeepQuotaUsed returns how many deep-research generations the user has used
+// on the given day (0 when there's no row).
+func (s *Store) GetDeepQuotaUsed(_ context.Context, userID, day string) (int, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.deepQuota[deepQuotaKey(userID, day)], nil
+}
+
+// IncrDeepQuotaUsed increments the user's deep-research generation count for the
+// given day by one.
+func (s *Store) IncrDeepQuotaUsed(_ context.Context, userID, day string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.deepQuota[deepQuotaKey(userID, day)]++
 	return nil
 }
 

@@ -262,6 +262,20 @@ CREATE TABLE IF NOT EXISTS user_prefs (
     updated_at timestamptz NOT NULL DEFAULT now()
 );
 
+-- Per-user, per-day generation quota for the AI Deep Research report
+-- (depth=deep): each user gets a small number of NEW deep-report generations
+-- per ET trading day, site-wide (not per stock). One row per (user, day),
+-- upserted/incremented on a genuinely-new generation; viewing a globally cached
+-- report never touches this. Cheap to rebuild (User store) — losing it just
+-- resets the day's quota. Old days accumulate harmlessly (pruneable later).
+CREATE TABLE IF NOT EXISTS deep_research_quota (
+    user_id    text NOT NULL,
+    day        text NOT NULL,
+    used       integer NOT NULL DEFAULT 0,
+    updated_at timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (user_id, day)
+);
+
 -- Public user comments on a stock (ticker) or the global community board
 -- (ticker IS NULL). Durable (Market store). Soft-deleted (deleted=true) for
 -- moderation audit; ip + flagged/reports support takedown/abuse handling.

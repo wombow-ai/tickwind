@@ -1016,6 +1016,33 @@ ON CONFLICT (user_id) DO UPDATE SET prefs = $2, updated_at = now()`
 	return nil
 }
 
+// GetDeepQuotaUsed returns the user's deep-research generation count for the day
+// (0 when there's no row yet → sql.ErrNoRows is a clean zero).
+func (s *Store) GetDeepQuotaUsed(ctx context.Context, userID, day string) (int, error) {
+	var used int
+	err := s.pool.QueryRow(ctx, `SELECT used FROM deep_research_quota WHERE user_id = $1 AND day = $2`, userID, day).Scan(&used)
+	switch {
+	case errors.Is(err, pgx.ErrNoRows):
+		return 0, nil
+	case err != nil:
+		return 0, fmt.Errorf("postgres: get deep-research quota: %w", err)
+	}
+	return used, nil
+}
+
+// IncrDeepQuotaUsed upserts the user's deep-research generation count for the day
+// by one (insert with used=1, or increment an existing row's used).
+func (s *Store) IncrDeepQuotaUsed(ctx context.Context, userID, day string) error {
+	const query = `
+INSERT INTO deep_research_quota (user_id, day, used, updated_at)
+VALUES ($1, $2, 1, now())
+ON CONFLICT (user_id, day) DO UPDATE SET used = deep_research_quota.used + 1, updated_at = now()`
+	if _, err := s.pool.Exec(ctx, query, userID, day); err != nil {
+		return fmt.Errorf("postgres: incr deep-research quota: %w", err)
+	}
+	return nil
+}
+
 // SaveComment inserts a public comment (empty ticker → NULL = global board)
 // together with its cashtag mention rows ($TICKER fan-out).
 func (s *Store) SaveComment(ctx context.Context, c store.Comment) error {

@@ -400,6 +400,11 @@ type Server struct {
 	researchInflight map[string]chan struct{}
 	researchDayDate  string
 	researchDayCount int
+	// deepResearchLimit is the per-user, per-ET-day GENERATION quota for the deep
+	// report (depth=deep), set from config via SetDeepResearchLimit (default 1).
+	// Only a genuinely-new generation (cache miss + a real LLM compose) consumes a
+	// user's quota; viewing a globally cached deep report is free.
+	deepResearchLimit int
 	// Move-explainer cache: the data-only explanation (Go number + evidence + canned
 	// line) is cheap, but the LLM's hedged sentence is one small generation per
 	// (ticker, ET day, lang), then served from memory — mirrors the AI digest cache.
@@ -467,7 +472,7 @@ func New(st store.Store, hub QuoteStream, enricher enrich.Enricher, verifier *au
 			admins[id] = true
 		}
 	}
-	s := &Server{store: st, hub: hub, clip: clip.NewFetcher(), enrich: enricher, auth: verifier, bars: bars, topics: topicSrc, opps: oppSrc, universe: universeSrc, gurus: guruSrc, ingestor: ingestor, symbols: symbolSrc, events: eventSrc, fundamentals: fundSrc, earnings: earningsSrc, congress: congressSrc, institutional: institutionalSrc, live: liveSub, indices: indicesSrc, short: shortSrc, briefing: briefingSrc, options: optionsSrc, thirteenf: thirteenfSrc, admins: admins, commentRL: newRateLimiter(10, 10*time.Minute), sumCache: map[string]summaryEntry{}, sumInflight: map[string]chan struct{}{}, researchCache: map[string]researchEntry{}, researchInflight: map[string]chan struct{}{}, moveCache: map[string]movementEntry{}, moveInflight: map[string]chan struct{}{}, meCache: map[string]materialEventsEntry{}, meInflight: map[string]chan struct{}{}, iaCache: map[string]insiderActivityEntry{}, iaInflight: map[string]chan struct{}{}, btCache: map[string]backtestEntry{}, digestCache: map[string]digestEntry{}, log: log}
+	s := &Server{store: st, hub: hub, clip: clip.NewFetcher(), enrich: enricher, auth: verifier, bars: bars, topics: topicSrc, opps: oppSrc, universe: universeSrc, gurus: guruSrc, ingestor: ingestor, symbols: symbolSrc, events: eventSrc, fundamentals: fundSrc, earnings: earningsSrc, congress: congressSrc, institutional: institutionalSrc, live: liveSub, indices: indicesSrc, short: shortSrc, briefing: briefingSrc, options: optionsSrc, thirteenf: thirteenfSrc, admins: admins, commentRL: newRateLimiter(10, 10*time.Minute), sumCache: map[string]summaryEntry{}, sumInflight: map[string]chan struct{}{}, researchCache: map[string]researchEntry{}, researchInflight: map[string]chan struct{}{}, deepResearchLimit: 1, moveCache: map[string]movementEntry{}, moveInflight: map[string]chan struct{}{}, meCache: map[string]materialEventsEntry{}, meInflight: map[string]chan struct{}{}, iaCache: map[string]insiderActivityEntry{}, iaInflight: map[string]chan struct{}{}, btCache: map[string]backtestEntry{}, digestCache: map[string]digestEntry{}, log: log}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", s.health)
 
@@ -2463,6 +2468,16 @@ func (s *Server) getStockIndicators(w http.ResponseWriter, r *http.Request) {
 // positional signature stable). nil-safe: /v1/stocks/{ticker}/research 404s until set.
 func (s *Server) SetResearch(src ResearchSource) { s.researchCalc = src }
 
+// SetDeepResearchLimit sets the per-user, per-ET-day GENERATION quota for the deep
+// report (depth=deep) from config (DEEP_RESEARCH_DAILY_LIMIT, default 1). A value
+// <= 0 is ignored so the deep path always keeps a sane (>=1) default rather than
+// silently disabling generation for everyone.
+func (s *Server) SetDeepResearchLimit(n int) {
+	if n > 0 {
+		s.deepResearchLimit = n
+	}
+}
+
 // researchDailyCap bounds research-prose LLM generations per day across ALL
 // tickers — a hard token-budget backstop, smaller than summaryDailyCap since R2
 // is a bigger call. The cap gates PROSE only: the data-only fact sheet (assemble
@@ -2503,20 +2518,33 @@ func (s *Server) getResearch(w http.ResponseWriter, r *http.Request) {
 	// depth=deep selects the richer AI Deep Research compose (stronger model +
 	// Fable-5 harness) over the SAME Go-owned facts. The deep report caches under a
 	// separate "|deep" key suffix so deep and normal reports never collide. The
-	// default (no/unknown depth) is the unchanged normal research path. This is the
-	// only gate in this increment — NO login/quota (that is increment 2).
+	// default (no/unknown depth) is the unchanged normal research path — PUBLIC +
+	// ungated, exactly as before.
 	deep := r.URL.Query().Get("depth") == "deep"
 	day := summaryDay() // ET trading day, shared with the AI digest cache
 	key := ticker + "|" + day + "|" + lang
+	// Gating applies ONLY to depth=deep (increment 2): the deep report requires a
+	// logged-in user, and a genuinely-new generation costs that user one daily
+	// generation slot, site-wide. Anonymous deep requests → 401. Viewing an
+	// already-generated (globally cached) deep report is free for any logged-in user
+	// (no quota, no LLM) — the quota check below only fires on a cache miss where WE
+	// are the generator. The normal path skips all of this.
+	var userID string
 	if deep {
 		key += "|deep"
+		u, ok := auth.UserFrom(r.Context())
+		if !ok {
+			writeJSON(w, http.StatusUnauthorized, errBody("登录后才能生成深度研报 / login required for deep research"))
+			return
+		}
+		userID = u.ID
 	}
 
 	for {
 		s.researchMu.Lock()
 		if e, ok := s.researchCache[key]; ok {
 			s.researchMu.Unlock()
-			s.writeResearch(w, e)
+			s.writeResearch(w, e) // cache hit → free for everyone (incl. deep: no quota, no LLM)
 			return
 		}
 		ch, busy := s.researchInflight[key]
@@ -2559,16 +2587,46 @@ func (s *Server) getResearch(w http.ResponseWriter, r *http.Request) {
 		s.researchMu.Unlock()
 	}
 
+	refundGlobalCap := func() {
+		if wantProse {
+			s.researchMu.Lock()
+			if s.researchDayDate == day && s.researchDayCount > 0 {
+				s.researchDayCount--
+			}
+			s.researchMu.Unlock()
+			wantProse = false
+		}
+	}
+
+	// Per-user deep-research GENERATION quota (depth=deep only). We are here only on
+	// a cache MISS (the loop above served any cached report free), so this is a NEW
+	// generation. The quota gates the LLM generation: when an LLM compose would run
+	// (wantProse) and the user has already used their daily slots, return 429 — they
+	// can wait, or open a stock whose deep report is already cached today (free). If
+	// the LLM is off / over the global cap (no prose to generate), there is nothing
+	// to charge: the data-only deep report still serves 200 (and caches globally, so
+	// it benefits everyone), exactly mirroring the no-LLM refund logic. The quota is
+	// CONSUMED only after a genuinely-successful prose generation (below), never on a
+	// data-only or failed one. The store read fails OPEN (log + allow) so a quota
+	// backend hiccup can never lock a user out.
+	if deep && wantProse {
+		used, err := s.store.GetDeepQuotaUsed(r.Context(), userID, day)
+		if err != nil {
+			s.log.Debug("deep-research quota read failed — failing open (allow)", "user", userID, "day", day, "err", err)
+		} else if used >= s.deepResearchLimit {
+			refundGlobalCap() // we won't generate — give the global slot back
+			finish(nil)       // release the inflight slot without caching
+			writeJSON(w, http.StatusTooManyRequests, errBody("今日深度研报生成次数已用完(每日 1 次),明天再来或选择已生成的股票 / daily deep-research generation limit reached"))
+			return
+		}
+	}
+
 	// Always assemble the data-only fact sheet first (cheap, no LLM, never errors).
 	fs := s.researchCalc.Report(r.Context(), ticker)
 	// "Nothing at all": no sections and no underlying date → unknown/invalid ticker.
 	if len(fs.Sections) == 0 && fs.AsOf == "" {
-		if wantProse {
-			s.researchMu.Lock()
-			s.researchDayCount-- // didn't generate prose — don't burn budget
-			s.researchMu.Unlock()
-		}
-		finish(nil) // don't cache an empty miss; let a later visit reassemble
+		refundGlobalCap() // didn't generate prose — don't burn the global budget
+		finish(nil)       // don't cache an empty miss; let a later visit reassemble
 		s.maybeCollect(ticker)
 		writeJSON(w, http.StatusNotFound, errBody("no research for "+ticker))
 		return
@@ -2588,9 +2646,19 @@ func (s *Server) getResearch(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		if !hasProse {
-			s.researchMu.Lock()
-			s.researchDayCount-- // empty prose (disabled mid-flight / error) refunds budget
-			s.researchMu.Unlock()
+			refundGlobalCap() // empty prose (disabled mid-flight / error) refunds the global budget
+		}
+	}
+
+	// Consume the user's per-day deep-research GENERATION quota ONLY on a genuinely-
+	// successful new deep generation (real LLM prose). A data-only result (LLM off /
+	// over the global cap → hasProse=false) ran no LLM, so it never charges the user;
+	// the report still caches globally and serves free thereafter. Best-effort: an
+	// increment error is logged, not fatal — the user got their report, and the worst
+	// case is they keep an extra generation slot today (fail open, never lock out).
+	if deep && hasProse {
+		if err := s.store.IncrDeepQuotaUsed(r.Context(), userID, day); err != nil {
+			s.log.Debug("deep-research quota increment failed (non-fatal)", "user", userID, "day", day, "err", err)
 		}
 	}
 
