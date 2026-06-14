@@ -681,3 +681,12 @@ verifies (build/vet/lint), updates this file + `CLAUDE.md`, and commits._
   - **应修**:③弃 StockTwits(换 Bluesky+Tickertick+ApeWisdom)④少依赖 Finnhub 免费(news 走 Tickertick+SEC 或买商用)。
   - **本周免费做**:Alpaca 发 30 天商用通知;加 CoinGecko + alternative.me 署名;加"数据延迟·非投资建议"页脚;国会交易**展示保持免费**;绝不转售原始批量数据。
   - **最低风险付费**:研报内容优先用 EDGAR/Treasury/FINRA 公有域(正好契合规划)。**待 owner 拍板:何时做合规迁移(Yahoo 移除有港股取舍)+ 何时开 paywall。**
+
+## 🔬 v8 资金面数据正确性审计(2026-06-15,owner 休息中自主)
+> 对喂给旗舰 AI 深度研报『资金面』节的 6 个数据子系统做对抗式正确性审计(Workflow:6 finder 各审一子系统 → 独立 skeptic refute 每条 finding)。Go 算的每个数都当真相展示给用户,所以审 wrong-math/wrong-unit/silent-data-loss/stale/fabrication。
+- **✅审计结果(commit 9b1fb2c,Go,已部署 LIVE 验证)**:7 confirmed bug 全修,**3 子系统干净**(FINRA 做空量 / 做空兴趣 / insider Form4),2 refuted(options 时区、NearestExpiry doc 不符——均正确驳回)。修复:
+  - **options/cboe**:① `MaxPain` map 迭代不确定性(平局 strike 随机)→ 排序升序 + 低 strike tie-break(确定性,pain 公式不变);② 稀疏链(1 strike)出退化磁吸值 → 要求 ≥`minMaxPainStrikes`(3)个有 OI 的 distinct strike 否则返 0(insufficient-not-wrong)。
+  - **13F**:③ PRN 债券仓位(Shares=0)每季误标"新建仓"→ shares=0 时按 Value delta 分类;④"持仓机构数"静默少计(只索引 top-15 仓位)→ 反向索引走全量仓位,只渲染列表 capped(权重%仍用全组合分母);⑤ 聚合 as-of 用最大 holder 季度 → 改最老季度。
+  - **congress**:⑥ PTR ticker chip 无 symbols-universe 校验(其他 money-flow 路径都校验)→ 接 US symbols universe 校验(从 main 接线如 guru rail,nil-safe;残留真 ticker 碰撞如 `(ON)` 需 asset-type 消歧,deferred);⑦ `wrappedAmountHigh` 把叙述行 $ 当区间上界 → 跳过子行 + 拒 high<low。
+  - **LIVE 无回归验证(AAPL)**:congress `$1,001-$15,000` 区间正确、whales(Buffett 22% 维持/Dalio 加仓/Li Lu 维持,as-of 2026-03-31)、short 50.6%/3.38 dtc;options `/v1/stocks/AAPL/options` max_pain 292.5 合理(cboe 修 happy-path 干净)。附带:opp board 随更多兜底 sweep 涨到 25 行。
+- **🔜下一项(已根因,下一轮做):研报资金面对大多数票静默缺 OPTIONS 块**。根因:研报 fact sheet 按 (ticker,ET-day,lang) 缓存,options 块读 `OptionsCache.Cached`(cache-only,设计上不阻塞 assemble);但 `c.cache`(每票 view)只被**按需 `Options()` 调用**(/options 命中)填充,**`scanUnusual` 每 30m 拉每个 mega-cap 的链却只建 unusual 看板、从不填 `c.cache`** → 除非某票在其研报当天首次 assemble 前 15m 内被 /options 命中,否则研报缺 options 块,且当天缓存冻结(实测 AAPL 3 次取 generated_at 相同,restart 后冷态 assemble;期间 /options 一直显示 max_pain 292.5)。非审计修的回归(cboe 正常)。**修(便宜)**:`scanUnusual` 给 ~40 个扫描 mega-cap 计算 + 缓存每票 `OptionsView` 到 `c.cache`(链已经拉了),使其研报可靠含 options;restart 冷窗缩到首轮扫描(~40s)。非扫描的冷门票保持按需(可接受)。验证:AAPL 研报含 options 后。

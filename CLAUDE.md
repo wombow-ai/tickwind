@@ -205,6 +205,43 @@ feature-flagged plugin, never on the critical path. Web only.
   (deferred): (a) frontend retry-once on a network/empty-reply error in ResearchReport/
   DeepResearchView (cheap, next up); (b) CF dashboard tunnel HTTP-timeout tuning (owner); (c) async
   report generation. In `docs/owner-confirm.md` #5 + memory `tickwind-cold-research-3s-reset`.
+- **Shipped + LIVE-verified 2026-06-15 (capital-flows data correctness audit — `9b1fb2c`):** an
+  adversarial Workflow audit (6 finders, one per subsystem feeding the AI research report 资金面
+  section, each finding refuted by an independent skeptic) found **7 confirmed correctness bugs** on
+  numbers Go computes and the report presents as authoritative; **FINRA short-volume, short-interest,
+  and insider Form 4 audited CLEAN**; 2 findings correctly refuted. All 7 fixed: **options/cboe** —
+  (a) `MaxPain` was non-deterministic on tie strikes (Go map iteration) → now sorts strikes ascending
+  + lower-strike tie-break (deterministic; pain formula unchanged); (b) `MaxPain` emitted a degenerate
+  magnet from a 1-strike sparse expiry → now requires ≥`minMaxPainStrikes`(3) distinct OI-bearing
+  strikes else returns 0 (insufficient-not-wrong). **13F** — (c) PRN-only (bond) positions (Shares=0)
+  were tagged "新建仓/new" every quarter → now classify by Value delta when shares are 0; (d) the
+  "持仓机构数" holder count silently undercounted (only top-15 positions indexed) → reverse index now
+  walks every position, only the rendered list stays top-15-capped (weight % still uses the full
+  portfolio denominator); (e) aggregate count as-of used the largest holder's quarter → now the oldest.
+  **congress** — (f) the PTR ticker chip had NO symbols-universe validation (every sibling money-flow
+  path validates) → now validates extracted tickers against the US symbols universe (wired from main
+  like the guru rail, nil-safe; residual real-ticker collisions like `(ON)` need asset-type
+  disambiguation, deferred); (g) `wrappedAmountHigh` could adopt a narrative $ figure as the range high
+  bound → now skips sub-rows + rejects high<low. Full combined `go build/vet/gofmt/test ./cmd/...
+  ./internal/...` green; anti-hallucination contract intact. **LIVE no-regression verified on AAPL**
+  (congress `$1,001-$15,000` band correct, whales Buffett 22% 维持/Dalio 加仓/Li Lu 维持 with
+  2026-03-31 as-of, short 50.6%/3.38 dtc; options `/v1/stocks/AAPL/options` max_pain 292.5 sane =
+  cboe fix happy-path-clean). Bonus: opp board grew 13→**25** rows as more us-gaap-fallback sweeps ran.
+- **Known pre-existing gap found 2026-06-15 (research 资金面 silently omits OPTIONS for most tickers):**
+  the research fact sheet is cached per (ticker, ET-day, lang), and the options block reads
+  `OptionsCache.Cached` (cache-only, by design — never block assemble on a multi-MB Cboe fetch). But
+  `OptionsCache.c.cache` (per-ticker views) is populated ONLY by an on-demand `Options()` call (a
+  `/v1/stocks/{t}/options` or similar hit); **`scanUnusual` fetches each mega-cap's chain every 30m but
+  only builds the unusual *board* — it never populates `c.cache`**. So unless someone hit `/options`
+  for a ticker within 15m (optionsTTL) before its research report was first assembled that day, the
+  report's options block is absent — and the per-day report cache then freezes that options-less sheet
+  for the ET-day (confirmed: AAPL's 3 fetches shared one `generated_at`, assembled cold post-restart;
+  `/options` showed max_pain 292.5 the whole time). NOT a regression from the audit fixes (cboe works).
+  **Fix (next tick, cheap):** have `scanUnusual` compute + cache the per-ticker `OptionsView` into
+  `c.cache` for the ~40 scanned mega-caps (it already fetches their chains), so their research reports
+  reliably include options; the post-restart cold window shrinks to the first scan (~40s). Non-scan
+  thin names stay on-demand-only (acceptable). `internal/ingest/options.go` scanUnusual + a research
+  no-regression check (AAPL report includes options after).
 - **Shipped 2026-06-14 (owner batch + greenlit follow-ups, all live-verified):** R2 now has all **6
   sections** (估值/基本面/技术面/资金面/情绪面/概览) + a **two-sided 看多/看空 (bull/bear)** reading on the
   overview (one ComposeReport call gains `bull`/`bear` keys; a deterministic Go advice-guard strips any
