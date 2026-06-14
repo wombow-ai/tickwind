@@ -27,6 +27,7 @@ import (
 	"github.com/wombow-ai/tickwind/internal/clip"
 	"github.com/wombow-ai/tickwind/internal/congress"
 	"github.com/wombow-ai/tickwind/internal/congress/ptr"
+	"github.com/wombow-ai/tickwind/internal/cryptofg"
 	"github.com/wombow-ai/tickwind/internal/edgar"
 	"github.com/wombow-ai/tickwind/internal/enrich"
 	"github.com/wombow-ai/tickwind/internal/events"
@@ -230,6 +231,16 @@ type MacroSource interface {
 	UpdatedAt() time.Time
 }
 
+// CryptoSource serves the latest crypto market-mood snapshot (the crypto Fear &
+// Greed index + best-effort BTC/ETH prices) for the crypto-context strip —
+// relevant to the crypto-linked equities COIN/MSTR/RIOT/MARA. nil-safe — a nil
+// source (or one before its first refresh) yields an "unavailable" empty shape,
+// never fabricated values. Satisfied by *cryptofg.Cache.
+type CryptoSource interface {
+	Latest() (cryptofg.Index, bool)
+	UpdatedAt() time.Time
+}
+
 // IPOSource serves the latest US IPO calendar (recently priced / upcoming /
 // newly filed offerings, via Nasdaq through the residential proxy). nil-safe —
 // a nil source (or one before its first refresh) yields empty sections.
@@ -312,6 +323,7 @@ type Server struct {
 	sentiment     SentimentSource        // injected post-New via SetSentiment
 	rateCut       RateCutSource          // injected post-New via SetRateCut
 	macro         MacroSource            // injected post-New via SetMacro (Treasury yield curve)
+	crypto        CryptoSource           // injected post-New via SetCrypto (crypto Fear & Greed)
 	congressTx    CongressTxSource       // injected post-New via SetCongressTx
 	ipo           IPOSource              // injected post-New via SetIPO
 	indicators    IndicatorSource        // injected post-New via SetIndicators (static catalog)
@@ -452,6 +464,7 @@ func New(st store.Store, hub QuoteStream, enricher enrich.Enricher, verifier *au
 	mux.HandleFunc("GET /v1/sentiment", s.getSentiment)
 	mux.HandleFunc("GET /v1/ratecut", s.getRateCut)
 	mux.HandleFunc("GET /v1/macro", s.getMacro)
+	mux.HandleFunc("GET /v1/crypto", s.getCrypto)
 	mux.HandleFunc("GET /v1/ipo", s.getIPO)
 	mux.HandleFunc("GET /v1/stocks/{ticker}/options", s.getOptions)
 	mux.HandleFunc("GET /v1/options/unusual", s.getUnusualOptions)
@@ -2134,6 +2147,72 @@ func (s *Server) getMacro(w http.ResponseWriter, _ *http.Request) {
 // SetMacro injects the Treasury yield-curve source after New (keeping New's
 // signature stable). nil-safe: /v1/macro reports available=false until set.
 func (s *Server) SetMacro(src MacroSource) { s.macro = src }
+
+// cryptoFGLabelZh maps an alternative.me Fear & Greed classification to its
+// Chinese label. Keyed on the lower-cased English label so casing/spacing
+// variations match. An unknown label falls through to the English string.
+var cryptoFGLabelZh = map[string]string{
+	"extreme fear":  "极度恐惧",
+	"fear":          "恐惧",
+	"neutral":       "中性",
+	"greed":         "贪婪",
+	"extreme greed": "极度贪婪",
+}
+
+// cryptoPrice renders a best-effort coin price for the JSON envelope: a JSON
+// object {price, change_24h} when the source gave a real price, or nil (→ JSON
+// null) when absent. Anti-fabrication: a missing price is omitted, never a 0.
+func cryptoPrice(p cryptofg.Price) any {
+	if !p.Present {
+		return nil
+	}
+	return map[string]any{
+		"price":      p.USD,
+		"change_24h": p.Change24h,
+	}
+}
+
+// getCrypto returns the latest crypto market-mood snapshot as a compact strip:
+// the crypto Fear & Greed score (0–100) + its classification (English + Chinese)
+// + the index day, plus best-effort BTC/ETH spot price + 24h change. This is
+// crypto context for the crypto-linked equities COIN/MSTR/RIOT/MARA. Always 200;
+// an unready or nil source yields available=false (the frontend hides the strip).
+// BTC/ETH are null when the price source was unavailable — never fabricated; the
+// F&G score alone is the feature.
+func (s *Server) getCrypto(w http.ResponseWriter, _ *http.Request) {
+	resp := map[string]any{
+		"available":  false,
+		"score":      0,
+		"label":      "",
+		"label_zh":   "",
+		"as_of":      "",
+		"btc":        nil,
+		"eth":        nil,
+		"source":     "alternative.me",
+		"updated_at": time.Time{}.UTC().Format(time.RFC3339),
+	}
+	if s.crypto != nil {
+		if idx, ok := s.crypto.Latest(); ok {
+			labelZh := cryptoFGLabelZh[strings.ToLower(strings.TrimSpace(idx.Label))]
+			if labelZh == "" {
+				labelZh = idx.Label // unknown classification → fall back to the source label
+			}
+			resp["available"] = true
+			resp["score"] = idx.Score
+			resp["label"] = idx.Label
+			resp["label_zh"] = labelZh
+			resp["as_of"] = idx.AsOf
+			resp["btc"] = cryptoPrice(idx.BTC)
+			resp["eth"] = cryptoPrice(idx.ETH)
+		}
+		resp["updated_at"] = s.crypto.UpdatedAt().UTC().Format(time.RFC3339)
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+// SetCrypto injects the crypto Fear & Greed source after New (keeping New's
+// signature stable). nil-safe: /v1/crypto reports available=false until set.
+func (s *Server) SetCrypto(src CryptoSource) { s.crypto = src }
 
 // SetShortVolume injects the FINRA daily short-volume source after New (keeping
 // New's signature stable). nil-safe: the short-volume endpoints stay empty until set.

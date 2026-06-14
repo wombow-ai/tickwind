@@ -33,6 +33,7 @@ import {useDark} from '@/lib/theme';
 import {cx, timeAgo, tok} from '@/lib/ui';
 import {useQuotes} from '@/lib/useQuotes';
 import {BriefingCard} from '@/components/BriefingCard';
+import {CryptoStrip} from '@/components/CryptoStrip';
 import {IndicesStrip} from '@/components/IndicesStrip';
 import {MacroStrip} from '@/components/MacroStrip';
 import {SentimentChip} from '@/components/SentimentChip';
@@ -149,6 +150,10 @@ export function HomeHub() {
       {/* U.S. Treasury yield curve — 2Y/10Y + the 2s10s recession signal
           (server-driven; self-hides until the Treasury curve is available) */}
       <MacroStrip />
+
+      {/* Crypto market mood — crypto Fear & Greed + best-effort BTC/ETH (context
+          for COIN/MSTR/RIOT/MARA; server-driven; self-hides until available) */}
+      <CryptoStrip />
 
       {/* Markets strip (hero) */}
       <div className="mb-8">

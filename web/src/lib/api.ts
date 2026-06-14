@@ -1369,6 +1369,42 @@ export function getMacro(signal?: AbortSignal): Promise<Macro> {
   return getJson<Macro>('/v1/macro', signal);
 }
 
+/** A coin's best-effort spot price + 24h change. `null` (not 0) when the price
+ * source was unavailable — never fabricated. */
+export interface CryptoPrice {
+  price: number; // spot price in USD
+  change_24h: number; // 24h change, percent
+}
+
+/**
+ * The latest crypto market-mood snapshot from `GET /v1/crypto` — the crypto
+ * Fear & Greed index (0–100, alternative.me) plus best-effort BTC/ETH spot
+ * prices (CoinGecko). Context for the crypto-linked equities COIN/MSTR/RIOT/MARA.
+ * `available` is false until the server-side cache is first filled (the strip
+ * hides itself). `btc`/`eth` are null when the price source was unavailable —
+ * the F&G score alone is the feature, prices are never fabricated.
+ */
+export interface Crypto {
+  available: boolean;
+  score: number; // 0–100 (0 = extreme fear, 100 = extreme greed)
+  label: string; // English classification, e.g. "Greed"
+  label_zh: string; // Chinese classification, e.g. "贪婪"
+  as_of: string; // YYYY-MM-DD, the index's day
+  btc: CryptoPrice | null;
+  eth: CryptoPrice | null;
+  source: string; // "alternative.me"
+  updated_at: string; // RFC 3339
+}
+
+/**
+ * Fetches the latest crypto Fear & Greed index + best-effort BTC/ETH prices
+ * (server-driven cache; refreshed ~hourly). Public, keyless. Always resolves
+ * with a well-formed shape — `available: false` until the index is loaded.
+ */
+export function getCrypto(signal?: AbortSignal): Promise<Crypto> {
+  return getJson<Crypto>('/v1/crypto', signal);
+}
+
 /** A U.S. House Periodic Transaction Report filing (official Clerk disclosure). */
 export interface CongressFiling {
   name: string; // "Richard W. Allen"

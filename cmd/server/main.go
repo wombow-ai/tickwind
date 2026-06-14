@@ -24,6 +24,7 @@ import (
 	"github.com/wombow-ai/tickwind/internal/config"
 	"github.com/wombow-ai/tickwind/internal/congress"
 	"github.com/wombow-ai/tickwind/internal/congress/ptr"
+	"github.com/wombow-ai/tickwind/internal/cryptofg"
 	"github.com/wombow-ai/tickwind/internal/dart"
 	"github.com/wombow-ai/tickwind/internal/edgar"
 	"github.com/wombow-ai/tickwind/internal/enrich"
@@ -362,6 +363,18 @@ func main() {
 	go macroIngestor.Run(ctx)
 	log.Info("treasury yield-curve ingestor enabled (2s10s macro strip)")
 
+	// Crypto market mood: the crypto Fear & Greed index (alternative.me, keyless)
+	// plus best-effort BTC/ETH spot price + 24h change (CoinGecko). Context for the
+	// crypto-linked equities COIN/MSTR/RIOT/MARA. The F&G index updates ~daily but
+	// the fetch is cheap and BTC/ETH move intraday, so an hourly cadence is used;
+	// the boot refresh warms it and a failed fetch keeps the last good snapshot.
+	// Prices degrade gracefully (absent on rate-limit) — the score alone is the
+	// feature. Server-driven — /v1/crypto reads only this cache.
+	cryptoFGCache := cryptofg.NewCache()
+	cryptoFGIngestor := ingest.NewCryptoFGIngestor(cryptofg.New(), cryptoFGCache, time.Hour, log)
+	go cryptoFGIngestor.Run(ctx)
+	log.Info("crypto fear & greed ingestor enabled (crypto market-mood strip)")
+
 	// US IPO calendar: Nasdaq's public IPO API, which BLOCKS datacenter IPs, so
 	// the client is routed through the residential proxy (RESIDENTIAL_PROXY_URL)
 	// + a full browser header set. Without the proxy the fetch fails and the
@@ -496,6 +509,7 @@ func main() {
 	apiServer.SetSentiment(sentimentCache)
 	apiServer.SetRateCut(rateCutIngestor.Cache())
 	apiServer.SetMacro(macroCache)         // U.S. Treasury yield curve (2s10s macro strip)
+	apiServer.SetCrypto(cryptoFGCache)     // crypto Fear & Greed + best-effort BTC/ETH
 	apiServer.SetCongressTx(congressCache) // ticker-level / member PTR detail
 	apiServer.SetIPO(ipoIngestor)          // US IPO calendar (Nasdaq via residential proxy)
 
