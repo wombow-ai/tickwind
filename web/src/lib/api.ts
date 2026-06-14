@@ -1130,6 +1130,45 @@ export async function getResearch(
 }
 
 /**
+ * Fetches the GATED **deep** research report (`?depth=deep`) for a ticker in the
+ * given UI language. Unlike the public {@link getResearch}, this is an authed
+ * call — it sends the Supabase access `token` as a Bearer header — and the
+ * endpoint enforces a global per-user **1 generation/day** quota. The richer
+ * prose comes back when the LLM ran (`llm:true`); when the provider is off /
+ * rate-limited the backend still 200s with the Go-owned data-only report
+ * (`llm:false`, prose empty), so the view always renders.
+ *
+ * The caller MUST branch on the thrown {@link ApiError} status rather than have
+ * it swallowed, so the gate UX can react:
+ * - **401** anon / invalid token → show the login gate (don't call this when
+ *   logged out — pass a real token);
+ * - **429** the daily generation quota is spent → show the "try tomorrow" note
+ *   (a cached (user-agnostic ticker,day) report 200s for free, so 429 only on a
+ *   NEW generation over quota);
+ * - **404** unknown symbol → resolves to `null` (hide the report).
+ * Other errors reject.
+ */
+export async function getDeepResearch(
+  ticker: string,
+  token: string | null,
+  lang?: string,
+  signal?: AbortSignal,
+): Promise<ResearchReportResponse | null> {
+  const p = new URLSearchParams({depth: 'deep'});
+  if (lang === 'en') p.set('lang', 'en');
+  try {
+    return await getJson<ResearchReportResponse>(
+      `/v1/stocks/${encodeURIComponent(normalizeTicker(ticker))}/research?${p.toString()}`,
+      signal,
+      token,
+    );
+  } catch (e) {
+    if (e instanceof ApiError && e.status === 404) return null;
+    throw e; // 401 / 429 / other → caller branches on status
+  }
+}
+
+/**
  * One attributed evidence item behind a notable price move: a recent news
  * headline, a filing, or an insider buy. `title`/`url` are set in Go from the
  * typed source — never the LLM's (the LLM may reference these headlines but

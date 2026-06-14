@@ -1,7 +1,8 @@
 'use client';
 
-import {Loader2, Sparkles} from 'lucide-react';
+import {ArrowRight, Loader2, Sparkles} from 'lucide-react';
 import {useEffect, useState} from 'react';
+import Link from '@/components/LocalLink';
 import {getSummary} from '@/lib/api';
 import {useLang, useT} from '@/lib/i18n';
 import {useDark} from '@/lib/theme';
@@ -68,6 +69,7 @@ export function AISummaryCard({ticker}: {ticker: string}) {
             <Loader2 size={13} className="animate-spin" />
             {tr('ai.loading')}
           </span>
+          <DeepEntry ticker={ticker} dark={dark} tr={tr} />
         </div>
         <div className="space-y-2" aria-hidden>
           <div className={cx('h-3 rounded', t.skel)} style={{width: '92%'}} />
@@ -93,14 +95,52 @@ export function AISummaryCard({ticker}: {ticker: string}) {
         >
           {tr('ai.badge')}
         </span>
-        {at && (
-          <span className={cx('ml-auto text-[10.5px]', t.faint)}>
-            {timeAgo(at)} {tr('common.ago')}
-          </span>
-        )}
+        <div className="ml-auto flex items-center gap-2">
+          {at && (
+            <span className={cx('text-[10.5px]', t.faint)}>
+              {timeAgo(at)} {tr('common.ago')}
+            </span>
+          )}
+          <DeepEntry ticker={ticker} dark={dark} tr={tr} />
+        </div>
       </div>
       <Markdown>{summary}</Markdown>
       <p className={cx('mt-2 text-[10.5px]', t.faint)}>{tr('ai.disclaimer')}</p>
     </section>
+  );
+}
+
+/**
+ * The entry button to the dedicated AI Deep Research report, placed at the AI
+ * Digest module's top-right (owner spec). Subtle, Aurora-styled, bilingual; a
+ * locale-aware link to `/stock/{ticker}/research`. The deep report is gated
+ * (login + 1/day quota) — that UX lives on the target route, so this is just the
+ * navigation affordance.
+ */
+function DeepEntry({
+  ticker,
+  dark,
+  tr,
+  className,
+}: {
+  ticker: string;
+  dark: boolean;
+  tr: (key: string) => string;
+  className?: string;
+}) {
+  return (
+    <Link
+      href={`/stock/${encodeURIComponent(ticker)}/research`}
+      className={cx(
+        'inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-semibold transition',
+        dark
+          ? 'border-violet-500/30 text-violet-300 hover:border-violet-400/50 hover:bg-violet-500/10'
+          : 'border-violet-200 text-violet-600 hover:border-violet-300 hover:bg-violet-50',
+        className,
+      )}
+    >
+      {tr('deep.entry')}
+      <ArrowRight size={12} />
+    </Link>
   );
 }

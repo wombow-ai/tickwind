@@ -17,7 +17,7 @@ import {Markdown} from '@/components/Markdown';
 import {ShareCardButton} from '@/components/ShareCardButton';
 import {type OgParams} from '@/lib/og';
 
-type Tokens = ReturnType<typeof tok>;
+export type Tokens = ReturnType<typeof tok>;
 type Status = 'loading' | 'ready' | 'hidden';
 
 /**
@@ -193,7 +193,7 @@ function Section({
  * are a two-sided read of the same public facts — not a recommendation (the backend
  * strips any point that slips into advice/targets). Renders nothing when empty.
  */
-function BullBearList({
+export function BullBearList({
   points,
   tone,
   title,
@@ -243,7 +243,7 @@ function BullBearList({
 }
 
 /** One fact: bilingual label + a value chip (muted "数据不足" chip when not ok). */
-function FactCell({
+export function FactCell({
   fact,
   dark,
   t,
@@ -292,11 +292,38 @@ function FactCell({
   );
 }
 
-/** A citation chip: an in-page anchor link, an external link, or a plain label. */
-function CitationChip({cite, dark, t}: {cite: ResearchCitation; dark: boolean; t: Tokens}) {
+/**
+ * A citation chip: an in-page anchor link, an external link, or a plain label.
+ *
+ * `anchorBase` rebases the F3 deep-link anchors. On the public report (the R2 tab
+ * on the stock page) it's unset, so an anchor like "#fundamentals" stays a bare
+ * in-page jump to the matching card on the SAME page. On the dedicated Deep
+ * Research route (a separate page where those cards don't exist) the view passes
+ * the stock path (e.g. "/stock/AAPL"), so the anchor becomes a locale-aware
+ * `LocalLink` back to that card on the stock page.
+ */
+export function CitationChip({
+  cite,
+  dark,
+  t,
+  anchorBase,
+}: {
+  cite: ResearchCitation;
+  dark: boolean;
+  t: Tokens;
+  anchorBase?: string;
+}) {
   const cls = cx('inline-flex items-center gap-1 text-[10.5px] hover:underline', dark ? 'text-teal-300' : 'text-teal-600');
   if (cite.anchor) {
-    // In-page deep-link to the matching card on this page (e.g. "#fundamentals").
+    // In-page deep-link to the matching card (e.g. "#fundamentals"). On a
+    // separate page (anchorBase set) link back to that card on the stock page.
+    if (anchorBase) {
+      return (
+        <Link href={`${anchorBase}${cite.anchor}`} className={cls}>
+          {cite.label}
+        </Link>
+      );
+    }
     return (
       <a href={cite.anchor} className={cls}>
         {cite.label}
