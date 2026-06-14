@@ -41,7 +41,7 @@ func TestGuruIngestorRefresh(t *testing.T) {
 				Published: time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC),
 				Tickers:   []string{"SIVE", "POET"},
 			},
-			{Title: "No tickers here", URL: "https://x/p/none", Tickers: nil}, // skipped
+			{Title: "No tickers here", URL: "https://x/p/none", Tickers: nil}, // kept on rail, no fan-out
 		},
 	}}
 	st := &fakeGuruStore{}
@@ -50,13 +50,16 @@ func TestGuruIngestorRefresh(t *testing.T) {
 
 	ing.refresh(context.Background())
 
-	// Rail: only the stock-anchored post.
-	if rail := cache.Get(); len(rail) != 1 || rail[0].Author != "Serenity" {
-		t.Fatalf("rail=%v want 1 Serenity item", rail)
+	// Rail: BOTH posts (tickers optional now) — the dated, anchored one sorts first.
+	if rail := cache.Get(); len(rail) != 2 || rail[0].Title != "Sivers thesis" || rail[0].Author != "Serenity" {
+		t.Fatalf("rail=%v want 2 items, Sivers/Serenity first", rail)
 	}
-	// Discussion: the post fanned out to both tickers it names.
+	// Discussion: only the ticker-anchored post fans out (the untagged one cannot).
 	if len(st.saved["SIVE"]) != 1 || len(st.saved["POET"]) != 1 {
 		t.Fatalf("saved=%v want SIVE+POET", st.saved)
+	}
+	if len(st.saved) != 2 {
+		t.Fatalf("saved keys=%v want exactly SIVE+POET (untagged post must not fan out)", st.saved)
 	}
 	p := st.saved["SIVE"][0]
 	if p.Source != guruSource || p.Author != "Serenity" || p.Ticker != "SIVE" || p.Body != "Sivers thesis" {

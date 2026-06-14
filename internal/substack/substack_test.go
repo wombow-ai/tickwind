@@ -68,8 +68,49 @@ func TestPosts(t *testing.T) {
 }
 
 func TestExtractTickers(t *testing.T) {
-	got := extractTickers("Buy $AAPL and $NVDA, not $AI or $CEO. $AAPL again.")
+	got := extractTickers("Buy $AAPL and $NVDA, not $AI or $CEO. $AAPL again.", nil)
 	if len(got) != 2 { // AAPL (deduped) + NVDA; AI + CEO stopped
 		t.Fatalf("got %v, want [AAPL NVDA]", got)
+	}
+
+	// US-exchange-prefixed mentions are extracted; with no universe set we trust the
+	// author's explicit notation. Mixed-case exchange names + tight/padded colons.
+	ex := extractTickers("We like Carvana (NYSE: CVNA) and Oracle (NASDAQ:ORCL); also Nasdaq: ZS.", nil)
+	exset := map[string]bool{}
+	for _, tk := range ex {
+		exset[tk] = true
+	}
+	if !exset["CVNA"] || !exset["ORCL"] || !exset["ZS"] {
+		t.Fatalf("exchange-prefixed extract = %v, want CVNA/ORCL/ZS", ex)
+	}
+
+	// Bare parentheticals are NOT extracted at all — "Reddit (RDDT)" yields nothing,
+	// because prose acronyms collide with real tickers (a universe hit can't tell them
+	// apart). A missing chip beats a wrong one.
+	if b := extractTickers("Reddit (RDDT) had a strong quarter.", map[string]bool{"RDDT": true}); len(b) != 0 {
+		t.Fatalf("bare parentheticals must not extract, got %v", b)
+	}
+
+	// With the universe known, only REAL US tickers survive: "$THE" (emphasis), an
+	// all-caps word after "NASDAQ:" ("NASDAQ: GREAT"), and a foreign "LSE:" venue are
+	// dropped; "$NVDA" and "NASDAQ: AAPL" are kept.
+	valid := map[string]bool{"NVDA": true, "AAPL": true}
+	v := extractTickers("$THE $NVDA story; listed NASDAQ: AAPL but NASDAQ: GREAT hype; Barclays (LSE: BARC).", valid)
+	vset := map[string]bool{}
+	for _, tk := range v {
+		vset[tk] = true
+	}
+	if !vset["NVDA"] || !vset["AAPL"] {
+		t.Fatalf("validated keep = %v, want NVDA+AAPL", v)
+	}
+	if vset["THE"] || vset["GREAT"] || vset["BARC"] {
+		t.Fatalf("validated should drop THE/GREAT/BARC, got %v", v)
+	}
+
+	// A bare "NASDAQ" with no colon+ticker (e.g. "NASDAQ Price 10.82") must NOT match,
+	// and a post that names no ticker returns a non-nil EMPTY slice (JSON []).
+	none := extractTickers("An exciting IPO. NASDAQ Price 10.82. A company I've been watching.", nil)
+	if none == nil || len(none) != 0 {
+		t.Fatalf("no-ticker extract = %v, want non-nil empty", none)
 	}
 }

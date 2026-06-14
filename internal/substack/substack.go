@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -50,6 +51,28 @@ type Post struct {
 // the rail goes stale), the same constraint the Nasdaq IPO client handles.
 type Client struct {
 	http *http.Client
+
+	mu sync.RWMutex
+	// valid is the optional set of real US tickers, used to validate ambiguous
+	// bare-parenthetical mentions like "(RDDT)". Replaced wholesale (never mutated
+	// in place) so a reader can use a returned snapshot lock-free.
+	valid map[string]bool
+}
+
+// SetValidTickers supplies the set of real US tickers used to validate ambiguous
+// bare-parenthetical mentions ("(RDDT)"). Without it, only unambiguous cashtags and
+// exchange-prefixed mentions are extracted. The guru ingestor refreshes this from
+// the symbol directory before each fetch cycle.
+func (c *Client) SetValidTickers(set map[string]bool) {
+	c.mu.Lock()
+	c.valid = set
+	c.mu.Unlock()
+}
+
+func (c *Client) validSet() map[string]bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.valid
 }
 
 // New returns a Client with a default direct http.Client (no proxy). Kept for
@@ -83,12 +106,24 @@ type rssFeed struct {
 
 var (
 	cashtagRe = regexp.MustCompile(`\$([A-Z]{1,5})(?:\.[A-Z])?\b`)
-	tagRe     = regexp.MustCompile(`<[^>]*>`)
+	// exchangeRe matches a US-exchange-prefixed ticker — "(NYSE: ABCD)", "NASDAQ:AB",
+	// "Nasdaq: ZS". Only US venues (NYSE / Nasdaq / AMEX): the chip deep-links to a US
+	// /stock page and the token is validated against the US universe anyway, so a
+	// foreign "LSE: BARC" would only mint a dead link. The (?i:…) group makes only the
+	// exchange name case-insensitive; the ticker capture stays uppercase.
+	//
+	// We deliberately do NOT parse bare "(RDDT)" parentheticals. Too many real tickers
+	// collide with prose acronyms/abbreviations a writer puts in parentheses — "constant
+	// currency (CC)"→Chemours, "El Dorado (AR)"→Antero, "(PAM)", "(RAC)", "(ALL)", "(IT)"
+	// — so a universe hit can't distinguish this post's ticker from a coincidental
+	// acronym. A missing chip is better than a wrong one (and a polluted Discussion tab).
+	exchangeRe = regexp.MustCompile(`(?i:NYSE American|NYSEAMERICAN|NYSE MKT|NASDAQ|NYSE|AMEX)\s*:\s*\(?\s*([A-Z]{1,5})(?:\.[A-Z]{1,2})?\b`)
+	tagRe      = regexp.MustCompile(`<[^>]*>`)
 	// stop drops common all-caps words that look like cashtags but aren't tickers.
 	stop = map[string]bool{
 		"A": true, "I": true, "AI": true, "CEO": true, "CFO": true, "CTO": true,
 		"USD": true, "EPS": true, "IPO": true, "ETF": true, "GDP": true, "USA": true,
-		"UK": true, "EU": true, "PM": true, "AM": true, "ET": true, "FED": true,
+		"UK": true, "EU": true, "US": true, "PM": true, "AM": true, "ET": true, "FED": true,
 		"SEC": true, "Q1": true, "Q2": true, "Q3": true, "Q4": true, "YOY": true,
 		"TAM": true, "ROE": true, "ROIC": true, "FCF": true, "DCF": true, "P": true,
 	}
@@ -120,6 +155,7 @@ func (c *Client) Posts(ctx context.Context, feedURL string) ([]Post, error) {
 		return nil, fmt.Errorf("substack: decode %s: %w", feedURL, err)
 	}
 
+	valid := c.validSet()
 	out := make([]Post, 0, len(feed.Channel.Items))
 	for _, it := range feed.Channel.Items {
 		body := stripHTML(it.Content)
@@ -132,23 +168,38 @@ func (c *Client) Posts(ctx context.Context, feedURL string) ([]Post, error) {
 			Author:    strings.TrimSpace(it.Creator),
 			Teaser:    snippet(body, 200),
 			Published: parseRSSDate(it.PubDate),
-			Tickers:   extractTickers(it.Title + " " + body),
+			Tickers:   extractTickers(it.Title+" "+body, valid),
 		})
 	}
 	return out, nil
 }
 
-// extractTickers pulls cashtag tickers from text, deduped, minus the stoplist.
-func extractTickers(text string) []string {
+// extractTickers pulls tickers from text — author-explicit notation only: cashtags
+// ($ABCD) and US-exchange-prefixed mentions ("(NASDAQ: ABCD)"). Results are deduped,
+// minus the stoplist. When valid (the real US ticker universe) is non-empty, a hit is
+// kept only if it is a real US ticker — this drops dead/wrong chips ("$THE", an
+// all-caps word after "NASDAQ:", a foreign listing). Before the directory loads (empty
+// valid) it falls back to trusting the explicit notation. It always returns a non-nil
+// (possibly empty) slice so the JSON tickers field marshals to [] not null for the many
+// newsletter posts that name no ticker at all.
+func extractTickers(text string, valid map[string]bool) []string {
 	seen := map[string]bool{}
-	var out []string
-	for _, m := range cashtagRe.FindAllStringSubmatch(text, -1) {
-		t := m[1]
-		if stop[t] || seen[t] {
-			continue
+	out := []string{}
+	add := func(t string) {
+		if t == "" || stop[t] || seen[t] {
+			return
+		}
+		if len(valid) > 0 && !valid[t] {
+			return // universe known: trust only real US tickers
 		}
 		seen[t] = true
 		out = append(out, t)
+	}
+	for _, m := range cashtagRe.FindAllStringSubmatch(text, -1) {
+		add(m[1])
+	}
+	for _, m := range exchangeRe.FindAllStringSubmatch(text, -1) {
+		add(m[1])
 	}
 	return out
 }

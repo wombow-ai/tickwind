@@ -261,13 +261,17 @@ func main() {
 	// IPO source); otherwise fall back to a direct client.
 	guruClient := substack.NewWithClient(cfg.ProxyHTTPClient(20 * time.Second))
 	guruIngestor := ingest.NewGuruIngestor(guruClient, substack.Feeds, guruCache, st, 60, 2*time.Hour, log)
-	go guruIngestor.Run(ctx)
-	log.Info("guru-watch rail enabled", "feeds", len(substack.Feeds), "proxied", cfg.ResidentialProxyURL != "")
 
 	// Symbol search directory: SEC public-domain US tickers for autocomplete,
-	// refreshed daily (key-free; needs SEC's required User-Agent).
+	// refreshed daily (key-free; needs SEC's required User-Agent). Created before the
+	// guru rail starts so the rail can validate the bare "(RDDT)" tickers it extracts
+	// against the real universe (no dead $chips); SetSymbols before Run is race-free.
 	symbolCache := symbols.NewCache()
 	go ingest.NewSymbolIngestor(symbolCache, cfg.EDGARUserAgent, 24*time.Hour, log).Run(ctx)
+
+	guruIngestor.SetSymbols(symbolCache)
+	go guruIngestor.Run(ctx)
+	log.Info("guru-watch rail enabled", "feeds", len(substack.Feeds), "proxied", cfg.ResidentialProxyURL != "")
 
 	// Major-events timeline: BLS economic calendar + curated FOMC/world events,
 	// refreshed twice a day (key-free, public-domain sources).

@@ -120,7 +120,7 @@ function GuruCard({g, dark, t}: {g: GuruItem; dark: boolean; t: Tokens}) {
       {g.teaser && <p className={cx('mt-1 line-clamp-2 text-[13px]', t.sub)}>{g.teaser}</p>}
 
       <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
-        {g.tickers.slice(0, 8).map(tk => (
+        {(g.tickers ?? []).slice(0, 8).map(tk => (
           <Link
             key={tk}
             href={`/stock/${encodeURIComponent(tk)}`}

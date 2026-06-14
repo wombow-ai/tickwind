@@ -296,7 +296,7 @@ export function HomeHub() {
                     <span className={cx('truncate text-[12px] font-semibold', t.text)}>
                       {g.author}
                     </span>
-                    {g.tickers[0] && (
+                    {g.tickers?.[0] && (
                       <span
                         className={cx('shrink-0 text-[11px] font-semibold', t.accentText)}
                       >

@@ -10,6 +10,7 @@ import (
 	"github.com/wombow-ai/tickwind/internal/guru"
 	"github.com/wombow-ai/tickwind/internal/store"
 	"github.com/wombow-ai/tickwind/internal/substack"
+	"github.com/wombow-ai/tickwind/internal/symbols"
 )
 
 // guruSource is the social-post source tag for guru/newsletter posts.
@@ -35,13 +36,14 @@ type GuruSocialStore interface {
 // API key (public RSS), so it runs in its own goroutine independent of the
 // price-gated scheduler.
 type GuruIngestor struct {
-	client GuruFeedClient
-	feeds  []substack.Feed
-	cache  *guru.Cache
-	store  GuruSocialStore // optional: also surface posts on per-stock Discussion
-	max    int
-	every  time.Duration
-	log    *slog.Logger
+	client  GuruFeedClient
+	feeds   []substack.Feed
+	cache   *guru.Cache
+	store   GuruSocialStore // optional: also surface posts on per-stock Discussion
+	symbols *symbols.Cache  // optional: US ticker universe, for validating bare "(RDDT)" mentions
+	max     int
+	every   time.Duration
+	log     *slog.Logger
 }
 
 // NewGuruIngestor builds the ingestor. every is the refresh cadence; max caps
@@ -49,6 +51,16 @@ type GuruIngestor struct {
 func NewGuruIngestor(client GuruFeedClient, feeds []substack.Feed, cache *guru.Cache, st GuruSocialStore, max int, every time.Duration, log *slog.Logger) *GuruIngestor {
 	return &GuruIngestor{client: client, feeds: feeds, cache: cache, store: st, max: max, every: every, log: log}
 }
+
+// SetSymbols supplies the symbol-directory cache so the rail can validate bare
+// "(RDDT)" mentions against the real US universe (avoids dead $chips). Call before
+// Run — the assignment then happens-before the refresh goroutine. Optional: without
+// it, only unambiguous cashtag/exchange-prefixed tickers become chips.
+func (g *GuruIngestor) SetSymbols(c *symbols.Cache) { g.symbols = c }
+
+// validTickerSetter is the optional capability (the real substack.Client) to accept
+// a ticker-validation set for ambiguous bare-parenthetical mentions.
+type validTickerSetter interface{ SetValidTickers(map[string]bool) }
 
 // Run refreshes the rail immediately, then on every tick, until ctx is cancelled.
 func (g *GuruIngestor) Run(ctx context.Context) {
@@ -69,6 +81,16 @@ func (g *GuruIngestor) Run(ctx context.Context) {
 // per-stock Discussion. A feed that fails (network/parse) is skipped, so one
 // dead newsletter never empties the rail.
 func (g *GuruIngestor) refresh(ctx context.Context) {
+	// Refresh the bare-ticker validation set from the symbol universe so the client
+	// only mints $chips for real tickers (see substack.SetValidTickers). Best-effort:
+	// before the directory loads, the set is empty and bare "(RDDT)" mentions simply
+	// don't chip — cashtag/exchange-prefixed tickers still do.
+	if g.symbols != nil {
+		if setter, ok := g.client.(validTickerSetter); ok {
+			setter.SetValidTickers(tickerSet(g.symbols))
+		}
+	}
+
 	var items []guru.Item
 	byTicker := map[string][]store.Post{} // ticker -> guru posts to add to Discussion
 	ok := 0
@@ -85,9 +107,9 @@ func (g *GuruIngestor) refresh(ctx context.Context) {
 		}
 		ok++
 		for _, p := range posts {
-			if len(p.Tickers) == 0 {
-				continue // only stock-anchored posts belong in the rail
-			}
+			// Tickers are optional — these newsletters mostly name companies in prose,
+			// so requiring a cashtag froze the rail (guru.Rank keeps recent posts and
+			// drops empty title/url). Tickers, when present, render as deep-link chips.
 			items = append(items, guru.Item{
 				Author:    f.Name, // curated publication name is our canonical attribution
 				Title:     p.Title,
@@ -96,7 +118,7 @@ func (g *GuruIngestor) refresh(ctx context.Context) {
 				Published: p.Published,
 				Tickers:   p.Tickers,
 			})
-			if g.store != nil {
+			if g.store != nil && len(p.Tickers) > 0 {
 				id := postID(p.URL)
 				for _, tk := range p.Tickers {
 					byTicker[tk] = append(byTicker[tk], store.Post{
@@ -130,6 +152,22 @@ func (g *GuruIngestor) refresh(ctx context.Context) {
 		}
 	}
 	g.log.Info("guru: refreshed rail", "feeds_ok", ok, "feeds", len(g.feeds), "items", len(rail), "discussion_posts", saved)
+}
+
+// tickerSet builds a lookup set of the US ticker universe from the symbol
+// directory, for validating bare-parenthetical mentions. Nil-safe (empty set
+// before the directory loads).
+func tickerSet(c *symbols.Cache) map[string]bool {
+	idx := c.Get()
+	if idx == nil {
+		return nil
+	}
+	us := idx.USTickers()
+	set := make(map[string]bool, len(us))
+	for _, t := range us {
+		set[t] = true
+	}
+	return set
 }
 
 // postID is a stable dedupe id for a guru post (same across the tickers it
