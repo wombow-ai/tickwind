@@ -160,6 +160,51 @@ feature-flagged plugin, never on the critical path. Web only.
   data-only) at `GET /v1/stocks/{t}/research` + public Research tab (3 sections: 估值/基本面/技术面).
   Owner directives still in force: **monetization deferred** (R1/R2 free, only cache+daily-cap plumbing),
   **web-push deferred**. See `ROADMAP.md` (v8 section) for the live status + backlog.
+- **Shipped + LIVE-verified 2026-06-15 (v8 no-confirm batch, owner away ~10-min /loop):**
+  **① AI Deep Research COMPLETE** (increments 1–3 all live): anti-hallucination harness
+  (`enrich.ComposeDeepReport`, Fable-5-modeled sections, structural number-safety via
+  `parseSectionProse`) → login + **1 deep report / user / day** SITE-WIDE quota
+  (`deep_research_quota` table; anon→401, over-quota→429, charged only on real prose) →
+  report view `/[locale]/stock/[ticker]/research` (noindex,follow + AI-Digest top-right entry
+  button). LIVE: `/en/stock/AAPL/research` 200, title "Apple Inc. · AI Deep Research". **Only the
+  paywall (increment 4) is parked for the owner** (`docs/owner-confirm.md` #1/#2).
+  **② LLM compose per-call timeout** (commit 88eb75c, `internal/api/api.go`): each AI compose
+  (research/summary/movement/material-events, incl. depth=deep) is wrapped at the handler boundary
+  in `context.WithTimeout` (**25s** normal / **60s** deep); the enrich methods build requests via
+  `http.NewRequestWithContext`, so the deadline cancels the REAL outbound HTTP call — an uncached
+  request degrades to data-only FAST instead of the enrich client's ~90s ceiling. **LIVE-verified:
+  uncached SOFI/research returned data-only 200 at 27s (= the 25s bound + overhead), vs the old
+  ~90s.** All four refund paths fire on timeout (research `refundGlobalCap`, movement/material
+  `…DayCount--`, summary `refundCap`); the deep per-user quota is charged only on real prose so a
+  timeout never burns it; `getMaterialEvents` re-runs facts-only if the deadline fires during the
+  EDGAR fetch (a timeout can't 404 a valid ticker); `getSummary` degrades to a 200 empty-digest
+  (genuine upstream errors still 502). Anti-hallucination tests byte-identical.
+  **③ Soft sign-in gate on the per-stock IndicatorsPanel** (commit 940555d, web growth nudge):
+  anon sees the first 5 indicator rows + a gentle "sign in to see all N" CTA (`LocalLink`,
+  locale-prefixed); logged-in unchanged (full set + customize picker). Pure CLIENT-SIDE view layer
+  (the panel fetches client-side → **zero crawl impact**); the public pSEO `/indicators` +
+  `/indicators/[id]` LIBRARY pages are untouched + stay crawlable (LIVE: `/en/indicators` 200).
+  **④ Opportunity-board us-gaap shares fallback** (commit e864dce, data-coverage; LIVE-verified):
+  `refreshShares` now falls back to `us-gaap:CommonStockSharesOutstanding` for CIKs the canonical
+  `dei:EntityCommonStockSharesOutstanding` frame leaves unresolved (dei stays canonical, fallback
+  never overrides), behind a 450-day staleness guard + 0/1-share plausibility guard at the frame
+  layer — widening the board without admitting a wrong cap (insufficient-not-wrong). Cap band/
+  MinBuyValue/ranking + keep-last-good untouched. **LIVE: board 4 → 13 rows, ALL caps in-band
+  ($334M–$1.68B); startup log `refreshed shares ciks=5796 via_fallback=216` = 216 dei-less CIKs
+  resolved via the us-gaap fallback.**
+- **Known pre-existing issue found 2026-06-15 (cold-ticker research intermittent ~3s empty-reply):**
+  an UNCACHED first request to a cold ticker's on-demand research INTERMITTENTLY returns an empty
+  reply / reset at **~exactly 3.0s** (curl exit 52 `CURLE_GOT_NOTHING` on HTTP/1.1, exit 16
+  `CURLE_HTTP2` on HTTP/2), no CF error headers, no origin panic; an immediate retry succeeds. Not
+  all cold tickers hit it (DKNG cold→200@9.2s, SOFI cold→200@27s succeeded; ZS/DDOG/RBLX cold→000@3s).
+  **Root-caused to the Cloudflare Tunnel hop, NOT a code bug** (Go has no `WriteTimeout`, no `3*time.
+  Second` literal, no panic; a CF edge 524 would carry `cf-ray` — these don't; `cloudflared` is a
+  TOKEN tunnel = ingress/timeouts in the CF Zero-Trust dashboard, not a local config). NOT caused by
+  the ② LLM-timeout change (the reset is in the cold fact-sheet ASSEMBLY, before the 25s/60s compose).
+  **Practical impact LOW** for deep research (reached from an already-warmed /stock page). Mitigations
+  (deferred): (a) frontend retry-once on a network/empty-reply error in ResearchReport/
+  DeepResearchView (cheap, next up); (b) CF dashboard tunnel HTTP-timeout tuning (owner); (c) async
+  report generation. In `docs/owner-confirm.md` #5 + memory `tickwind-cold-research-3s-reset`.
 - **Shipped 2026-06-14 (owner batch + greenlit follow-ups, all live-verified):** R2 now has all **6
   sections** (估值/基本面/技术面/资金面/情绪面/概览) + a **two-sided 看多/看空 (bull/bear)** reading on the
   overview (one ComposeReport call gains `bull`/`bear` keys; a deterministic Go advice-guard strips any

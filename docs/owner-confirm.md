@@ -21,8 +21,11 @@
 ## 3.（FYI，不阻塞）登录拉新门控的范围
 你说"核心功能未登录看部分、完整需登录,样式我设计"。我会**保守**地设计(如:指标面板未登录显示前若干项 + 引导登录看全部,不打扰式),先做出来你回来可调。若你对"哪些核心功能该门控 / 露出多少"有具体想法,回来告诉我。
 
-## 4.（FYI）opportunity board 偏小
-已修空板 bug(429 clobber)。但 dei 股本覆盖缺口致候选被 `sh<=0` gate 掉、板子偏小(11 行)。可加 us-gaap 股本兜底放大覆盖——我可自行做(数据校验类,不需确认),会归类到 data-validation 自主任务。
+## 4.（FYI，已自主处理）opportunity board 偏小
+已修空板 bug(429 clobber)。dei 股本覆盖缺口致候选被 `sh<=0` gate 掉、板子偏小(实测 4 行)。**已自主加 us-gaap 股本兜底**(commit e864dce,只对 dei 缺失的 CIK 兜底、保持 450 天 staleness + 0/1 股垃圾值守护、dei 仍为权威源、insufficient-not-wrong)放大覆盖。**✅已部署 LIVE 验证:板子 4→13 行、全部市值在带内、216 个 dei 缺失 CIK 由兜底解析。** 不需你确认。
+
+## 5.（FYI，需你 CF 面板）冷门股研报首请求间歇性 ~3s 空响应
+发现(2026-06-15):未缓存的冷门股 on-demand 端点(如 `/v1/stocks/{t}/research`)**首次**请求**间歇性**在 **~3.0s** 被重置/空响应(curl exit 52/16,无 CF 错误头、无 body),立即重试即成功(数据已缓存)。**已定位到 Cloudflare Tunnel 那一跳,不是代码 bug**(Go 无 WriteTimeout、无 3s 字面量、容器无 panic;CF 边缘超时会回 524+cf-ray,这里都没有)。`cloudflared` 是 token 隧道,ingress/超时在 **CF Zero-Trust 面板**配置,VPS 上无本地 config 可调。**对深度研报实际影响低**(用户从已预热的 /stock 页进入→装配快→不触发)。**缓解方案(待定/可选):** (a) 前端对网络/空响应错误**重试一次**(便宜,我可自主做,下一轮);(b) 你在 CF 面板调隧道 HTTP 超时;(c) 异步生成研报(返回 data-only 即时+后台预热)。详见记忆 tickwind-cold-research-3s-reset。
 
 ---
 *更新于 2026-06-15。Claude 在等待期间持续推进 #3 的设计 + 不需确认的 roadmap 工作;#1、#2 待你回来拍板。*
