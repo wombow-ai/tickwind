@@ -44,14 +44,28 @@ type Post struct {
 	Tickers   []string
 }
 
-// Client fetches and parses Substack/blog RSS feeds.
+// Client fetches and parses Substack/blog RSS feeds. The http.Client is
+// injectable so production can route through a RESIDENTIAL proxy — Substack's
+// feeds sit behind Cloudflare, which blocks datacenter IPs (the fetch fails and
+// the rail goes stale), the same constraint the Nasdaq IPO client handles.
 type Client struct {
 	http *http.Client
 }
 
-// New returns a Client.
+// New returns a Client with a default direct http.Client (no proxy). Kept for
+// back-compat and tests; production uses NewWithClient with a proxied client.
 func New() *Client {
-	return &Client{http: &http.Client{Timeout: 20 * time.Second}}
+	return NewWithClient(nil)
+}
+
+// NewWithClient returns a Client over the given http.Client (a residential-proxy
+// client in production, a test client in tests). A nil client falls back to a
+// default with a sane timeout.
+func NewWithClient(hc *http.Client) *Client {
+	if hc == nil {
+		hc = &http.Client{Timeout: 20 * time.Second}
+	}
+	return &Client{http: hc}
 }
 
 type rssFeed struct {
@@ -86,7 +100,11 @@ func (c *Client) Posts(ctx context.Context, feedURL string) ([]Post, error) {
 	if err != nil {
 		return nil, fmt.Errorf("substack: build request: %w", err)
 	}
-	req.Header.Set("User-Agent", "TickwindBot/0.1 (+https://tickwind.com)")
+	// Send a browser-like header set: Substack feeds sit behind Cloudflare,
+	// which 403s a bare Go/bot User-Agent (mirrors the proxied Nasdaq client).
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15")
+	req.Header.Set("Accept", "application/rss+xml, application/xml, text/xml, */*")
+	req.Header.Set("Accept-Language", "en-US,en;q=0.9")
 
 	resp, err := c.http.Do(req)
 	if err != nil {

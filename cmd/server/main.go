@@ -255,9 +255,14 @@ func main() {
 	// Guru-watch rail: curated finance-KOL newsletters (public RSS) → the tickers
 	// they mention. Needs no API key, so it always runs (independent of prices).
 	guruCache := guru.NewCache()
-	guruIngestor := ingest.NewGuruIngestor(substack.New(), substack.Feeds, guruCache, st, 60, 2*time.Hour, log)
+	// Substack feeds sit behind Cloudflare, which blocks datacenter IPs (the
+	// VPS) → the fetch fails and the rail goes stale. When a residential proxy
+	// is configured, route the guru fetch through it (same egress as the Nasdaq
+	// IPO source); otherwise fall back to a direct client.
+	guruClient := substack.NewWithClient(cfg.ProxyHTTPClient(20 * time.Second))
+	guruIngestor := ingest.NewGuruIngestor(guruClient, substack.Feeds, guruCache, st, 60, 2*time.Hour, log)
 	go guruIngestor.Run(ctx)
-	log.Info("guru-watch rail enabled", "feeds", len(substack.Feeds))
+	log.Info("guru-watch rail enabled", "feeds", len(substack.Feeds), "proxied", cfg.ResidentialProxyURL != "")
 
 	// Symbol search directory: SEC public-domain US tickers for autocomplete,
 	// refreshed daily (key-free; needs SEC's required User-Agent).

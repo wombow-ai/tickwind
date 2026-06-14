@@ -78,7 +78,9 @@ func (g *GuruIngestor) refresh(ctx context.Context) {
 		}
 		posts, err := g.client.Posts(ctx, f.URL)
 		if err != nil {
-			g.log.Debug("guru: feed fetch failed", "feed", f.Name, "err", err)
+			// WARN (not Debug) so a future Cloudflare/IP block is diagnosable;
+			// one failing feed is skipped, never wiping the rest of the rail.
+			g.log.Warn("guru: feed fetch failed (keeping previous, skipping feed)", "feed", f.Name, "url", f.URL, "err", err)
 			continue
 		}
 		ok++

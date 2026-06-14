@@ -85,10 +85,11 @@ type UniverseSource interface {
 	UpdatedAt() time.Time
 }
 
-// GuruSource provides the latest Guru-watch rail (curated-KOL posts). nil →
-// empty list.
+// GuruSource provides the latest Guru-watch rail (curated-KOL posts) plus the
+// time it was last refreshed (rail freshness). nil → empty list.
 type GuruSource interface {
 	Get() []guru.Item
+	UpdatedAt() time.Time
 }
 
 // TickerIngestor triggers a one-shot data pull (filings/news/social) for a
@@ -1629,8 +1630,10 @@ func (s *Server) getOpportunities(w http.ResponseWriter, r *http.Request) {
 // ?limit= caps the rows.
 func (s *Server) getGurus(w http.ResponseWriter, r *http.Request) {
 	var rail []guru.Item
+	var updatedAt time.Time
 	if s.gurus != nil {
 		rail = s.gurus.Get()
+		updatedAt = s.gurus.UpdatedAt()
 	}
 	if rail == nil {
 		rail = []guru.Item{}
@@ -1638,7 +1641,11 @@ func (s *Server) getGurus(w http.ResponseWriter, r *http.Request) {
 	if lim := queryLimit(r, 0); lim > 0 && len(rail) > lim {
 		rail = rail[:lim]
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"count": len(rail), "items": rail})
+	writeJSON(w, http.StatusOK, map[string]any{
+		"count":      len(rail),
+		"updated_at": updatedAt.UTC().Format(time.RFC3339),
+		"items":      rail,
+	})
 }
 
 // getSearch returns symbol-directory autocomplete matches for ?q= (best first).

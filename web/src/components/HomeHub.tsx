@@ -88,6 +88,9 @@ export function HomeHub() {
   const [loading, setLoading] = useState({hot: true, opps: true, gurus: true, news: true, posts: true});
   const quotes = useQuotes(tickers);
   const [sortKey, setSortKey] = useState<SortKey>('default');
+  // Guru-watch collapses to a couple of items so its card matches the height of
+  // the Hot/Opportunity leaderboards beside it; "Show more" reveals the rest.
+  const [guruExpanded, setGuruExpanded] = useState(false);
 
   useEffect(() => {
     const c = new AbortController();
@@ -106,7 +109,7 @@ export function HomeHub() {
     getOpportunities(5, c.signal)
       .then(r => setOpps(r.stocks ?? []), () => setOpps([]))
       .finally(() => settle('opps'));
-    getGurus(3, c.signal)
+    getGurus(6, c.signal)
       .then(r => setGurus(r.items ?? []), () => setGurus([]))
       .finally(() => settle('gurus'));
     getNewsBatch(tickers, 6, c.signal)
@@ -144,15 +147,23 @@ export function HomeHub() {
 
       {/* Markets strip (hero) */}
       <div className="mb-8">
-        <div className="mb-2.5 flex items-center justify-end gap-1.5">
-          <ArrowUpDown size={13} className={t.faint} />
-          <SortPills
-            value={sortKey}
-            onChange={setSortKey}
-            defaultLabel={tr('board.sortDefault')}
-            changeLabel={tr('board.sortChange')}
-            alphaLabel={tr('board.sortAlpha')}
-          />
+        <div className="mb-2.5 flex items-center justify-between gap-1.5">
+          <Link
+            href="/screen"
+            className={cx('text-[12.5px] font-semibold', t.accentText, 'hover:underline')}
+          >
+            {tr('mkt.allStocks')} →
+          </Link>
+          <div className="flex items-center gap-1.5">
+            <ArrowUpDown size={13} className={t.faint} />
+            <SortPills
+              value={sortKey}
+              onChange={setSortKey}
+              defaultLabel={tr('board.sortDefault')}
+              changeLabel={tr('board.sortChange')}
+              alphaLabel={tr('board.sortAlpha')}
+            />
+          </div>
         </div>
         <div className="flex gap-4 overflow-x-auto pb-2">
           {sortedCards.map(sec => (
@@ -171,10 +182,17 @@ export function HomeHub() {
           until generated) */}
       <BriefingCard />
 
-      {/* Boards & signals (榜单 · 机会 · 大V). items-start so the shorter
-          leaderboard cards (Hot / Opportunity) keep their natural height instead
-          of stretching to the taller Guru-watch card and leaving dead space. */}
-      <div className="grid items-start gap-5 sm:grid-cols-2 lg:grid-cols-3">
+      {/* Boards & signals (榜单 · 机会 · 大V). Collapsed, Guru-watch shows only a
+          couple of items so all three cards match height (items-stretch — the
+          Guru "Show more" button sits at the card's bottom, filling the gap).
+          Expanding Guru switches to items-start so the Hot/Opportunity cards keep
+          their natural height instead of stretching to the now-tall Guru card. */}
+      <div
+        className={cx(
+          'grid gap-5 sm:grid-cols-2 lg:grid-cols-3',
+          guruExpanded ? 'items-start' : 'items-stretch',
+        )}
+      >
         <ModuleCard
           t={t}
           title={tr('mod.hotStocks')}
@@ -265,32 +283,45 @@ export function HomeHub() {
           ) : gurus.length === 0 ? (
             <CardEmpty t={t} label={tr('mod.noPosts')} />
           ) : (
-            gurus.map((g, i) => (
-              <a
-                key={g.url}
-                href={g.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className={cx(
-                  'block py-2',
-                  i < gurus.length - 1 && cx('border-b', t.hair),
-                )}
-              >
-                <div className="flex items-center gap-1.5">
-                  <span className={cx('truncate text-[12px] font-semibold', t.text)}>
-                    {g.author}
-                  </span>
-                  {g.tickers[0] && (
-                    <span
-                      className={cx('shrink-0 text-[11px] font-semibold', t.accentText)}
-                    >
-                      ${g.tickers[0]}
+            <div className="flex h-full flex-col">
+              {(guruExpanded ? gurus : gurus.slice(0, 2)).map((g, i, arr) => (
+                <a
+                  key={g.url}
+                  href={g.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className={cx('block py-2', i < arr.length - 1 && cx('border-b', t.hair))}
+                >
+                  <div className="flex items-center gap-1.5">
+                    <span className={cx('truncate text-[12px] font-semibold', t.text)}>
+                      {g.author}
                     </span>
+                    {g.tickers[0] && (
+                      <span
+                        className={cx('shrink-0 text-[11px] font-semibold', t.accentText)}
+                      >
+                        ${g.tickers[0]}
+                      </span>
+                    )}
+                  </div>
+                  <p className={cx('mt-0.5 line-clamp-2 text-[12.5px]', t.sub)}>{g.title}</p>
+                </a>
+              ))}
+              {gurus.length > 2 && (
+                <button
+                  type="button"
+                  onClick={() => setGuruExpanded(v => !v)}
+                  className={cx(
+                    'mt-auto pt-2.5 text-left text-[12px] font-semibold hover:opacity-80',
+                    t.accentText,
                   )}
-                </div>
-                <p className={cx('mt-0.5 line-clamp-2 text-[12.5px]', t.sub)}>{g.title}</p>
-              </a>
-            ))
+                >
+                  {guruExpanded
+                    ? tr('mod.showLess')
+                    : tr('mod.showMore').replace('{n}', String(gurus.length - 2))}
+                </button>
+              )}
+            </div>
           )}
         </ModuleCard>
       </div>

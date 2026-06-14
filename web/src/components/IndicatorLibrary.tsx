@@ -34,9 +34,9 @@ function IndicatorCard({ind}: {ind: Indicator}) {
   const {lang} = useLang();
   const core = ind.priority === 'P0';
 
-  // The non-English display name leads in the Chinese UI; otherwise English leads.
+  // Show ONLY the active language's name — Chinese UI shows the zh name, English
+  // UI shows the en name (no mixed bilingual display, per owner).
   const primary = lang === 'zh' && ind.name_zh ? ind.name_zh : ind.name_en;
-  const secondary = lang === 'zh' && ind.name_zh ? ind.name_en : ind.name_zh;
 
   return (
     <article
@@ -58,9 +58,6 @@ function IndicatorCard({ind}: {ind: Indicator}) {
               <span className={cx('ml-2 text-[12px] font-medium', t.sub)}>{ind.abbr}</span>
             )}
           </h3>
-          {secondary && secondary !== primary && (
-            <p className={cx('mt-0.5 text-[12px]', t.faint)}>{secondary}</p>
-          )}
         </div>
         <span
           className={cx(
