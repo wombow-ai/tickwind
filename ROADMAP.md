@@ -698,3 +698,11 @@ verifies (build/vet/lint), updates this file + `CLAUDE.md`, and commits._
   - **fundamental**:EV/债务族(无债务 tag 时兜底 `us-gaap:LiabilitiesNoncurrent`=总非流动负债→虚高 EV/净杠杆/ROIC/EV倍数)→ 去掉该兜底,仅真债务 tag,缺→0→insufficient-not-wrong(顺带消除 lt-debt-ratio 的概念静默漂移);lt-debt-ratio catalog 文本对齐为"长期债务/(债务+权益)"(代码本就算 debt-to-cap);Piotroski F 分第5点(ΔLEVER)原比原始债务额→改为 LTD/总资产**比率**变化(Piotroski 2000),修 off-by-one(all-or-nothing 保持)。
   - **LIVE 无回归验证(AAPL)**:6 指标全 present+status ok;KVO −168724→−23.9M、KAMA 305.31→303.32、SAR 312.84→313.89(新公式 live);AAPL EV/lt-debt 不变(有显式债务 tag)、Piotroski 仍 7。combined 全 gate 绿。
 - **本会话两次数据对抗审计(资金面+指标引擎)= 13 真 bug 修 + 5 子系统/族确认干净。旗舰研报数据底座已加固。** 审计 ROI 开始递减→后续转向 feature/SEO/UX。
+
+## 🔬 v8 fundamentals XBRL 提取层审计(2026-06-15,第3次,owner 休息中自主)
+> 对 `internal/edgar/fundamentals.go` ~30 字段提取层(喂付费旗舰研报+fundamentals面板+~100指标)做对抗审计(Workflow 5 finder[损益/资产负债/现金流/shares-dei/helper语义]→独立 skeptic refute)。
+- **✅审计结果(commit e1eca41,Go,已部署 LIVE 验证)**:1 个 **HIGH** bug,4 族干净(损益/资产负债/现金流/shares-dei),0 refuted。
+  - **HIGH:prior-year 配对错**——`annualForFY` 按 SEC companyfacts 的 report-context `fy` 字段匹配,而非 period 实际 end-date 年。10-K 把 2-3 个前年作比较列嵌入、全部 re-stamp 成 FILING 的 `fy`+同一 `filed` 日期→全部匹配目标年,SEC 数组按 end-date 升序→最老(错)列确定性胜出。LIVE实测:Apple FY2025 revenue_prior=FY2022($394.3B)而非 FY2024($391.0B)→污染 RevenuePrior/NetIncomePrior/EPSPrior/GrossProfitPrior/OperatingIncomePrior + same-FY COGS → 所有 YoY 增长/dROA/Piotroski delta/毛利率/周转率。
+  - **修**:`annualForEndYear(endYr)` 按 period end-date 年匹配(`endYear` helper)+ End-then-Filed tie-break(同 latestAnnual/latestInstant);7 处 caller 传 `endYear(primary)-1`(prior)/ `endYear(revPt)`(same-FY COGS)。primary/latest 值(按 End 排序)不变;回归测试复现多-fy-context 碰撞(fail-pre/pass-post)。
+  - **LIVE 验证**:AAPL revenue_prior 394328→391035、NI_prior 99803→93736、revenue-growth 5.54%→6.43%、earnings-growth 12.23%→19.50%(均 vs FY2024);asset-growth 不变 12.03%(资产负债表派生 via priorInstant=正确不在范围内,完美交叉验证修复精确scoped);MSFT prior FY2024 正确。**修正所有 filer 的 YoY/增长/Piotroski。**
+- **本会话三次数据对抗审计(资金面+指标引擎+fundamentals-XBRL)= 14 真 bug 修(7+6+1)+ 9 子系统/族干净。付费旗舰数据底座彻底加固。审计阶段收口→转 feature/SEO/UX。**

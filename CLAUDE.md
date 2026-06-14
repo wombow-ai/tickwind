@@ -269,6 +269,27 @@ feature-flagged plugin, never on the critical path. Web only.
   tag], Piotroski 7). **→ Two adversarial data audits this session (capital-flows + indicators) = 13
   real bugs fixed + 5 subsystems/families certified clean; the flagship report's data layer is
   hardened.** Anti-hallucination contract intact throughout.
+- **Shipped + LIVE-verified 2026-06-15 (fundamentals-XBRL extraction audit — `e1eca41`, HIGH-sev fix):**
+  a 3rd adversarial Workflow audit (5 finders: income stmt / balance sheet / cash flow / shares-dei /
+  helper-semantics) of the extraction layer feeding the paid report + fundamentals panel + ~100
+  indicators found **1 HIGH-severity bug**; the other 4 families audited CLEAN; 0 refuted. **Bug:
+  prior-year selection (`annualForFY`) matched SEC companyfacts' report-context `fy` field, not the
+  period's actual end-date year.** A 10-K embeds its 2-3 prior years as comparative columns, all
+  re-stamped with the FILING's `fy` + one shared `filed` date, so all matched the target year and the
+  oldest (SEC sorts ascending by end-date) won deterministically → every prior-year flow resolved to
+  the WRONG fiscal year. Live repro: Apple FY2025 `revenue_prior` = FY2022 ($394.3B) instead of FY2024
+  ($391.0B) — corrupting RevenuePrior/NetIncomePrior/EPSPrior/GrossProfitPrior/OperatingIncomePrior +
+  same-FY COGS → every YoY growth, dROA, Piotroski delta, gross margin, turnover. **Fix:**
+  `annualForEndYear(endYr)` keyed on the period's own end-date year (`endYear` helper) + the
+  End-then-Filed tie-break used by `latestAnnual`/`latestInstant`; 7 callers pass `endYear(primary)-1`
+  (prior) / `endYear(revPt)` (same-FY COGS). Primary/latest values (sorted by End) untouched; regression
+  test reproduces the multi-`fy`-context collision (fails pre-fix, passes post-fix). **LIVE-verified:
+  AAPL revenue_prior 394328→391035, NI_prior 99803→93736, revenue-growth 5.54%→6.43%, earnings-growth
+  12.23%→19.50% (all now vs FY2024); asset-growth unchanged 12.03% [balance-sheet-derived via
+  priorInstant = correctly out of scope]; MSFT prior FY2024 correct.** Corrects YoY/growth/Piotroski for
+  ALL filers. **→ THREE adversarial data audits this session (capital-flows + indicators +
+  fundamentals-XBRL) = 14 real bugs fixed (7+6+1) + 9 subsystems/families certified clean; the paid
+  flagship's data layer is thoroughly hardened. Audit phase closed — pivoting to feature/SEO/UX.**
 - **Shipped 2026-06-14 (owner batch + greenlit follow-ups, all live-verified):** R2 now has all **6
   sections** (估值/基本面/技术面/资金面/情绪面/概览) + a **two-sided 看多/看空 (bull/bear)** reading on the
   overview (one ComposeReport call gains `bull`/`bear` keys; a deterministic Go advice-guard strips any
