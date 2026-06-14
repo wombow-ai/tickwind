@@ -247,6 +247,28 @@ feature-flagged plugin, never on the critical path. Web only.
   attribution** (was: options block entirely absent). cboe MaxPain + the unusual board untouched.
   (Deploy SSH dropped mid-launch but the nohup'd script completed; verified container restart +
   DEPLOY_DONE before confirming the business result — no double build.)
+- **Shipped + LIVE-verified 2026-06-15 (indicators-engine correctness audit — `f583b4e`):** an
+  adversarial Workflow audit (7 family finders → independent-skeptic verify) of the ~161-indicator
+  compute engine found **6 confirmed formula bugs**; the **oscillator family and the fundamental
+  Group-0 ratios audited CLEAN**; 0 refuted. All 6 fixed: **technical** — KAMA was reseeded at a raw
+  close `period` bars from the end and iterated only `period` steps (discarding ~250 bars of the IIR
+  recursion, ~2.4% wrong in ranging markets) → now seeds once + iterates full history like its sibling
+  MAs; KVO (Klinger) used signed raw volume (≈OBV) → now the canonical Volume Force
+  `vol·|2(dm/cm)−1|·trend·100` with cumulative-measurement reset on trend flip; Parabolic SAR clamped
+  against 1 prior bar and tested reversal on the un-clamped SAR → now Wilder's 2-prior-bar bound applied
+  BEFORE the penetration test. **fundamental** — the EV/debt family fell back to
+  `us-gaap:LiabilitiesNoncurrent` (TOTAL non-current liabilities) when a debt tag was absent, inflating
+  EV/net-gearing/ROIC/EV-multiples → dropped that fallback to genuine debt tags only (absent → 0 →
+  insufficient-not-wrong; also removes the silent concept-flip behind lt-debt-ratio); lt-debt-ratio
+  catalog text corrected to "long-term debt / (debt + equity)" (code already computed the canonical
+  debt-to-cap); Piotroski F-score point 5 (ΔLEVER) compared raw LTD dollars → now grades the LTD/
+  TotalAssets *ratio* change per Piotroski (2000), fixing an off-by-one F-score (all-or-nothing
+  preserved). Combined `go build/vet/gofmt/test ./cmd/... ./internal/...` green; load-bearing tests
+  per fix. **LIVE-verified no-regression on AAPL** (all 6 present + status ok; KVO −168724→−23.9M,
+  KAMA 305.31→303.32, SAR 312.84→313.89 = new formulas live; AAPL EV/lt-debt unchanged [explicit debt
+  tag], Piotroski 7). **→ Two adversarial data audits this session (capital-flows + indicators) = 13
+  real bugs fixed + 5 subsystems/families certified clean; the flagship report's data layer is
+  hardened.** Anti-hallucination contract intact throughout.
 - **Shipped 2026-06-14 (owner batch + greenlit follow-ups, all live-verified):** R2 now has all **6
   sections** (估值/基本面/技术面/资金面/情绪面/概览) + a **two-sided 看多/看空 (bull/bear)** reading on the
   overview (one ComposeReport call gains `bull`/`bear` keys; a deterministic Go advice-guard strips any
