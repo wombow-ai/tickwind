@@ -1077,6 +1077,13 @@ export interface ResearchSection {
   /** Qualitative prose (Markdown); "" in the data-only report. */
   prose: string;
   citations: ResearchCitation[];
+  /**
+   * Two-sided 看多/看空 reading, set only on the `overview` section when the LLM
+   * ran (absent in the data-only report). Each is a list of qualitative points
+   * grounded in the report's facts — not a recommendation, not a number.
+   */
+  bull?: string[];
+  bear?: string[];
 }
 
 /** Envelope returned by `GET /v1/stocks/{ticker}/research`. */

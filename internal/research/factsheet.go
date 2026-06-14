@@ -61,6 +61,12 @@ type SectionFacts struct {
 	Citations []Citation `json:"citations"`
 	Context   []string   `json:"context,omitempty"` // attributed UGC/news backdrop for the LLM (never a number)
 	Prose     string     `json:"prose"`             // qualitative LLM prose; "" when LLM off
+	// Bull / Bear are the two-sided "看多/看空" reading the composer writes over the
+	// whole report — qualitative points grounded in the facts above, NOT a number,
+	// NOT a recommendation. Set only on the overview section, only when the LLM is on
+	// (a deterministic advice-guard strips any point that slips into advice/targets).
+	Bull []string `json:"bull,omitempty"`
+	Bear []string `json:"bear,omitempty"`
 }
 
 // Citation maps a section's claim space to a source. The frontend turns Anchor

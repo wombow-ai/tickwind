@@ -1,6 +1,6 @@
 'use client';
 
-import {ExternalLink, Loader2, Sparkles} from 'lucide-react';
+import {ExternalLink, Loader2, Sparkles, TrendingDown, TrendingUp} from 'lucide-react';
 import Link from 'next/link';
 import {useEffect, useState} from 'react';
 import {
@@ -168,6 +168,13 @@ function Section({
 
       {sec.prose.trim() && <Markdown>{sec.prose}</Markdown>}
 
+      {((sec.bull?.length ?? 0) > 0 || (sec.bear?.length ?? 0) > 0) && (
+        <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <BullBearList points={sec.bull ?? []} tone="bull" title={tr('research.bull')} dark={dark} t={t} />
+          <BullBearList points={sec.bear ?? []} tone="bear" title={tr('research.bear')} dark={dark} t={t} />
+        </div>
+      )}
+
       {(sec.citations?.length ?? 0) > 0 && (
         <div className={cx('mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 border-t pt-2.5', t.hair)}>
           <span className={cx('text-[10.5px] font-semibold', t.faint)}>{tr('research.sources')}</span>
@@ -177,6 +184,61 @@ function Section({
         </div>
       )}
     </section>
+  );
+}
+
+/**
+ * One column of the 看多/看空 (bull / bear) reading on the overview section: a
+ * tinted card with a trend icon + a bulleted list of qualitative points. The points
+ * are a two-sided read of the same public facts — not a recommendation (the backend
+ * strips any point that slips into advice/targets). Renders nothing when empty.
+ */
+function BullBearList({
+  points,
+  tone,
+  title,
+  dark,
+  t,
+}: {
+  points: string[];
+  tone: 'bull' | 'bear';
+  title: string;
+  dark: boolean;
+  t: Tokens;
+}) {
+  if (points.length === 0) return null;
+  const bull = tone === 'bull';
+  const accent = bull
+    ? dark
+      ? 'text-emerald-300'
+      : 'text-emerald-600'
+    : dark
+      ? 'text-rose-300'
+      : 'text-rose-500';
+  const border = bull
+    ? dark
+      ? 'border-emerald-500/30'
+      : 'border-emerald-200'
+    : dark
+      ? 'border-rose-500/30'
+      : 'border-rose-200';
+  const dot = bull ? 'bg-emerald-500' : 'bg-rose-500';
+  const Icon = bull ? TrendingUp : TrendingDown;
+  return (
+    <div className={cx('rounded-xl border p-3', border, dark ? 'bg-slate-900/40' : 'bg-white/60')}>
+      <div className={cx('mb-2 flex items-center gap-1.5 text-[12.5px] font-bold', accent)}>
+        <Icon size={14} />
+        {title}
+      </div>
+      <ul className="space-y-1.5">
+        {points.map((p, i) => (
+          <li key={i} className={cx('flex gap-2 text-[12.5px] leading-snug', t.sub)}>
+            <span className={cx('mt-[6px] h-1.5 w-1.5 shrink-0 rounded-full', dot)} />
+            <span>{p}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 

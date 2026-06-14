@@ -3,6 +3,7 @@ package research
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"strings"
 )
 
@@ -42,10 +43,14 @@ func Compose(ctx context.Context, fs FactSheet, enr ResearchEnricher, lang strin
 		}
 	}
 	// The overview is a synthesis the LLM writes over all the other sections'
-	// facts (it is NOT in the material as an input section). It is prose-only —
-	// no facts of its own — so it exists only when the LLM produced it; the
-	// data-only report (LLM off) has no overview. Rendered FIRST (prepended).
-	if ov := strings.TrimSpace(prose[overviewKey]); ov != "" {
+	// facts (it is NOT in the material as an input section). It carries the balanced
+	// prose plus the two-sided 看多/看空 (bull/bear) reading — prose-only, no facts of
+	// its own — so it exists only when the LLM produced it; the data-only report (LLM
+	// off) has no overview. Rendered FIRST (prepended).
+	ov := strings.TrimSpace(prose[overviewKey])
+	bull := splitPoints(prose[bullKey])
+	bear := splitPoints(prose[bearKey])
+	if ov != "" || len(bull) > 0 || len(bear) > 0 {
 		fs.Sections = append([]SectionFacts{{
 			Key:     overviewKey,
 			TitleZH: "概览",
@@ -56,13 +61,70 @@ func Compose(ctx context.Context, fs FactSheet, enr ResearchEnricher, lang strin
 			Facts:     []Fact{},
 			Citations: []Citation{},
 			Prose:     ov,
+			Bull:      bull,
+			Bear:      bear,
 		}}, fs.Sections...)
 	}
 	return fs
 }
 
-// overviewKey is the synthesis section the composer adds over all other sections.
-const overviewKey = "overview"
+// overviewKey is the synthesis section the composer adds over all other sections;
+// bullKey/bearKey carry its two-sided reading (parsed out, not rendered as sections).
+const (
+	overviewKey = "overview"
+	bullKey     = "bull"
+	bearKey     = "bear"
+)
+
+// maxBullBearPoints caps each side of the 看多/看空 reading.
+const maxBullBearPoints = 5
+
+// bulletRe strips a leading list marker ("- ", "• ", "1.", "1)", "1、") from a line
+// — but NOT a bare leading number that is part of the content (e.g. "10x P/E …").
+var bulletRe = regexp.MustCompile(`^\s*(?:[-–—•*·‣◦]+|\d{1,2}[.)、])\s*`)
+
+// advicePhrases are unambiguous investment-advice / price-target markers. A bull or
+// bear point containing one is dropped — a deterministic backstop to the prompt
+// guardrail (more reliable than asking the model to self-censor, and zero extra
+// cost). Bare "买入/卖出/buy/sell" is intentionally absent: it legitimately describes
+// insider-buy or congressional-sale activity inside a point.
+var advicePhrases = []string{
+	"目标价", "目标股价", "强烈推荐", "强烈建议", "建议买", "建议卖", "应该买", "应该卖", "值得买入", "可以买入", "立即买",
+	"price target", "target price", "strong buy", "strong sell", "should buy", "should sell", "recommend buy", "recommend sell", "must buy",
+}
+
+// splitPoints turns the model's newline-joined bull/bear string into trimmed points:
+// it strips list markers, drops blanks, drops any point that trips the advice-guard,
+// and caps the count. Returns nil for empty input (so the JSON omits the field).
+func splitPoints(s string) []string {
+	if strings.TrimSpace(s) == "" {
+		return nil
+	}
+	var out []string
+	for _, line := range strings.Split(s, "\n") {
+		p := strings.TrimSpace(bulletRe.ReplaceAllString(line, ""))
+		if p == "" || hasAdvice(p) {
+			continue
+		}
+		out = append(out, p)
+		if len(out) >= maxBullBearPoints {
+			break
+		}
+	}
+	return out
+}
+
+// hasAdvice reports whether a point contains an investment-advice / price-target
+// marker (case-insensitive for the ASCII phrases).
+func hasAdvice(p string) bool {
+	low := strings.ToLower(p)
+	for _, w := range advicePhrases {
+		if strings.Contains(low, strings.ToLower(w)) {
+			return true
+		}
+	}
+	return false
+}
 
 // buildMaterial assembles the single pre-formatted material string the LLM sees,
 // in the briefing.buildMaterial style: a header, then one block per section keyed

@@ -420,6 +420,51 @@ func TestComposeOverviewPrepended(t *testing.T) {
 	}
 }
 
+// TestComposeBullBear asserts the composer parses the model's newline-joined
+// bull/bear strings into clean points on the overview: list markers are stripped, a
+// bare descriptive "买入" (insider buy) survives, and any point that trips the
+// deterministic advice/target guard is dropped.
+func TestComposeBullBear(t *testing.T) {
+	src := Sources{
+		Indicators: &fakeIndicators{res: indicators.StockIndicatorsResult{
+			Indicators: []indicators.StockIndicator{okIndicator("technical.rsi", 56.3, "")},
+		}},
+	}
+	enr := &fakeEnricher{enabled: true, prose: map[string]string{
+		"overview": "综合来看,基本面稳健。以上为基于公开数据的客观梳理,非投资建议。",
+		"bull":     "- 营收同比增长,显示需求稳健\n• 内部人近期买入,内部信心较强\n3. 目标价 $250,强烈推荐买入",
+		"bear":     "估值处于历史高位\n做空占比上升",
+	}}
+	composed := Compose(context.Background(), Assemble(context.Background(), "X", src), enr, "zh")
+
+	ov := composed.Sections[0]
+	if ov.Key != overviewKey {
+		t.Fatalf("first section = %q, want overview", ov.Key)
+	}
+	// Two bull points kept (markers stripped); the "目标价/强烈推荐" point dropped.
+	if len(ov.Bull) != 2 {
+		t.Fatalf("bull = %v, want 2 points (advice/target dropped)", ov.Bull)
+	}
+	if ov.Bull[0] != "营收同比增长,显示需求稳健" || ov.Bull[1] != "内部人近期买入,内部信心较强" {
+		t.Errorf("bull points not cleaned: %v", ov.Bull)
+	}
+	for _, p := range ov.Bull {
+		if hasAdvice(p) {
+			t.Errorf("advice point survived the guard: %q", p)
+		}
+	}
+	if len(ov.Bear) != 2 {
+		t.Fatalf("bear = %v, want 2 points", ov.Bear)
+	}
+
+	// Disabled → no overview, hence no bull/bear.
+	off := &fakeEnricher{enabled: false, prose: map[string]string{"bull": "x", "bear": "y"}}
+	dataOnly := Compose(context.Background(), Assemble(context.Background(), "X", src), off, "zh")
+	if _, ok := section(dataOnly, overviewKey); ok {
+		t.Error("data-only report carries an overview/bull-bear; want none")
+	}
+}
+
 // TestComposeNeverMutatesNumbers asserts the LLM map only touches Prose — every
 // Fact.Value and Fact.Raw is byte-for-byte identical before and after Compose,
 // even when the model returns prose AND a stray bogus number-looking key.
