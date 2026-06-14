@@ -151,8 +151,25 @@ feature-flagged plugin, never on the critical path. Web only.
   fact-sheet (Go owns every number, LLM writes prose only via `enrich.ComposeReport`, LLM-off → 200
   data-only) at `GET /v1/stocks/{t}/research` + public Research tab (3 sections: 估值/基本面/技术面).
   Owner directives still in force: **monetization deferred** (R1/R2 free, only cache+daily-cap plumbing),
-  **web-push deferred**. **Next:** R2 follow-ups (F1 资金面/情绪面 sections, F2 overview) and/or R1 P1/P2
-  indicator expansion. See `ROADMAP.md` (v8 section) for the live status + backlog.
+  **web-push deferred**. See `ROADMAP.md` (v8 section) for the live status + backlog.
+- **Shipped 2026-06-14 (owner batch + greenlit follow-ups, all live-verified):** R2 now has all **6
+  sections** (估值/基本面/技术面/资金面/情绪面/概览) + a **two-sided 看多/看空 (bull/bear)** reading on the
+  overview (one ComposeReport call gains `bull`/`bear` keys; a deterministic Go advice-guard strips any
+  point that slips into targets/buy-sell — chosen over an LLM self-critique; Go still owns every number).
+  **Selectable per-stock indicators** (Phase A picker + Increment 1 Group-0 + **Increment 2 Groups 1/2/4**):
+  per-stock fundamental set 19→**157 emitted ids** (148 ok for AAPL); new XBRL fields + ~39 ratios
+  (margins/turnover/working-capital/EV/debt), anti-fabrication preserved; a `usd` unit renders FCF/EV
+  compact ("$4.5T"). **Signed-in cloud prefs** `GET/PUT /v1/me/prefs` (opaque JSON blob, User store via
+  Split, 8KB cap, shallow-merge) — IndicatorsPanel: server selection wins over localStorage + migrate-up.
+  **Guru-watch staleness fix** (real cause was the `$cashtag`-only gate, NOT an IP block): rail = latest
+  KOL posts newest-first, ≤2/author, chips only for universe-validated cashtag/exchange tickers (bare
+  parentheticals dropped — acronym collisions). **Portfolio** now shows **当日盈亏 (day P&L)** + per-row
+  today's-move + allocation %. **Already-shipped (verified this session, were stale in the roadmap):**
+  Alerts Center (TopNav bell + `/me?tab=alerts` global list, triggered/active split + re-arm) and Chinese
+  search (苹果→AAPL via the curated alias table + CJK routing).
+- **Ops (2026-06-14):** the new 4 GB VPS lacked the old box's fail2ban deploy-IP whitelist → a burst of
+  deploy connects banned `154.29.158.47`; fixed durably via `/etc/fail2ban/jail.d/tickwind-ignore.conf`
+  (owner VNC). The ssh unit on this box is **`ssh`, NOT `sshd`**. Box has 2 G swap + healthy RAM (not OOM).
 - Phase 0 ✅ · Phase 1 ✅ · Phase 2 ✅ (prices REST + SSE live stream + frontend
   live price + Finnhub news; all auto-disable without keys). Alpaca prices
   LIVE-VERIFIED end-to-end with paper keys (local `.env`, gitignored). Finnhub

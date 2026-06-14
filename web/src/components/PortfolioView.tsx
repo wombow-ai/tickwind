@@ -52,6 +52,8 @@ export function PortfolioView() {
   // v1 simplification). Rows without a live price are excluded from the total.
   let totalValue = 0;
   let totalCost = 0;
+  let totalDayPL = 0; // today's P&L: Σ (price − prev_close) × shares (nominal-currency, US-first)
+  let totalPrevValue = 0; // prior-close value of priced rows, for the day-% denominator
   let priced = 0;
   for (const h of holdings) {
     totalCost += h.shares * h.avg_cost;
@@ -59,18 +61,27 @@ export function PortfolioView() {
     if (q && q.price > 0) {
       totalValue += h.shares * q.price;
       priced++;
+      if (q.prev_close && q.prev_close > 0) {
+        totalDayPL += h.shares * (q.price - q.prev_close);
+        totalPrevValue += h.shares * q.prev_close;
+      }
     }
   }
   const totalPL = totalValue - totalCost;
   const totalPLPct = totalCost > 0 ? (totalPL / totalCost) * 100 : 0;
+  const totalDayPLPct = totalPrevValue > 0 ? (totalDayPL / totalPrevValue) * 100 : 0;
   const up = totalPL >= 0;
-  const plCol = up
-    ? dark
-      ? 'text-emerald-400'
-      : 'text-emerald-600'
-    : dark
-      ? 'text-rose-400'
-      : 'text-rose-500';
+  const dayUp = totalDayPL >= 0;
+  const plColor = (good: boolean) =>
+    good
+      ? dark
+        ? 'text-emerald-400'
+        : 'text-emerald-600'
+      : dark
+        ? 'text-rose-400'
+        : 'text-rose-500';
+  const plCol = plColor(up);
+  const dayCol = plColor(dayUp);
 
   if (!loaded) {
     return <div className={cx('h-40 rounded-3xl border', t.card, t.border, t.skel)} />;
@@ -86,9 +97,17 @@ export function PortfolioView() {
 
   return (
     <>
-      <div className={cx('mb-5 grid grid-cols-3 gap-3 rounded-2xl border p-4', t.card, t.border, t.soft)}>
+      <div className={cx('mb-5 grid grid-cols-2 gap-3 rounded-2xl border p-4 sm:grid-cols-4', t.card, t.border, t.soft)}>
         <Sum t={t} label={tr('portfolio.total')} value={fmtPrice('$', totalValue)} />
         <Sum t={t} label={tr('portfolio.totalCost')} value={fmtPrice('$', totalCost)} />
+        <div className="flex flex-col">
+          <span className={cx('text-[11px]', t.faint)}>{tr('portfolio.dayPL')}</span>
+          <span className={cx('text-[15px] font-semibold tabular-nums', dayCol)}>
+            {dayUp ? '+' : '−'}
+            {fmtPrice('$', Math.abs(totalDayPL))} ({dayUp ? '+' : '−'}
+            {Math.abs(totalDayPLPct).toFixed(2)}%)
+          </span>
+        </div>
         <div className="flex flex-col">
           <span className={cx('text-[11px]', t.faint)}>{tr('portfolio.totalPL')}</span>
           <span className={cx('text-[15px] font-semibold tabular-nums', plCol)}>
@@ -122,13 +141,10 @@ export function PortfolioView() {
           const cost = h.shares * h.avg_cost;
           const pl = value - cost;
           const rUp = pl >= 0;
-          const rCol = rUp
-            ? dark
-              ? 'text-emerald-400'
-              : 'text-emerald-600'
-            : dark
-              ? 'text-rose-400'
-              : 'text-rose-500';
+          const rCol = plColor(rUp);
+          // Today's move (vs prior close) and this row's share of the portfolio.
+          const dayPct = q?.prev_close && q.prev_close > 0 ? (price / q.prev_close - 1) * 100 : null;
+          const alloc = totalValue > 0 ? (value / totalValue) * 100 : 0;
           return (
             <div
               key={h.id}
@@ -144,16 +160,27 @@ export function PortfolioView() {
               <span className={cx('col-span-2 text-right tabular-nums', t.sub)}>
                 {fmtPrice(cur, h.avg_cost)}
               </span>
-              <span className={cx('col-span-2 text-right tabular-nums', t.sub)}>
-                {has ? fmtPrice(cur, price) : '—'}
+              <span className="col-span-2 flex flex-col items-end">
+                <span className={cx('tabular-nums', t.sub)}>{has ? fmtPrice(cur, price) : '—'}</span>
+                {dayPct !== null && (
+                  <span className={cx('text-[11px] tabular-nums', plColor(dayPct >= 0))}>
+                    {dayPct >= 0 ? '+' : '−'}
+                    {Math.abs(dayPct).toFixed(2)}%
+                  </span>
+                )}
               </span>
               <span className="col-span-3 flex flex-col items-end">
                 {has ? (
                   <>
                     <span className={cx('font-semibold tabular-nums', t.text)}>{fmtPrice(cur, value)}</span>
-                    <span className={cx('text-[11px] tabular-nums', rCol)}>
-                      {rUp ? '+' : '−'}
-                      {Math.abs(cost > 0 ? (pl / cost) * 100 : 0).toFixed(1)}%
+                    <span className="text-[11px] tabular-nums">
+                      <span className={rCol}>
+                        {rUp ? '+' : '−'}
+                        {Math.abs(cost > 0 ? (pl / cost) * 100 : 0).toFixed(1)}%
+                      </span>
+                      <span className={cx('ml-1.5', t.faint)} title={tr('portfolio.allocation')}>
+                        {tr('portfolio.allocShort')} {alloc.toFixed(1)}%
+                      </span>
                     </span>
                   </>
                 ) : (
