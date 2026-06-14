@@ -6,7 +6,6 @@ import {getFund, type FundHoldings, type WhalePosition} from '@/lib/api';
 import {SITE_URL, langAlternates} from '@/lib/config';
 import {isLocale} from '@/lib/locale';
 import {ogImageMeta} from '@/lib/og';
-import {LocalizedTitle} from '@/components/LocalizedTitle';
 import {ShareCardButton} from '@/components/ShareCardButton';
 import {fmtCompactUSD} from '@/lib/ui';
 
@@ -62,13 +61,14 @@ export async function generateMetadata({
     alternates: langAlternates(path, loc),
     openGraph: {
       type: 'profile',
-      title: tt.en,
+      title: loc === 'zh' ? tt.zh : tt.en,
       url: `${SITE_URL}/${loc}${path}`,
       images: [
         ogImageMeta({
-          eyebrow: '13F 持仓',
-          title: `${f.manager} 持仓`,
-          subtitle: `${f.name} · SEC 13F 大佬持仓`,
+          lang: loc,
+          eyebrow: loc === 'zh' ? '13F 持仓' : '13F holdings',
+          title: loc === 'zh' ? `${f.manager} 持仓` : `${f.manager} holdings`,
+          subtitle: loc === 'zh' ? `${f.name} · SEC 13F 大佬持仓` : `${f.name} · SEC 13F whale holdings`,
         }),
       ],
     },
@@ -78,11 +78,14 @@ export async function generateMetadata({
 /**
  * Fund detail page (pSEO): one famous manager's latest quarterly SEC 13F
  * holdings from the public-domain 13F dataset. Server-rendered so crawlers get
- * the full table; bilingual chrome via [data-i18n] CSS keyed to <html lang>, the
- * tab title swapped by LocalizedTitle. Unknown slug → notFound().
+ * the full table; only the active locale's chrome (chosen from the route
+ * segment) is emitted, the per-locale tab title set in generateMetadata, so /en
+ * and /zh are distinct single-language HTML. Unknown slug → notFound().
  */
-export default async function FundRoute({params}: {params: Promise<{slug: string}>}) {
-  const {slug} = await params;
+export default async function FundRoute({params}: {params: Promise<{locale: string; slug: string}>}) {
+  const {locale, slug} = await params;
+  const loc = isLocale(locale) ? locale : 'en';
+  const zh = loc === 'zh';
   let f: FundHoldings | null = null;
   try {
     f = await getFund(slug, AbortSignal.timeout(5000));
@@ -93,7 +96,6 @@ export default async function FundRoute({params}: {params: Promise<{slug: string
   }
   if (!f) notFound();
 
-  const tt = titles(f.name, f.manager);
   const positions = f.positions ?? [];
 
   // Share card: a 13F 大佬持仓 card for 小红书 / 微信. Subtitle lists the top
@@ -117,13 +119,13 @@ export default async function FundRoute({params}: {params: Promise<{slug: string
       {
         '@type': 'BreadcrumbList',
         itemListElement: [
-          {'@type': 'ListItem', position: 1, name: 'Tickwind', item: SITE_URL},
-          {'@type': 'ListItem', position: 2, name: 'Smart money', item: `${SITE_URL}/smart-money`},
+          {'@type': 'ListItem', position: 1, name: 'Tickwind', item: `${SITE_URL}/${loc}`},
+          {'@type': 'ListItem', position: 2, name: zh ? '聪明钱' : 'Smart money', item: `${SITE_URL}/${loc}/smart-money`},
           {
             '@type': 'ListItem',
             position: 3,
             name: `${f.manager} — ${f.name}`,
-            item: `${SITE_URL}/fund/${slug}`,
+            item: `${SITE_URL}/${loc}/fund/${slug}`,
           },
         ],
       },
@@ -132,7 +134,6 @@ export default async function FundRoute({params}: {params: Promise<{slug: string
 
   return (
     <article className="mx-auto max-w-3xl">
-      <LocalizedTitle en={tt.en} zh={tt.zh} />
       <script type="application/ld+json" dangerouslySetInnerHTML={{__html: JSON.stringify(ld)}} />
 
       <nav className="mb-4 text-[12px] text-slate-500 dark:text-slate-400" aria-label="Breadcrumb">
@@ -141,8 +142,7 @@ export default async function FundRoute({params}: {params: Promise<{slug: string
         </Link>
         <span className="mx-1.5">/</span>
         <Link href="/smart-money?tab=13f" className="hover:underline">
-          <span data-i18n="zh">大佬持仓</span>
-          <span data-i18n="en">Whale holdings</span>
+          {zh ? '大佬持仓' : 'Whale holdings'}
         </Link>
       </nav>
 
@@ -158,43 +158,33 @@ export default async function FundRoute({params}: {params: Promise<{slug: string
         <div className="mt-2 flex flex-wrap items-center gap-2">
           <span className="text-[13px] text-slate-500 dark:text-slate-400">{f.name}</span>
           <span className="inline-block rounded-full bg-slate-100 px-2.5 py-0.5 text-[11px] font-semibold text-slate-500 dark:bg-slate-800 dark:text-slate-300">
-            <span data-i18n="zh">截至 </span>
-            <span data-i18n="en">as of </span>
+            {zh ? '截至 ' : 'as of '}
             {asOfQuarter(f.period)}
           </span>
           <span className="text-[11.5px] tabular-nums text-slate-400 dark:text-slate-500">
             · {fmtCompactUSD(f.value)}
-            <span data-i18n="zh"> 组合 · {f.count} 只持仓</span>
-            <span data-i18n="en"> portfolio · {f.count} positions</span>
+            {zh ? ` 组合 · ${f.count} 只持仓` : ` portfolio · ${f.count} positions`}
           </span>
         </div>
       </header>
 
       <div className="mb-5 rounded-xl border border-slate-200 bg-slate-50 p-3 text-[12px] text-slate-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400">
-        <span data-i18n="zh">
-          公开数据（SEC 13F-HR 申报）。每季度末快照，披露最多滞后约 45 天，且仅含美股多头（不含做空/期权）—— 非实时持仓，亦非投资建议。
-        </span>
-        <span data-i18n="en">
-          Public data (SEC 13F-HR filings). A quarter-end snapshot disclosed up to ~45 days late, long
-          U.S. equity positions only (no shorts or options) — not real-time holdings, and not investment
-          advice.
-        </span>
+        {zh
+          ? '公开数据（SEC 13F-HR 申报）。每季度末快照，披露最多滞后约 45 天，且仅含美股多头（不含做空/期权）—— 非实时持仓，亦非投资建议。'
+          : 'Public data (SEC 13F-HR filings). A quarter-end snapshot disclosed up to ~45 days late, long U.S. equity positions only (no shorts or options) — not real-time holdings, and not investment advice.'}
       </div>
 
       <h2 className="mb-3 text-[15px] font-bold text-slate-900 dark:text-slate-100">
-        <span data-i18n="zh">最新一季持仓</span>
-        <span data-i18n="en">Latest quarter holdings</span>
+        {zh ? '最新一季持仓' : 'Latest quarter holdings'}
       </h2>
 
       {positions.length === 0 ? (
         <div className="rounded-2xl border border-slate-200 px-6 py-10 text-center dark:border-slate-800">
           <p className="text-[14px] font-semibold text-slate-900 dark:text-slate-100">
-            <span data-i18n="zh">暂无持仓数据</span>
-            <span data-i18n="en">No holdings yet</span>
+            {zh ? '暂无持仓数据' : 'No holdings yet'}
           </p>
           <p className="mt-1 text-[12.5px] text-slate-500 dark:text-slate-400">
-            <span data-i18n="zh">正在抓取最新 13F 申报 —— 稍后再来看看。</span>
-            <span data-i18n="en">Fetching the latest 13F filings — check back shortly.</span>
+            {zh ? '正在抓取最新 13F 申报 —— 稍后再来看看。' : 'Fetching the latest 13F filings — check back shortly.'}
           </p>
         </div>
       ) : (
@@ -202,27 +192,15 @@ export default async function FundRoute({params}: {params: Promise<{slug: string
           <table className="w-full border-collapse text-left text-[13px]">
             <thead>
               <tr className="border-b border-slate-200 text-[11.5px] font-semibold uppercase tracking-wide text-slate-400 dark:border-slate-800 dark:text-slate-500">
-                <th className="px-3 py-2.5 font-semibold">
-                  <span data-i18n="zh">股票</span>
-                  <span data-i18n="en">Stock</span>
-                </th>
-                <th className="px-3 py-2.5 text-right font-semibold">
-                  <span data-i18n="zh">市值</span>
-                  <span data-i18n="en">Value</span>
-                </th>
-                <th className="px-3 py-2.5 text-right font-semibold">
-                  <span data-i18n="zh">占比</span>
-                  <span data-i18n="en">Weight</span>
-                </th>
-                <th className="px-3 py-2.5 text-right font-semibold">
-                  <span data-i18n="zh">环比</span>
-                  <span data-i18n="en">QoQ</span>
-                </th>
+                <th className="px-3 py-2.5 font-semibold">{zh ? '股票' : 'Stock'}</th>
+                <th className="px-3 py-2.5 text-right font-semibold">{zh ? '市值' : 'Value'}</th>
+                <th className="px-3 py-2.5 text-right font-semibold">{zh ? '占比' : 'Weight'}</th>
+                <th className="px-3 py-2.5 text-right font-semibold">{zh ? '环比' : 'QoQ'}</th>
               </tr>
             </thead>
             <tbody>
               {positions.map((p, i) => (
-                <PositionRow key={`${p.ticker || p.issuer}-${i}`} p={p} />
+                <PositionRow key={`${p.ticker || p.issuer}-${i}`} p={p} zh={zh} />
               ))}
             </tbody>
           </table>
@@ -230,19 +208,16 @@ export default async function FundRoute({params}: {params: Promise<{slug: string
       )}
 
       <p className="mt-6 text-center text-[11px] text-slate-400 dark:text-slate-500">
-        <span data-i18n="zh">
-          数据来源：SEC 13F-HR 申报（公有领域）；CUSIP→代码经 OpenFIGI 映射。非投资建议。
-        </span>
-        <span data-i18n="en">
-          Source: SEC 13F-HR filings (public domain); CUSIP→ticker via OpenFIGI. Not investment advice.
-        </span>
+        {zh
+          ? '数据来源：SEC 13F-HR 申报（公有领域）；CUSIP→代码经 OpenFIGI 映射。非投资建议。'
+          : 'Source: SEC 13F-HR filings (public domain); CUSIP→ticker via OpenFIGI. Not investment advice.'}
       </p>
     </article>
   );
 }
 
 /** One holding row: stock (+ ticker link) · value · weight · QoQ change. */
-function PositionRow({p}: {p: WhalePosition}) {
+function PositionRow({p, zh}: {p: WhalePosition; zh: boolean}) {
   const changeCls =
     p.change === 'new'
       ? 'bg-sky-50 text-sky-600 dark:bg-sky-500/15 dark:text-sky-300'
@@ -289,8 +264,7 @@ function PositionRow({p}: {p: WhalePosition}) {
       </td>
       <td className="px-3 py-2.5 text-right">
         <span className={`rounded-md px-1.5 py-0.5 text-[10.5px] font-bold ${changeCls}`}>
-          <span data-i18n="zh">{lbl.zh}</span>
-          <span data-i18n="en">{lbl.en}</span>
+          {zh ? lbl.zh : lbl.en}
           {pctSuffix}
         </span>
       </td>

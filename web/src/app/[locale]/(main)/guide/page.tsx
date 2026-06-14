@@ -3,7 +3,6 @@ import Link from '@/components/LocalLink';
 import {langAlternates} from '@/lib/config';
 import {GUIDES} from '@/lib/guides';
 import {isLocale} from '@/lib/locale';
-import {LocalizedTitle} from '@/components/LocalizedTitle';
 
 const TITLE_EN = 'Guides — How to Track US Stocks, Congress, 13F & Options · Tickwind';
 const TITLE_ZH = '指南 · 美股数据怎么查:国会山股神 / 13F / 期权异动 / 内部人买入 · 潮汐 Tickwind';
@@ -25,20 +24,23 @@ export async function generateMetadata({
 }
 
 /** Hub of the keyword landing pages — real internal linking for crawlers. */
-export default function GuideHub() {
+export default async function GuideHub({
+  params,
+}: {
+  params: Promise<{locale: string}>;
+}) {
+  const {locale} = await params;
+  const loc = isLocale(locale) ? locale : 'en';
   return (
     <div className="mx-auto max-w-3xl">
-      <LocalizedTitle en={TITLE_EN} zh={TITLE_ZH} />
       <header className="mb-6">
         <h1 className="text-[26px] font-bold tracking-tight text-slate-900 dark:text-slate-100">
-          <span data-i18n="zh">指南:美股数据怎么查</span>
-          <span data-i18n="en">Guides: How to Track US Stocks</span>
+          {loc === 'zh' ? '指南:美股数据怎么查' : 'Guides: How to Track US Stocks'}
         </h1>
         <p className="mt-1.5 text-[13.5px] text-slate-500 dark:text-slate-400">
-          <span data-i18n="zh">每个信号怎么看、在哪查 —— 每篇都链接到对应的实时看板。</span>
-          <span data-i18n="en">
-            What each signal means and where to find it — each links to its live board.
-          </span>
+          {loc === 'zh'
+            ? '每个信号怎么看、在哪查 —— 每篇都链接到对应的实时看板。'
+            : 'What each signal means and where to find it — each links to its live board.'}
         </p>
       </header>
 
@@ -50,12 +52,10 @@ export default function GuideHub() {
               className="block h-full rounded-2xl border border-slate-200 p-4 transition hover:border-teal-400 dark:border-slate-800"
             >
               <div className="text-[14px] font-semibold text-slate-900 dark:text-slate-100">
-                <span data-i18n="zh">{g.h1Zh}</span>
-                <span data-i18n="en">{g.h1En}</span>
+                {loc === 'zh' ? g.h1Zh : g.h1En}
               </div>
               <p className="mt-1 line-clamp-2 text-[12.5px] leading-relaxed text-slate-500 dark:text-slate-400">
-                <span data-i18n="zh">{g.descZh}</span>
-                <span data-i18n="en">{g.descEn}</span>
+                {loc === 'zh' ? g.descZh : g.descEn}
               </p>
             </Link>
           </li>

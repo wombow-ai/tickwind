@@ -235,9 +235,23 @@ feature-flagged plugin, never on the critical path. Web only.
   5-dimension adversarial review (12 raised → **10 confirmed, 0 blockers**; the high [5 section pages
   canonicalizing to the homepage + no hreflang] + both medium [404 pages rendering html/body-less] + the lows
   all fixed and re-verified in built HTML). Default locale `en` (x-default); `zh` via Accept-Language/cookie.
-  **Stage 2 next:** render only the active locale on pSEO pages (drop the `[data-i18n]` dual-render → genuinely
-  distinct `/en` vs `/zh` HTML + per-locale JSON-LD/OG). **Stage 3:** add `GET /v1/symbols` to mass-generate
-  `/stock/[ticker]`, build `/screen/[preset]`, upgrade `/topic/[key]`.
+  **LIVE-verified** on prod: both locales 200, bare paths 308 (incl. dotted tickers `BRK.B`→`/en/stock/BRK.B`),
+  `/en/hot` canonical=`/en/hot` + en/zh-CN/x-default hreflang, `/zh` serves `<html lang="zh">` + Chinese,
+  `/en/zzzz` 404 with valid `<html lang>`, sitemap emits both locales (2210 `/en` + 1326 `/zh` locs).
+- **Shipped 2026-06-14 (pSEO Stage 2 — single-locale rendering):** the localized pSEO Server Components
+  (home, guide hub + `[slug]`, indicators hub + `[id]`, fund/`[slug]`, congress/member/`[slug]`) now render
+  ONLY the active locale's content (chosen from the `[locale]` route segment) instead of dual-rendering both
+  languages behind the `[data-i18n]` CSS-hide — so `/en` and `/zh` ship **genuinely distinct single-language
+  HTML** (verified: `/zh/guide` Chinese body only, `/en/guide` English only, per-locale `<title>`). JSON-LD
+  (guide FAQPage q/a, breadcrumb labels), OG image (`lang` + active-locale eyebrow/title) and the tab title
+  (now per-locale via `generateMetadata`, retiring `LocalizedTitle` on these pages) are all locale-correct.
+  Shipped after a focused 2-dimension adversarial review (4 low/nit findings, 0 high; fixed: home per-locale
+  OG card [was Chinese-only for both], fund + congress-member breadcrumb JSON-LD `item` URLs now locale-
+  prefixed to match canonical). Left as a known data limitation: the indicator `definition`/`formula` catalog
+  has no `_zh` field, so `/zh/indicators/[id]` DefinedTerm `description` stays English (name IS localized).
+  Meta `keywords`/`description` intentionally stay mixed (deferred). **Stage 3 next:** add `GET /v1/symbols`
+  (exposes `internal/symbols.USTickers()`) to mass-generate `/stock/[ticker]` (with thin-content guards),
+  build `/screen/[preset]` preset landing pages, upgrade `/topic/[key]` to static pSEO, expand the sitemap.
 - **Ops (2026-06-14):** the new 4 GB VPS lacked the old box's fail2ban deploy-IP whitelist → a burst of
   deploy connects banned `154.29.158.47`; fixed durably via `/etc/fail2ban/jail.d/tickwind-ignore.conf`
   (owner VNC). The ssh unit on this box is **`ssh`, NOT `sshd`**. Box has 2 G swap + healthy RAM (not OOM).

@@ -4,14 +4,13 @@ import {langAlternates} from '@/lib/config';
 import {isLocale} from '@/lib/locale';
 import {ogImageMeta} from '@/lib/og';
 import {IndicatorLibraryShell} from '@/components/IndicatorLibraryShell';
-import {LocalizedTitle} from '@/components/LocalizedTitle';
 
 // The catalog is static (embedded metadata), so a long ISR window is plenty —
 // it only changes on a deploy that updates the dataset.
 export const revalidate = 86400;
 
-// English browser-tab title is the default (crawlers + the English UI); Chinese
-// SEO keywords stay in description/keywords. LocalizedTitle swaps in zh.
+// Per-locale browser-tab title, chosen server-side by the route locale in
+// generateMetadata; Chinese SEO keywords stay in description/keywords.
 const TITLE_EN = 'Stock Indicator Library — Technical, Fundamental & Sentiment · Tickwind';
 const TITLE_ZH = '美股指标大全 · 技术 / 基本面 / 情绪指标库 · 潮汐 Tickwind';
 
@@ -42,11 +41,21 @@ export async function generateMetadata({
     alternates: langAlternates('/indicators', loc),
     openGraph: {
       images: [
-        ogImageMeta({
-          eyebrow: '指标库',
-          title: '美股指标大全 · 技术 / 基本面 / 情绪',
-          subtitle: '含公式、默认参数与解读要点的可检索指标参考',
-        }),
+        ogImageMeta(
+          loc === 'zh'
+            ? {
+                lang: 'zh',
+                eyebrow: '指标库',
+                title: '美股指标大全 · 技术 / 基本面 / 情绪',
+                subtitle: '含公式、默认参数与解读要点的可检索指标参考',
+              }
+            : {
+                lang: 'en',
+                eyebrow: 'Indicator library',
+                title: 'US-stock indicators · technical / fundamental / sentiment',
+                subtitle: 'A searchable reference with formulas, default params & how to read them',
+              },
+        ),
       ],
     },
   };
@@ -74,7 +83,6 @@ export default async function IndicatorsPage() {
 
   return (
     <div className="mx-auto max-w-5xl">
-      <LocalizedTitle en={TITLE_EN} zh={TITLE_ZH} />
       <IndicatorLibraryShell
         indicators={data.indicators}
         facets={data.facets}

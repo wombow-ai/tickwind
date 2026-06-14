@@ -12,7 +12,6 @@ import {
 import {SITE_URL, langAlternates} from '@/lib/config';
 import {isLocale} from '@/lib/locale';
 import {ogImageMeta} from '@/lib/og';
-import {LocalizedTitle} from '@/components/LocalizedTitle';
 import {FollowTradeSim} from '@/components/FollowTradeSim';
 
 // SSR with ISR: a member's disclosure history changes at most daily, so cache an
@@ -59,13 +58,17 @@ export async function generateMetadata({
     alternates: langAlternates(path, loc),
     openGraph: {
       type: 'profile',
-      title: tt.en,
+      title: loc === 'zh' ? tt.zh : tt.en,
       url: `${SITE_URL}/${loc}${path}`,
       images: [
         ogImageMeta({
-          eyebrow: '国会交易',
-          title: `${m.name} 持仓`,
-          subtitle: '美国国会议员股票买卖披露 · 国会山股神',
+          lang: loc,
+          eyebrow: loc === 'zh' ? '国会交易' : 'Congress trades',
+          title: loc === 'zh' ? `${m.name} 持仓` : `${m.name} holdings`,
+          subtitle:
+            loc === 'zh'
+              ? '美国国会议员股票买卖披露 · 国会山股神'
+              : 'U.S. lawmaker stock-trade disclosures · Congress tracker',
         }),
       ],
     },
@@ -92,11 +95,14 @@ function fmtDate(raw: string): {en: string; zh: string} {
 /**
  * Member detail page (pSEO): a U.S. House member's disclosed stock trades from
  * the public-domain House Clerk PTR dataset. Server-rendered so crawlers get the
- * full table; bilingual chrome via the [data-i18n] CSS keyed to <html lang>, the
- * tab title swapped by LocalizedTitle. Unknown slug → notFound().
+ * full table; only the active locale's chrome (chosen from the route segment) is
+ * emitted, the per-locale tab title set in generateMetadata, so /en and /zh are
+ * distinct single-language HTML. Unknown slug → notFound().
  */
-export default async function MemberRoute({params}: {params: Promise<{slug: string}>}) {
-  const {slug} = await params;
+export default async function MemberRoute({params}: {params: Promise<{locale: string; slug: string}>}) {
+  const {locale, slug} = await params;
+  const loc = isLocale(locale) ? locale : 'en';
+  const zh = loc === 'zh';
   let m: MemberResponse | null = null;
   try {
     m = await getCongressMember(slug, AbortSignal.timeout(5000));
@@ -117,7 +123,6 @@ export default async function MemberRoute({params}: {params: Promise<{slug: stri
     bt = null;
   }
 
-  const tt = titles(m.name);
   const txs = m.transactions ?? [];
 
   const ld = {
@@ -126,13 +131,13 @@ export default async function MemberRoute({params}: {params: Promise<{slug: stri
       {
         '@type': 'BreadcrumbList',
         itemListElement: [
-          {'@type': 'ListItem', position: 1, name: 'Tickwind', item: SITE_URL},
-          {'@type': 'ListItem', position: 2, name: 'Smart money', item: `${SITE_URL}/smart-money`},
+          {'@type': 'ListItem', position: 1, name: 'Tickwind', item: `${SITE_URL}/${loc}`},
+          {'@type': 'ListItem', position: 2, name: zh ? '聪明钱' : 'Smart money', item: `${SITE_URL}/${loc}/smart-money`},
           {
             '@type': 'ListItem',
             position: 3,
             name: m.name,
-            item: `${SITE_URL}/congress/member/${slug}`,
+            item: `${SITE_URL}/${loc}/congress/member/${slug}`,
           },
         ],
       },
@@ -141,7 +146,6 @@ export default async function MemberRoute({params}: {params: Promise<{slug: stri
 
   return (
     <article className="mx-auto max-w-3xl">
-      <LocalizedTitle en={tt.en} zh={tt.zh} />
       <script type="application/ld+json" dangerouslySetInnerHTML={{__html: JSON.stringify(ld)}} />
 
       <nav className="mb-4 text-[12px] text-slate-500 dark:text-slate-400" aria-label="Breadcrumb">
@@ -150,8 +154,7 @@ export default async function MemberRoute({params}: {params: Promise<{slug: stri
         </Link>
         <span className="mx-1.5">/</span>
         <Link href="/smart-money?tab=congress" className="hover:underline">
-          <span data-i18n="zh">国会交易</span>
-          <span data-i18n="en">Congress</span>
+          {zh ? '国会交易' : 'Congress'}
         </Link>
       </nav>
 
@@ -168,31 +171,26 @@ export default async function MemberRoute({params}: {params: Promise<{slug: stri
       </header>
 
       <div className="mb-5 rounded-xl border border-slate-200 bg-slate-50 p-3 text-[12px] text-slate-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400">
-        <span data-i18n="zh">
-          公开数据（美国众议院书记官）。申报最多滞后 45 天，且仅标注金额区间 —— 非实时交易，亦非投资建议。
-        </span>
-        <span data-i18n="en">
-          Public data (U.S. House Clerk). Disclosures lag up to 45 days and show only amount ranges —
-          not real-time trades, and not investment advice.
-        </span>
+        {zh
+          ? '公开数据（美国众议院书记官）。申报最多滞后 45 天，且仅标注金额区间 —— 非实时交易，亦非投资建议。'
+          : 'Public data (U.S. House Clerk). Disclosures lag up to 45 days and show only amount ranges — not real-time trades, and not investment advice.'}
       </div>
 
       {bt && <FollowTradeSim bt={bt} memberName={m.name} />}
 
       <h2 className="mb-3 text-[15px] font-bold text-slate-900 dark:text-slate-100">
-        <span data-i18n="zh">披露交易</span>
-        <span data-i18n="en">Disclosed trades</span>
+        {zh ? '披露交易' : 'Disclosed trades'}
       </h2>
 
       {txs.length === 0 ? (
         <div className="rounded-2xl border border-slate-200 px-6 py-10 text-center dark:border-slate-800">
           <p className="text-[14px] font-semibold text-slate-900 dark:text-slate-100">
-            <span data-i18n="zh">暂无披露交易</span>
-            <span data-i18n="en">No disclosed trades</span>
+            {zh ? '暂无披露交易' : 'No disclosed trades'}
           </p>
           <p className="mt-1 text-[12.5px] text-slate-500 dark:text-slate-400">
-            <span data-i18n="zh">该议员目前还没有定期交易报告（PTR）在档。</span>
-            <span data-i18n="en">No Periodic Transaction Reports are on file for this member yet.</span>
+            {zh
+              ? '该议员目前还没有定期交易报告（PTR）在档。'
+              : 'No Periodic Transaction Reports are on file for this member yet.'}
           </p>
         </div>
       ) : (
@@ -200,27 +198,15 @@ export default async function MemberRoute({params}: {params: Promise<{slug: stri
           <table className="w-full border-collapse text-left text-[13px]">
             <thead>
               <tr className="border-b border-slate-200 text-[11.5px] font-semibold uppercase tracking-wide text-slate-400 dark:border-slate-800 dark:text-slate-500">
-                <th className="px-3 py-2.5 font-semibold">
-                  <span data-i18n="zh">日期</span>
-                  <span data-i18n="en">Date</span>
-                </th>
-                <th className="px-3 py-2.5 font-semibold">
-                  <span data-i18n="zh">方向</span>
-                  <span data-i18n="en">Type</span>
-                </th>
-                <th className="px-3 py-2.5 font-semibold">
-                  <span data-i18n="zh">资产</span>
-                  <span data-i18n="en">Asset</span>
-                </th>
-                <th className="px-3 py-2.5 text-right font-semibold">
-                  <span data-i18n="zh">金额区间</span>
-                  <span data-i18n="en">Amount</span>
-                </th>
+                <th className="px-3 py-2.5 font-semibold">{zh ? '日期' : 'Date'}</th>
+                <th className="px-3 py-2.5 font-semibold">{zh ? '方向' : 'Type'}</th>
+                <th className="px-3 py-2.5 font-semibold">{zh ? '资产' : 'Asset'}</th>
+                <th className="px-3 py-2.5 text-right font-semibold">{zh ? '金额区间' : 'Amount'}</th>
               </tr>
             </thead>
             <tbody>
               {txs.map((tx, i) => (
-                <TxRow key={`${tx.tx_date}-${tx.ticker}-${tx.asset}-${i}`} tx={tx} />
+                <TxRow key={`${tx.tx_date}-${tx.ticker}-${tx.asset}-${i}`} tx={tx} zh={zh} />
               ))}
             </tbody>
           </table>
@@ -228,17 +214,16 @@ export default async function MemberRoute({params}: {params: Promise<{slug: stri
       )}
 
       <p className="mt-6 text-center text-[11px] text-slate-400 dark:text-slate-500">
-        <span data-i18n="zh">数据来源：美国众议院书记官金融披露（公有领域）。非投资建议。</span>
-        <span data-i18n="en">
-          Source: U.S. House Clerk financial disclosures (public domain). Not investment advice.
-        </span>
+        {zh
+          ? '数据来源：美国众议院书记官金融披露（公有领域）。非投资建议。'
+          : 'Source: U.S. House Clerk financial disclosures (public domain). Not investment advice.'}
       </p>
     </article>
   );
 }
 
 /** One disclosure row: date · buy/sell (green/red) · asset (+ ticker link) · amount. */
-function TxRow({tx}: {tx: MemberTx}) {
+function TxRow({tx, zh}: {tx: MemberTx; zh: boolean}) {
   const s = side(tx.type);
   const date = fmtDate(tx.tx_date);
   const sideCls =
@@ -250,29 +235,23 @@ function TxRow({tx}: {tx: MemberTx}) {
   return (
     <tr className="border-b border-slate-100 last:border-0 dark:border-slate-800/60">
       <td className="whitespace-nowrap px-3 py-2.5 tabular-nums text-slate-500 dark:text-slate-400">
-        <span data-i18n="zh">{date.zh}</span>
-        <span data-i18n="en">{date.en}</span>
+        {zh ? date.zh : date.en}
       </td>
       <td className="px-3 py-2.5">
         <span className={`rounded-md px-1.5 py-0.5 text-[11px] font-bold ${sideCls}`}>
-          {s === 'buy' ? (
-            <>
-              <span data-i18n="zh">买入</span>
-              <span data-i18n="en">Buy</span>
-            </>
-          ) : s === 'sell' ? (
-            <>
-              <span data-i18n="zh">卖出</span>
-              <span data-i18n="en">Sell</span>
-            </>
-          ) : s === 'exchange' ? (
-            <>
-              <span data-i18n="zh">换股</span>
-              <span data-i18n="en">Exchange</span>
-            </>
-          ) : (
-            tx.type
-          )}
+          {s === 'buy'
+            ? zh
+              ? '买入'
+              : 'Buy'
+            : s === 'sell'
+              ? zh
+                ? '卖出'
+                : 'Sell'
+              : s === 'exchange'
+                ? zh
+                  ? '换股'
+                  : 'Exchange'
+                : tx.type}
         </span>
       </td>
       <td className="px-3 py-2.5 text-slate-800 dark:text-slate-100">

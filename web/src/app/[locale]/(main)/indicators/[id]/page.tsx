@@ -11,7 +11,6 @@ import {
 import {SITE_URL, POPULAR_TICKERS, langAlternates} from '@/lib/config';
 import {isLocale, LOCALES} from '@/lib/locale';
 import {ogImageMeta, type OgParams} from '@/lib/og';
-import {LocalizedTitle} from '@/components/LocalizedTitle';
 import {ShareCardButton} from '@/components/ShareCardButton';
 
 // SSR with ISR: the catalog is static (embedded metadata) and only changes on a
@@ -108,12 +107,16 @@ export async function generateMetadata({
     alternates: langAlternates(path, loc),
     openGraph: {
       type: 'article',
-      title: tt.en,
+      title: loc === 'zh' ? tt.zh : tt.en,
       url: `${SITE_URL}/${loc}${path}`,
       images: [
         ogImageMeta({
-          eyebrow: domainZh,
-          title: `${n.zh}${ind.abbr ? ` ${ind.abbr}` : ''}`,
+          lang: loc,
+          eyebrow: loc === 'zh' ? domainZh : ind.domain_name,
+          title:
+            loc === 'zh'
+              ? `${n.zh}${ind.abbr ? ` ${ind.abbr}` : ''}`
+              : `${n.en}${ind.abbr ? ` ${ind.abbr}` : ''}`,
           subtitle: snip.slice(0, 64),
         }),
       ],
@@ -124,11 +127,11 @@ export async function generateMetadata({
 /**
  * Per-indicator detail page (pSEO): one indicator's definition, formula, default
  * parameters and interpretation from the public-knowledge `/v1/indicators`
- * catalog. Server-rendered so crawlers get the full content; the inactive
- * language is hidden by the [data-i18n] CSS keyed to <html lang>, the tab title
- * swapped by LocalizedTitle. Renders ONLY fields present in the dataset (empty
- * definitions fall back to formula + interpretation — nothing is invented).
- * Unknown slug → notFound().
+ * catalog. Server-rendered so crawlers get the full content; only the active
+ * locale's chrome (chosen from the route segment) is emitted, the per-locale tab
+ * title set in generateMetadata, so /en and /zh are distinct single-language
+ * HTML. Renders ONLY fields present in the dataset (empty definitions fall back
+ * to formula + interpretation — nothing is invented). Unknown slug → notFound().
  */
 export default async function IndicatorRoute({
   params,
@@ -137,6 +140,7 @@ export default async function IndicatorRoute({
 }) {
   const {locale, id} = await params;
   const loc = isLocale(locale) ? locale : 'en';
+  const zh = loc === 'zh';
 
   // Need the full catalog both to resolve the record and to build the related
   // list, so fetch once. A transient API failure → notFound (ISR refills later).
@@ -152,8 +156,9 @@ export default async function IndicatorRoute({
   const slug = indicatorSlug(ind.id);
   const path = `/indicators/${slug}`;
   const n = displayNames(ind);
-  const tt = titles(ind);
   const domainZh = DOMAIN_ZH[ind.domain] ?? ind.domain_name;
+  // Domain label in the active locale (zh term vs the dataset's English name).
+  const domainLabel = zh ? domainZh : ind.domain_name;
   const core = ind.priority === 'P0';
 
   // Definition is shown when present; otherwise we fall back to the formula and
@@ -190,7 +195,7 @@ export default async function IndicatorRoute({
     '@graph': [
       {
         '@type': 'DefinedTerm',
-        name: n.en,
+        name: zh ? n.zh : n.en,
         ...(ind.abbr ? {alternateName: ind.abbr} : {}),
         ...(description ? {description} : {}),
         inDefinedTermSet: {
@@ -204,11 +209,11 @@ export default async function IndicatorRoute({
         '@type': 'BreadcrumbList',
         itemListElement: [
           {'@type': 'ListItem', position: 1, name: 'Tickwind', item: `${SITE_URL}/${loc}`},
-          {'@type': 'ListItem', position: 2, name: 'Indicators', item: `${SITE_URL}/${loc}/indicators`},
+          {'@type': 'ListItem', position: 2, name: zh ? '指标库' : 'Indicators', item: `${SITE_URL}/${loc}/indicators`},
           {
             '@type': 'ListItem',
             position: 3,
-            name: n.en,
+            name: zh ? n.zh : n.en,
             item: `${SITE_URL}/${loc}${path}`,
           },
         ],
@@ -218,18 +223,15 @@ export default async function IndicatorRoute({
 
   return (
     <article className="mx-auto max-w-3xl">
-      <LocalizedTitle en={tt.en} zh={tt.zh} />
       <script type="application/ld+json" dangerouslySetInnerHTML={{__html: JSON.stringify(ld)}} />
 
       <nav className="mb-4 text-[12px] text-slate-500 dark:text-slate-400" aria-label="Breadcrumb">
         <Link href="/" className="hover:underline">
-          <span data-i18n="zh">首页</span>
-          <span data-i18n="en">Home</span>
+          {zh ? '首页' : 'Home'}
         </Link>
         <span className="mx-1.5">/</span>
         <Link href="/indicators" className="hover:underline">
-          <span data-i18n="zh">指标库</span>
-          <span data-i18n="en">Indicators</span>
+          {zh ? '指标库' : 'Indicators'}
         </Link>
       </nav>
 
@@ -237,9 +239,7 @@ export default async function IndicatorRoute({
         <div className="flex items-start justify-between gap-3">
           <h1 className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[24px] font-bold tracking-tight text-slate-900 dark:text-slate-100">
             <LayoutGrid size={20} className="text-teal-600 dark:text-teal-300" />
-            {/* English-default name; zh leads for Chinese users (data-i18n CSS). */}
-            <span data-i18n="zh">{n.zh}</span>
-            <span data-i18n="en">{n.en}</span>
+            {zh ? n.zh : n.en}
             {ind.abbr && (
               <span className="text-[15px] font-medium text-slate-500 dark:text-slate-400">
                 {ind.abbr}
@@ -252,15 +252,13 @@ export default async function IndicatorRoute({
         {/* The other-language name on a secondary line, so both are on the page. */}
         {n.zh !== n.en && (
           <p className="mt-1 text-[13px] text-slate-500 dark:text-slate-400">
-            <span data-i18n="zh">{n.en}</span>
-            <span data-i18n="en">{n.zh}</span>
+            {zh ? n.en : n.zh}
           </p>
         )}
 
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <span className="inline-block rounded-full bg-teal-50 px-2.5 py-0.5 text-[11px] font-semibold text-teal-700 dark:bg-teal-500/15 dark:text-teal-300">
-            {domainZh}
-            <span className="ml-1 text-teal-600/70 dark:text-teal-300/70">{ind.domain_name}</span>
+            {domainLabel}
           </span>
           <span
             className={
@@ -270,11 +268,7 @@ export default async function IndicatorRoute({
             }
           >
             {ind.priority}
-            <span data-i18n="zh">
-              {' '}
-              {core ? '核心' : ''}
-            </span>
-            <span data-i18n="en">{core ? ' Core' : ''}</span>
+            {core ? (zh ? ' 核心' : ' Core') : ''}
           </span>
           {ind.subcategory && (
             <span className="inline-block rounded-full bg-slate-100 px-2.5 py-0.5 text-[11px] font-medium text-slate-500 dark:bg-slate-800 dark:text-slate-300">
@@ -282,8 +276,7 @@ export default async function IndicatorRoute({
             </span>
           )}
           <span className="text-[11.5px] text-slate-400 dark:text-slate-500">
-            <span data-i18n="zh">适用:美股</span>
-            <span data-i18n="en">Applies to: US stocks</span>
+            {zh ? '适用:美股' : 'Applies to: US stocks'}
           </span>
         </div>
       </header>
@@ -292,8 +285,7 @@ export default async function IndicatorRoute({
       {hasDefinition && (
         <section className="mb-5">
           <h2 className="mb-1.5 text-[12px] font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">
-            <span data-i18n="zh">定义</span>
-            <span data-i18n="en">Definition</span>
+            {zh ? '定义' : 'Definition'}
           </h2>
           <p className="text-[14px] leading-relaxed text-slate-700 dark:text-slate-200">
             {ind.definition}
@@ -304,8 +296,7 @@ export default async function IndicatorRoute({
       {ind.formula && (
         <section className="mb-5">
           <h2 className="mb-1.5 text-[12px] font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">
-            <span data-i18n="zh">计算公式</span>
-            <span data-i18n="en">Formula</span>
+            {zh ? '计算公式' : 'Formula'}
           </h2>
           <pre className="overflow-x-auto whitespace-pre-wrap break-words rounded-xl bg-slate-50 px-3.5 py-3 font-mono text-[12.5px] leading-relaxed text-slate-800 dark:bg-slate-900 dark:text-slate-100">
             {ind.formula}
@@ -316,8 +307,7 @@ export default async function IndicatorRoute({
       {ind.default_params != null && (
         <section className="mb-5">
           <h2 className="mb-1.5 text-[12px] font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">
-            <span data-i18n="zh">默认参数</span>
-            <span data-i18n="en">Default parameters</span>
+            {zh ? '默认参数' : 'Default parameters'}
           </h2>
           <pre className="overflow-x-auto whitespace-pre-wrap break-words rounded-xl bg-slate-50 px-3.5 py-3 font-mono text-[12.5px] leading-relaxed text-slate-800 dark:bg-slate-900 dark:text-slate-100">
             {JSON.stringify(ind.default_params, null, 2)}
@@ -328,8 +318,7 @@ export default async function IndicatorRoute({
       {ind.interpretation && (
         <section className="mb-5">
           <h2 className="mb-1.5 text-[12px] font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">
-            <span data-i18n="zh">解读要点</span>
-            <span data-i18n="en">How to read it</span>
+            {zh ? '解读要点' : 'How to read it'}
           </h2>
           <p className="text-[14px] leading-relaxed text-slate-700 dark:text-slate-200">
             {ind.interpretation}
@@ -341,11 +330,11 @@ export default async function IndicatorRoute({
       {(ind.output_type || (ind.inputs && ind.inputs.length > 0) || ind.talib_or_lib) && (
         <div className="mb-5 flex flex-wrap gap-1.5">
           {ind.inputs && ind.inputs.length > 0 && (
-            <MetaChip labelZh="输入" labelEn="Inputs" value={ind.inputs.join(', ')} />
+            <MetaChip label={zh ? '输入' : 'Inputs'} value={ind.inputs.join(', ')} />
           )}
-          {ind.output_type && <MetaChip labelZh="输出" labelEn="Output" value={ind.output_type} />}
+          {ind.output_type && <MetaChip label={zh ? '输出' : 'Output'} value={ind.output_type} />}
           {ind.talib_or_lib && (
-            <MetaChip labelZh="库" labelEn="Library" value={ind.talib_or_lib} mono />
+            <MetaChip label={zh ? '库' : 'Library'} value={ind.talib_or_lib} mono />
           )}
         </div>
       )}
@@ -353,12 +342,10 @@ export default async function IndicatorRoute({
       <div className="mb-6 rounded-xl border border-slate-200 bg-slate-50 p-3 text-[12px] text-slate-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400">
         {ind.data_source && (
           <span className="mr-1.5 font-semibold text-slate-600 dark:text-slate-300">
-            <span data-i18n="zh">数据来源:{ind.data_source}。</span>
-            <span data-i18n="en">Data source: {ind.data_source}. </span>
+            {zh ? `数据来源:${ind.data_source}。` : `Data source: ${ind.data_source}. `}
           </span>
         )}
-        <span data-i18n="zh">公开知识,不构成投资建议。</span>
-        <span data-i18n="en">Public knowledge, not investment advice.</span>
+        {zh ? '公开知识,不构成投资建议。' : 'Public knowledge, not investment advice.'}
       </div>
 
       {/* Activation funnel: turn a glossary reader into a product user by sending
@@ -366,8 +353,9 @@ export default async function IndicatorRoute({
           the per-stock indicators panel via the #indicators anchor). */}
       <section className="mb-6 rounded-xl border border-teal-200 bg-teal-50/60 p-4 dark:border-teal-500/20 dark:bg-teal-500/5">
         <p className="mb-2.5 text-[13.5px] font-semibold text-slate-800 dark:text-slate-100">
-          <span data-i18n="zh">在热门美股上查看{n.zh}的实时计算值 →</span>
-          <span data-i18n="en">See {n.en} computed live on popular US stocks →</span>
+          {zh
+            ? `在热门美股上查看${n.zh}的实时计算值 →`
+            : `See ${n.en} computed live on popular US stocks →`}
         </p>
         <div className="flex flex-wrap gap-1.5">
           {POPULAR_TICKERS.slice(0, 5).map(tk => (
@@ -383,8 +371,7 @@ export default async function IndicatorRoute({
             href="/screen"
             className="rounded-lg border border-slate-300 px-2.5 py-1 text-[12.5px] font-medium text-slate-600 transition hover:bg-white dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-900"
           >
-            <span data-i18n="zh">全部美股 →</span>
-            <span data-i18n="en">All stocks →</span>
+            {zh ? '全部美股 →' : 'All stocks →'}
           </Link>
         </div>
       </section>
@@ -394,68 +381,59 @@ export default async function IndicatorRoute({
           href="/indicators"
           className="inline-block rounded-lg border border-slate-200 px-3 py-1.5 text-[12.5px] font-medium text-slate-600 hover:bg-slate-50 dark:border-slate-800 dark:text-slate-300 dark:hover:bg-slate-900"
         >
-          <span data-i18n="zh">← 返回指标库</span>
-          <span data-i18n="en">← Back to all indicators</span>
+          {zh ? '← 返回指标库' : '← Back to all indicators'}
         </Link>
       </div>
 
       {related.length > 0 && (
         <section className="mb-6">
           <h2 className="mb-2.5 text-[15px] font-bold text-slate-900 dark:text-slate-100">
-            <span data-i18n="zh">相关指标</span>
-            <span data-i18n="en">Related indicators</span>
+            {zh ? '相关指标' : 'Related indicators'}
           </h2>
           <div className="grid gap-2 sm:grid-cols-2">
             {related.map(r => (
-              <RelatedCard key={r.id} ind={r} />
+              <RelatedCard key={r.id} ind={r} zh={zh} />
             ))}
           </div>
         </section>
       )}
 
       <p className="mt-6 text-center text-[11px] text-slate-400 dark:text-slate-500">
-        <span data-i18n="zh">参考元数据 —— 公开、通用的指标定义。非投资建议。</span>
-        <span data-i18n="en">
-          Reference metadata — public, well-known indicator definitions. Not investment advice.
-        </span>
+        {zh
+          ? '参考元数据 —— 公开、通用的指标定义。非投资建议。'
+          : 'Reference metadata — public, well-known indicator definitions. Not investment advice.'}
       </p>
     </article>
   );
 }
 
-/** A small key:value metadata chip (bilingual label via the [data-i18n] CSS). */
+/** A small key:value metadata chip with an active-locale label. */
 function MetaChip({
-  labelZh,
-  labelEn,
+  label,
   value,
   mono,
 }: {
-  labelZh: string;
-  labelEn: string;
+  label: string;
   value: string;
   mono?: boolean;
 }) {
   return (
     <span className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-2 py-0.5 text-[11px] dark:bg-slate-800">
-      <span className="text-slate-400 dark:text-slate-500">
-        <span data-i18n="zh">{labelZh}</span>
-        <span data-i18n="en">{labelEn}</span>
-      </span>
+      <span className="text-slate-400 dark:text-slate-500">{label}</span>
       <span className={`text-slate-600 dark:text-slate-300 ${mono ? 'font-mono' : ''}`}>{value}</span>
     </span>
   );
 }
 
 /** One related-indicator link card (internal linking → its detail page). */
-function RelatedCard({ind}: {ind: Indicator}) {
+function RelatedCard({ind, zh}: {ind: Indicator; zh: boolean}) {
   return (
     <Link
       href={`/indicators/${indicatorSlug(ind.id)}`}
       className="block rounded-xl border border-slate-200 px-3 py-2.5 hover:border-teal-300 hover:bg-slate-50 dark:border-slate-800 dark:hover:border-teal-500/40 dark:hover:bg-slate-900"
     >
       <div className="flex items-center gap-1.5 text-[13px] font-semibold text-slate-800 dark:text-slate-100">
-        <span data-i18n="zh">{ind.name_zh || ind.name_en}</span>
-        <span data-i18n="en">{ind.name_en}</span>
+        {zh ? ind.name_zh || ind.name_en : ind.name_en}
         {ind.abbr && (
           <span className="text-[11px] font-medium text-slate-400 dark:text-slate-500">
             {ind.abbr}
