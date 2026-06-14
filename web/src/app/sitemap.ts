@@ -4,6 +4,7 @@ import {
   getCongress,
   getIndicators,
   getThirteenF,
+  getTopics,
   indicatorSlug,
 } from '@/lib/api';
 import {SITE_URL} from '@/lib/config';
@@ -94,6 +95,22 @@ async function indicatorSlugs(): Promise<string[]> {
   }
 }
 
+/**
+ * The indexable trending topics: the key of every Hot Topic in the live snapshot,
+ * backing the `/topic/{key}` pSEO pages. Topics are volatile (they trend through
+ * the day) so this captures the build/revalidate-time set; ISR + dynamicParams
+ * cover the rest. Tolerant — a slow/down API just yields an empty list.
+ */
+async function topicKeys(): Promise<string[]> {
+  try {
+    const r = await getTopics(AbortSignal.timeout(5000));
+    return (r.topics ?? []).map(t => t.key);
+  } catch {
+    // API hiccup → skip topic pages this build; the rest of the sitemap stands.
+    return [];
+  }
+}
+
 import {LOCALES} from '@/lib/locale';
 
 /**
@@ -152,11 +169,12 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     changeFrequency: 'daily',
     priority: 0.6,
   }));
-  const [tickers, memberSlugs, funds, indicators] = await Promise.all([
+  const [tickers, memberSlugs, funds, indicators, topics] = await Promise.all([
     indexableTickers(),
     congressMemberSlugs(),
     fundSlugs(),
     indicatorSlugs(),
+    topicKeys(),
   ]);
   const stockPages: Page[] = tickers.map(ticker => ({
     path: `/stock/${encodeURIComponent(ticker)}`,
@@ -178,6 +196,11 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     changeFrequency: 'monthly',
     priority: 0.6,
   }));
+  const topicPages: Page[] = topics.map(key => ({
+    path: `/topic/${encodeURIComponent(key)}`,
+    changeFrequency: 'daily',
+    priority: 0.5,
+  }));
   const pages: Page[] = [
     ...staticPages,
     ...guidePages,
@@ -186,6 +209,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     ...memberPages,
     ...fundPages,
     ...indicatorPages,
+    ...topicPages,
   ];
   // Emit one entry per (page × locale), each advertising both language variants.
   return pages.flatMap(p =>

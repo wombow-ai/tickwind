@@ -284,8 +284,19 @@ feature-flagged plugin, never on the critical path. Web only.
   are empty off-hours, ISR refills). `web/src/lib/presets.ts` config + a preset cross-link hub on `/screen`.
   Built-HTML verified: single-locale, canonical+3 hreflang, 0 bare-path JSON-LD leak; sitemap +18. Note: the
   preset universe inherits the mega-cap exclusion (movers are mid/small-cap — fine for gainers/losers intent).
-  **Next:** `/topic/[key]` → static pSEO (last increment), optional A-Z `/stocks` directory from `/v1/symbols`;
-  lift `MAX_STOCK_URLS` toward 6,695 as the domain gains crawl authority.
+- **Shipped 2026-06-14 (pSEO Stage 3⑤ — /topic static; pSEO COMPLETE):** upgraded `/topic/[key]` from a
+  thin `?label=` client wrapper into a static pSEO Server Component — `generateStaticParams` from `getTopics()`
+  (8 live topics × 2 = **16 prerendered**, ISR `revalidate=1800` + dynamicParams for new themes), per-locale
+  `generateMetadata` + `langAlternates`, single-locale crawlable render (verbatim news-derived label + localized
+  chrome + a related-tickers grid linking into `/stock/{t}` + topic-scoped headlines via `getNewsBatch(…,topic)`),
+  CollectionPage/ItemList/BreadcrumbList JSON-LD (locale-prefixed), `notFound()`+noindex for empty topics.
+  Deleted the now-orphaned `TopicPage.tsx` client component. Built-HTML verified single-locale + canonical/3
+  hreflang + 0 bare-path leak; sitemap +16. **→ pSEO COMPLETE (Stages 1–3, all LIVE-verified):** path-based
+  `/zh`+`/en` i18n (hreflang unblocked) · single-locale distinct HTML · ~6,000 `/stock` + 564 indicator + 18
+  screen-preset + 16 topic + guides/funds/congress/sections = **a few thousand indexable pages with valid
+  hreflang**, up from a single client-toggle URL. Each stage shipped via adversarial review + built-HTML + live
+  verification. **Optional follow-ups (deferred, owner's call):** A-Z `/stocks` directory from `/v1/symbols`;
+  lift `MAX_STOCK_URLS` 3,000→~6,695 as crawl authority grows; the mega-cap screener fix (task_04cfaedd).
 - **Ops (2026-06-14):** the new 4 GB VPS lacked the old box's fail2ban deploy-IP whitelist → a burst of
   deploy connects banned `154.29.158.47`; fixed durably via `/etc/fail2ban/jail.d/tickwind-ignore.conf`
   (owner VNC). The ssh unit on this box is **`ssh`, NOT `sshd`**. Box has 2 G swap + healthy RAM (not OOM).
