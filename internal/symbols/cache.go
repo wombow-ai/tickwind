@@ -29,3 +29,7 @@ func (c *Cache) Search(q string, limit int) []Symbol { return c.Get().Search(q, 
 
 // ByCIK resolves a SEC CIK against the current snapshot (none while unloaded).
 func (c *Cache) ByCIK(cik int) (Symbol, bool) { return c.Get().ByCIK(cik) }
+
+// AllUSTickers returns every US ticker in the current snapshot (nil while
+// unloaded), so the API can enumerate the full universe for the pSEO sitemap.
+func (c *Cache) AllUSTickers() []string { return c.Get().USTickers() }

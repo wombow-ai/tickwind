@@ -111,6 +111,10 @@ type SymbolSearcher interface {
 	// (e.g. 13D/13G ownership refs) can link to the stock page. ok=false when
 	// unknown / the directory is unloaded.
 	ByCIK(cik int) (symbols.Symbol, bool)
+	// AllUSTickers enumerates every US-listed ticker (~6,700), so the pSEO
+	// sitemap can seed a /stock/[ticker] page per symbol. nil/empty while the
+	// directory is unloaded.
+	AllUSTickers() []string
 }
 
 // EventSource provides the latest major-events timeline. nil → empty list.
@@ -507,6 +511,7 @@ func New(st store.Store, hub QuoteStream, enricher enrich.Enricher, verifier *au
 	mux.HandleFunc("GET /v1/screen", s.getScreen)
 	mux.HandleFunc("GET /v1/gurus", s.getGurus)
 	mux.HandleFunc("GET /v1/search", s.getSearch)
+	mux.HandleFunc("GET /v1/symbols", s.getSymbols)
 	mux.HandleFunc("GET /v1/events", s.getEvents)
 	mux.HandleFunc("GET /v1/earnings", s.getEarnings)
 	mux.HandleFunc("GET /v1/congress", s.getCongress)
@@ -1892,6 +1897,27 @@ func (s *Server) getSearch(w http.ResponseWriter, r *http.Request) {
 		results = []symbols.Symbol{}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"count": len(results), "results": results})
+}
+
+// getSymbols enumerates the full US-listed ticker universe (~6,700) so the pSEO
+// sitemap can seed a /stock/[ticker] page per symbol. Tickers pass through as the
+// directory holds them (dotted names like BRK.B intact; no re-sort/normalize).
+// Always 200 with a non-nil list — empty when the directory is unloaded; ?limit=
+// caps the slice (the sitemap requests the full list with no limit). The list
+// changes ~daily, so it's cacheable.
+func (s *Server) getSymbols(w http.ResponseWriter, r *http.Request) {
+	var tickers []string
+	if s.symbols != nil {
+		tickers = s.symbols.AllUSTickers()
+	}
+	if tickers == nil {
+		tickers = []string{}
+	}
+	if lim := queryLimit(r, 0); lim > 0 && len(tickers) > lim {
+		tickers = tickers[:lim]
+	}
+	w.Header().Set("Cache-Control", "public, max-age=3600")
+	writeJSON(w, http.StatusOK, map[string]any{"symbols": tickers, "count": len(tickers)})
 }
 
 // getEvents returns the major-events timeline windowed to what's relevant now:
