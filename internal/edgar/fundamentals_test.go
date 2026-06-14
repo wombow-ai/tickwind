@@ -192,7 +192,7 @@ func TestExtractFundamentals_NewFields(t *testing.T) {
 		"Revenues": usd(
 			fy(2023, 500),
 			fy(2024, 800), // latest annual
-			// quarterly slice must be ignored by latestAnnual / annualForFY.
+			// quarterly slice must be ignored by latestAnnual / annualForEndYear.
 			factPoint{Start: "2024-01-01", End: "2024-03-31", Val: 180, FY: 2024, FP: "Q1", Form: "10-Q", Filed: "2024-05-01"},
 		),
 		"NetIncomeLoss": usd(
@@ -295,7 +295,7 @@ func inst(end string, val float64) factPoint {
 // TestExtractFundamentals_Inc2Fields exercises every NEW Increment-2 concept
 // (design §1.2 Groups 1/2/4 income-statement + current-balance-sheet + debt/EV
 // fields) plus the Group-3 prior-FY values (prior diluted EPS / gross profit via
-// annualForFY, prior equity / assets via priorInstant). Each must extract with the
+// annualForEndYear, prior equity / assets via priorInstant). Each must extract with the
 // chosen tag priority and prefer the latest annual / instant.
 func TestExtractFundamentals_Inc2Fields(t *testing.T) {
 	resp := factsResp{EntityName: "Full Inc"}
@@ -609,5 +609,111 @@ func TestExtractFundamentals_StaleSharesGuard(t *testing.T) {
 	na := extractFundamentals(noAnchor)
 	if na.Shares != 941_481 {
 		t.Errorf("no-anchor Shares = %d, want 941481 (no financial anchor → cannot prove stale, keep)", na.Shares)
+	}
+}
+
+// comp builds a comparative income-statement column as SEC actually emits it in
+// companyfacts: a full-year (10-K) duration whose own Start/End mark the GENUINE
+// fiscal year (year), but whose report-context fy + filed date are those of the
+// FILING that carried the column (filingFY / filed). An annual 10-K re-stamps
+// EVERY embedded prior-year comparative column with the FILING's fy and the SAME
+// filed date — so two different fiscal years' columns inside one 10-K share both
+// fy and filed.
+func comp(year, filingFY int, filed string, val float64) factPoint {
+	return factPoint{
+		Start: fmt.Sprintf("%d-01-01", year),
+		End:   fmt.Sprintf("%d-12-31", year),
+		Val:   val,
+		FY:    filingFY, // SEC re-stamps the comparative column with the FILING's fy
+		FP:    "FY",
+		Form:  "10-K",
+		Filed: filed, // …and the SAME filed date as the rest of that 10-K
+	}
+}
+
+// TestExtractFundamentals_ComparativeColumnPriorYear is the regression test for the
+// prior-year XBRL selection bug. In SEC companyfacts, an annual 10-K embeds its 2-3
+// prior fiscal years as comparative income-statement columns and re-stamps EVERY
+// column with the FILING's fy and the SAME filed date. Selecting the prior year by
+// the report-context fy (the old annualForFY) therefore matched ALL columns sharing
+// the target fy, and the only tie-break (latest Filed) could not separate columns
+// that share a filed date — SEC orders the array ascending by end-date, so the
+// OLDEST (wrong) comparative column won deterministically.
+//
+// Modeled on the LIVE-verified Apple shape: the FY2024 10-K (filed 2024-11-01)
+// carries FY2024 / FY2023 / FY2022 revenue columns, ALL stamped fy:2024,
+// filed:2024-11-01; the prior FY2023 10-K (filed 2023-11-03) carries FY2023 /
+// FY2022 / FY2021 columns, ALL stamped fy:2023, filed:2023-11-03. The OLD code's
+// annualForFY(revPts, 2024-1=2023) matched every column stamped fy:2023 (the three
+// from the FY2023 filing) AND returned the oldest of them (FY2021, 365817) — two
+// fiscal years off. The fix keys on the period's END-DATE YEAR, so the prior of the
+// FY2024 current period is the FY2023 period (383285), regardless of fy/filed
+// collisions. The latest/primary value must stay FY2024 (391035), unchanged.
+func TestExtractFundamentals_ComparativeColumnPriorYear(t *testing.T) {
+	resp := factsResp{EntityName: "Apple-shaped Inc"}
+	resp.Facts.UsGaap = map[string]xbrlConcept{
+		"Revenues": usd(
+			// FY2023 10-K (filed 2023-11-03): three comparative columns, all fy:2023.
+			comp(2021, 2023, "2023-11-03", 365817),
+			comp(2022, 2023, "2023-11-03", 394328),
+			comp(2023, 2023, "2023-11-03", 383285),
+			// FY2024 10-K (filed 2024-11-01): three comparative columns, all fy:2024.
+			comp(2022, 2024, "2024-11-01", 394328),
+			comp(2023, 2024, "2024-11-01", 383285),
+			comp(2024, 2024, "2024-11-01", 391035), // genuine current FY2024
+		),
+		// Net income, same comparative-column shape (current 2024 / prior 2023).
+		"NetIncomeLoss": usd(
+			comp(2021, 2023, "2023-11-03", 94680),
+			comp(2022, 2023, "2023-11-03", 99803),
+			comp(2023, 2023, "2023-11-03", 96995),
+			comp(2022, 2024, "2024-11-01", 99803),
+			comp(2023, 2024, "2024-11-01", 96995),
+			comp(2024, 2024, "2024-11-01", 93736),
+		),
+		// COGS in the SAME comparative-column shape — exercises the same-FY pairing:
+		// CostOfRevenue must match the chosen revenue's END-YEAR (2024 → 210352), so
+		// gross margin / turnover use the right year's cost, NOT an older column.
+		"CostOfRevenue": usd(
+			comp(2022, 2024, "2024-11-01", 223546),
+			comp(2023, 2024, "2024-11-01", 214137),
+			comp(2024, 2024, "2024-11-01", 210352),
+		),
+	}
+
+	f := extractFundamentals(resp)
+
+	// Primary/latest values are unchanged (latestAnnual sorts by End → FY2024).
+	if f.Revenue != 391035 {
+		t.Errorf("Revenue = %v, want 391035 (latest FY2024 primary value must be unchanged)", f.Revenue)
+	}
+	if f.Period != "FY2024" {
+		t.Errorf("Period = %q, want FY2024", f.Period)
+	}
+	if f.NetIncome != 93736 {
+		t.Errorf("NetIncome = %v, want 93736 (latest FY2024)", f.NetIncome)
+	}
+
+	// THE BUG: prior-year must be the period ending one calendar year before the
+	// current period (FY2023), NOT an older comparative column. The old annualForFY
+	// returned FY2022 (394328) — or worse, FY2021 (365817) from the FY2023 filing's
+	// columns — because every fy:2023-stamped column collided on fy + filed.
+	if f.RevenuePrior != 383285 {
+		t.Errorf("RevenuePrior = %v, want 383285 (FY2023, the period ending one year "+
+			"before FY2024); the comparative-column collision must NOT return an older "+
+			"column (394328=FY2022 or 365817=FY2021)", f.RevenuePrior)
+	}
+	if f.NetIncomePrior != 96995 {
+		t.Errorf("NetIncomePrior = %v, want 96995 (FY2023, not an older comparative column)", f.NetIncomePrior)
+	}
+
+	// Derived gross profit must pair the current revenue with the SAME-FY COGS
+	// (FY2024 revenue 391035 − FY2024 COGS 210352 = 180683), not an older column.
+	if f.GrossProfit != 391035-210352 {
+		t.Errorf("GrossProfit = %v, want %v (Revenue FY2024 − COGS FY2024, same end-year)",
+			f.GrossProfit, 391035-210352)
+	}
+	if f.CostOfRevenue != 210352 {
+		t.Errorf("CostOfRevenue = %v, want 210352 (FY2024, matched to the revenue end-year)", f.CostOfRevenue)
 	}
 }

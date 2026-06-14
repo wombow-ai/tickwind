@@ -82,7 +82,8 @@ type Fundamentals struct {
 	ResearchDevelopment   float64 `json:"research_development,omitempty"`    // us-gaap:ResearchAndDevelopmentExpense (latest-FY)
 
 	// Group 3 — prior-FY values for growth ratios (faithfully extracted: flows via
-	// annualForFY(FY−1), balance-sheet instants via the prior period-end instant).
+	// annualForEndYear(endYear−1), balance-sheet instants via the prior period-end
+	// instant).
 	// 0 when the prior period is absent → the growth ratio reports insufficient.
 	EPSBasic         float64 `json:"eps_basic,omitempty"`          // us-gaap:EarningsPerShareBasic (latest-FY)
 	EPSDilutedPrior  float64 `json:"eps_diluted_prior,omitempty"`  // prior-FY diluted EPS (for eps-growth)
@@ -236,8 +237,10 @@ func extractFundamentals(resp factsResp) Fundamentals {
 	var revOK bool
 	if revPt, revOK = latestAnnual(revPts); revOK {
 		f.Revenue, f.Period, f.AsOf = revPt.Val, fiscalLabel(revPt), revPt.End
-		// Prior-year revenue (same concept, FY = chosenFY−1) for YoY growth.
-		if p, ok := annualForFY(revPts, fiscalYear(revPt)-1); ok {
+		// Prior-year revenue (same concept, the annual period ending one calendar
+		// year before the chosen current period) for YoY growth — keyed on the
+		// END-DATE YEAR, robust to the comparative-column FY-restamp collision.
+		if p, ok := annualForEndYear(revPts, endYear(revPt)-1); ok {
 			f.RevenuePrior = p.Val
 		}
 	}
@@ -249,8 +252,9 @@ func extractFundamentals(resp factsResp) Fundamentals {
 		if f.Period == "" {
 			f.Period, f.AsOf = fiscalLabel(niPt), niPt.End
 		}
-		// Prior-year net income (same concept) for YoY growth.
-		if p, ok := annualForFY(niPts, fiscalYear(niPt)-1); ok {
+		// Prior-year net income (same concept, the period ending one year before
+		// the chosen current period) for YoY growth — keyed on the END-DATE YEAR.
+		if p, ok := annualForEndYear(niPts, endYear(niPt)-1); ok {
 			f.NetIncomePrior = p.Val
 		}
 	}
@@ -261,7 +265,7 @@ func extractFundamentals(resp factsResp) Fundamentals {
 	epsPts := pick(gaap, "USD/shares", "EarningsPerShareDiluted", "EarningsPerShareBasic")
 	if p, ok := latestAnnual(epsPts); ok {
 		f.EPSDiluted = p.Val
-		if pp, ok := annualForFY(epsPts, fiscalYear(p)-1); ok {
+		if pp, ok := annualForEndYear(epsPts, endYear(p)-1); ok {
 			f.EPSDilutedPrior = pp.Val
 		}
 	}
@@ -279,12 +283,15 @@ func extractFundamentals(resp factsResp) Fundamentals {
 	gpPts := pick(gaap, "USD", "GrossProfit")
 	if p, ok := latestAnnual(gpPts); ok {
 		f.GrossProfit = p.Val
-		if pp, ok := annualForFY(gpPts, fiscalYear(p)-1); ok {
+		if pp, ok := annualForEndYear(gpPts, endYear(p)-1); ok {
 			f.GrossProfitPrior = pp.Val
 		}
 	} else if revOK {
 		for _, cogsTag := range []string{"CostOfRevenue", "CostOfGoodsAndServicesSold", "CostOfGoodsSold"} {
-			if cp, ok := annualForFY(pick(gaap, "USD", cogsTag), fiscalYear(revPt)); ok {
+			// Same-FY COGS: match the revenue period's END-DATE YEAR so the derived
+			// GrossProfit = Revenue(FY) − COGS(same FY) pairs correctly (revenue and
+			// COGS of one FY share an End date → same end-year).
+			if cp, ok := annualForEndYear(pick(gaap, "USD", cogsTag), endYear(revPt)); ok {
 				f.GrossProfit = revPt.Val - cp.Val
 				break
 			}
@@ -336,8 +343,9 @@ func extractFundamentals(resp factsResp) Fundamentals {
 	if p, ok := latestAnnual(opPts); ok {
 		f.OperatingIncomeLoss = p.Val
 		// Prior-FY operating income (same concept) for op-growth — matched to the
-		// chosen FY−1 so the YoY pair is consistent (mirrors RevenuePrior).
-		if pp, ok := annualForFY(opPts, fiscalYear(p)-1); ok {
+		// period ending one year before the chosen current period (END-DATE YEAR),
+		// so the YoY pair is consistent (mirrors RevenuePrior).
+		if pp, ok := annualForEndYear(opPts, endYear(p)-1); ok {
 			f.OperatingIncomeLossPrior = pp.Val
 		}
 	}
@@ -377,7 +385,9 @@ func extractFundamentals(resp factsResp) Fundamentals {
 		// payables turnover numerator. Reuse the COGS tag priority already used to
 		// derive GrossProfit so the figure is consistent.
 		for _, cogsTag := range []string{"CostOfRevenue", "CostOfGoodsAndServicesSold", "CostOfGoodsSold"} {
-			if cp, ok := annualForFY(pick(gaap, "USD", cogsTag), fiscalYear(revPt)); ok {
+			// Match the revenue period's END-DATE YEAR so CostOfRevenue is the SAME
+			// FY as Revenue (the turnover-ratio numerator).
+			if cp, ok := annualForEndYear(pick(gaap, "USD", cogsTag), endYear(revPt)); ok {
 				f.CostOfRevenue = cp.Val
 				break
 			}
@@ -622,21 +632,35 @@ func latestAnnual(pts []factPoint) (factPoint, bool) {
 	return best, found
 }
 
-// annualForFY returns the full-year flow fact for a specific fiscal year (the
-// same ~365-day duration filter as latestAnnual), preferring the latest
-// amendment. Used to pull a prior-year value or a same-period cost of revenue
-// for the SAME concept, so a YoY pair or derived margin stays consistent.
-func annualForFY(pts []factPoint, fy int) (factPoint, bool) {
+// annualForEndYear returns the full-year flow fact whose PERIOD ends in a
+// specific calendar year (the same ~365-day duration filter as latestAnnual),
+// keyed on the END-DATE YEAR — NOT the report-context FY field. This is the
+// robust selector for a prior-year value or a same-period cost of revenue.
+//
+// Why end-year, not the FY field: in SEC companyfacts an annual 10-K embeds its
+// 2-3 prior fiscal years as comparative income-statement columns, and SEC
+// re-stamps EVERY column with the FILING's fy and the SAME filed date. So
+// matching on fiscalYear(p) (the report-context fy) matches ALL comparative
+// columns of a 10-K that share the target fy, and the only tie-break (latest
+// Filed) cannot separate columns that share a filed date — the SEC array is
+// ordered ascending by end-date, so the OLDEST (wrong) comparative column would
+// win. Matching on the period's own end-date year is collision-proof: each
+// genuine fiscal year has exactly one full-year period ending in it.
+//
+// Among the matched points it prefers the newest End then the latest Filed
+// (End-then-Filed tie-break, exactly like latestAnnual / latestInstant) — so a
+// later 10-K's restated value for the year wins over an earlier original.
+func annualForEndYear(pts []factPoint, endYr int) (factPoint, bool) {
 	var best factPoint
 	found := false
 	for _, p := range pts {
-		if p.Start == "" || fiscalYear(p) != fy {
+		if p.Start == "" || endYear(p) != endYr {
 			continue
 		}
 		if d := durationDays(p.Start, p.End); d < 350 || d > 380 {
 			continue
 		}
-		if !found || p.Filed > best.Filed {
+		if !found || p.End > best.End || (p.End == best.End && p.Filed > best.Filed) {
 			best, found = p, true
 		}
 	}
@@ -648,6 +672,19 @@ func annualForFY(pts []factPoint, fy int) (factPoint, bool) {
 func fiscalYear(p factPoint) int {
 	y := p.FY
 	if y == 0 && len(p.End) >= 4 {
+		_, _ = fmt.Sscanf(p.End[:4], "%d", &y)
+	}
+	return y
+}
+
+// endYear parses a fact's End date ("2006-01-02") and returns its calendar
+// year, or 0 when End is empty/unparseable. It is the selection key for
+// annualForEndYear — robust to the comparative-column FY-restamp collision (see
+// annualForEndYear) and consistent for off-calendar fiscal years (revenue and
+// COGS of the same FY share an End date → same end-year → they pair correctly).
+func endYear(p factPoint) int {
+	y := 0
+	if len(p.End) >= 4 {
 		_, _ = fmt.Sscanf(p.End[:4], "%d", &y)
 	}
 	return y
