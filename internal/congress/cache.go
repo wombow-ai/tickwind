@@ -39,7 +39,25 @@ type TickerTrade struct {
 // and by ticker (for the per-stock chip).
 type Cache struct {
 	v atomic.Value // *snapshot
+
+	// validTicker, when set, gates which extracted PTR tickers are ticker-indexed
+	// into byTicker (and thus served by ByTicker / the 资金面 research facts). The
+	// ptr parser extracts a ticker from ANY uppercase parenthetical, so a non-ticker
+	// acronym or an out-of-universe symbol (e.g. a crypto "(BTC)") could otherwise
+	// be minted as a false ticker on an unrelated real stock. A nil validator (tests,
+	// or before the symbol universe loads) keeps every parsed ticker — degrade
+	// safely, never drop everything. Set once before the first SetWithTransactions.
+	validTicker func(string) bool
 }
+
+// SetTickerValidator installs an optional ticker-universe gate applied when the
+// by-ticker index is (re)built. It mirrors the guru rail's SetValidTickers: only
+// tickers the validator accepts (real US symbols) are surfaced on a stock's
+// congress chip / 资金面 facts, dropping non-ticker parentheticals the same way
+// CUSIPs are already dropped. Nil-safe: pass nil (or never call it) to keep
+// today's behavior. Call before Run starts the refresh goroutine so the
+// assignment happens-before the reader; it is then re-applied on every snapshot.
+func (c *Cache) SetTickerValidator(fn func(string) bool) { c.validTicker = fn }
 
 type snapshot struct {
 	filings   []Filing
@@ -81,6 +99,14 @@ func (c *Cache) SetWithTransactions(filings []Filing, byMember map[string]Member
 			tk := strings.ToUpper(strings.TrimSpace(tx.Ticker))
 			if tk == "" {
 				continue // assets without a ticker (bonds, funds) aren't ticker-indexed
+			}
+			// Drop a parenthetical that isn't a real US symbol (a description
+			// acronym, or an out-of-universe crypto symbol), so it can't assert a
+			// congressional trade on an unrelated real stock. Nil validator ⇒ keep
+			// all (test / pre-load fallback). The member page still carries the raw
+			// transaction (asset name intact); only ticker-indexing is gated.
+			if c.validTicker != nil && !c.validTicker(tk) {
+				continue
 			}
 			byTicker[tk] = append(byTicker[tk], TickerTrade{
 				MemberName:  m.Name,

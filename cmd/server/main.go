@@ -318,7 +318,13 @@ func main() {
 		ptrExtractor = ex
 		log.Info("congress: PTR PDF parsing enabled (pdftotext)")
 	}
-	go ingest.NewCongressIngestor(congress.New(), congressCache, cfg.CongressSweepEvery, ptrExtractor, log).Run(ctx)
+	congressIngestor := ingest.NewCongressIngestor(congress.New(), congressCache, cfg.CongressSweepEvery, ptrExtractor, log)
+	// Validate extracted PTR tickers against the real US symbol universe (same gate
+	// the guru rail uses), so a non-ticker parenthetical the parser pulls from a
+	// filing can't assert a congressional trade on an unrelated real stock. SetSymbols
+	// before Run is race-free (assignment happens-before the refresh goroutine).
+	congressIngestor.SetSymbols(symbolCache)
+	go congressIngestor.Run(ctx)
 
 	// Institutional / activist board: SEC Schedule 13D/13G beneficial-ownership
 	// filings (public domain, keyless). Same unconditional, off-request-path pattern.

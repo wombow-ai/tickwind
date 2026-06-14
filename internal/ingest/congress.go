@@ -10,6 +10,7 @@ import (
 
 	"github.com/wombow-ai/tickwind/internal/congress"
 	"github.com/wombow-ai/tickwind/internal/congress/ptr"
+	"github.com/wombow-ai/tickwind/internal/symbols"
 )
 
 // CongressFetcher fetches recent House Periodic Transaction Reports for a year
@@ -53,6 +54,7 @@ type CongressIngestor struct {
 	max       int
 	extractor ptr.Extractor
 	throttle  time.Duration
+	symbols   *symbols.Cache // optional: US ticker universe, for validating extracted PTR tickers
 	log       *slog.Logger
 
 	// seen accumulates parse results across sweeps so each digital PTR is fetched
@@ -77,6 +79,15 @@ func NewCongressIngestor(client CongressFetcher, cache *congress.Cache, every ti
 		parsed:    make(map[string][]ptr.Transaction),
 	}
 }
+
+// SetSymbols supplies the symbol-directory cache so each extracted PTR ticker is
+// validated against the real US universe before it is ticker-indexed (a
+// non-ticker parenthetical — a description acronym, or an out-of-universe crypto
+// symbol — would otherwise assert a congressional trade on an unrelated real
+// stock). Mirrors GuruIngestor.SetSymbols; call before Run so the assignment
+// happens-before the refresh goroutine. Optional: without it, congress keeps
+// today's behavior (every parsed ticker is served).
+func (c *CongressIngestor) SetSymbols(s *symbols.Cache) { c.symbols = s }
 
 // Run refreshes once on startup, then on the cadence, until ctx is cancelled.
 func (c *CongressIngestor) Run(ctx context.Context) {
@@ -118,6 +129,17 @@ func (c *CongressIngestor) refresh(ctx context.Context) {
 	sort.SliceStable(all, func(i, j int) bool { return all[i].FiledDate.After(all[j].FiledDate) })
 	if len(all) > c.max {
 		all = all[:c.max]
+	}
+
+	// Refresh the ticker-universe validator from the symbol directory so only real
+	// US tickers are ticker-indexed (drops non-ticker parentheticals the ptr parser
+	// extracts). Best-effort: before the directory loads the set is empty, so we
+	// leave the validator unset (keep today's behavior) rather than drop every
+	// ticker. Once loaded, the gate is applied on this and every later snapshot.
+	if c.symbols != nil {
+		if set := tickerSet(c.symbols); len(set) > 0 {
+			c.cache.SetTickerValidator(func(t string) bool { return set[t] })
+		}
 	}
 
 	// Without an extractor, keep the original behaviour: store the filing index

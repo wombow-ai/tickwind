@@ -198,6 +198,67 @@ func TestParseAderholtSameLineAmount(t *testing.T) {
 	}
 }
 
+// fixtureOpenEnded is an open-ended top band ("Over $50,000,000", no real high
+// bound) whose only later $-bearing line is a "D:" narrative note carrying a
+// smaller figure ($9,999). The high-bound scan must NOT adopt that narrative
+// figure — the band stays open-ended ("$50,000,001+"), never an inverted
+// "$50,000,000 - $9,999". (BUG 7 regression.)
+const fixtureOpenEnded = `
+          SP          Megacorp Inc. - Common Stock (MEGA)        P                 01/14/2025 01/14/2025           Over $50,000,000
+                      [ST]
+                      D           : Note re fee of $9,999 charged on the account.
+                      F      S      : New
+`
+
+func TestParseOpenEndedBandKeepsOpen(t *testing.T) {
+	res, err := ParseText(fixtureOpenEnded)
+	if err != nil {
+		t.Fatalf("ParseText: %v", err)
+	}
+	if len(res.Transactions) != 1 {
+		t.Fatalf("got %d transactions, want 1: %+v", len(res.Transactions), res.Transactions)
+	}
+	tx := res.Transactions[0]
+	if tx.Ticker != "MEGA" {
+		t.Errorf("ticker = %q, want MEGA", tx.Ticker)
+	}
+	if tx.AmountLow != 50000000 {
+		t.Errorf("amount_low = %d, want 50000000", tx.AmountLow)
+	}
+	// The narrative "$9,999" must NOT be adopted as the high bound. Open-ended ⇒ 0.
+	if tx.AmountHigh != 0 {
+		t.Errorf("amount_high = %d, want 0 (open-ended; must not borrow narrative $9,999)", tx.AmountHigh)
+	}
+	if tx.AmountRange != "$50,000,000+" {
+		t.Errorf("amount_range = %q, want %q (open-ended form, not an inverted range)", tx.AmountRange, "$50,000,000+")
+	}
+}
+
+// fixtureWrappedHigh is the common layout: low on the anchor, real high on the
+// immediate next line. It must parse EXACTLY as before the BUG 7 guard. (No-regression.)
+const fixtureWrappedHigh = `
+          SP          Some Company - Common Stock                P                 01/14/2025 01/14/2025           $1,001 -
+                      (SCMP) [ST]                                                                                  $15,000
+                      F      S      : New
+`
+
+func TestParseWrappedHighStillParses(t *testing.T) {
+	res, err := ParseText(fixtureWrappedHigh)
+	if err != nil {
+		t.Fatalf("ParseText: %v", err)
+	}
+	if len(res.Transactions) != 1 {
+		t.Fatalf("got %d transactions, want 1: %+v", len(res.Transactions), res.Transactions)
+	}
+	tx := res.Transactions[0]
+	if tx.Ticker != "SCMP" || tx.AmountLow != 1001 || tx.AmountHigh != 15000 {
+		t.Errorf("got ticker %q amount %d-%d, want SCMP 1001-15000", tx.Ticker, tx.AmountLow, tx.AmountHigh)
+	}
+	if tx.AmountRange != "$1,001 - $15,000" {
+		t.Errorf("amount_range = %q, want %q", tx.AmountRange, "$1,001 - $15,000")
+	}
+}
+
 func TestParseScannedReturnsErrScanned(t *testing.T) {
 	// Image-only scans extract to a few stray glyphs.
 	_, err := ParseText("P\n\nT\n\nR\n  ")

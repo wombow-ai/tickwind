@@ -9,6 +9,7 @@ import (
 
 	"github.com/wombow-ai/tickwind/internal/congress"
 	"github.com/wombow-ai/tickwind/internal/congress/ptr"
+	"github.com/wombow-ai/tickwind/internal/symbols"
 )
 
 // fakeCongressFetcher returns canned filings + per-URL PDF bytes, counting fetch
@@ -186,6 +187,74 @@ func TestCongressIngestorScannedDigitalDocIDSkipped(t *testing.T) {
 	}
 	if len(cache.Members()) != 0 {
 		t.Errorf("scanned filing produced members: %+v", cache.Members())
+	}
+}
+
+// pelosiMixed is a digital PTR with TWO purchases: a real ticker (AAPL) and a
+// parenthetical that is NOT in the US equity universe (a crypto symbol "(SOL)"
+// the ptr parser extracts verbatim). With a symbols validator wired, only AAPL
+// is ticker-indexed; SOL is dropped (BUG 6).
+const pelosiMixed = `
+          SP          Apple Inc. - Common Stock (AAPL)         P                 01/14/2025 01/14/2025           $250,001 -
+                      [ST]                                                                                       $500,000
+                      F      S      : New
+
+
+          SP          Solana Token (SOL)                       P                 01/14/2025 01/14/2025           $1,001 -
+                      [ST]                                                                                        $15,000
+                      F      S      : New
+`
+
+// TestCongressIngestorValidatesTickerUniverse verifies BUG 6 end-to-end through
+// the ingestor: a non-universe parenthetical the parser extracts is dropped from
+// the by-ticker index when SetSymbols is wired, while a real ticker is kept.
+func TestCongressIngestorValidatesTickerUniverse(t *testing.T) {
+	base := "https://x/ptr"
+	fetcher := &fakeCongressFetcher{
+		filings: []congress.Filing{
+			{Name: "Nancy Pelosi", State: "CA", FilingType: "P", DocID: "20026590", PDFURL: base + "/pelosi.pdf", FiledDate: time.Date(2025, 1, 17, 0, 0, 0, 0, time.UTC)},
+		},
+		pdfByURL: map[string][]byte{base + "/pelosi.pdf": []byte(pelosiMixed)},
+	}
+	ci, cache := newTestIngestor(t, fetcher, fakeExtractor{})
+	// Stub US universe: AAPL is real; SOL is NOT a US equity symbol.
+	sc := symbols.NewCache()
+	sc.Set(symbols.Build([]symbols.Symbol{{Ticker: "AAPL", Name: "Apple Inc.", Country: "US"}}))
+	ci.SetSymbols(sc)
+
+	ci.refresh(context.Background())
+
+	if got := cache.ByTicker("AAPL"); len(got) != 1 {
+		t.Errorf("ByTicker(AAPL) = %+v, want one trade (real ticker kept)", got)
+	}
+	if got := cache.ByTicker("SOL"); len(got) != 0 {
+		t.Errorf("ByTicker(SOL) = %+v, want none (non-universe parenthetical dropped)", got)
+	}
+	// The member page still carries BOTH parsed transactions (asset names intact).
+	if m, ok := cache.ByMember("nancy-pelosi"); !ok || len(m.Transactions) != 2 {
+		t.Errorf("ByMember(nancy-pelosi) txns = %d, want 2 (raw transactions unaffected)", len(m.Transactions))
+	}
+}
+
+// TestCongressIngestorNoSymbolsKeepsAll verifies the nil-safe wiring fallback: no
+// SetSymbols (or an unloaded universe) ⇒ no validator installed ⇒ every parsed
+// ticker is served, including the non-universe parenthetical (today's behavior).
+func TestCongressIngestorNoSymbolsKeepsAll(t *testing.T) {
+	base := "https://x/ptr"
+	fetcher := &fakeCongressFetcher{
+		filings: []congress.Filing{
+			{Name: "Nancy Pelosi", State: "CA", FilingType: "P", DocID: "20026590", PDFURL: base + "/pelosi.pdf", FiledDate: time.Date(2025, 1, 17, 0, 0, 0, 0, time.UTC)},
+		},
+		pdfByURL: map[string][]byte{base + "/pelosi.pdf": []byte(pelosiMixed)},
+	}
+	ci, cache := newTestIngestor(t, fetcher, fakeExtractor{}) // no SetSymbols
+	ci.refresh(context.Background())
+
+	if got := cache.ByTicker("AAPL"); len(got) != 1 {
+		t.Errorf("no-symbols: ByTicker(AAPL) = %+v, want kept", got)
+	}
+	if got := cache.ByTicker("SOL"); len(got) != 1 {
+		t.Errorf("no-symbols: ByTicker(SOL) = %+v, want kept (no universe gate)", got)
 	}
 }
 

@@ -165,41 +165,57 @@ func (c *Cache) Run(ctx context.Context) {
 	}
 }
 
+// fundData is one fund's computed holdings: the rendered FundHoldings (positions
+// capped to topN for display) plus its FULL position list (every holding), kept
+// only for building the reverse holder index so the holder count is complete.
+type fundData struct {
+	holdings FundHoldings
+	allPos   []Position
+}
+
 // Recompute rebuilds the board for every fund (best-effort: a fund that fails to
 // fetch is skipped). An all-fail run keeps the previous board.
 func (c *Cache) Recompute(ctx context.Context) {
-	var funds []FundHoldings
+	var funds []fundData
 	for _, fund := range Funds {
 		select {
 		case <-ctx.Done():
 			return
 		default:
 		}
-		if fh, ok := computeFund(ctx, c.filer, c.mapper, fund); ok {
-			funds = append(funds, fh)
+		if fd, ok := computeFund(ctx, c.filer, c.mapper, fund); ok {
+			funds = append(funds, fd)
 		}
 	}
 	if len(funds) == 0 {
 		return
 	}
+	board := make([]FundHoldings, len(funds))
+	for i, fd := range funds {
+		board[i] = fd.holdings
+	}
 	byTicker, bySlug := buildIndexes(funds)
 	c.mu.Lock()
-	c.board = Board{Funds: funds, At: time.Now().UTC()}
+	c.board = Board{Funds: board, At: time.Now().UTC()}
 	c.byTicker = byTicker
 	c.bySlug = bySlug
 	c.mu.Unlock()
 }
 
 // buildIndexes derives the reverse (ticker → holders) and per-slug (slug →
-// holdings) lookups from the freshly built fund list. The ticker index skips
-// positions with no resolved ticker (CUSIPs OpenFIGI couldn't map) and sorts
-// each ticker's holders by position value, largest first.
-func buildIndexes(funds []FundHoldings) (map[string][]Holder, map[string]FundHoldings) {
+// holdings) lookups from the freshly built fund list. The reverse index walks the
+// fund's FULL position list (not the topN-truncated render set) so the holder
+// count is complete — a fund holding the ticker as its #16+ position is still
+// counted. It skips positions with no resolved ticker (CUSIPs OpenFIGI couldn't
+// map) and sorts each ticker's holders by position value, largest first. The
+// per-slug index carries the rendered (topN-capped) holdings for the fund page.
+func buildIndexes(funds []fundData) (map[string][]Holder, map[string]FundHoldings) {
 	byTicker := make(map[string][]Holder)
 	bySlug := make(map[string]FundHoldings, len(funds))
-	for _, fh := range funds {
+	for _, fd := range funds {
+		fh := fd.holdings
 		bySlug[strings.ToLower(fh.Slug)] = fh
-		for _, p := range fh.Positions {
+		for _, p := range fd.allPos {
 			if p.Ticker == "" {
 				continue
 			}
@@ -222,76 +238,120 @@ func buildIndexes(funds []FundHoldings) (map[string][]Holder, map[string]FundHol
 	return byTicker, bySlug
 }
 
-// computeFund builds one fund's holdings: latest filing's top positions, each
-// tagged against the prior quarter. ok=false when the fund has no usable filing.
-func computeFund(ctx context.Context, f Filer, m Mapper, fund Fund) (FundHoldings, bool) {
+// computeFund builds one fund's holdings: every position is computed and tagged
+// against the prior quarter (so the reverse holder index is complete), but the
+// rendered FundHoldings.Positions is capped to topN for display. ok=false when the
+// fund has no usable filing.
+func computeFund(ctx context.Context, f Filer, m Mapper, fund Fund) (fundData, bool) {
 	filings, err := f.ThirteenFFilings(ctx, fund.CIK, 2)
 	if err != nil || len(filings) == 0 {
-		return FundHoldings{}, false
+		return fundData{}, false
 	}
 	latest, err := f.Holdings(ctx, fund.CIK, filings[0].Accession)
 	if err != nil || len(latest) == 0 {
-		return FundHoldings{}, false
+		return fundData{}, false
 	}
 
-	// Prior quarter's share counts, for the quarter-over-quarter diff.
-	var prevShares map[string]int64
+	// Prior quarter's share counts AND values, for the quarter-over-quarter diff.
+	// Both are needed: share counts drive the diff for equities (SH), but a
+	// fixed-income position (PRN) carries Shares=0 with a real Value (sec's
+	// parseInfoTable counts only SH amounts), so it must be diffed by value.
+	var prevShares, prevValues map[string]int64
 	if len(filings) > 1 {
 		if prev, err := f.Holdings(ctx, fund.CIK, filings[1].Accession); err == nil && len(prev) > 0 {
 			prevShares = make(map[string]int64, len(prev))
+			prevValues = make(map[string]int64, len(prev))
 			for _, h := range prev {
 				prevShares[h.CUSIP] = h.Shares
+				prevValues[h.CUSIP] = h.Value
 			}
 		}
 	}
 
+	// Total is summed over ALL holdings so each position's weight % is the share of
+	// the full portfolio (never the truncated render set).
 	var total int64
 	for _, h := range latest {
 		total += h.Value
 	}
 	sort.Slice(latest, func(i, j int) bool { return latest[i].Value > latest[j].Value })
-	top := latest
-	if len(top) > topN {
-		top = top[:topN]
-	}
 
-	cusips := make([]string, len(top))
-	for i, h := range top {
+	// Resolve tickers for EVERY holding so the reverse holder index is complete
+	// (a #16+ position must still be counted), not just the rendered top-N.
+	cusips := make([]string, len(latest))
+	for i, h := range latest {
 		cusips[i] = h.CUSIP
 	}
 	tickers, _ := m.Map(ctx, cusips) // best-effort; unmapped CUSIPs keep an empty ticker
 
-	positions := make([]Position, 0, len(top))
-	for _, h := range top {
+	allPos := make([]Position, 0, len(latest))
+	for _, h := range latest {
 		p := Position{Ticker: tickers[h.CUSIP], Issuer: h.Issuer, Value: h.Value, Shares: h.Shares}
 		if total > 0 {
 			p.Pct = float64(h.Value) / float64(total) * 100
 		}
-		p.Change, p.ChgPct = classify(h.Shares, prevShares, h.CUSIP)
-		positions = append(positions, p)
+		p.Change, p.ChgPct = classify(h.Shares, h.Value, prevShares, prevValues, h.CUSIP)
+		allPos = append(allPos, p)
 	}
 
-	return FundHoldings{
-		Slug: fund.Slug, Name: fund.Name, Manager: fund.Manager,
-		Period: filings[0].Period, Filed: filings[0].Filed,
-		Count: len(latest), Value: total, Positions: positions,
+	// The rendered list is the topN largest positions (display cap only); the full
+	// allPos list is what the reverse index walks.
+	rendered := allPos
+	if len(rendered) > topN {
+		rendered = rendered[:topN]
+	}
+
+	return fundData{
+		holdings: FundHoldings{
+			Slug: fund.Slug, Name: fund.Name, Manager: fund.Manager,
+			Period: filings[0].Period, Filed: filings[0].Filed,
+			Count: len(latest), Value: total, Positions: rendered,
+		},
+		allPos: allPos,
 	}, true
 }
 
-// classify labels a position against the prior quarter's share count. With no
-// prior filing to compare, everything reads as "hold" (we can't infer a change).
-func classify(shares int64, prev map[string]int64, cusip string) (string, float64) {
-	if prev == nil {
+// classify labels a position against the prior quarter. With no prior filing to
+// compare, everything reads as "hold" (we can't infer a change). For ordinary
+// equity (SH) holdings it diffs the share count; for a position whose share count
+// is 0 in BOTH quarters — a fixed-income (PRN) holding, whose principal sec's
+// parseInfoTable deliberately omits from Shares — it diffs the Value instead, so a
+// bond held across quarters reads "hold"/"add"/"trim" rather than "new" every time.
+func classify(shares, value int64, prevShares, prevValues map[string]int64, cusip string) (string, float64) {
+	if prevShares == nil {
 		return "hold", 0
 	}
-	ps, ok := prev[cusip]
+	ps, ok := prevShares[cusip]
+	// A PRN-only position carries Shares=0 in both quarters; falling back to the
+	// (always-populated) value delta keeps a held bond from re-reading "new".
+	if shares == 0 && ps == 0 {
+		return classifyByValue(value, prevValues, cusip)
+	}
 	if !ok || ps == 0 {
 		return "new", 0
 	}
 	if shares == ps {
 		return "hold", 0
 	}
-	delta := float64(shares-ps) / float64(ps) * 100
+	return changeTag(float64(shares-ps) / float64(ps) * 100)
+}
+
+// classifyByValue diffs a position by its prior-quarter Value, used for PRN
+// (bond/note) holdings whose share count is 0. A CUSIP absent last quarter (or
+// with no prior value to compare) is genuinely "new".
+func classifyByValue(value int64, prevValues map[string]int64, cusip string) (string, float64) {
+	pv, ok := prevValues[cusip]
+	if !ok || pv == 0 {
+		return "new", 0
+	}
+	if value == pv {
+		return "hold", 0
+	}
+	return changeTag(float64(value-pv) / float64(pv) * 100)
+}
+
+// changeTag maps a signed percent delta to an add/trim/hold tag (±5% band).
+func changeTag(delta float64) (string, float64) {
 	switch {
 	case delta >= 5:
 		return "add", delta

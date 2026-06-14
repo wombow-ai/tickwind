@@ -248,6 +248,61 @@ func TestAssembleFlowsOptionsNoListedOptionsOmitted(t *testing.T) {
 	}
 }
 
+// TestAssembleFlowsWhalesCountOldestPeriod is the BUG 5 check: when tracked funds
+// filed for DIFFERENT quarters near a 13F deadline, the aggregate whales_count fact
+// is stamped with the OLDEST (stalest) Period — the conservative as-of for the whole
+// count — while each per-fund line keeps its own filing Period.
+func TestAssembleFlowsWhalesCountOldestPeriod(t *testing.T) {
+	src := Sources{
+		ThirteenF: fakeWhales{holders: []thirteenf.Holder{
+			// Sorted largest-first (as Holders returns); Periods deliberately mixed,
+			// and the largest holder is NOT the oldest.
+			{FundSlug: "berkshire", FundName: "Berkshire", Manager: "Buffett", Value: 1e11, Weight: 40, Change: "add", Period: "2026-03-31"},
+			{FundSlug: "scion", FundName: "Scion", Manager: "Burry", Value: 5e8, Weight: 10, Change: "hold", Period: "2025-12-31"},
+			{FundSlug: "pershing-square", FundName: "Pershing", Manager: "Ackman", Value: 2e8, Weight: 5, Change: "new", Period: "2026-03-31"},
+		}},
+	}
+	fs := Assemble(context.Background(), "AAPL", src)
+
+	wc, ok := findFact(fs, "whales_count")
+	if !ok {
+		t.Fatal("whales_count fact missing")
+	}
+	if wc.AsOf != "2025-12-31" {
+		t.Errorf("whales_count as_of = %q, want the OLDEST holder Period 2025-12-31 (not the largest holder's quarter)", wc.AsOf)
+	}
+	// The per-fund line keeps its own (newer) Period — unchanged by this fix.
+	w1, ok := findFact(fs, "whale_1")
+	if !ok {
+		t.Fatal("whale_1 fact missing")
+	}
+	if w1.AsOf != "2026-03-31" {
+		t.Errorf("whale_1 as_of = %q, want its OWN filing Period 2026-03-31", w1.AsOf)
+	}
+}
+
+// TestOldestPeriod unit-tests the oldest-Period helper, including empty-Period
+// skipping and the all-empty case.
+func TestOldestPeriod(t *testing.T) {
+	tests := []struct {
+		name    string
+		holders []thirteenf.Holder
+		want    string
+	}{
+		{"single", []thirteenf.Holder{{Period: "2026-03-31"}}, "2026-03-31"},
+		{"mixed → oldest", []thirteenf.Holder{{Period: "2026-03-31"}, {Period: "2025-12-31"}, {Period: "2026-03-31"}}, "2025-12-31"},
+		{"skips empty", []thirteenf.Holder{{Period: ""}, {Period: "2026-03-31"}}, "2026-03-31"},
+		{"all empty → empty", []thirteenf.Holder{{Period: ""}, {Period: ""}}, ""},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := oldestPeriod(tc.holders); got != tc.want {
+				t.Errorf("oldestPeriod = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 // --- sentiment section tests ---
 
 // TestAssembleSentimentMarketGuard asserts the market Fear & Greed fact appears

@@ -248,7 +248,7 @@ func parseRow(lines []string, i int, m []string) (Transaction, bool) {
 
 	// Amount: low bound on the anchor line, high bound on the wrapped next line.
 	low := firstMoney(amtStart)
-	high := wrappedAmountHigh(lines, i)
+	high := wrappedAmountHigh(lines, i, low)
 	tx.AmountLow = low
 	tx.AmountHigh = high
 	tx.AmountRange = formatRange(amtStart, low, high)
@@ -280,8 +280,13 @@ func assetContinuation(lines []string, i int) (string, bool) {
 }
 
 // wrappedAmountHigh returns the high bound of the amount range, which the layout
-// places on the line below the anchor (the range wraps after the " -").
-func wrappedAmountHigh(lines []string, i int) int64 {
+// places on the line below the anchor (the range wraps after the " -"). low is
+// the anchor's low bound, used to reject an implausible high (a value below the
+// low, which would yield an inverted "$50,000,000 - $9,999" range surfaced
+// verbatim). An open-ended top band ("Over $50,000,000", no real high) must stay
+// open-ended (high 0 → formatRange renders "$low+") rather than borrow a later
+// narrative figure such as a "$9,999" note from a sub-row.
+func wrappedAmountHigh(lines []string, i int, low int64) int64 {
 	// Same-line range: "$1,001 - $15,000" — both bounds already on the anchor.
 	if i < len(lines) {
 		if ms := moneyRe.FindAllString(lines[i], -1); len(ms) >= 2 {
@@ -289,11 +294,39 @@ func wrappedAmountHigh(lines []string, i int) int64 {
 		}
 	}
 	for j := i + 1; j < len(lines) && j <= i+2; j++ {
+		// Skip narrative / sub-row continuation lines (the "F S:"/"D:"/"S O" rows
+		// and any line carrying a ":" note), mirroring assetContinuation's guard.
+		// Their dollar figures (e.g. a "$9,999" in a "D:" note) are not the
+		// amount-column high bound and must never be adopted as one.
+		if isSubRow(lines[j]) {
+			continue
+		}
 		if ms := moneyRe.FindAllString(lines[j], -1); len(ms) >= 1 {
-			return parseMoney(ms[len(ms)-1])
+			high := parseMoney(ms[len(ms)-1])
+			// Only accept a high that forms a plausible range with the low. A high
+			// below the low is an open-ended band that wrapped onto an unrelated
+			// figure — leave it open-ended (0) rather than invert the range.
+			if high >= low {
+				return high
+			}
+			return 0
 		}
 	}
 	return 0
+}
+
+// isSubRow reports whether a line is a PTR sub-row / narrative continuation
+// rather than the amount-column high-bound wrap. These carry the filing-status
+// ("F S: New"), description ("D: …"), or owner-org ("S O: …") notes, and any
+// figures in them (share counts, strike prices, narrative dollar amounts) are
+// not the disclosed amount range. Mirrors the guard in assetContinuation.
+func isSubRow(line string) bool {
+	s := strings.TrimSpace(line)
+	if strings.HasPrefix(s, "F ") || strings.HasPrefix(s, "D ") ||
+		strings.HasPrefix(s, "D:") || strings.HasPrefix(s, "S O") {
+		return true
+	}
+	return strings.Contains(s, ":")
 }
 
 // splitAsset pulls the ticker and bracket asset-type out of the asset text and

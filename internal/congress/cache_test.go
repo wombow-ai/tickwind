@@ -73,6 +73,67 @@ func TestCacheTransactionsAndIndexes(t *testing.T) {
 	}
 }
 
+// TestCacheTickerValidatorDropsNonUniverse verifies BUG 6: a parsed parenthetical
+// that is NOT a real US symbol (a crypto / description acronym the ptr parser
+// extracts verbatim) is dropped from the by-ticker index, while a real ticker is
+// kept — mirroring how CUSIPs / empty tickers are already dropped. The member's
+// raw transactions are unaffected (only ticker-indexing is gated).
+func TestCacheTickerValidatorDropsNonUniverse(t *testing.T) {
+	c := NewCache()
+	// Stub universe: AAPL is real; BTC (a crypto symbol the parser might extract
+	// from "(BTC)") is NOT in the US equity universe.
+	universe := map[string]bool{"AAPL": true}
+	c.SetTickerValidator(func(t string) bool { return universe[t] })
+
+	byMember := map[string]MemberTx{
+		"jane-doe": {
+			Slug: "jane-doe", Name: "Jane Doe", State: "TX",
+			Transactions: []ptr.Transaction{
+				{Ticker: "AAPL", Type: ptr.TxPurchase, AmountRange: "$1 - $2", TxDate: time.Now().UTC()},
+				{Ticker: "BTC", Type: ptr.TxPurchase, AmountRange: "$3 - $4", TxDate: time.Now().UTC()},
+			},
+		},
+	}
+	c.SetWithTransactions([]Filing{{DocID: "1"}}, byMember)
+
+	// Real ticker kept.
+	if got := c.ByTicker("AAPL"); len(got) != 1 {
+		t.Errorf("ByTicker(AAPL) = %+v, want one trade (real ticker kept)", got)
+	}
+	// Non-universe parenthetical dropped (would otherwise assert a congress trade
+	// on an unrelated real BTC-like stock / a false ticker).
+	if got := c.ByTicker("BTC"); len(got) != 0 {
+		t.Errorf("ByTicker(BTC) = %+v, want none (non-universe parenthetical dropped)", got)
+	}
+	// Member page still carries BOTH raw transactions — only ticker-indexing is gated.
+	if m, ok := c.ByMember("jane-doe"); !ok || len(m.Transactions) != 2 {
+		t.Errorf("ByMember(jane-doe) transactions = %d, want 2 (raw txns unaffected)", len(m.Transactions))
+	}
+}
+
+// TestCacheNilValidatorKeepsAll verifies the nil-safe fallback: with no validator
+// wired (tests, or before the symbol universe loads), every parsed ticker is
+// served — today's behavior, never "drop everything".
+func TestCacheNilValidatorKeepsAll(t *testing.T) {
+	c := NewCache() // no SetTickerValidator
+	byMember := map[string]MemberTx{
+		"jane-doe": {
+			Slug: "jane-doe", Name: "Jane Doe",
+			Transactions: []ptr.Transaction{
+				{Ticker: "AAPL", Type: ptr.TxPurchase, TxDate: time.Now().UTC()},
+				{Ticker: "BTC", Type: ptr.TxPurchase, TxDate: time.Now().UTC()}, // would be dropped if validated
+			},
+		},
+	}
+	c.SetWithTransactions(nil, byMember)
+	if got := c.ByTicker("AAPL"); len(got) != 1 {
+		t.Errorf("nil validator: ByTicker(AAPL) = %+v, want kept", got)
+	}
+	if got := c.ByTicker("BTC"); len(got) != 1 {
+		t.Errorf("nil validator: ByTicker(BTC) = %+v, want kept (no universe gate)", got)
+	}
+}
+
 // TestCacheSetKeepsTransactions verifies the index-only Set() retains previously
 // parsed transactions (the degraded path shouldn't wipe ticker/member detail).
 func TestCacheSetKeepsTransactions(t *testing.T) {

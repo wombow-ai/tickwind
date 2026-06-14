@@ -149,7 +149,10 @@ func thirteenFFacts(holders []thirteenf.Holder) []Fact {
 	facts := []Fact{{
 		Key: "whales_count", LabelZH: "持仓机构数(13F)", LabelEN: "Tracked Funds Holding (13F)",
 		Value: formatPlain(count), Raw: copyFloat(&count), Unit: unitNone,
-		Status: StatusOK, Source: srcThirteenF, AsOf: holders[0].Period,
+		// Stamp the aggregate count with the OLDEST holder Period: holders can span
+		// funds that filed for different quarters near a 13F deadline, so the most
+		// conservative (stalest) quarter is the honest as-of for the whole count.
+		Status: StatusOK, Source: srcThirteenF, AsOf: oldestPeriod(holders),
 	}}
 
 	top := holders
@@ -175,6 +178,22 @@ func thirteenFFacts(holders []thirteenf.Holder) []Fact {
 		})
 	}
 	return facts
+}
+
+// oldestPeriod returns the earliest (stalest) non-empty Period across holders.
+// Periods are YYYY-MM-DD, so lexical order matches chronological order. Empty
+// Periods are skipped; "" is returned only when every holder lacks one.
+func oldestPeriod(holders []thirteenf.Holder) string {
+	oldest := ""
+	for _, h := range holders {
+		if h.Period == "" {
+			continue
+		}
+		if oldest == "" || h.Period < oldest {
+			oldest = h.Period
+		}
+	}
+	return oldest
 }
 
 // changeTagLabel maps a 13F quarter-over-quarter change tag to a bilingual label.

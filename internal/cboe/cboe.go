@@ -168,21 +168,45 @@ func NearestExpiry(cs []Contract, today string) string {
 	return best
 }
 
+// minMaxPainStrikes is the minimum number of DISTINCT strikes carrying open
+// interest at the chosen expiry before a non-zero Max Pain is reported. Below
+// this, the "pain valley" is degenerate (a single strike trivially minimizes
+// total pain at 0, and two strikes give a meaningless coin-flip), so we report
+// nothing rather than an authoritative-looking but vacuous magnet — the same
+// insufficient-not-wrong stance as the stale-shares guard and the all-or-nothing
+// Altman-Z/Piotroski scores. 3 is the smallest count at which an interior strike
+// can win on genuine OI weighting (a real call-vs-put balance, not an artifact).
+const minMaxPainStrikes = 3
+
 // MaxPain returns the strike that minimizes total in-the-money option value to
-// holders for the given expiry (the classic "max pain" magnet), using OI. 0
-// when the expiry has no contracts.
+// holders for the given expiry (the classic "max pain" magnet), using OI. It
+// returns 0 when the expiry has fewer than minMaxPainStrikes distinct strikes
+// with open interest (insufficient to compute a meaningful magnet) — callers
+// gate on >0 and omit the fact entirely in that case.
+//
+// Strike iteration is deterministic: candidates are sorted ascending and ties on
+// minimal total pain (a common flat valley on balanced chains) resolve to the
+// LOWER strike, so identical input always yields the identical Max Pain. (The
+// underlying spot is not available in this code path — the Cboe chain carries no
+// spot — so a spot-distance tie-break isn't possible here; the lower strike is
+// the deterministic, documented choice.)
 func MaxPain(cs []Contract, expiry string) float64 {
-	strikes := map[float64]bool{}
+	strikeSet := map[float64]bool{}
 	for _, c := range cs {
-		if c.Expiry == expiry {
-			strikes[c.Strike] = true
+		if c.Expiry == expiry && c.OI > 0 {
+			strikeSet[c.Strike] = true
 		}
 	}
-	if len(strikes) == 0 {
+	if len(strikeSet) < minMaxPainStrikes {
 		return 0
 	}
+	strikes := make([]float64, 0, len(strikeSet))
+	for k := range strikeSet {
+		strikes = append(strikes, k)
+	}
+	sort.Float64s(strikes) // deterministic iteration; ties resolve to the lower strike
 	bestK, bestPain := 0.0, -1.0
-	for k := range strikes {
+	for _, k := range strikes {
 		var pain float64
 		for _, c := range cs {
 			if c.Expiry != expiry || c.OI == 0 {
@@ -194,6 +218,8 @@ func MaxPain(cs []Contract, expiry string) float64 {
 				pain += float64(c.OI) * (c.Strike - k)
 			}
 		}
+		// Strict improvement only: because strikes ascend, the first (lowest)
+		// strike that hits the minimum wins and later ties never displace it.
 		if bestPain < 0 || pain < bestPain {
 			bestPain, bestK = pain, k
 		}
