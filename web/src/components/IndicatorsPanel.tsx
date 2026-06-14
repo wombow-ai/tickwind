@@ -11,7 +11,7 @@ import {
 } from '@/lib/api';
 import {useLang, useT} from '@/lib/i18n';
 import {useDark} from '@/lib/theme';
-import {cx, fmtPrice, tok} from '@/lib/ui';
+import {cx, fmtCompactUSD, fmtPrice, tok} from '@/lib/ui';
 import {IndicatorPicker} from './IndicatorPicker';
 import {
   clearSelection,
@@ -29,8 +29,10 @@ const DOMAIN_ORDER: Record<string, number> = {technical: 0, fundamental: 1, sent
 /**
  * Formats an indicator's headline value by its unit: `%` appends a percent sign,
  * `x` appends an "x" multiple suffix (e.g. `1.8x`), `price` uses the USD price
- * formatter, and `ratio`/empty render a plain trimmed number. Values are shown
- * exactly as computed — never invented or rounded into a different figure.
+ * formatter, `usd` renders a large dollar amount compact (`$4.5T` — FCF / enterprise
+ * value), and `ratio`/empty render a plain trimmed number (small counts/per-share).
+ * Values are shown exactly as computed — never invented or rounded into a different
+ * figure.
  */
 function fmtValue(value: number, unit?: string): string {
   switch (unit) {
@@ -40,6 +42,8 @@ function fmtValue(value: number, unit?: string): string {
       return `${trim(value)}x`;
     case 'price':
       return fmtPrice('$', value);
+    case 'usd':
+      return fmtCompactUSD(value);
     default:
       return trim(value);
   }

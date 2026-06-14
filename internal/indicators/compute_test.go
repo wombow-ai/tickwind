@@ -540,6 +540,7 @@ func TestRegistryNoDuplicateIDs(t *testing.T) {
 		{"fundamentalRegistry", fundamentalRegistry()},
 		{"technicalRegistryMore", technicalRegistryMore()},
 		{"fundamentalRegistryMore", fundamentalRegistryMore()},
+		{"fundamentalRegistryInc2", fundamentalRegistryInc2()},
 	}
 	seen := make(map[string]string)
 	for _, s := range subs {

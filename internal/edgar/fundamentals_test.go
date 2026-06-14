@@ -230,3 +230,168 @@ func TestExtractFundamentals_DerivedGrossProfitNonPayer(t *testing.T) {
 		t.Errorf("RevenuePrior = %v, want 400", f.RevenuePrior)
 	}
 }
+
+// inst is a terse builder for a point-in-time (instant) balance-sheet fact.
+func inst(end string, val float64) factPoint {
+	return factPoint{End: end, Val: val, Filed: end}
+}
+
+// TestExtractFundamentals_Inc2Fields exercises every NEW Increment-2 concept
+// (design §1.2 Groups 1/2/4 income-statement + current-balance-sheet + debt/EV
+// fields) plus the Group-3 prior-FY values (prior diluted EPS / gross profit via
+// annualForFY, prior equity / assets via priorInstant). Each must extract with the
+// chosen tag priority and prefer the latest annual / instant.
+func TestExtractFundamentals_Inc2Fields(t *testing.T) {
+	resp := factsResp{EntityName: "Full Inc"}
+	resp.Facts.UsGaap = map[string]xbrlConcept{
+		"Revenues":      usd(fy(2023, 600), fy(2024, 1000)),
+		"NetIncomeLoss": usd(fy(2023, 80), fy(2024, 150)),
+		"EarningsPerShareDiluted": perSh(
+			factPoint{Start: "2023-01-01", End: "2023-12-31", Val: 1.0, FY: 2023, FP: "FY", Form: "10-K", Filed: "2024-02-01"},
+			factPoint{Start: "2024-01-01", End: "2024-12-31", Val: 1.5, FY: 2024, FP: "FY", Form: "10-K", Filed: "2025-02-01"},
+		),
+		"EarningsPerShareBasic": perSh(
+			factPoint{Start: "2024-01-01", End: "2024-12-31", Val: 1.55, FY: 2024, FP: "FY", Form: "10-K", Filed: "2025-02-01"},
+		),
+		"GrossProfit": usd(fy(2023, 240), fy(2024, 420)),
+		// Balance-sheet instants: prior FY-end + latest FY-end.
+		"StockholdersEquity": usd(inst("2023-12-31", 500), inst("2024-12-31", 700)),
+		"Assets":             usd(inst("2023-12-31", 1800), inst("2024-12-31", 2400)),
+		// Group 1 income-statement flows.
+		"OperatingIncomeLoss":                  usd(fy(2023, 120), fy(2024, 220)),
+		"InterestExpense":                      usd(fy(2024, 30)),
+		"IncomeTaxExpenseBenefit":              usd(fy(2024, 40)),
+		"DepreciationDepletionAndAmortization": usd(fy(2024, 90)),
+		"IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryItemsNoncontrollingInterest": usd(fy(2024, 190)),
+		// Group 2 current balance-sheet + cost of revenue.
+		"CostOfRevenue":                         usd(fy(2024, 580)),
+		"AssetsCurrent":                         usd(inst("2024-12-31", 900)),
+		"LiabilitiesCurrent":                    usd(inst("2024-12-31", 400)),
+		"InventoryNet":                          usd(inst("2024-12-31", 150)),
+		"CashAndCashEquivalentsAtCarryingValue": usd(inst("2024-12-31", 300)),
+		"AccountsReceivableNetCurrent":          usd(inst("2024-12-31", 200)),
+		"AccountsPayableCurrent":                usd(inst("2024-12-31", 120)),
+		"PropertyPlantAndEquipmentNet":          usd(inst("2024-12-31", 800)),
+		// Group 4 debt / EV / capital structure.
+		"LongTermDebtNoncurrent":               usd(inst("2024-12-31", 600)),
+		"DebtCurrent":                          usd(inst("2024-12-31", 100)),
+		"Goodwill":                             usd(inst("2024-12-31", 250)),
+		"IntangibleAssetsNetExcludingGoodwill": usd(inst("2024-12-31", 80)),
+		"PaymentsForRepurchaseOfCommonStock":   usd(fy(2024, 70)),
+		"ResearchAndDevelopmentExpense":        usd(fy(2024, 110)),
+	}
+
+	f := extractFundamentals(resp)
+	tests := []struct {
+		name string
+		got  float64
+		want float64
+	}{
+		// Group 1.
+		{"OperatingIncomeLoss", f.OperatingIncomeLoss, 220},
+		{"OperatingIncomeLossPrior", f.OperatingIncomeLossPrior, 120},
+		{"InterestExpense", f.InterestExpense, 30},
+		{"IncomeTaxExpense", f.IncomeTaxExpense, 40},
+		{"DepreciationAmort", f.DepreciationAmort, 90},
+		{"PreTaxIncome", f.PreTaxIncome, 190},
+		// Group 2.
+		{"CostOfRevenue", f.CostOfRevenue, 580},
+		{"AssetsCurrent", f.AssetsCurrent, 900},
+		{"LiabilitiesCurrent", f.LiabilitiesCurrent, 400},
+		{"InventoryNet", f.InventoryNet, 150},
+		{"CashAndEquivalents", f.CashAndEquivalents, 300},
+		{"AccountsReceivable", f.AccountsReceivable, 200},
+		{"AccountsPayable", f.AccountsPayable, 120},
+		{"PropertyPlantNet", f.PropertyPlantNet, 800},
+		// Group 4.
+		{"LongTermDebt", f.LongTermDebt, 600},
+		{"DebtCurrent", f.DebtCurrent, 100},
+		{"Goodwill", f.Goodwill, 250},
+		{"IntangiblesExGoodwill", f.IntangiblesExGoodwill, 80},
+		{"BuybackAmount", f.BuybackAmount, 70},
+		{"ResearchDevelopment", f.ResearchDevelopment, 110},
+		// Group 3 (prior-FY + basic EPS).
+		{"EPSBasic", f.EPSBasic, 1.55},
+		{"EPSDilutedPrior", f.EPSDilutedPrior, 1.0},
+		{"GrossProfitPrior", f.GrossProfitPrior, 240},
+		{"EquityPrior", f.EquityPrior, 500},
+		{"TotalAssetsPrior", f.TotalAssetsPrior, 1800},
+	}
+	for _, tc := range tests {
+		if tc.got != tc.want {
+			t.Errorf("%s = %v, want %v", tc.name, tc.got, tc.want)
+		}
+	}
+}
+
+// TestExtractFundamentals_Inc2FallbacksAndDerivations covers the tag-priority
+// fallbacks and the sign / derivation guards: the LiabilitiesNoncurrent fallback for
+// long-term debt, the NetIncome+tax pre-tax derivation when the reported concept is
+// absent, the EBIT-input-only path (no OperatingIncomeLoss), a sign-flipped buyback,
+// and a DERIVED gross profit leaving GrossProfitPrior 0 (no faithful prior pair).
+func TestExtractFundamentals_Inc2FallbacksAndDerivations(t *testing.T) {
+	resp := factsResp{EntityName: "Fallback Inc"}
+	resp.Facts.UsGaap = map[string]xbrlConcept{
+		"Revenues":      usd(fy(2023, 400), fy(2024, 900)),
+		"NetIncomeLoss": usd(fy(2024, 100)),
+		// Gross profit DERIVED (no GrossProfit concept) → GrossProfitPrior stays 0.
+		"CostOfGoodsAndServicesSold": usd(fy(2023, 300), fy(2024, 560)),
+		// No LongTermDebtNoncurrent / LongTermDebt → fall back to LiabilitiesNoncurrent.
+		"LiabilitiesNoncurrent": usd(inst("2024-12-31", 350)),
+		// Income tax present but NO reported pre-tax concept → derive NI + tax.
+		"IncomeTaxExpenseBenefit": usd(fy(2024, 25)),
+		// Sign-flipped buyback by a quirky filer → stored positive.
+		"PaymentsForRepurchaseOfCommonStock": usd(fy(2024, -55)),
+	}
+	f := extractFundamentals(resp)
+	if f.GrossProfit != 340 { // 900 − 560 derived
+		t.Errorf("GrossProfit = %v, want 340 (derived)", f.GrossProfit)
+	}
+	if f.GrossProfitPrior != 0 {
+		t.Errorf("GrossProfitPrior = %v, want 0 (derived path has no faithful prior)", f.GrossProfitPrior)
+	}
+	if f.LongTermDebt != 350 {
+		t.Errorf("LongTermDebt = %v, want 350 (LiabilitiesNoncurrent fallback)", f.LongTermDebt)
+	}
+	if f.PreTaxIncome != 0 {
+		t.Errorf("PreTaxIncome field = %v, want 0 (no reported concept; derivation happens in the ratio)", f.PreTaxIncome)
+	}
+	if f.IncomeTaxExpense != 25 {
+		t.Errorf("IncomeTaxExpense = %v, want 25", f.IncomeTaxExpense)
+	}
+	if f.BuybackAmount != 55 {
+		t.Errorf("BuybackAmount = %v, want 55 (abs of -55)", f.BuybackAmount)
+	}
+}
+
+// TestExtractFundamentals_Inc2Absent asserts that when NONE of the Increment-2
+// concepts are present, every new field stays 0 (never invented) — the
+// anti-fabrication guarantee at the extraction layer.
+func TestExtractFundamentals_Inc2Absent(t *testing.T) {
+	resp := factsResp{EntityName: "Minimal Inc"}
+	resp.Facts.UsGaap = map[string]xbrlConcept{
+		"Revenues":      usd(fy(2024, 100)),
+		"NetIncomeLoss": usd(fy(2024, 10)),
+	}
+	f := extractFundamentals(resp)
+	zero := map[string]float64{
+		"OperatingIncomeLoss": f.OperatingIncomeLoss, "OperatingIncomeLossPrior": f.OperatingIncomeLossPrior,
+		"InterestExpense": f.InterestExpense, "IncomeTaxExpense": f.IncomeTaxExpense,
+		"DepreciationAmort": f.DepreciationAmort, "PreTaxIncome": f.PreTaxIncome,
+		"CostOfRevenue": f.CostOfRevenue, "AssetsCurrent": f.AssetsCurrent,
+		"LiabilitiesCurrent": f.LiabilitiesCurrent, "InventoryNet": f.InventoryNet,
+		"CashAndEquivalents": f.CashAndEquivalents, "AccountsReceivable": f.AccountsReceivable,
+		"AccountsPayable": f.AccountsPayable, "PropertyPlantNet": f.PropertyPlantNet,
+		"LongTermDebt": f.LongTermDebt, "DebtCurrent": f.DebtCurrent,
+		"Goodwill": f.Goodwill, "IntangiblesExGoodwill": f.IntangiblesExGoodwill,
+		"BuybackAmount": f.BuybackAmount, "ResearchDevelopment": f.ResearchDevelopment,
+		"EPSBasic": f.EPSBasic, "EPSDilutedPrior": f.EPSDilutedPrior,
+		"GrossProfitPrior": f.GrossProfitPrior, "EquityPrior": f.EquityPrior,
+		"TotalAssetsPrior": f.TotalAssetsPrior,
+	}
+	for name, v := range zero {
+		if v != 0 {
+			t.Errorf("%s = %v on absent concepts, want 0 (never invented)", name, v)
+		}
+	}
+}

@@ -41,6 +41,10 @@ const (
 	unitPrice   = "price"
 	unitMult    = "x"
 	unitNone    = ""
+	// unitUSD is a large dollar amount (free cash flow, enterprise value) rendered
+	// compact ("$4.5T") by the frontend — distinct from unitNone so it is not shown
+	// as a raw 13-digit number.
+	unitUSD = "usd"
 )
 
 // StockIndicator is one indicator computed (or attempted) for a single stock. It
@@ -285,7 +289,7 @@ func fundamentalRegistry() map[string]computeFn {
 				return
 			}
 			if v, ok := fcf(in.fund); ok {
-				setOK(si, v, unitNone)
+				setOK(si, v, unitUSD)
 			} else {
 				setInsufficient(si, "no operating cash flow reported")
 			}
@@ -370,10 +374,10 @@ type Computer struct {
 
 // NewComputer builds a Computer from the catalog and the (possibly nil) data
 // sources. The P0 technical + fundamental registries and the expanded
-// technicalRegistryMore / fundamentalRegistryMore sets (design §1.1/§1.2) are
-// merged once at construction. The four registries must have disjoint ids — a
-// double-registered id would silently shadow one closure; TestRegistryNoDuplicateIDs
-// guards against that.
+// technicalRegistryMore / fundamentalRegistryMore / fundamentalRegistryInc2 sets
+// (design §1.1/§1.2) are merged once at construction. The sub-registries must have
+// disjoint ids — a double-registered id would silently shadow one closure;
+// TestRegistryNoDuplicateIDs guards against that.
 func NewComputer(catalog *Catalog, ohlcv OHLCVSource, fund FundamentalsProvider, price PriceProvider, market MarketContextProvider) *Computer {
 	reg := technicalRegistry()
 	for id, fn := range fundamentalRegistry() {
@@ -383,6 +387,9 @@ func NewComputer(catalog *Catalog, ohlcv OHLCVSource, fund FundamentalsProvider,
 		reg[id] = fn
 	}
 	for id, fn := range fundamentalRegistryMore() {
+		reg[id] = fn
+	}
+	for id, fn := range fundamentalRegistryInc2() {
 		reg[id] = fn
 	}
 	return &Computer{
