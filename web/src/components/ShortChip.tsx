@@ -59,8 +59,10 @@ export function ShortChip({ticker}: {ticker: string}) {
   }, [ticker]);
 
   if (status === 'hidden') return null;
+  // No own margin/row — StockView groups this with the earnings chip into one
+  // coherent, aligned signals row; the pills below share its min-height.
   if (status === 'loading') {
-    return <div className={cx('mb-6 h-9 w-72 rounded-full', t.skel)} />;
+    return <div className={cx('h-9 w-72 rounded-full', t.skel)} />;
   }
 
   const locale = lang === 'zh' ? 'zh-CN' : 'en-US';
@@ -79,7 +81,7 @@ export function ShortChip({ticker}: {ticker: string}) {
         return (
           <span
             className={cx(
-              'inline-flex flex-wrap items-center gap-x-2 gap-y-1 rounded-full border px-3.5 py-1.5 text-[12.5px]',
+              'inline-flex min-h-9 flex-wrap items-center gap-x-2 gap-y-1 rounded-full border px-3.5 py-1.5 text-[12.5px]',
               t.card,
               t.border,
               t.soft,
@@ -143,7 +145,7 @@ export function ShortChip({ticker}: {ticker: string}) {
         return (
           <span
             className={cx(
-              'inline-flex flex-wrap items-center gap-x-2 gap-y-1 rounded-full border px-3.5 py-1.5 text-[12.5px]',
+              'inline-flex min-h-9 flex-wrap items-center gap-x-2 gap-y-1 rounded-full border px-3.5 py-1.5 text-[12.5px]',
               t.card,
               t.border,
               t.soft,
@@ -172,7 +174,7 @@ export function ShortChip({ticker}: {ticker: string}) {
     : null;
 
   return (
-    <div className="mb-6 flex flex-wrap items-center gap-2">
+    <div className="flex flex-wrap items-center gap-2">
       {siChip}
       {dailyChip}
     </div>

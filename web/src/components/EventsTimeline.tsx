@@ -8,7 +8,6 @@ import {useLang, useT} from '@/lib/i18n';
 import {useDark} from '@/lib/theme';
 import {cx, tok} from '@/lib/ui';
 import {EmptyState, ErrorState, FeedSkeleton} from '@/components/ui/states';
-import {RateCutOdds} from '@/components/RateCutOdds';
 
 type Tokens = ReturnType<typeof tok>;
 type Status = 'loading' | 'ready' | 'error';
@@ -105,9 +104,6 @@ export function EventsTimeline() {
         </h1>
         <p className={cx('mt-1 text-[13.5px]', t.sub)}>{tr('events.subtitle')}</p>
       </header>
-
-      {/* Fed rate-cut odds from prediction markets (self-hides until live) */}
-      <RateCutOdds />
 
       {status === 'ready' && months.length > 1 && (
         <div className="mb-5 flex flex-wrap gap-1.5">

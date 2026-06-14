@@ -10,11 +10,12 @@ import {cx, timeAgo, tok} from '@/lib/ui';
 type Tokens = ReturnType<typeof tok>;
 
 /**
- * Rate-cut odds section for the Events page: what prediction markets (Kalshi /
- * Polymarket) price for the Fed's next move, broken out by cut size as labeled
- * probability bars per source. Self-hides while loading errors out; shows an
- * empty state when the feed is live but has no markets yet. Prediction-market
- * odds — explicitly not investment advice.
+ * Rate-cut odds module on the home macro context (grouped with the Treasury
+ * {@link MacroStrip} so the macro/rates signals sit together): what prediction
+ * markets (Kalshi / Polymarket) price for the Fed's next move, broken out by cut
+ * size as labeled probability bars per source. Self-hides while loading errors
+ * out; shows an empty state when the feed is live but has no markets yet.
+ * Prediction-market odds — explicitly not investment advice.
  */
 export function RateCutOdds() {
   const dark = useDark();
@@ -42,7 +43,7 @@ export function RateCutOdds() {
   if (status === 'hidden') return null;
 
   return (
-    <section className={cx('mb-7 rounded-2xl border p-4', t.card, t.border, t.soft)}>
+    <section className={cx('mb-5 rounded-2xl border p-4', t.card, t.border, t.soft)}>
       <div className="mb-3 flex items-center gap-2">
         <Percent size={18} className={dark ? 'text-emerald-300' : 'text-emerald-600'} />
         <h2 className={cx('text-[16px] font-bold tracking-tight', t.text)}>

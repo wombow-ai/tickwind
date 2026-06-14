@@ -56,8 +56,11 @@ export function EarningsChip({ticker}: {ticker: string}) {
   }, [ticker]);
 
   if (status === 'hidden') return null;
+  // Loading/ready render a same-height pill so the signals group (earnings +
+  // short-pressure) stays vertically aligned — no margin here; StockView groups
+  // these strips into one coherent flex row.
   if (status === 'loading' || !next) {
-    return <div className={cx('mb-6 h-9 w-56 rounded-full', t.skel)} />;
+    return <div className={cx('h-9 w-56 rounded-full', t.skel)} />;
   }
 
   const locale = lang === 'zh' ? 'zh-CN' : 'en-US';
@@ -70,38 +73,36 @@ export function EarningsChip({ticker}: {ticker: string}) {
     next.hour && HOUR_KEY[next.hour] ? tr(HOUR_KEY[next.hour]) : '';
 
   return (
-    <div className="mb-6">
-      <span
-        className={cx(
-          'inline-flex items-center gap-2 rounded-full border px-3.5 py-1.5 text-[12.5px]',
-          t.card,
-          t.border,
-          t.soft,
-        )}
-      >
-        <CalendarClock
-          size={14}
-          className={dark ? 'text-teal-300' : 'text-teal-600'}
-        />
-        <span className={cx('font-semibold', t.sub)}>{tr('earnings.next')}</span>
-        <span className={cx('font-bold tabular-nums', t.text)}>{dateStr}</span>
-        {hourLabel && (
-          <span
-            className={cx(
-              'rounded-md px-1.5 py-0.5 text-[10.5px] font-semibold',
-              t.chip,
-              t.chipText,
-            )}
-          >
-            {hourLabel}
-          </span>
-        )}
-        {typeof next.eps_estimate === 'number' && (
-          <span className={cx('tabular-nums text-[11.5px]', t.faint)}>
-            {tr('earnings.estEps')} ${next.eps_estimate.toFixed(2)}
-          </span>
-        )}
-      </span>
-    </div>
+    <span
+      className={cx(
+        'inline-flex h-9 flex-wrap items-center gap-x-2 gap-y-1 rounded-full border px-3.5 text-[12.5px]',
+        t.card,
+        t.border,
+        t.soft,
+      )}
+    >
+      <CalendarClock
+        size={14}
+        className={dark ? 'text-teal-300' : 'text-teal-600'}
+      />
+      <span className={cx('font-semibold', t.sub)}>{tr('earnings.next')}</span>
+      <span className={cx('font-bold tabular-nums', t.text)}>{dateStr}</span>
+      {hourLabel && (
+        <span
+          className={cx(
+            'rounded-md px-1.5 py-0.5 text-[10.5px] font-semibold',
+            t.chip,
+            t.chipText,
+          )}
+        >
+          {hourLabel}
+        </span>
+      )}
+      {typeof next.eps_estimate === 'number' && (
+        <span className={cx('tabular-nums text-[11.5px]', t.faint)}>
+          {tr('earnings.estEps')} ${next.eps_estimate.toFixed(2)}
+        </span>
+      )}
+    </span>
   );
 }

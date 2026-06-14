@@ -36,6 +36,7 @@ import {BriefingCard} from '@/components/BriefingCard';
 import {CryptoStrip} from '@/components/CryptoStrip';
 import {IndicesStrip} from '@/components/IndicesStrip';
 import {MacroStrip} from '@/components/MacroStrip';
+import {RateCutOdds} from '@/components/RateCutOdds';
 import {SentimentChip} from '@/components/SentimentChip';
 import {
   changePct,
@@ -150,6 +151,10 @@ export function HomeHub() {
       {/* U.S. Treasury yield curve — 2Y/10Y + the 2s10s recession signal
           (server-driven; self-hides until the Treasury curve is available) */}
       <MacroStrip />
+
+      {/* Fed rate-cut odds (prediction markets) — grouped here with the Treasury
+          strip so the macro/rates signals sit together; self-hides until live */}
+      <RateCutOdds />
 
       {/* Crypto market mood — crypto Fear & Greed + best-effort BTC/ETH (context
           for COIN/MSTR/RIOT/MARA; server-driven; self-hides until available) */}

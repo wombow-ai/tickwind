@@ -555,24 +555,17 @@ export function StockView({ticker}: {ticker: string}) {
         <PulseBar signals={signals} />
       </div>
 
-      {/* next earnings date (Finnhub calendar; hides when none upcoming) */}
-      <EarningsChip ticker={norm} />
-
-      {/* FINRA short pressure (squeeze radar; hides when the symbol has no row) */}
-      <div id="short" className="scroll-mt-20">
-        <ShortChip ticker={norm} />
-      </div>
-
-      {/* Congress trades in this ticker (House Clerk PTRs; hides when none) —
-          each member links to their /congress/member/{slug} detail page */}
-      <div id="congress" className="scroll-mt-20">
-        <CongressChip ticker={norm} />
-      </div>
-
-      {/* Which famous 13F funds hold this ticker (reverse whale lookup; hides
-          when none) — each fund links to its /fund/{slug} page */}
-      <div id="whales" className="scroll-mt-20">
-        <WhalesChip ticker={norm} />
+      {/* Next-earnings signals group: the upcoming-earnings chip + the FINRA
+          short-pressure strips read as one coherent, aligned row (equal-height
+          pills, shared gap). Each piece still self-hides when it has no data, so
+          the row collapses cleanly. The #short anchor wraps the short pills so
+          research-report deep-links still resolve. */}
+      <div className="mb-6 flex flex-wrap items-center gap-2">
+        <EarningsChip ticker={norm} />
+        {/* FINRA short pressure (squeeze radar; hides when the symbol has no row) */}
+        <div id="short" className="scroll-mt-20">
+          <ShortChip ticker={norm} />
+        </div>
       </div>
 
       {/* Move-explainer: a move-triggered, evidence-grounded explanation of TODAY's
@@ -618,6 +611,20 @@ export function StockView({ticker}: {ticker: string}) {
           hides entirely when no indicators are computable */}
       <div id="indicators" className="scroll-mt-20">
         <IndicatorsPanel ticker={norm} />
+      </div>
+
+      {/* Smart-money cards sit directly below the indicators — the "who else is
+          positioned here" read after the technical/fundamental readout. */}
+      {/* Congress trades in this ticker (House Clerk PTRs; hides when none) —
+          each member links to their /congress/member/{slug} detail page */}
+      <div id="congress" className="scroll-mt-20">
+        <CongressChip ticker={norm} />
+      </div>
+
+      {/* Which famous 13F funds hold this ticker (reverse whale lookup; hides
+          when none) — each fund links to its /fund/{slug} page */}
+      <div id="whales" className="scroll-mt-20">
+        <WhalesChip ticker={norm} />
       </div>
 
       {/* Options overview: delayed Cboe P/C, max pain, OI leaders (hides for non-US/no options) */}
