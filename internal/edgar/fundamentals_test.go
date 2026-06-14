@@ -532,3 +532,79 @@ func TestExtractFundamentals_Inc3PriorAbsentSinglePeriod(t *testing.T) {
 		}
 	}
 }
+
+// TestExtractFundamentals_StaleSharesGuard is the regression test for the
+// wrong-market-cap bug: when the undimensioned shares-outstanding concept stopped
+// updating years before the financials (Berkshire BRK.B's dei concept's last point
+// is 2011-04-29 = 941,481 while it still files current 10-Ks → 941,481 × price ≈
+// $460M for a ~$1T company), the stale share count must be treated as ABSENT so
+// market_cap and every per-share metric report "insufficient" rather than a wildly
+// wrong number. A FRESH payload (shares within a quarter of the financials) must
+// keep its share count. Both are checked. The guard is clock-free — it compares the
+// shares date to the company's own latest financial-period end, not wall-clock now.
+func TestExtractFundamentals_StaleSharesGuard(t *testing.T) {
+	// BRK-shaped: a 2011 cover-page share count alongside CURRENT (2024) financials.
+	stale := factsResp{EntityName: "Berkshire-shaped Inc"}
+	stale.Facts.Dei = map[string]xbrlConcept{
+		"EntityCommonStockSharesOutstanding": shares(
+			inst("2011-04-29", 941_481), // 14 years stale vs the financials below
+		),
+	}
+	stale.Facts.UsGaap = map[string]xbrlConcept{
+		"Revenues":           usd(fy(2023, 364_000_000_000), fy(2024, 371_000_000_000)),
+		"NetIncomeLoss":      usd(fy(2024, 89_000_000_000)),
+		"StockholdersEquity": usd(inst("2024-12-31", 649_000_000_000)),
+		"Assets":             usd(inst("2024-12-31", 1_153_000_000_000)),
+	}
+	sf := extractFundamentals(stale)
+	if sf.Shares != 0 {
+		t.Errorf("stale Shares = %d, want 0 (a 2011 count must be treated as absent vs 2024 financials, "+
+			"so market_cap can't be derived wrong)", sf.Shares)
+	}
+	if sf.SharesAsOf != "" {
+		t.Errorf("stale SharesAsOf = %q, want empty (no usable shares date)", sf.SharesAsOf)
+	}
+	if sf.SharesPrior != 0 {
+		t.Errorf("stale SharesPrior = %d, want 0 (prior of a stale series is also dropped)", sf.SharesPrior)
+	}
+	// The non-shares financials must be UNTOUCHED — revenue / net income / equity stay
+	// present, so /fundamentals still serves them (only the shares-derived numbers vanish).
+	if sf.Revenue != 371_000_000_000 || sf.NetIncome != 89_000_000_000 || sf.Equity != 649_000_000_000 {
+		t.Errorf("non-shares financials altered by the guard: rev=%v ni=%v eq=%v",
+			sf.Revenue, sf.NetIncome, sf.Equity)
+	}
+	if !sf.HasData() { // revenue alone keeps HasData true → the card/endpoint still renders
+		t.Error("HasData() = false after nulling stale shares, want true (revenue/NI still present)")
+	}
+
+	// Fresh-shaped: shares dated within a quarter of the financials → kept.
+	fresh := factsResp{EntityName: "Healthy Filer Inc"}
+	fresh.Facts.Dei = map[string]xbrlConcept{
+		"EntityCommonStockSharesOutstanding": shares(
+			inst("2025-01-31", 15_000_000_000), // ~1 month after the FY2024 financials
+		),
+	}
+	fresh.Facts.UsGaap = map[string]xbrlConcept{
+		"Revenues":           usd(fy(2024, 391_000_000_000)),
+		"NetIncomeLoss":      usd(fy(2024, 94_000_000_000)),
+		"StockholdersEquity": usd(inst("2024-12-31", 57_000_000_000)),
+	}
+	ff := extractFundamentals(fresh)
+	if ff.Shares != 15_000_000_000 {
+		t.Errorf("fresh Shares = %d, want 15000000000 (a current count must be kept)", ff.Shares)
+	}
+	if ff.SharesAsOf != "2025-01-31" {
+		t.Errorf("fresh SharesAsOf = %q, want 2025-01-31", ff.SharesAsOf)
+	}
+
+	// Edge: no financial anchor at all (only a shares concept) → cannot judge staleness,
+	// so the shares are KEPT (we never null a count we can't prove stale).
+	noAnchor := factsResp{EntityName: "Shares-only Inc"}
+	noAnchor.Facts.Dei = map[string]xbrlConcept{
+		"EntityCommonStockSharesOutstanding": shares(inst("2011-04-29", 941_481)),
+	}
+	na := extractFundamentals(noAnchor)
+	if na.Shares != 941_481 {
+		t.Errorf("no-anchor Shares = %d, want 941481 (no financial anchor → cannot prove stale, keep)", na.Shares)
+	}
+}

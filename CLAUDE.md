@@ -327,6 +327,21 @@ feature-flagged plugin, never on the critical path. Web only.
   gofmt/build/vet/-race all clean; new tests (string-cik fixture, `Canonical` mapping, class-share CIK round-trip,
   dedup-keeps-CIK). Process restart on deploy reloads the edgar tickerMap + symbols index, so a normal redeploy
   suffices. Verify live: `/v1/stocks/BRK.B/fundamentals` + `/v1/stocks/RDDT/fundamentals` → 200 w/ data.
+- **Fixed 2026-06-14 (stale shares → wrong market cap):** verifying the class-share fix surfaced that BRK.B's
+  `market_cap` read ~$460M (Berkshire is ~$1T). Root cause: `dei:EntityCommonStockSharesOutstanding` froze for a
+  COHORT of older issuers — Berkshire's undimensioned concept has 7 points ending **2011** (941,481); `latestInstant`
+  returned that 14-yr-stale count → 941,481 × $489 ≈ $460M. Same cohort: HEICO (2015), Bio-Rad (2010), Comcast
+  (2009), Ford (2011); Paramount/Fox even carry garbage (0/1). (GOOGL/META/Lennar have NO undimensioned concept →
+  fall to a current us-gaap fallback → already correct.) **Fix** (`internal/edgar/fundamentals.go`, anti-hallucination:
+  insufficient-not-wrong): a clock-free recency guard — `extractFundamentals` records `SharesAsOf` (the chosen
+  instant's End) and, if it's >`sharesStaleAfterDays=450` (~15 mo) older than `latestFinancialEnd` (newest of
+  revenue/NI/equity/assets in the same payload), ZEROES `Shares`/`SharesPrior` so every shares-dependent output
+  cascades to insufficient via the existing `Shares<=0` guard — `market_cap`, P/B, P/S, EV (+ ev/sales·fcf·ebitda),
+  bvps/sps/fcfps/cfps/dps/capex-share, buyback/dividend yield, forward-P/E, Altman-Z. P/E (EPS-based), revenue,
+  net income, equity are UNTOUCHED. Never nulls a current filer (they restate shares every 10-Q, ≤~1 quarter behind);
+  no financial anchor → no-op (can't prove stale). Test `TestExtractFundamentals_StaleSharesGuard` (BRK-stale→zeroed
+  but revenue kept / fresh→kept / no-anchor→kept). **Deferred:** correct dual-class total market cap (per-class
+  dimensioned shares × per-class prices) + a sanity floor for recent garbage values (Paramount/Fox 0/1).
 - **Ops (2026-06-14):** the new 4 GB VPS lacked the old box's fail2ban deploy-IP whitelist → a burst of
   deploy connects banned `154.29.158.47`; fixed durably via `/etc/fail2ban/jail.d/tickwind-ignore.conf`
   (owner VNC). The ssh unit on this box is **`ssh`, NOT `sshd`**. Box has 2 G swap + healthy RAM (not OOM).

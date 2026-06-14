@@ -27,6 +27,16 @@ type Fundamentals struct {
 	Period     string  `json:"period"`      // fiscal period the income figures cover, e.g. "FY2024"
 	AsOf       string  `json:"as_of"`       // newest underlying fact date (YYYY-MM-DD)
 
+	// SharesAsOf is the end date (YYYY-MM-DD) of the shares-outstanding instant that
+	// Shares was taken from — i.e. how current the share count is. It is exposed so a
+	// downstream consumer can reason about share-count freshness; extractFundamentals
+	// itself enforces a staleness guard (see sharesStaleAfterDays) and ZEROES Shares
+	// when the chosen instant is far older than the company's latest financial period,
+	// so a 14-year-stale cover-page count (e.g. Berkshire's undimensioned dei concept,
+	// last reported 2011) can never yield a wildly-wrong market cap. Empty when Shares
+	// is 0 / absent.
+	SharesAsOf string `json:"shares_as_of,omitempty"`
+
 	// Additional figures for margin / leverage / cash-flow / YoY indicators.
 	// Each is 0 when the underlying concept is absent (best-effort).
 	GrossProfit       float64 `json:"gross_profit,omitempty"`        // latest-FY gross profit; us-gaap:GrossProfit, else Revenue − cost of revenue
@@ -155,6 +165,12 @@ func extractFundamentals(resp factsResp) Fundamentals {
 	dei := resp.Facts.Dei
 	f := Fundamentals{Name: resp.EntityName, Currency: "USD"}
 
+	// The latest financial-period end in this payload (newest revenue / net-income /
+	// equity / assets date) is the anchor for the shares-staleness guard below. It is
+	// derived purely from the company's own facts (clock-free → testable) so a
+	// historical-data fixture stays valid regardless of when the test runs.
+	latestFinEnd := latestFinancialEnd(gaap)
+
 	// Shares outstanding (point-in-time): dei is canonical, us-gaap as fallback.
 	// Keep the dei series so the prior period-end share count can be matched for the
 	// Piotroski no-dilution test (Group 5). The prior is taken from the SAME primary
@@ -163,12 +179,12 @@ func extractFundamentals(resp factsResp) Fundamentals {
 	// F-score reports insufficient rather than mixing series.
 	deiSharePts := pick(dei, "shares", "EntityCommonStockSharesOutstanding")
 	if p, ok := latestInstant(deiSharePts); ok {
-		f.Shares = int64(p.Val)
+		f.Shares, f.SharesAsOf = int64(p.Val), p.End
 		if pp, ok := priorInstant(deiSharePts, p.End); ok {
 			f.SharesPrior = int64(pp.Val)
 		}
 	} else if p, ok := latestInstant(pick(gaap, "shares", "CommonStockSharesOutstanding")); ok {
-		f.Shares = int64(p.Val)
+		f.Shares, f.SharesAsOf = int64(p.Val), p.End
 	}
 	// Fallback for multi-class / oddly-tagged issuers (e.g. MSTR) that omit a
 	// point-in-time cover-page count: the latest weighted-average share count
@@ -177,8 +193,23 @@ func extractFundamentals(resp factsResp) Fundamentals {
 		if p, ok := latestInstant(pick(gaap, "shares",
 			"WeightedAverageNumberOfSharesOutstandingBasic",
 			"WeightedAverageNumberOfDilutedSharesOutstanding")); ok && p.Val > 0 {
-			f.Shares = int64(p.Val)
+			f.Shares, f.SharesAsOf = int64(p.Val), p.End
 		}
+	}
+
+	// STALENESS GUARD (anti-hallucination): never derive a shares-dependent number
+	// (market cap, P/B, P/S, EV, Altman-Z, every per-share metric) from a share count
+	// that is far older than the company's latest financial period. A current filer
+	// refreshes its cover-page share count every 10-Q (~quarterly), so a healthy issuer's
+	// SharesAsOf is at most a few months behind latestFinEnd; a wide window therefore
+	// never nulls a current filer but catches the pathological gaps where an undimensioned
+	// dei/us-gaap concept stopped updating years ago (Berkshire BRK.B's last point is
+	// 2011 → 941,481 × ~$489 ≈ $460M for a ~$1T company). When the chosen shares instant
+	// is more than sharesStaleAfterDays older than latestFinEnd, treat Shares as ABSENT
+	// (0) — every downstream guard already turns a 0 share count into "insufficient", so
+	// the consumer reports no value instead of a wildly-wrong one.
+	if f.Shares > 0 && sharesIsStale(f.SharesAsOf, latestFinEnd) {
+		f.Shares, f.SharesPrior, f.SharesAsOf = 0, 0, ""
 	}
 
 	// Stockholders' equity (point-in-time) — for P/B at the API layer. Keep the
@@ -439,6 +470,69 @@ func abs(v float64) float64 {
 		return -v
 	}
 	return v
+}
+
+// sharesStaleAfterDays is the staleness threshold for the share count: if the
+// chosen shares-outstanding instant is more than this many days OLDER than the
+// company's latest financial period (latestFinancialEnd), the share count is
+// treated as absent rather than used to derive a market cap / per-share metric.
+//
+// ~15 months. Justification: a current SEC filer restates its cover-page shares
+// outstanding on every quarterly 10-Q, so a healthy issuer's shares date trails
+// its latest financial-statement date by at most ~one quarter (≤~100 days) — even
+// allowing for a late annual-only filer the gap stays under a year. 15 months
+// (450 days) leaves comfortable slack so NO current filer is ever nulled, while
+// still catching the pathological cases where an undimensioned shares concept
+// stopped updating years before the financials did (Berkshire's dei concept: last
+// 2011, financials current → a ~14-year gap; HEICO 2015; Bio-Rad 2010; Comcast
+// 2009 — a cohort, not a one-off). The window is intentionally generous: the goal
+// is "insufficient, not wrong", so we only act on an unambiguous multi-quarter gap.
+const sharesStaleAfterDays = 450
+
+// latestFinancialEnd returns the newest period-end date (YYYY-MM-DD) among the
+// company's core financial facts — annual revenue / net income (duration flows)
+// and the latest stockholders'-equity / total-assets instants. It is the anchor
+// the shares-staleness guard compares the share-count date against. Returns "" when
+// none of these concepts are present (then sharesIsStale is a no-op — we cannot
+// judge staleness without a financial anchor, so we keep whatever shares we found
+// rather than null a count we cannot prove stale). Pure: derived only from the
+// payload, so it is clock-free and unit-testable.
+func latestFinancialEnd(gaap map[string]xbrlConcept) string {
+	best := ""
+	consider := func(p factPoint, ok bool) {
+		if ok && p.End > best {
+			best = p.End
+		}
+	}
+	consider(latestAnnual(pick(gaap, "USD",
+		"RevenueFromContractWithCustomerExcludingAssessedTax",
+		"Revenues",
+		"RevenueFromContractWithCustomerIncludingAssessedTax",
+		"SalesRevenueNet")))
+	consider(latestAnnual(pick(gaap, "USD", "NetIncomeLoss", "ProfitLoss")))
+	consider(latestInstant(pick(gaap, "USD",
+		"StockholdersEquity",
+		"StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest")))
+	consider(latestInstant(pick(gaap, "USD", "Assets")))
+	return best
+}
+
+// sharesIsStale reports whether a share count dated sharesEnd is too old to trust
+// relative to the company's latest financial period latestFinEnd — i.e. sharesEnd
+// is more than sharesStaleAfterDays before latestFinEnd. Returns false (NOT stale)
+// when either date is empty or unparseable, or when the shares date is not older
+// than the financial date, so the guard only ever fires on a provable multi-quarter
+// gap and never nulls a count it cannot judge.
+func sharesIsStale(sharesEnd, latestFinEnd string) bool {
+	if sharesEnd == "" || latestFinEnd == "" {
+		return false
+	}
+	se, err1 := time.Parse("2006-01-02", sharesEnd)
+	fe, err2 := time.Parse("2006-01-02", latestFinEnd)
+	if err1 != nil || err2 != nil {
+		return false
+	}
+	return fe.Sub(se).Hours()/24 > sharesStaleAfterDays
 }
 
 // pick returns the units array for the first tag present with data, in the given
