@@ -656,11 +656,11 @@ verifies (build/vet/lint), updates this file + `CLAUDE.md`, and commits._
 - ⏸DEFERRED:web-push(iOS PWA)/HK财报/KR市场/Reddit(商用受限,ApeWisdom+Tickertick 已覆盖)。「完整 hreflang」已由 pSEO 迁移完成。
 
 ### A. 体验优化(5 项,快批量)
-- **①手机端禁缩放**:viewport=device-width + user-scalable=no（对齐主流移动站,固定宽度=屏幕宽）。
-- **②个股页排版**:Next-earnings 三条幅整理协调;Congress trades + Institutional whales 移到 Indicators 下方。
-- **③** Events timeline 的 Rate-cut odds 模块移出,另置(位置我拍板)。
-- **④Opportunity board 变空**("No insider-buy signals yet")→ 真 bug,根因排查中(aebcb1da)。
-- **⑤AI 类数据缓存**:AI Digest 等按股缓存(1 天 TTL),过期/缺才重新调 LLM(省 token)。
+- **✅①手机端禁缩放**(commit 3d324fd,web):root layout `viewport` = device-width + initial-scale1 + maximum-scale1 + user-scalable=no + viewport-fit=cover。
+- **✅②个股页排版**(3d324fd):Next-earnings 组(EarningsChip+ShortChip pills)等高对齐成一行;Congress + Institutional whales 移到 Indicators 下方(#indicators→#congress→#whales,F3 锚点全保留)。
+- **✅③Rate-cut odds 移位**(3d324fd):移出 Events timeline → home HomeHub 的 Treasury MacroStrip 之后(归类 rates/macro 信号,我拍板)。
+- **✅④Opportunity board 变空修复**(Go,本批):根因=启动时 6 次 bulk Alpaca snapshot 连发触发 **429**,`recompute()` 在 price-fetch 错误时置空 prices → 所有行被 price≤0 gate 掉 → **把好的 23 行板子覆盖成空**(同 audit 的 symbols-refresh 部分失败覆盖 class)。修=price-fetch 错误时保留 last-good 板子不覆盖(genuine 零买入仍诚实置空)+ 防御性 empty-price guard + 回归测试。**follow-up(B 标记,未做)**:①debounce 启动 recompute 连发(429 的根源)②dei 股本覆盖缺口(8 候选仅 1 有 dei `EntityCommonStockSharesOutstanding`→7 被 `sh<=0` gate 掉=板子偏小;可加 us-gaap `CommonStockSharesOutstanding` 兜底/取最近 dei 期而非固定3季——判断题)。
+- **⑤AI 类数据缓存**(待做):AI Digest 等按股缓存(1 天 TTL),过期/缺才重新调 LLM(省 token)。先查 getSummary 是否已有 cap+single-flight 缓存。
 
 ### B. 重磅:AI 深度调研(研报)= R2 升级为付费独立模块
 - 独立模块;入口=个股页 AI Digest 右上角按钮 → 跳研报界面。

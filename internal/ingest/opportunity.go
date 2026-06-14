@@ -212,10 +212,22 @@ func (o *OpportunityIngestor) recompute(ctx context.Context) {
 	}
 	prices, err := o.prices.Snapshots(ctx, tickers)
 	if err != nil {
-		o.log.Warn("opportunity: prices", "err", err)
-		prices = map[string]float64{}
+		// A transient price-fetch failure (e.g. an Alpaca 429 — the startup burst
+		// of progressive recomputes can trip the rate limit) returns no prices.
+		// Recomputing now would gate EVERY row out on the price<=0 check and
+		// overwrite a perfectly good board with an empty one (the bug that emptied
+		// the live board). Keep the last-good board and retry on the next pass.
+		o.log.Warn("opportunity: prices — keeping last-good board", "err", err)
+		return
 	}
 	board := opportunity.Recompute(now, buys, o.shares, prices)
+	// Defensive: if we had candidate tickers but priced none of them (an empty
+	// price map with no error — e.g. every snapshot omitted), the board would
+	// collapse to empty. Don't clobber a non-empty last-good board with that.
+	if len(board) == 0 && len(tickers) > 0 && len(prices) == 0 && len(o.cache.Get()) > 0 {
+		o.log.Warn("opportunity: priced no candidates — keeping last-good board", "candidates", len(tickers))
+		return
+	}
 	o.cache.Set(board)
 	o.log.Info("opportunity: recomputed board", "candidates", len(tickers), "rows", len(board))
 }
