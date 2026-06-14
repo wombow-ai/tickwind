@@ -642,3 +642,36 @@ verifies (build/vet/lint), updates this file + `CLAUDE.md`, and commits._
 > **②恐贪折线图(本 commit)**:后端给恐贪日度分值加**持久化**(store.FearGreedPoint + SaveFearGreed/FearGreedHistory,memory+postgres[fear_greed 表]+split→Market;ingestor 每日写;启动从 store backfill 进 sentiment.Cache.Seed)——历史跨重新部署累积不再清零。前端 SentimentChip 展开区加 `FearGreedTrend` SVG 折线(0-100,按最新档着色绿/红/蓝 + 50 中性虚线 + 日期/高低区间;≥2 天才显示,1 天优雅隐藏)。随天数累积成形。
 > **③搜索空结果幻影按钮(本 commit)**:搜不到股票时"Go to {q}"按钮会让非股票词(如 hreflang)进入幻影详情页。改为仅当 query **像 ticker**(`^[A-Za-z0-9]{1,6}([.-][A-Za-z0-9]{1,4})?$`)才显示"直接打开"——hreflang→只显"无匹配"无按钮;qxqz(像 ticker)→保留按钮(未收录 OTC 仍可达)。预览双向验证。
 > **④调研 TradingAgents(subagent,Apache-2.0 可商用复用)→ R2 增强思路**:可复用其角色分解(分析师映射我们已有数据节)+ **牛熊辩论两轮生成 → 综合**(提升研报定性平衡,~3 次 DeepSeek,完全符合我们数字-从结构化-源、LLM-只定性的反幻觉约束)+ **自我批判 pass**(删无据论断)+ 双层模型路由。**不采纳**其交易/执行/评级层(违反"非投资建议/不执行")。详见调研报告。
+
+## 🎯 v8 owner 大批次(2026-06-14 晚 · UX + AI 深度研报重磅 + 拉新 + 付费)
+> owner 一次性给出:5 项体验优化 + AI 深度研报(R2 升级)细化规格 + 登录拉新门控 + 付费(含先做法律调研)。按 /loop + 多 subagent 推进。**进行中子任务:法律调研 addc6f274b · Opportunity-board 空根因 aebcb1da。**
+
+### 携带 backlog(/loop 暂停时列给 owner → 归档于此)
+- **pSEO 放量**:A-Z `/stocks` 目录(用 /v1/symbols 16118 帮爬长尾)· lift MAX_STOCK_URLS 3000→~6695(待爬取权威度涨)· Search Console 出数后按收录/排名调标题/结构化/扩展面。
+- **数据质量余项**:dual-class 正确总市值(per-class dimensioned shares×各价;BRK 等有价值,复杂)· garbage-value 股本 sanity floor(Paramount/Fox 0/1;staleness 已 catch 旧的)。
+- **新数据/功能**:市值筛选维度(market_cap 已修+守护)→ NL 筛选器 · Wikipedia pageviews · 暗池/A股灰源/Brazil B3(.env 有 key)。
+- **运维/可观测**:数据新鲜度健康端点 `/v1/health`(聚合各 cache UpdatedAt+count+staleness;本会话两次静默失败的根治)· 部署健康检查(确认新 commit 真上线,防 /tmp-swept 空操作 + 255-没起)· 更稳健 deploy(255 重试内建)。
+- **社区第5波**:官方每日帖(AI 晨报种子)· 留痕观点/战绩页。
+- 待确认:F&G breadth 成分(箱子久 up 后确认填充)。
+- ⏸DEFERRED:web-push(iOS PWA)/HK财报/KR市场/Reddit(商用受限,ApeWisdom+Tickertick 已覆盖)。「完整 hreflang」已由 pSEO 迁移完成。
+
+### A. 体验优化(5 项,快批量)
+- **①手机端禁缩放**:viewport=device-width + user-scalable=no（对齐主流移动站,固定宽度=屏幕宽）。
+- **②个股页排版**:Next-earnings 三条幅整理协调;Congress trades + Institutional whales 移到 Indicators 下方。
+- **③** Events timeline 的 Rate-cut odds 模块移出,另置(位置我拍板)。
+- **④Opportunity board 变空**("No insider-buy signals yet")→ 真 bug,根因排查中(aebcb1da)。
+- **⑤AI 类数据缓存**:AI Digest 等按股缓存(1 天 TTL),过期/缺才重新调 LLM(省 token)。
+
+### B. 重磅:AI 深度调研(研报)= R2 升级为付费独立模块
+- 独立模块;入口=个股页 AI Digest 右上角按钮 → 跳研报界面。
+- 工程固定数据(R1 指标 + SEC 财报/filings + smart-money + 期权情绪,**数字 Go 注入**)+ LLM 分析严格 harness 约束(反幻觉契约不变);**固定排版,尽量有图/表/数据/原文链接**。
+- prompt(user/system)参考 Claude Fable 5 system prompt(github asgeirtj/system_prompts_leaks .../claude-fable-5.md)。
+- **更强模型**(OpenRouter)→ 因更贵:**必须登录 + 全站每用户每天 1 次**(非每股一次)。
+- 做法:先 DESIGN(研究 Fable 5 prompt + 定固定数据/图表/引用架构 + 模型/配额/登录门控)再分增量;建立在已上线的 R2 6 节研报之上。
+
+### C. 拉新:核心功能登录门控
+- 核心(如指标)未登录只看部分,完整需登录;未登录"部分视图"样式我设计(诚实预览 + 引导登录,不打扰式,守 data-first)。
+
+### D. 付费:研报收费 + 法律调研(先做)
+- 计划对 AI 深度研报收费(更贵模型 + 高 token)。**monetization 解冻(此前 DEFERRED)。**
+- **先调研(addc6f274b):只对 AI 收费、底层仍用免费数据源,有无 ToS/法律风险?** 逐源 ToS(Alpaca IEX / Yahoo 非官方 / Finnhub 免费 / SEC 公有域 / …)+ 缓解。结论决定能否直接开付费,或先换/授权某些源。
