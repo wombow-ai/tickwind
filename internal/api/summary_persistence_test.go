@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/wombow-ai/tickwind/internal/auth"
 	"github.com/wombow-ai/tickwind/internal/enrich"
@@ -77,6 +78,75 @@ func getSummaryBody(t *testing.T, url string) (int, string) {
 	}
 	_ = json.NewDecoder(resp.Body).Decode(&body)
 	return resp.StatusCode, body.Summary
+}
+
+// slowSummaryEnricher is an enabled Enricher whose Summarize HONORS its context: it
+// blocks until the context is canceled, then returns the cancellation error. The
+// per-call timeout the handler imposes is what cancels it.
+type slowSummaryEnricher struct {
+	calls   atomic.Int32
+	gotDone atomic.Bool
+}
+
+func (s *slowSummaryEnricher) Enabled() bool { return true }
+func (s *slowSummaryEnricher) Summarize(ctx context.Context, _, _ string) (string, error) {
+	s.calls.Add(1)
+	<-ctx.Done()
+	s.gotDone.Store(true)
+	return "", ctx.Err()
+}
+func (s *slowSummaryEnricher) TranslateTitles(context.Context, []string) ([]string, error) {
+	return nil, enrich.ErrDisabled
+}
+func (s *slowSummaryEnricher) Brief(context.Context, string, string) (string, error) {
+	return "", enrich.ErrDisabled
+}
+func (s *slowSummaryEnricher) ComposeReport(context.Context, string, string) (map[string]string, error) {
+	return nil, enrich.ErrDisabled
+}
+func (s *slowSummaryEnricher) ComposeDeepReport(context.Context, string, string) (map[string]string, error) {
+	return nil, enrich.ErrDisabled
+}
+func (s *slowSummaryEnricher) ExplainMove(context.Context, string, string) (string, error) {
+	return "", enrich.ErrDisabled
+}
+func (s *slowSummaryEnricher) SummarizeFiling(context.Context, string, string) (string, error) {
+	return "", enrich.ErrDisabled
+}
+
+// TestSummaryComposeTimeoutDegradesTo200 proves a slow LLM digest degrades to an
+// empty-summary 200 (NOT a 5xx, never a hang) and refunds the daily cap, using the
+// real handler path with the package timeout temporarily shortened.
+func TestSummaryComposeTimeoutDegradesTo200(t *testing.T) {
+	orig := llmComposeTimeout
+	llmComposeTimeout = 50 * time.Millisecond
+	defer func() { llmComposeTimeout = orig }()
+
+	st := memory.New()
+	ctx := context.Background()
+	// Seed material so the handler reaches the LLM call (not the empty-news 200).
+	_ = st.SaveNews(ctx, "AAPL", []store.News{{Ticker: "AAPL", ID: "n1", Headline: "Apple news"}})
+
+	enr := &slowSummaryEnricher{}
+	srv, ts := newSummaryServer(st, enr)
+	defer ts.Close()
+
+	status, got := getSummaryBody(t, ts.URL+"/v1/stocks/AAPL/summary")
+	if status != http.StatusOK {
+		t.Fatalf("status = %d; want 200 (compose timeout must degrade to data-only, not 5xx)", status)
+	}
+	if got != "" {
+		t.Errorf("summary = %q; want empty after a compose timeout", got)
+	}
+	if !enr.gotDone.Load() {
+		t.Error("Summarize did not observe context cancellation; the deadline must reach the enrich call")
+	}
+	srv.sumMu.Lock()
+	count := srv.sumDayCount
+	srv.sumMu.Unlock()
+	if count != 0 {
+		t.Errorf("sumDayCount = %d; want 0 (a timed-out generation must refund the cap)", count)
+	}
 }
 
 // TestSummaryServedFromStoreSkipsLLM seeds the store with today's digest for a

@@ -226,6 +226,89 @@ func TestGetMovement_EnabledLLMCachedOnce(t *testing.T) {
 	}
 }
 
+// slowExplainEnricher is a movement.Enricher whose ExplainMove HONORS its context:
+// it blocks until the context is canceled, then returns the cancellation error. The
+// per-call timeout the handler imposes is what cancels it — proving the deadline
+// reaches the (would-be HTTP) enrich call, not just the goroutine. It records that
+// it ran so the cache/cap refund can be asserted.
+type slowExplainEnricher struct {
+	calls   int
+	gotDone bool
+}
+
+func (s *slowExplainEnricher) Enabled() bool { return true }
+func (s *slowExplainEnricher) ExplainMove(ctx context.Context, _, _ string) (string, error) {
+	s.calls++
+	<-ctx.Done() // block until the handler's per-call timeout (or parent cancel) fires
+	s.gotDone = true
+	return "", ctx.Err() // the enrich layer surfaces context.DeadlineExceeded
+}
+
+// TestGetMovement_ComposeTimeoutDegradesToDataOnly proves a slow LLM compose degrades
+// to the canned data-only 200 (never a 5xx, never a hang) and refunds the daily cap.
+// It runs the REAL movement.Service over a fake enricher that blocks until its
+// context deadline fires, with the package timeout temporarily shortened so the test
+// is fast — the same WithTimeout path production uses.
+func TestGetMovement_ComposeTimeoutDegradesToDataOnly(t *testing.T) {
+	// Shorten the per-call compose timeout for the duration of this test so the
+	// deadline fires in milliseconds instead of the production 25s.
+	orig := llmComposeTimeout
+	llmComposeTimeout = 50 * time.Millisecond
+	defer func() { llmComposeTimeout = orig }()
+
+	st := memory.New()
+	ctx := context.Background()
+	now := time.Now().UTC()
+	// A notable +10% move with one news headline → a significant, LLM-eligible move.
+	_ = st.UpsertQuote(ctx, store.Quote{Ticker: "AAPL", Price: 110, PrevClose: 100, Session: "regular", At: now})
+	_ = st.SaveNews(ctx, "AAPL", []store.News{
+		{Ticker: "AAPL", ID: "n1", Headline: "Apple beats earnings estimates", URL: "https://news/1", Published: now.Add(-2 * time.Hour)},
+	})
+
+	slow := &slowExplainEnricher{}
+	svc := movement.NewService(st, nil, slow, "deepseek-chat")
+	h := New(
+		st, stream.NewHub(), enrich.Noop{},
+		auth.NewVerifier(testSecret, ""),
+		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
+		nil, slog.New(slog.NewTextHandler(io.Discard, nil)),
+	)
+	h.SetMovement(svc)
+	srv := httptest.NewServer(h)
+	defer srv.Close()
+
+	resp, body := getMovement(t, srv.URL+"/v1/stocks/AAPL/movement")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d; want 200 (compose timeout must degrade to data-only, not 5xx)", resp.StatusCode)
+	}
+	if slow.calls == 0 { // ExplainMove must have been attempted
+		t.Fatal("ExplainMove was not called")
+	}
+	if !slow.gotDone {
+		t.Error("ExplainMove did not observe context cancellation; the deadline must reach the enrich call")
+	}
+	if body.LLM {
+		t.Error("llm = true; want false after a compose timeout (data-only)")
+	}
+	if !body.Significant || body.ChangePct != 10 || body.Direction != "up" {
+		t.Errorf("got significant=%v %v %q; want the Go-owned significant +10 up", body.Significant, body.ChangePct, body.Direction)
+	}
+	if body.Explanation == "" {
+		t.Error("explanation empty; want the canned data-only line after a timeout")
+	}
+	if len(body.Evidence) != 1 || body.Evidence[0].Type != "news" {
+		t.Errorf("evidence = %+v; want one attributed news item", body.Evidence)
+	}
+	// The daily cap must be refunded exactly like any other failed/empty generation:
+	// a timed-out compose produced no LLM sentence, so it must not burn budget.
+	h.moveMu.Lock()
+	count := h.moveDayCount
+	h.moveMu.Unlock()
+	if count != 0 {
+		t.Errorf("moveDayCount = %d; want 0 (a timed-out compose must refund the cap)", count)
+	}
+}
+
 // TestGetMovement_EndToEndDataOnly wires the REAL movement.Service over a seeded
 // memory store through the HTTP handler, with a Noop enricher — the exact
 // production data-only path. It asserts: a +10% quote → 200 significant with the

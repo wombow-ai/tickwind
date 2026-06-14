@@ -10,6 +10,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"hash/fnv"
 	"io"
@@ -2478,6 +2479,28 @@ func (s *Server) SetDeepResearchLimit(n int) {
 	}
 }
 
+// llmComposeTimeout bounds a single LLM compose/enrich call so an uncached AI
+// endpoint degrades FAST to its data-only fallback instead of blocking up to the
+// enricher's generous ~90s HTTP ceiling when the free-tier model is rate-limited
+// or slow. It is applied at each handler call boundary via context.WithTimeout;
+// because every enrich method builds its request with http.NewRequestWithContext,
+// the deadline cancels the real in-flight HTTP call (not just the goroutine). On
+// the deadline the enrich method returns context.DeadlineExceeded, which every
+// AI handler already treats as "LLM unavailable → serve the existing data-only
+// fallback" (refunding any reserved cap exactly like the other error paths).
+//
+//   - llmComposeTimeout covers the normal/short compositions (news+social digest,
+//     movement explainer, per-filing material-event summaries, normal research).
+//   - llmDeepComposeTimeout is the longer bound for the deep-research compose
+//     (depth=deep, composeDeepMaxTokens=6000), which legitimately needs more room.
+//
+// These are vars (not consts) only so a test can shorten them to fire the deadline
+// in milliseconds; production never reassigns them.
+var (
+	llmComposeTimeout     = 25 * time.Second
+	llmDeepComposeTimeout = 60 * time.Second
+)
+
 // researchDailyCap bounds research-prose LLM generations per day across ALL
 // tickers — a hard token-budget backstop, smaller than summaryDailyCap since R2
 // is a bigger call. The cap gates PROSE only: the data-only fact sheet (assemble
@@ -2634,10 +2657,19 @@ func (s *Server) getResearch(w http.ResponseWriter, r *http.Request) {
 
 	hasProse := false
 	if wantProse {
+		// Bound the LLM compose so an uncached report degrades FAST to the data-only
+		// fact sheet rather than blocking on a slow/rate-limited model. The deadline
+		// cancels the real outbound HTTP call (enrich uses NewRequestWithContext); a
+		// context.DeadlineExceeded surfaces as empty prose below, which refunds the
+		// reserved cap exactly like a disabled/errored compose.
 		if deep {
-			fs = s.researchCalc.ComposeDeep(r.Context(), fs, lang)
+			ctx, cancel := context.WithTimeout(r.Context(), llmDeepComposeTimeout)
+			fs = s.researchCalc.ComposeDeep(ctx, fs, lang)
+			cancel()
 		} else {
-			fs = s.researchCalc.Compose(r.Context(), fs, lang)
+			ctx, cancel := context.WithTimeout(r.Context(), llmComposeTimeout)
+			fs = s.researchCalc.Compose(ctx, fs, lang)
+			cancel()
 		}
 		for _, sec := range fs.Sections {
 			if strings.TrimSpace(sec.Prose) != "" {
@@ -2804,7 +2836,13 @@ func (s *Server) getMovement(w http.ResponseWriter, r *http.Request) {
 
 	// Only call the LLM for a significant move (a sub-threshold move has no prose).
 	if wantLLM && exp.Significant {
-		exp = s.movementCalc.Explain(r.Context(), ticker, lang)
+		// Bound the LLM sentence so a slow/rate-limited model degrades FAST to the
+		// canned Go line instead of hanging. The deadline cancels the real outbound
+		// HTTP call (enrich uses NewRequestWithContext); on timeout Explain returns
+		// the data-only explanation (LLM=false), which refunds the cap below.
+		ctx, cancel := context.WithTimeout(r.Context(), llmComposeTimeout)
+		exp = s.movementCalc.Explain(ctx, ticker, lang)
+		cancel()
 		if !exp.LLM {
 			s.moveMu.Lock()
 			s.moveDayCount-- // LLM disabled mid-flight / errored → refund budget
@@ -2949,7 +2987,21 @@ func (s *Server) getMaterialEvents(w http.ResponseWriter, r *http.Request) {
 		err error
 	)
 	if wantLLM {
-		rep, err = s.materialCalc.Summarize(r.Context(), ticker, lang)
+		// Bound the LLM-summary pass so a slow/rate-limited model degrades FAST to
+		// the facts-only report. The deadline cancels the real outbound HTTP call
+		// (enrich uses NewRequestWithContext): a per-filing summary that times out
+		// is dropped to "" inside the service (never an error), so the report still
+		// serves its filings + item labels. rep.LLM=false then refunds the cap below.
+		ctx, cancel := context.WithTimeout(r.Context(), llmComposeTimeout)
+		rep, err = s.materialCalc.Summarize(ctx, ticker, lang)
+		cancel()
+		// Defensive: if the deadline fired during the EDGAR facts fetch (before any
+		// summary), Summarize errors — but the company may be perfectly valid. While
+		// the parent context is still alive, fall back to the facts-only report so a
+		// compose timeout can never turn a real ticker into a 404.
+		if err != nil && r.Context().Err() == nil {
+			rep, err = s.materialCalc.Report(r.Context(), ticker)
+		}
 	} else {
 		rep, err = s.materialCalc.Report(r.Context(), ticker)
 	}
@@ -3565,10 +3617,23 @@ func (s *Server) getSummary(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{"ticker": ticker, "summary": "", "generated_at": e.At})
 		return
 	}
-	summary, err := s.enrich.Summarize(r.Context(), input, lang)
+	// Bound the LLM digest so a slow/rate-limited model degrades FAST instead of
+	// blocking on the enricher's ~90s HTTP ceiling. The deadline cancels the real
+	// outbound HTTP call (enrich uses NewRequestWithContext).
+	ctx, cancel := context.WithTimeout(r.Context(), llmComposeTimeout)
+	summary, err := s.enrich.Summarize(ctx, input, lang)
+	cancel()
 	if err != nil {
 		refundCap() // failed generation shouldn't burn budget
-		finish(nil)
+		finish(nil) // no cache entry → a later visit retries (don't persist the miss)
+		// A compose timeout degrades to an empty digest (200), NOT a 5xx: the AI
+		// digest is best-effort and the client treats an empty summary as "no digest
+		// yet". Only a genuine upstream LLM error (bad gateway / auth) still 502s.
+		// The parent context being canceled (client hung up) is not a degrade case.
+		if errors.Is(err, context.DeadlineExceeded) && r.Context().Err() == nil {
+			writeJSON(w, http.StatusOK, map[string]any{"ticker": ticker, "summary": "", "generated_at": time.Now().UTC()})
+			return
+		}
 		writeJSON(w, http.StatusBadGateway, errBody(err.Error()))
 		return
 	}
