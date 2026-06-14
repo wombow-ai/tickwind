@@ -10,7 +10,7 @@ import {
   TrendingDown,
   TrendingUp,
 } from 'lucide-react';
-import Link from 'next/link';
+import Link from '@/components/LocalLink';
 import {useEffect, useMemo, useState} from 'react';
 import {
   getBarsBatch,

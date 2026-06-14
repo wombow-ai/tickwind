@@ -91,41 +91,54 @@ async function indicatorSlugs(): Promise<string[]> {
   }
 }
 
+import {LOCALES} from '@/lib/locale';
+
 /**
- * Bilingual hreflang alternates for a sitemap URL. Every page is served in both
- * languages via a `?lang=zh|en` param, so each entry advertises its en / zh
- * variants — letting search engines index and language-target both.
+ * Path-based bilingual hreflang alternates for an un-prefixed sitemap `path`
+ * (e.g. `/hot`). Every page is served at `/en${path}` and `/zh${path}`, so each
+ * entry advertises both language variants + x-default — letting search engines
+ * index and language-target both.
  */
-function langAlt(url: string): {languages: Record<string, string>} {
-  return {languages: {en: `${url}?lang=en`, 'zh-CN': `${url}?lang=zh`}};
+function langAlt(path: string): {languages: Record<string, string>} {
+  const suffix = path === '/' ? '' : path;
+  const en = `${SITE_URL}/en${suffix}`;
+  const zh = `${SITE_URL}/zh${suffix}`;
+  return {languages: {en, 'zh-CN': zh, 'x-default': en}};
 }
+
+/** An indexable page keyed by its locale-less `path` (e.g. `/hot`). */
+type Page = {
+  path: string;
+  changeFrequency: MetadataRoute.Sitemap[number]['changeFrequency'];
+  priority: number;
+};
 
 /**
  * Sitemap of the public, indexable pages: the hub + section pages, and a stock
  * page per indexable ticker. Per-user/auth routes are intentionally omitted.
- * Every entry carries en / zh hreflang alternates (URL-level i18n via `?lang=`).
+ * Path-based i18n: each page is emitted twice (`/en${path}` and `/zh${path}`),
+ * and every entry carries the en / zh / x-default hreflang alternates.
  */
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const now = new Date();
-  const staticPages: MetadataRoute.Sitemap = [
-    {url: `${SITE_URL}/`, lastModified: now, changeFrequency: 'hourly', priority: 1},
-    {url: `${SITE_URL}/opportunities`, lastModified: now, changeFrequency: 'daily', priority: 0.7},
-    {url: `${SITE_URL}/smart-money`, lastModified: now, changeFrequency: 'daily', priority: 0.7},
-    {url: `${SITE_URL}/hot`, lastModified: now, changeFrequency: 'hourly', priority: 0.7},
-    {url: `${SITE_URL}/screen`, lastModified: now, changeFrequency: 'daily', priority: 0.6},
-    {url: `${SITE_URL}/calendar/earnings`, lastModified: now, changeFrequency: 'daily', priority: 0.6},
-    {url: `${SITE_URL}/calendar/ipo`, lastModified: now, changeFrequency: 'daily', priority: 0.6},
-    {url: `${SITE_URL}/news`, lastModified: now, changeFrequency: 'hourly', priority: 0.6},
-    {url: `${SITE_URL}/discussion`, lastModified: now, changeFrequency: 'hourly', priority: 0.6},
-    {url: `${SITE_URL}/calendar/macro`, lastModified: now, changeFrequency: 'daily', priority: 0.6},
-    {url: `${SITE_URL}/unusual`, lastModified: now, changeFrequency: 'daily', priority: 0.6},
-    {url: `${SITE_URL}/indicators`, lastModified: now, changeFrequency: 'monthly', priority: 0.6},
-    {url: `${SITE_URL}/guide`, lastModified: now, changeFrequency: 'weekly', priority: 0.6},
-    {url: `${SITE_URL}/announcements`, lastModified: now, changeFrequency: 'weekly', priority: 0.5},
+  const staticPages: Page[] = [
+    {path: '/', changeFrequency: 'hourly', priority: 1},
+    {path: '/opportunities', changeFrequency: 'daily', priority: 0.7},
+    {path: '/smart-money', changeFrequency: 'daily', priority: 0.7},
+    {path: '/hot', changeFrequency: 'hourly', priority: 0.7},
+    {path: '/screen', changeFrequency: 'daily', priority: 0.6},
+    {path: '/calendar/earnings', changeFrequency: 'daily', priority: 0.6},
+    {path: '/calendar/ipo', changeFrequency: 'daily', priority: 0.6},
+    {path: '/news', changeFrequency: 'hourly', priority: 0.6},
+    {path: '/discussion', changeFrequency: 'hourly', priority: 0.6},
+    {path: '/calendar/macro', changeFrequency: 'daily', priority: 0.6},
+    {path: '/unusual', changeFrequency: 'daily', priority: 0.6},
+    {path: '/indicators', changeFrequency: 'monthly', priority: 0.6},
+    {path: '/guide', changeFrequency: 'weekly', priority: 0.6},
+    {path: '/announcements', changeFrequency: 'weekly', priority: 0.5},
   ];
-  const guidePages: MetadataRoute.Sitemap = GUIDES.map(g => ({
-    url: `${SITE_URL}/guide/${g.slug}`,
-    lastModified: now,
+  const guidePages: Page[] = GUIDES.map(g => ({
+    path: `/guide/${g.slug}`,
     changeFrequency: 'monthly',
     priority: 0.6,
   }));
@@ -135,39 +148,42 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     fundSlugs(),
     indicatorSlugs(),
   ]);
-  const stockPages: MetadataRoute.Sitemap = tickers.map(ticker => ({
-    url: `${SITE_URL}/stock/${encodeURIComponent(ticker)}`,
-    lastModified: now,
+  const stockPages: Page[] = tickers.map(ticker => ({
+    path: `/stock/${encodeURIComponent(ticker)}`,
     changeFrequency: 'hourly',
     priority: 0.8,
   }));
-  const memberPages: MetadataRoute.Sitemap = memberSlugs.map(slug => ({
-    url: `${SITE_URL}/congress/member/${encodeURIComponent(slug)}`,
-    lastModified: now,
+  const memberPages: Page[] = memberSlugs.map(slug => ({
+    path: `/congress/member/${encodeURIComponent(slug)}`,
     changeFrequency: 'daily',
     priority: 0.6,
   }));
-  const fundPages: MetadataRoute.Sitemap = funds.map(slug => ({
-    url: `${SITE_URL}/fund/${encodeURIComponent(slug)}`,
-    lastModified: now,
+  const fundPages: Page[] = funds.map(slug => ({
+    path: `/fund/${encodeURIComponent(slug)}`,
     changeFrequency: 'weekly',
     priority: 0.6,
   }));
-  const indicatorPages: MetadataRoute.Sitemap = indicators.map(slug => ({
-    url: `${SITE_URL}/indicators/${encodeURIComponent(slug)}`,
-    lastModified: now,
+  const indicatorPages: Page[] = indicators.map(slug => ({
+    path: `/indicators/${encodeURIComponent(slug)}`,
     changeFrequency: 'monthly',
     priority: 0.6,
   }));
-  return [
+  const pages: Page[] = [
     ...staticPages,
     ...guidePages,
     ...stockPages,
     ...memberPages,
     ...fundPages,
     ...indicatorPages,
-  ].map(entry => ({
-    ...entry,
-    alternates: langAlt(entry.url),
-  }));
+  ];
+  // Emit one entry per (page × locale), each advertising both language variants.
+  return pages.flatMap(p =>
+    LOCALES.map(locale => ({
+      url: `${SITE_URL}/${locale}${p.path === '/' ? '' : p.path}`,
+      lastModified: now,
+      changeFrequency: p.changeFrequency,
+      priority: p.priority,
+      alternates: langAlt(p.path),
+    })),
+  );
 }

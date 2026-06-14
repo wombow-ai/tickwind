@@ -1,7 +1,7 @@
 'use client';
 
 import {X} from 'lucide-react';
-import Link from 'next/link';
+import Link from '@/components/LocalLink';
 import type {Quote, Security} from '@/lib/api';
 import {useT} from '@/lib/i18n';
 import {useDark} from '@/lib/theme';

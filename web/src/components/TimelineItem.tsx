@@ -7,7 +7,7 @@ import {
   MessageSquare,
   Newspaper,
 } from 'lucide-react';
-import Link from 'next/link';
+import Link from '@/components/LocalLink';
 import type {Clip, Filing, NewsItem, Post} from '@/lib/api';
 import {useLang, useT} from '@/lib/i18n';
 import {useDark} from '@/lib/theme';

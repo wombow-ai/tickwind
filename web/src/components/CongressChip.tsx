@@ -1,7 +1,7 @@
 'use client';
 
 import {Landmark} from 'lucide-react';
-import Link from 'next/link';
+import Link from '@/components/LocalLink';
 import {useEffect, useState} from 'react';
 import {getStockCongress, type CongressTrade} from '@/lib/api';
 import {useLang, useT} from '@/lib/i18n';

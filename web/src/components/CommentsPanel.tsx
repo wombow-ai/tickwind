@@ -1,7 +1,7 @@
 'use client';
 
 import {Flag, Heart, MessageSquare, Pencil, Trash2} from 'lucide-react';
-import Link from 'next/link';
+import Link from '@/components/LocalLink';
 import {useCallback, useEffect, useState} from 'react';
 import {
   deleteComment,

@@ -12,7 +12,7 @@ import {
   Plus,
   X,
 } from 'lucide-react';
-import Link from 'next/link';
+import Link from '@/components/LocalLink';
 import {useLang, useT} from '@/lib/i18n';
 import {useCallback, useEffect, useState} from 'react';
 import {

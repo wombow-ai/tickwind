@@ -1,7 +1,7 @@
 'use client';
 
 import {Activity, Gauge, SlidersHorizontal} from 'lucide-react';
-import Link from 'next/link';
+import Link from '@/components/LocalLink';
 import {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {
   getMyPrefs,

@@ -1,7 +1,7 @@
 'use client';
 
 import {Activity} from 'lucide-react';
-import Link from 'next/link';
+import Link from '@/components/LocalLink';
 import {useEffect, useState} from 'react';
 import {getUnusualOptions, type UnusualContract} from '@/lib/api';
 import {useLang, useT} from '@/lib/i18n';

@@ -1,7 +1,7 @@
 'use client';
 
 import {Rocket} from 'lucide-react';
-import Link from 'next/link';
+import Link from '@/components/LocalLink';
 import {useEffect, useState} from 'react';
 import {getIPO, type IPO} from '@/lib/api';
 import {useT} from '@/lib/i18n';

@@ -1,9 +1,10 @@
 'use client';
 
 import {CalendarClock} from 'lucide-react';
-import Link from 'next/link';
+import Link from '@/components/LocalLink';
 import {usePathname} from 'next/navigation';
 import {useT} from '@/lib/i18n';
+import {stripLocale} from '@/lib/locale';
 import {useDark} from '@/lib/theme';
 import {cx, tok} from '@/lib/ui';
 
@@ -23,7 +24,7 @@ export function CalendarTabs() {
   const dark = useDark();
   const t = tok(dark);
   const tr = useT();
-  const pathname = usePathname();
+  const pathname = stripLocale(usePathname()).rest;
   return (
     <nav className="mx-auto mb-5 flex max-w-3xl items-center gap-1.5">
       <CalendarClock

@@ -1,15 +1,15 @@
 import type {Metadata} from 'next';
 import './globals.css';
-import {AuthProvider} from '@/lib/auth';
 import {APP_NAME, APP_TAGLINE, SITE_URL} from '@/lib/config';
 import {ogImageMeta} from '@/lib/og';
-import {langNoFlashScript} from '@/lib/i18n';
-import {ThemeProvider, themeNoFlashScript} from '@/lib/theme';
-import {ToastProvider} from '@/components/ui/Toast';
 
 const DESCRIPTION =
   'Live all-session stock prices, SEC filings, news and the chatter you follow — one calm page per stock.';
 
+// Global metadata (metadataBase + defaults) applies to every page. The actual
+// <html>/<body> + provider stack live in `[locale]/layout.tsx` — all pages are
+// under `[locale]`, so this root layout is a minimal pass-through (the standard
+// next-intl pattern for a path-prefixed locale segment).
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
   title: {
@@ -41,23 +41,6 @@ export const metadata: Metadata = {
   },
 };
 
-export default function RootLayout({
-  children,
-}: Readonly<{children: React.ReactNode}>) {
-  return (
-    <html lang="en" suppressHydrationWarning>
-      <head>
-        {/* Apply the persisted theme + language before paint to avoid a flash. */}
-        <script dangerouslySetInnerHTML={{__html: themeNoFlashScript}} />
-        <script dangerouslySetInnerHTML={{__html: langNoFlashScript}} />
-      </head>
-      <body className="antialiased">
-        <ThemeProvider>
-          <AuthProvider>
-            <ToastProvider>{children}</ToastProvider>
-          </AuthProvider>
-        </ThemeProvider>
-      </body>
-    </html>
-  );
+export default function RootLayout({children}: Readonly<{children: React.ReactNode}>) {
+  return children;
 }

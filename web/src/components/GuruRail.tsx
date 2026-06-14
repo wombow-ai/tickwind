@@ -1,7 +1,7 @@
 'use client';
 
 import {ExternalLink, Mic} from 'lucide-react';
-import Link from 'next/link';
+import Link from '@/components/LocalLink';
 import {useCallback, useEffect, useState} from 'react';
 import {getGurus, type GuruItem} from '@/lib/api';
 import {useT} from '@/lib/i18n';

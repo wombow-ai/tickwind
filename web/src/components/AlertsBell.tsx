@@ -1,12 +1,13 @@
 'use client';
 
 import {Bell} from 'lucide-react';
-import Link from 'next/link';
+import Link from '@/components/LocalLink';
 import {usePathname} from 'next/navigation';
 import {useEffect, useState} from 'react';
 import {getAlerts} from '@/lib/api';
 import {useAuth} from '@/lib/auth';
 import {useT} from '@/lib/i18n';
+import {stripLocale} from '@/lib/locale';
 import {cx, tok} from '@/lib/ui';
 
 const POLL_MS = 60_000;
@@ -21,7 +22,7 @@ export function AlertsBell({dark}: {dark: boolean}) {
   const {user, getToken} = useAuth();
   const t = tok(dark);
   const tr = useT();
-  const pathname = usePathname();
+  const pathname = stripLocale(usePathname()).rest;
   const [count, setCount] = useState(0);
 
   useEffect(() => {

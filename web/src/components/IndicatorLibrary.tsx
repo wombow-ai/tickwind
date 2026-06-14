@@ -1,7 +1,7 @@
 'use client';
 
 import {ChevronDown, Search} from 'lucide-react';
-import Link from 'next/link';
+import Link from '@/components/LocalLink';
 import {useMemo, useState} from 'react';
 import {indicatorSlug, type Indicator, type IndicatorFacets} from '@/lib/api';
 import {useLang, useT} from '@/lib/i18n';

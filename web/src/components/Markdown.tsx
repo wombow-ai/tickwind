@@ -1,6 +1,6 @@
 'use client';
 
-import Link from 'next/link';
+import Link from '@/components/LocalLink';
 import ReactMarkdown from 'react-markdown';
 import {useDark} from '@/lib/theme';
 import {cx, tok} from '@/lib/ui';

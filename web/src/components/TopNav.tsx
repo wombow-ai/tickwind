@@ -1,11 +1,12 @@
 'use client';
 
 import {ChevronDown, LogOut, Menu, Moon, Search, Settings, Star, StickyNote, Sun, Wallet, X} from 'lucide-react';
-import Link from 'next/link';
+import Link from '@/components/LocalLink';
 import {usePathname, useRouter} from 'next/navigation';
 import {useEffect, useRef, useState} from 'react';
 import {useAuth} from '@/lib/auth';
 import {useLang, useT} from '@/lib/i18n';
+import {localizedPath, stripLocale} from '@/lib/locale';
 import {useTheme} from '@/lib/theme';
 import {btnPrimary, cx, tok} from '@/lib/ui';
 import {Logo} from '@/components/ui/atoms';
@@ -59,7 +60,10 @@ export function TopNav() {
   const tr = useT();
   const {lang, toggle: toggleLang} = useLang();
   const router = useRouter();
-  const pathname = usePathname();
+  const rawPathname = usePathname();
+  // Active-state matching compares against un-prefixed paths (e.g. `/hot`), so
+  // strip the `/en`|`/zh` locale segment the URL now carries.
+  const pathname = stripLocale(rawPathname).rest;
   const authed = !!user;
   const [menu, setMenu] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -82,8 +86,10 @@ export function TopNav() {
     setSearchOpen(false);
   }, [pathname]);
 
-  const go = (ticker: string) => router.push(`/stock/${encodeURIComponent(ticker)}`);
-  const search = (q: string) => router.push(`/search?q=${encodeURIComponent(q)}`);
+  const go = (ticker: string) =>
+    router.push(localizedPath(lang, `/stock/${encodeURIComponent(ticker)}`));
+  const search = (q: string) =>
+    router.push(localizedPath(lang, `/search?q=${encodeURIComponent(q)}`));
 
   // One source of truth for destinations, shared by desktop nav, the More
   // dropdown, and the mobile menu.

@@ -2,7 +2,7 @@
 
 import {ArrowUpDown, Lock, MessageSquare, Newspaper, Plus, Wind} from 'lucide-react';
 import type {LucideIcon} from 'lucide-react';
-import Link from 'next/link';
+import Link from '@/components/LocalLink';
 import {useCallback, useEffect, useMemo, useState} from 'react';
 import {
   addToWatchlist,

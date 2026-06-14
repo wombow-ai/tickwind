@@ -1,7 +1,7 @@
 'use client';
 
 import {Bell, RotateCcw, Trash2} from 'lucide-react';
-import Link from 'next/link';
+import Link from '@/components/LocalLink';
 import {useCallback, useEffect, useState} from 'react';
 import {deleteAlert, getAlerts, reactivateAlert, type Alert} from '@/lib/api';
 import {useAuth} from '@/lib/auth';

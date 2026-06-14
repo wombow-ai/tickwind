@@ -1,12 +1,13 @@
 'use client';
 
-import Link from 'next/link';
+import Link from '@/components/LocalLink';
 import {useRouter} from 'next/navigation';
 import {useState} from 'react';
 import {Check} from 'lucide-react';
 import {useAuth} from '@/lib/auth';
 import {GOOGLE_OAUTH_ENABLED} from '@/lib/config';
-import {useT} from '@/lib/i18n';
+import {useLang, useT} from '@/lib/i18n';
+import {localizedPath} from '@/lib/locale';
 import {useDark} from '@/lib/theme';
 import {btnPrimary, cx, tok} from '@/lib/ui';
 
@@ -17,6 +18,8 @@ export function AuthForm({mode}: {mode: 'login' | 'signup'}) {
   const dark = useDark();
   const t = tok(dark);
   const tr = useT();
+  const {lang} = useLang();
+  const home = localizedPath(lang, '/');
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -40,7 +43,7 @@ export function AuthForm({mode}: {mode: 'login' | 'signup'}) {
         const {data, error} = await supabase.auth.signUp({email, password});
         if (error) throw error;
         if (data.session) {
-          router.push('/');
+          router.push(home);
           router.refresh();
         } else {
           setNotice(tr('auth.checkEmail'));
@@ -48,7 +51,7 @@ export function AuthForm({mode}: {mode: 'login' | 'signup'}) {
       } else {
         const {error} = await supabase.auth.signInWithPassword({email, password});
         if (error) throw error;
-        router.push('/');
+        router.push(home);
         router.refresh();
       }
     } catch (err) {
@@ -63,7 +66,11 @@ export function AuthForm({mode}: {mode: 'login' | 'signup'}) {
     setBusy(true);
     const {error} = await supabase.auth.signInWithOAuth({
       provider: 'google',
-      options: {redirectTo: `${window.location.origin}/auth/callback`},
+      options: {
+        // Pass the active locale as `next` so the callback lands the user on
+        // the locale-prefixed home directly (no extra 308 hop through `/`).
+        redirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent('/' + lang)}`,
+      },
     });
     if (error) {
       setError(error.message);

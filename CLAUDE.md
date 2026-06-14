@@ -216,7 +216,28 @@ feature-flagged plugin, never on the critical path. Web only.
   filing-delay note). Footnote-only-priced lines (weighted-avg, no `<value>`) are dropped, not fabricated.
   Shipped after a 5-dimension adversarial review (3 low/nit findings fixed: edgar.Client now self-throttles
   ≥120 ms/req like `sec.Client`, so the ≤25-filing sweep stays under SEC's 10 req/s — also hardens material-
-  events). v2: derivative-table option exercises (code M).
+  events). v2: derivative-table option exercises (code M). **LIVE-verified** (AAPL: 13 sells / 0 buys,
+  net −$111.7 M; every value = shares×price; 10b5-1 correct — Levinson Director discretionary `false`,
+  Borders/Parekh/O'Brien officer plan sells `true`).
+- **Shipped 2026-06-14 (pSEO Stage 1 — path-based `/zh` `/en` i18n, the long-deferred hreflang unblock):**
+  migrated the whole web app from client-side `?lang=` to **path-based locale URLs** (`/en/...`, `/zh/...`).
+  The decisive move: reimplement `useT`/`useLang` internals to read the locale from a React **Context** fed by
+  the `[locale]` route segment — so all **~592 `tr()` call sites stayed unchanged** and SSR now renders the
+  correct language (no English-only first paint). `(main)`/`(auth)`/`designs` moved under `app/[locale]/`;
+  `<html lang>` + providers live in `app/[locale]/layout.tsx`, root `layout.tsx` is a pass-through;
+  `web/src/proxy.ts` middleware detects locale (cookie `tw-lang` → `Accept-Language` `zh*` → default `en`) and
+  **308-redirects** bare paths (static-asset extension allowlist so dotted tickers like `BRK.B`/`0700.HK` still
+  localize, not 404); `<LocalLink>` prefixes internal links (48 `next/link` imports swapped); the language
+  toggle now `router.push`es the locale-swapped path (preserving query+hash). SEO is path-based: `langAlternates`
+  emits per-locale canonical + `{en, zh-CN, x-default}` hreflang, `sitemap.ts` emits both `/en` and `/zh` per
+  URL, `robots.ts` covers both; `generateStaticParams` is locale×slug (**632 static pages**, incl. indicators
+  282×2). Added `app/not-found.tsx` (own `<html>`/`<body>`) + `app/[locale]/not-found.tsx`. Shipped after a
+  5-dimension adversarial review (12 raised → **10 confirmed, 0 blockers**; the high [5 section pages
+  canonicalizing to the homepage + no hreflang] + both medium [404 pages rendering html/body-less] + the lows
+  all fixed and re-verified in built HTML). Default locale `en` (x-default); `zh` via Accept-Language/cookie.
+  **Stage 2 next:** render only the active locale on pSEO pages (drop the `[data-i18n]` dual-render → genuinely
+  distinct `/en` vs `/zh` HTML + per-locale JSON-LD/OG). **Stage 3:** add `GET /v1/symbols` to mass-generate
+  `/stock/[ticker]`, build `/screen/[preset]`, upgrade `/topic/[key]`.
 - **Ops (2026-06-14):** the new 4 GB VPS lacked the old box's fail2ban deploy-IP whitelist → a burst of
   deploy connects banned `154.29.158.47`; fixed durably via `/etc/fail2ban/jail.d/tickwind-ignore.conf`
   (owner VNC). The ssh unit on this box is **`ssh`, NOT `sshd`**. Box has 2 G swap + healthy RAM (not OOM).

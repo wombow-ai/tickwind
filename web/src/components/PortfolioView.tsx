@@ -1,6 +1,6 @@
 'use client';
 
-import Link from 'next/link';
+import Link from '@/components/LocalLink';
 import {useCallback, useEffect, useMemo, useState} from 'react';
 import {getHoldings, type Holding} from '@/lib/api';
 import {useAuth} from '@/lib/auth';

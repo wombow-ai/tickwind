@@ -1,7 +1,7 @@
 'use client';
 
 import {CalendarClock} from 'lucide-react';
-import Link from 'next/link';
+import Link from '@/components/LocalLink';
 import {useEffect, useState} from 'react';
 import {getEarnings, type Earning} from '@/lib/api';
 import {useLang, useT} from '@/lib/i18n';

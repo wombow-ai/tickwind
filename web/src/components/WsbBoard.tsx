@@ -1,7 +1,7 @@
 'use client';
 
 import {Flame, TrendingDown, TrendingUp} from 'lucide-react';
-import Link from 'next/link';
+import Link from '@/components/LocalLink';
 import {useCallback, useEffect, useState} from 'react';
 import {getHot, type HotStock} from '@/lib/api';
 import {useT} from '@/lib/i18n';

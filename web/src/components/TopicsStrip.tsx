@@ -1,7 +1,7 @@
 'use client';
 
 import {Flame} from 'lucide-react';
-import Link from 'next/link';
+import Link from '@/components/LocalLink';
 import {useEffect, useState} from 'react';
 import {getTopics, type HotTopic} from '@/lib/api';
 import {useT} from '@/lib/i18n';

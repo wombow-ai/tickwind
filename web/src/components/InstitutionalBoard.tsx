@@ -1,7 +1,7 @@
 'use client';
 
 import {FileText, Landmark} from 'lucide-react';
-import Link from 'next/link';
+import Link from '@/components/LocalLink';
 import {useCallback, useEffect, useState} from 'react';
 import {getInstitutional, type InstitutionalFiling} from '@/lib/api';
 import {useLang, useT} from '@/lib/i18n';

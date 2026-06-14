@@ -1,7 +1,7 @@
 'use client';
 
 import {FileText, Sparkles, Users} from 'lucide-react';
-import Link from 'next/link';
+import Link from '@/components/LocalLink';
 import {useCallback, useEffect, useState} from 'react';
 import {getOpportunities, type OpportunityStock} from '@/lib/api';
 import {useT} from '@/lib/i18n';

@@ -1,7 +1,7 @@
 'use client';
 
 import {FileText, Landmark, Users} from 'lucide-react';
-import Link from 'next/link';
+import Link from '@/components/LocalLink';
 import {useCallback, useEffect, useState} from 'react';
 import {congressSlug, getCongress, type CongressFiling} from '@/lib/api';
 import {useLang, useT} from '@/lib/i18n';

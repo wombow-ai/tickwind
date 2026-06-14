@@ -1,7 +1,7 @@
 'use client';
 
 import {ExternalLink, Loader2, Sparkles, TrendingDown, TrendingUp} from 'lucide-react';
-import Link from 'next/link';
+import Link from '@/components/LocalLink';
 import {useEffect, useState} from 'react';
 import {
   getResearch,

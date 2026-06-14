@@ -43,23 +43,31 @@ export const APP_NAME = 'Tickwind';
 export const APP_TAGLINE = "Read every tick. See where the market's blowing.";
 
 /**
- * Bilingual hreflang alternates for a page `path` (e.g. `/smart-money`). The
- * site does URL-level i18n via a `?lang=zh|en` param (resolved before paint by
- * the language no-flash script), so search engines can index both languages of
- * the same page. `canonical` is the clean path; `x-default` points there (it
- * defaults to English). Assign to a page's `metadata.alternates`.
+ * Path-based bilingual hreflang alternates for an un-prefixed page `path` (e.g.
+ * `/smart-money`). The site does URL-level i18n via `/en` and `/zh` route
+ * segments, so each language gets its own indexable URL. `x-default` points at
+ * the English variant. `canonical` is the current locale's URL when the page
+ * knows its locale (pass `currentLocale`), else it defaults to English. Assign
+ * to a page's `metadata.alternates`.
+ *
+ * @param path the path WITHOUT a locale prefix, starting with `/`.
+ * @param currentLocale the page's own locale, used for the canonical URL.
  */
-export function langAlternates(path: string): {
+export function langAlternates(
+  path: string,
+  currentLocale: 'en' | 'zh' = 'en',
+): {
   canonical: string;
   languages: Record<string, string>;
 } {
-  const base = `${SITE_URL}${path}`;
+  const en = `${SITE_URL}/en${path}`;
+  const zh = `${SITE_URL}/zh${path}`;
   return {
-    canonical: base,
+    canonical: currentLocale === 'zh' ? zh : en,
     languages: {
-      en: `${base}?lang=en`,
-      'zh-CN': `${base}?lang=zh`,
-      'x-default': base,
+      en,
+      'zh-CN': zh,
+      'x-default': en,
     },
   };
 }
