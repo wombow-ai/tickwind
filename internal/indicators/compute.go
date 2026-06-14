@@ -71,6 +71,13 @@ type computeInput struct {
 	fund    edgar.Fundamentals
 	hasFund bool
 	price   float64
+	// stockReturns / marketReturns are the DATE-ALIGNED, equal-length daily-return
+	// series of this stock and the market benchmark (SPY), prepared by the Computer
+	// (gather → alignedMarketReturns) so the beta closure stays pure. Both are empty
+	// when SPY candles are unavailable, the ticker IS SPY, or the overlap is too short
+	// — in which case the beta closure reports insufficient (never fabricated).
+	stockReturns  []float64
+	marketReturns []float64
 }
 
 // computeFn evaluates one indicator over the fetched per-ticker data, mutating
@@ -475,15 +482,21 @@ func (c *Computer) StockIndicators(ctx context.Context, ticker string) StockIndi
 	return res
 }
 
+// marketBenchmarkTicker is the S&P 500 proxy whose daily returns the per-stock beta is
+// measured against (the catalog formula: β = Cov(stock, market) / Var(market)).
+const marketBenchmarkTicker = "SPY"
+
 // gather fetches the per-ticker data once and assembles the computeInput plus the
 // newest underlying data date (the latest candle's date, else the fundamentals
 // AsOf). Missing sources leave the corresponding fields zero/empty.
 func (c *Computer) gather(ctx context.Context, ticker string) (computeInput, string) {
 	var in computeInput
 	var asOf string
+	var stockCandles []store.Candle
 
 	if c.ohlcv != nil {
 		if candles, err := c.ohlcv.DailyCandles(ctx, ticker); err == nil && len(candles) > 0 {
+			stockCandles = candles
 			in.opens = make([]float64, len(candles))
 			in.highs = make([]float64, len(candles))
 			in.lows = make([]float64, len(candles))
@@ -513,7 +526,56 @@ func (c *Computer) gather(ctx context.Context, ticker string) (computeInput, str
 			in.price = p
 		}
 	}
+
+	// Market beta: align the stock's daily candles with SPY's by DATE and form the
+	// paired daily returns. Skip when the ticker IS the benchmark (its beta vs itself
+	// is the degenerate 1.0 — not informative, so it stays insufficient) or there are
+	// no stock candles. SPY is fetched once here (a cache hit after the first call);
+	// when it is unavailable the aligned series stay empty → the beta closure reports
+	// insufficient, never a fabricated value.
+	if c.ohlcv != nil && len(stockCandles) > 0 && ticker != marketBenchmarkTicker {
+		if spyCandles, err := c.ohlcv.DailyCandles(ctx, marketBenchmarkTicker); err == nil && len(spyCandles) > 0 {
+			in.stockReturns, in.marketReturns = alignedReturns(stockCandles, spyCandles)
+		}
+	}
 	return in, asOf
+}
+
+// alignedReturns builds the DATE-ALIGNED paired daily-return series for the stock and
+// the market benchmark. It indexes the benchmark by date (YYYY-MM-DD → close), then
+// walks the stock candles in order; for each consecutive pair of stock candles whose
+// BOTH dates have a benchmark close (and all four prices are positive), it appends the
+// matching daily returns to the two output series. The series are therefore equal-length
+// and aligned step-for-step — the form beta() requires. Thin names with missing days
+// (or a benchmark gap) simply contribute fewer pairs; the beta gate (>= betaMinPairs)
+// then decides sufficiency.
+func alignedReturns(stock, market []store.Candle) (stockReturns, marketReturns []float64) {
+	if len(stock) < 2 || len(market) < 2 {
+		return nil, nil
+	}
+	const dateFmt = "2006-01-02"
+	mktByDate := make(map[string]float64, len(market))
+	for _, cd := range market {
+		mktByDate[cd.Time.Format(dateFmt)] = cd.Close
+	}
+	stockReturns = make([]float64, 0, len(stock))
+	marketReturns = make([]float64, 0, len(stock))
+	for i := 1; i < len(stock); i++ {
+		prevDate := stock[i-1].Time.Format(dateFmt)
+		curDate := stock[i].Time.Format(dateFmt)
+		mPrev, okPrev := mktByDate[prevDate]
+		mCur, okCur := mktByDate[curDate]
+		if !okPrev || !okCur {
+			continue
+		}
+		sPrev, sCur := stock[i-1].Close, stock[i].Close
+		if sPrev <= 0 || sCur <= 0 || mPrev <= 0 || mCur <= 0 {
+			continue
+		}
+		stockReturns = append(stockReturns, sCur/sPrev-1)
+		marketReturns = append(marketReturns, mCur/mPrev-1)
+	}
+	return stockReturns, marketReturns
 }
 
 // evaluate fills si for one catalog record: a registered per-stock indicator runs

@@ -121,6 +121,106 @@ func piotroskiF(f edgar.Fundamentals) (int, bool) {
 	return score, true
 }
 
+// --- RISK / RETURN: market beta + ~1-year total shareholder return ---
+//
+// These two are the §Group-5 RISK/RETURN pair. Unlike the composite scores above they
+// are price-series driven (TSR uses the stock's own daily closes + the latest-FY
+// dividend; beta uses the DATE-ALIGNED stock-vs-SPY daily returns the Computer prepares
+// in computeInput.marketReturns). Same anti-fabrication contract: a number is emitted
+// only when the window is long enough to be faithful — never invented for a thin/new
+// name.
+
+// tsrTradingDays is the ~1-year lookback (≈252 US trading days). The start price is
+// taken this many bars back from the latest close.
+const tsrTradingDays = 252
+
+// tsrMinCloses is the minimum daily-close count for a faithful ~1-year TSR. Below this
+// the window is materially shorter than a year, so the result is not a 1-year return
+// and is reported insufficient rather than mislabeled. (Allowing a small shortfall
+// below the full 252 tolerates holiday/half-day gaps in a real annual series.)
+const tsrMinCloses = 240
+
+// betaMinPairs is the minimum number of ALIGNED daily-return pairs required for a
+// faithful beta. Fewer than ~60 (≈3 trading months) overfits noise, so beta is reported
+// insufficient — never fabricated for a thin or newly-listed name.
+const betaMinPairs = 60
+
+// tsr computes the ~1-year total shareholder return as a PERCENT: price appreciation
+// plus the latest-FY dividend per share, over the starting price ~252 trading days ago.
+//
+//	start = closes[max(0, len-252)] ; end = price (else the last close)
+//	divPerShare = (Shares>0 && DividendsPaid>0) ? DividendsPaid/Shares : 0   (non-payers → 0)
+//	tsr = ((end - start) + divPerShare) / start * 100
+//
+// APPROXIMATION (documented): the dividend term is the latest-FY total dividends paid
+// divided by shares — a per-share dividend aligned to the ~1-year price window, not a
+// sum of the actual ex-dates inside the window (which Fundamentals does not carry). A
+// non-payer legitimately contributes 0, so TSR collapses to the pure price return.
+//
+// GATING: ok=false unless there are >= tsrMinCloses closes (≈1 trading year — else it
+// is not a 1-year return) AND start>0 AND end>0. price<=0 falls back to the last close.
+func tsr(closes []float64, price float64, f edgar.Fundamentals) (float64, bool) {
+	if len(closes) < tsrMinCloses {
+		return 0, false
+	}
+	// start = closes[max(0, len-252)]: ~252 trading days back, clamped to the first
+	// close when the series is shorter than a full year (but still >= tsrMinCloses).
+	startIdx := len(closes) - tsrTradingDays
+	if startIdx < 0 {
+		startIdx = 0
+	}
+	start := closes[startIdx]
+	end := price
+	if end <= 0 {
+		end = closes[len(closes)-1]
+	}
+	if start <= 0 || end <= 0 {
+		return 0, false
+	}
+	divPerShare := 0.0
+	if f.Shares > 0 && f.DividendsPaid > 0 {
+		divPerShare = f.DividendsPaid / float64(f.Shares)
+	}
+	return ((end - start) + divPerShare) / start * 100, true
+}
+
+// beta computes the market beta from two ALREADY-DATE-ALIGNED, equal-length daily
+// return series (the stock's and the market's):
+//
+//	β = Σ((r_s − mean_s)(r_m − mean_m)) / Σ((r_m − mean_m)^2)
+//	  = cov(stock, market) / var(market)
+//
+// The alignment (matching the two series by date, dropping unpaired days) lives in the
+// Computer; this helper is the pure, unit-testable core over the prepared pairs.
+//
+// ok=false unless len == len (equal, both >= betaMinPairs) AND var(market) > 0. A
+// zero-variance market window (or too few pairs) cannot yield a faithful beta, so it is
+// reported insufficient rather than fabricated.
+func beta(stockReturns, marketReturns []float64) (float64, bool) {
+	n := len(marketReturns)
+	if n != len(stockReturns) || n < betaMinPairs {
+		return 0, false
+	}
+	var sumS, sumM float64
+	for i := 0; i < n; i++ {
+		sumS += stockReturns[i]
+		sumM += marketReturns[i]
+	}
+	meanS := sumS / float64(n)
+	meanM := sumM / float64(n)
+	var cov, varM float64
+	for i := 0; i < n; i++ {
+		ds := stockReturns[i] - meanS
+		dm := marketReturns[i] - meanM
+		cov += ds * dm
+		varM += dm * dm
+	}
+	if varM <= 0 {
+		return 0, false
+	}
+	return cov / varM, true
+}
+
 // fundamentalRegistryInc3 registers the Increment-3 composite-score closures. Each id
 // is a real catalog id; the remaining composite (beneish-m) is simply not registered,
 // so it stays absent rather than faked.
@@ -146,6 +246,31 @@ func fundamentalRegistryInc3() map[string]computeFn {
 				setOK(si, float64(v), unitNone)
 			} else {
 				setInsufficient(si, "missing current+prior-FY inputs (need two years of assets/liabilities/revenue/income, prior gross profit, long-term debt and share count)")
+			}
+		},
+		// TSR — ~1-year total shareholder return (price appreciation + latest-FY
+		// dividend-per-share). hasFund-gated like the rest (the dividend term needs
+		// Fundamentals) AND needs ≈1 trading year of the stock's own closes.
+		"fundamental.tsr": func(in computeInput, si *StockIndicator) {
+			if !in.hasFund {
+				setInsufficient(si, "no SEC fundamentals available")
+				return
+			}
+			if v, ok := tsr(in.closes, in.price, in.fund); ok {
+				setOK(si, v, unitPercent)
+			} else {
+				setInsufficient(si, "need ≈1 year (240+) of daily closes with a positive start/end price for a 1-year TSR")
+			}
+		},
+		// BETA — market beta vs SPY over the DATE-ALIGNED ~1-year daily-return series.
+		// Gated on the Computer-prepared aligned pairs (in.stockReturns / in.marketReturns):
+		// empty when SPY candles are unavailable or the ticker IS SPY → insufficient,
+		// never a fabricated beta for a thin/new name.
+		"fundamental.beta": func(in computeInput, si *StockIndicator) {
+			if v, ok := beta(in.stockReturns, in.marketReturns); ok {
+				setOK(si, v, unitMult)
+			} else {
+				setInsufficient(si, "need 60+ date-aligned stock-vs-SPY daily-return pairs with non-zero market variance (SPY series unavailable or too short)")
 			}
 		},
 	}
