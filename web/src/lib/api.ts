@@ -1126,6 +1126,74 @@ export async function getResearch(
   }
 }
 
+/**
+ * One attributed evidence item behind a notable price move: a recent news
+ * headline, a filing, or an insider buy. `title`/`url` are set in Go from the
+ * typed source — never the LLM's (the LLM may reference these headlines but
+ * invents none and writes no URL).
+ */
+export interface MovementEvidence {
+  type: 'news' | 'filing' | 'insider';
+  title: string;
+  url?: string;
+  /** RFC3339 timestamp of the source item. */
+  time: string;
+}
+
+/**
+ * Envelope returned by `GET /v1/stocks/{ticker}/movement`. The move-explainer:
+ * `change_pct`/`direction` are Go-owned numbers (computed from the quote, NEVER
+ * the LLM's). `significant` gates whether the move is notable enough (|change|
+ * >= 5%) to explain — when `false`, there is no `explanation`/`evidence` and the
+ * card hides. When `significant`, `explanation` is the LLM's ONE hedged Chinese
+ * sentence (`llm:true`, with `disclaimer`) or a canned Go-built line (`llm:false`,
+ * the data-only fallback when the LLM is off / over the daily cap / errored).
+ */
+export interface MovementResponse {
+  ticker: string;
+  significant: boolean;
+  /** Day's change %, computed in Go from price vs prev close. */
+  change_pct: number;
+  direction: 'up' | 'down';
+  session: string;
+  /** Present only when `significant`. LLM-hedged or canned. */
+  explanation?: string;
+  /** Present only when `significant`. Attributed source items. */
+  evidence?: MovementEvidence[];
+  /** Whether the explanation is the LLM's sentence (true) or the canned line. */
+  llm: boolean;
+  /** The configured model id; "" when the LLM is disabled / canned line served. */
+  model: string;
+  /** RFC3339 quote timestamp. */
+  as_of: string;
+  /** "AI 生成 · 仅供参考 · 非投资建议" — present only when `llm`. */
+  disclaimer?: string;
+}
+
+/**
+ * Fetches the "why did this stock move today?" explainer for a ticker in the
+ * given UI language ("zh"|"en"). Always 200 with the Go-owned number; when the
+ * move is below threshold (or the LLM is off) it still resolves — the caller
+ * checks `significant` and `llm` to decide what to render. Resolves to `null`
+ * only when the symbol is unknown (the API 404s) so callers hide the card.
+ */
+export async function getMovement(
+  ticker: string,
+  lang?: string,
+  signal?: AbortSignal,
+): Promise<MovementResponse | null> {
+  const q = lang === 'en' ? '?lang=en' : '';
+  try {
+    return await getJson<MovementResponse>(
+      `/v1/stocks/${encodeURIComponent(normalizeTicker(ticker))}/movement${q}`,
+      signal,
+    );
+  } catch (e) {
+    if (e instanceof ApiError && e.status === 404) return null;
+    throw e;
+  }
+}
+
 /** A symbol's latest FINRA short-interest row (twice-monthly settlement). */
 export interface ShortInterest {
   symbol: string;

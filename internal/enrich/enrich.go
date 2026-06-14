@@ -43,6 +43,14 @@ type Enricher interface {
 	// valuation call, neutral, attributing source types, "数据不足" for a thin
 	// section. Returns ErrDisabled when no LLM is configured.
 	ComposeReport(ctx context.Context, material, lang string) (map[string]string, error)
+	// ExplainMove writes ONE short (1-2 sentence) hedged explanation of a notable
+	// daily price move from a pre-built material string (the Go-computed move % +
+	// direction + attributed evidence headlines). The move number and direction are
+	// given in the material and MUST NOT be recomputed or altered; the model may
+	// reference ONLY the supplied evidence headlines, must HEDGE ("可能与…有关"), must
+	// NOT assert a definitive cause, invent a catalyst, or give any price target /
+	// advice. Returns ErrDisabled when no LLM is configured.
+	ExplainMove(ctx context.Context, material, lang string) (string, error)
 }
 
 // Config configures the LLM enricher. An empty APIKey yields a disabled Noop.
@@ -94,6 +102,10 @@ func (Noop) Brief(context.Context, string, string) (string, error) {
 
 func (Noop) ComposeReport(context.Context, string, string) (map[string]string, error) {
 	return nil, ErrDisabled
+}
+
+func (Noop) ExplainMove(context.Context, string, string) (string, error) {
+	return "", ErrDisabled
 }
 
 // systemPrompt drives the per-stock digest. Chinese-first product → Chinese
@@ -237,6 +249,85 @@ func (l *llm) Brief(ctx context.Context, material, lang string) (string, error) 
 	}
 	if len(out.Choices) == 0 {
 		return "", errors.New("enrich: empty brief response")
+	}
+	return strings.TrimSpace(out.Choices[0].Message.Content), nil
+}
+
+// explainMovePrompt drives the "why did this stock move today?" explainer — the
+// LLM writes ONE short hedged sentence over the supplied evidence ONLY. The Go
+// assembler owns the move % and direction (given in the material, NOT to be
+// altered): the anti-hallucination contract. Hard guardrails: hedge, never assert
+// a definitive cause, never invent a catalyst beyond the listed evidence, no
+// price target / advice.
+const explainMovePrompt = "你是股票异动解读助手。材料中已给出今日的涨跌幅与方向(由系统计算),以及若干条带来源类型的近期证据(新闻/公告/内部人交易)。" +
+	"请用简体中文输出一句话(最多两句)的异动原因解读,必须遵守:" +
+	"1)涨跌幅与方向只能照抄材料中的数字与方向,绝不改动、重算或编造;" +
+	"2)只能引用材料中列出的证据条目,绝不编造材料以外的催化因素或事件,并在句中注明来源类型(如\"据新闻\"\"据公告\");" +
+	"3)必须用推测性、对冲的措辞,如\"今日{涨/跌}X%,可能与[材料中的消息]有关\",绝不断言确定的因果关系;" +
+	"4)严禁任何目标价、买卖建议或投资评级。" +
+	"若材料中没有任何证据条目,则只输出\"今日{涨/跌}X%,暂无明确催化消息\"(用材料中的实际数字)。只输出这句解读,不要前言或解释。"
+
+// explainMovePromptEN is the English-output counterpart, same guardrails. The
+// product is Chinese-first (zh default); en is served when the UI is English.
+const explainMovePromptEN = "You are a stock-move explainer. The material already gives today's percent change and direction (computed by the system) plus a few attributed recent evidence items (news / filings / insider trades). " +
+	"Output ONE sentence (at most two) in English explaining the move, and you MUST: " +
+	"1) copy the percent change and direction VERBATIM from the material — never alter, recompute or fabricate them; " +
+	"2) reference ONLY the evidence items listed in the material — never invent a catalyst or event beyond them — and attribute the source type in the sentence (e.g. \"per news\", \"per filing\"); " +
+	"3) use tentative, HEDGED wording such as \"Up/Down X% today, possibly related to [item from the material]\" — never assert a definitive cause; " +
+	"4) absolutely no price target, buy/sell advice or rating. " +
+	"If the material lists no evidence, output only \"Up/Down X% today; no clear catalyst\" (using the actual number from the material). Output only that sentence, no preamble."
+
+// explainMoveSystemPrompt picks the move-explainer system prompt for a language.
+func explainMoveSystemPrompt(lang string) string {
+	if lang == "en" {
+		return explainMovePromptEN
+	}
+	return explainMovePrompt
+}
+
+// ExplainMove writes one short, hedged explanation of a notable price move from
+// the pre-built material string, in the requested language ("zh"|"en"). Cloned
+// from Brief: the Go assembler owns the move number (it is in the material), the
+// model only writes the hedged prose over the attributed evidence.
+func (l *llm) ExplainMove(ctx context.Context, material, lang string) (string, error) {
+	body, err := json.Marshal(map[string]any{
+		"model":       l.model,
+		"temperature": 0.2,
+		"messages": []map[string]string{
+			{"role": "system", "content": explainMoveSystemPrompt(lang)},
+			{"role": "user", "content": material},
+		},
+	})
+	if err != nil {
+		return "", err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, l.baseURL+"/chat/completions", bytes.NewReader(body))
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+l.apiKey)
+
+	resp, err := l.http.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("enrich: explain-move request: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("enrich: explain-move status %s", resp.Status)
+	}
+	var out struct {
+		Choices []struct {
+			Message struct {
+				Content string `json:"content"`
+			} `json:"message"`
+		} `json:"choices"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return "", fmt.Errorf("enrich: explain-move decode: %w", err)
+	}
+	if len(out.Choices) == 0 {
+		return "", errors.New("enrich: empty explain-move response")
 	}
 	return strings.TrimSpace(out.Choices[0].Message.Content), nil
 }

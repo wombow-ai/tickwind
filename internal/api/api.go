@@ -35,6 +35,7 @@ import (
 	"github.com/wombow-ai/tickwind/internal/guru"
 	"github.com/wombow-ai/tickwind/internal/indicators"
 	"github.com/wombow-ai/tickwind/internal/ingest"
+	"github.com/wombow-ai/tickwind/internal/movement"
 	"github.com/wombow-ai/tickwind/internal/nasdaq"
 	"github.com/wombow-ai/tickwind/internal/opportunity"
 	"github.com/wombow-ai/tickwind/internal/ratecut"
@@ -257,6 +258,21 @@ type ResearchSource interface {
 	Model() string
 }
 
+// MovementSource produces the move-triggered "why did this stock move today?"
+// explainer. Report assembles the data-only explanation (Go-owned change % +
+// direction + attributed evidence + canned line; never errors, never an LLM
+// call); Explain optionally overlays one hedged LLM sentence (degrading to the
+// data-only explanation when the LLM is off/over-cap/errors — never the LLM's
+// number). Enabled reports whether the LLM backend is configured; Model is its
+// name ("" when disabled). nil-safe — a nil source makes
+// /v1/stocks/{ticker}/movement 404. Satisfied by *movement.Service.
+type MovementSource interface {
+	Report(ctx context.Context, ticker string) movement.Explanation
+	Explain(ctx context.Context, ticker, lang string) movement.Explanation
+	Enabled() bool
+	Model() string
+}
+
 type Server struct {
 	store         store.Store
 	hub           QuoteStream
@@ -289,6 +305,7 @@ type Server struct {
 	indicators    IndicatorSource        // injected post-New via SetIndicators (static catalog)
 	indicatorCalc IndicatorComputeSource // injected post-New via SetIndicatorCompute (per-stock compute)
 	researchCalc  ResearchSource         // injected post-New via SetResearch (deep-research report)
+	movementCalc  MovementSource         // injected post-New via SetMovement (move-explainer)
 	admins        map[string]bool        // user UUIDs and/or emails (lowercased) allowed to delete any comment
 	commentRL     *rateLimiter           // per-user comment-post throttle
 	// AI digest cache: one LLM generation per (ticker, ET day), then served from
@@ -310,6 +327,18 @@ type Server struct {
 	researchInflight map[string]chan struct{}
 	researchDayDate  string
 	researchDayCount int
+	// Move-explainer cache: the data-only explanation (Go number + evidence + canned
+	// line) is cheap, but the LLM's hedged sentence is one small generation per
+	// (ticker, ET day, lang), then served from memory — mirrors the AI digest cache.
+	// Guarded by moveMu; moveInflight dedupes concurrent first requests; moveDay*
+	// enforce a global per-day generation cap (the cap gates the LLM SENTENCE only —
+	// the data-only explanation, including a sub-threshold "not significant", always
+	// serves).
+	moveMu       sync.Mutex
+	moveCache    map[string]movementEntry
+	moveInflight map[string]chan struct{}
+	moveDayDate  string
+	moveDayCount int
 	// Follow-trade backtest cache: the simulation is deterministic for a given
 	// (member, price-day), so compute once per slug per UTC day and serve from
 	// memory (the per-ticker DailyCandles fetch is the only cost). Guarded by btMu.
@@ -343,7 +372,7 @@ func New(st store.Store, hub QuoteStream, enricher enrich.Enricher, verifier *au
 			admins[id] = true
 		}
 	}
-	s := &Server{store: st, hub: hub, clip: clip.NewFetcher(), enrich: enricher, auth: verifier, bars: bars, topics: topicSrc, opps: oppSrc, universe: universeSrc, gurus: guruSrc, ingestor: ingestor, symbols: symbolSrc, events: eventSrc, fundamentals: fundSrc, earnings: earningsSrc, congress: congressSrc, institutional: institutionalSrc, live: liveSub, indices: indicesSrc, short: shortSrc, briefing: briefingSrc, options: optionsSrc, thirteenf: thirteenfSrc, admins: admins, commentRL: newRateLimiter(10, 10*time.Minute), sumCache: map[string]summaryEntry{}, sumInflight: map[string]chan struct{}{}, researchCache: map[string]researchEntry{}, researchInflight: map[string]chan struct{}{}, btCache: map[string]backtestEntry{}, digestCache: map[string]digestEntry{}, log: log}
+	s := &Server{store: st, hub: hub, clip: clip.NewFetcher(), enrich: enricher, auth: verifier, bars: bars, topics: topicSrc, opps: oppSrc, universe: universeSrc, gurus: guruSrc, ingestor: ingestor, symbols: symbolSrc, events: eventSrc, fundamentals: fundSrc, earnings: earningsSrc, congress: congressSrc, institutional: institutionalSrc, live: liveSub, indices: indicesSrc, short: shortSrc, briefing: briefingSrc, options: optionsSrc, thirteenf: thirteenfSrc, admins: admins, commentRL: newRateLimiter(10, 10*time.Minute), sumCache: map[string]summaryEntry{}, sumInflight: map[string]chan struct{}{}, researchCache: map[string]researchEntry{}, researchInflight: map[string]chan struct{}{}, moveCache: map[string]movementEntry{}, moveInflight: map[string]chan struct{}{}, btCache: map[string]backtestEntry{}, digestCache: map[string]digestEntry{}, log: log}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", s.health)
 
@@ -418,6 +447,7 @@ func New(st store.Store, hub QuoteStream, enricher enrich.Enricher, verifier *au
 	mux.HandleFunc("GET /v1/stocks/{ticker}/whales", s.getWhales)
 	mux.HandleFunc("GET /v1/stocks/{ticker}/indicators", s.getStockIndicators)
 	mux.HandleFunc("GET /v1/stocks/{ticker}/research", s.getResearch)
+	mux.HandleFunc("GET /v1/stocks/{ticker}/movement", s.getMovement)
 	mux.HandleFunc("GET /v1/indicators", s.getIndicators)
 	mux.HandleFunc("GET /v1/stream", s.getStream)
 
@@ -2295,6 +2325,164 @@ func (s *Server) writeResearch(w http.ResponseWriter, e researchEntry) {
 		"disclaimer":   e.fs.Disclaimer,
 		"sections":     sections,
 	})
+}
+
+// SetMovement injects the move-explainer source after New (keeps api.New's
+// positional signature stable). nil-safe: /v1/stocks/{ticker}/movement 404s until set.
+func (s *Server) SetMovement(src MovementSource) { s.movementCalc = src }
+
+// movementDailyCap bounds move-explainer LLM sentences per day across ALL tickers
+// — a hard token-budget backstop. The cap gates the LLM SENTENCE only: the
+// data-only explanation (Go number + evidence + canned line) is cheap and always
+// serves, so over-cap requests still return a 200 with the canned line.
+const movementDailyCap = 120
+
+// movementEntry is one cached move explanation (per ticker per ET day per
+// language). It holds the assembled Explanation and the generation timestamp.
+type movementEntry struct {
+	exp movement.Explanation
+	at  time.Time
+}
+
+// getMovement serves the per-ticker "why did this stock move today?" explainer.
+// The change % and direction are computed IN GO from the quote (never the LLM's);
+// the explainer is meaningful only on a NOTABLE move (|change| >= 5%). On a
+// sub-threshold or quote-less move the response is a 200 with "significant":false
+// and no explanation (the frontend hides the card). On a notable move it returns
+// the number + attributed evidence + an explanation: the LLM's ONE hedged Chinese
+// sentence when the LLM is on and under cap, else a canned Go-built line. The LLM
+// is OFF THE CRITICAL PATH — the endpoint always serves the number + evidence,
+// never 500/503. The (optional) LLM sentence is generated at most once per
+// (ticker, ET day, lang) and served from memory; the cheap data-only explanation
+// is reassembled on every cache miss. 404 only for an unknown/invalid ticker (no
+// quote at all and no evidence).
+func (s *Server) getMovement(w http.ResponseWriter, r *http.Request) {
+	if s.movementCalc == nil {
+		writeJSON(w, http.StatusNotFound, errBody("movement unavailable"))
+		return
+	}
+	ticker := strings.ToUpper(strings.TrimSpace(r.PathValue("ticker")))
+	if ticker == "" {
+		writeJSON(w, http.StatusNotFound, errBody("no ticker"))
+		return
+	}
+	lang := "zh" // Chinese-first default; English UI requests ?lang=en
+	if r.URL.Query().Get("lang") == "en" {
+		lang = "en"
+	}
+	day := summaryDay() // ET trading day, shared with the AI digest cache
+	key := ticker + "|" + day + "|" + lang
+
+	for {
+		s.moveMu.Lock()
+		if e, ok := s.moveCache[key]; ok {
+			s.moveMu.Unlock()
+			s.writeMovement(w, e)
+			return
+		}
+		ch, busy := s.moveInflight[key]
+		if !busy {
+			break // we'll generate
+		}
+		s.moveMu.Unlock()
+		select { // someone else is generating: wait, then re-check the cache
+		case <-ch:
+		case <-r.Context().Done():
+			return
+		}
+	}
+	// We hold moveMu and are the generator for this key.
+	if s.moveDayDate != day {
+		s.moveDayDate, s.moveDayCount = day, 0
+		for k := range s.moveCache { // yesterday's explanations are dead weight
+			if !strings.Contains(k, "|"+day+"|") { // key = ticker|day|lang
+				delete(s.moveCache, k)
+			}
+		}
+	}
+	// Reserve an LLM-sentence slot only if the LLM is enabled and under cap; the
+	// data-only explanation is always assembled regardless (off the critical path).
+	wantLLM := s.movementCalc.Enabled() && s.moveDayCount < movementDailyCap
+	if wantLLM {
+		s.moveDayCount++
+	}
+	ch := make(chan struct{})
+	s.moveInflight[key] = ch
+	s.moveMu.Unlock()
+
+	finish := func(e *movementEntry) {
+		s.moveMu.Lock()
+		if e != nil {
+			s.moveCache[key] = *e
+		}
+		delete(s.moveInflight, key)
+		close(ch)
+		s.moveMu.Unlock()
+	}
+
+	// Assemble the data-only explanation first (cheap, no LLM, never errors).
+	exp := s.movementCalc.Report(r.Context(), ticker)
+	// "Nothing at all": no usable quote AND no evidence → unknown/invalid ticker
+	// (a sub-threshold move with a real quote DOES have a number, so it is served).
+	if exp.AsOf.IsZero() && exp.ChangePct == 0 && len(exp.Evidence) == 0 {
+		if wantLLM {
+			s.moveMu.Lock()
+			s.moveDayCount-- // didn't call the LLM — don't burn budget
+			s.moveMu.Unlock()
+		}
+		finish(nil) // don't cache an empty miss; let a later visit reassemble
+		s.maybeCollect(ticker)
+		writeJSON(w, http.StatusNotFound, errBody("no movement data for "+ticker))
+		return
+	}
+
+	// Only call the LLM for a significant move (a sub-threshold move has no prose).
+	if wantLLM && exp.Significant {
+		exp = s.movementCalc.Explain(r.Context(), ticker, lang)
+		if !exp.LLM {
+			s.moveMu.Lock()
+			s.moveDayCount-- // LLM disabled mid-flight / errored → refund budget
+			s.moveMu.Unlock()
+		}
+	} else if wantLLM {
+		s.moveMu.Lock()
+		s.moveDayCount-- // sub-threshold: no LLM call → refund budget
+		s.moveMu.Unlock()
+	}
+
+	e := movementEntry{exp: exp, at: time.Now().UTC()}
+	finish(&e)
+	s.writeMovement(w, e)
+}
+
+// writeMovement marshals a cached movement entry into the wire shape. Always 200.
+// A sub-threshold move carries significant:false and no explanation/evidence (the
+// frontend hides the card); a notable move carries the Go-owned number, the
+// attributed evidence, the explanation (LLM or canned), and the llm/model/as_of
+// chrome.
+func (s *Server) writeMovement(w http.ResponseWriter, e movementEntry) {
+	exp := e.exp
+	ev := exp.Evidence
+	if ev == nil {
+		ev = []movement.Evidence{}
+	}
+	out := map[string]any{
+		"ticker":       exp.Ticker,
+		"significant":  exp.Significant,
+		"change_pct":   exp.ChangePct,
+		"direction":    exp.Direction,
+		"session":      exp.Session,
+		"llm":          exp.LLM,
+		"model":        exp.Model,
+		"as_of":        exp.AsOf,
+		"generated_at": e.at,
+	}
+	if exp.Significant {
+		out["explanation"] = exp.Text
+		out["evidence"] = ev
+		out["disclaimer"] = exp.Disclaimer
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 // getIPO returns the US IPO calendar — recently priced, upcoming, and newly

@@ -37,6 +37,7 @@ import (
 	"github.com/wombow-ai/tickwind/internal/institutional"
 	"github.com/wombow-ai/tickwind/internal/krx"
 	"github.com/wombow-ai/tickwind/internal/market"
+	"github.com/wombow-ai/tickwind/internal/movement"
 	"github.com/wombow-ai/tickwind/internal/nasdaq"
 	"github.com/wombow-ai/tickwind/internal/openfigi"
 	"github.com/wombow-ai/tickwind/internal/opportunity"
@@ -551,6 +552,23 @@ func main() {
 	} else {
 		log.Warn("per-stock indicator compute disabled — no price feed (Alpaca) for daily candles")
 	}
+
+	// Move-explainer (R3): a move-triggered "why did this stock move today?"
+	// explanation. Go owns the change % + direction (computed from the quote) and
+	// assembles a small ATTRIBUTED evidence set (recent news / filings / today's
+	// insider buys) from the store; the LLM, when on, writes ONE hedged Chinese
+	// sentence over that evidence. The data-only explanation (number + evidence +
+	// canned line) serves regardless of the LLM AND regardless of the bar feed —
+	// it needs only the store's quote + corpus, so it is wired UNCONDITIONALLY
+	// (off the critical path). The quote provider is the BarCache fallback when a
+	// price feed exists, else nil (the service reads GetQuote straight from the
+	// store).
+	var moveQuote movement.QuoteProvider
+	if bars != nil {
+		moveQuote = &latestPriceProvider{store: st, bars: bars}
+	}
+	apiServer.SetMovement(movement.NewService(st, moveQuote, enricher, cfg.LLMModel))
+	log.Info("move-explainer enabled", "llm", enricher.Enabled(), "quote_fallback", bars != nil)
 
 	srv := &http.Server{
 		Addr:              ":" + cfg.Port,

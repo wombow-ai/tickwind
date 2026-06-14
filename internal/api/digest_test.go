@@ -38,6 +38,9 @@ func (f *fakeEnricher) Brief(context.Context, string, string) (string, error) {
 func (f *fakeEnricher) ComposeReport(context.Context, string, string) (map[string]string, error) {
 	return nil, enrich.ErrDisabled
 }
+func (f *fakeEnricher) ExplainMove(context.Context, string, string) (string, error) {
+	return "", enrich.ErrDisabled
+}
 
 // newDigestServer builds an API server backed by a memory store (which also
 // serves as the earnings source) and the given enricher.

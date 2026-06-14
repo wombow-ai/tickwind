@@ -57,6 +57,7 @@ import {KLineChart} from '@/components/KLineChart';
 import {FundamentalsCard} from '@/components/FundamentalsCard';
 import {IndicatorsPanel} from '@/components/IndicatorsPanel';
 import {AISummaryCard} from '@/components/AISummaryCard';
+import {MovementCard} from '@/components/MovementCard';
 import {EarningsChip} from '@/components/EarningsChip';
 import {OptionsCard} from '@/components/OptionsCard';
 import {ShortChip} from '@/components/ShortChip';
@@ -544,6 +545,12 @@ export function StockView({ticker}: {ticker: string}) {
       <div id="whales" className="scroll-mt-20">
         <WhalesChip ticker={norm} />
       </div>
+
+      {/* Move-explainer: a move-triggered, evidence-grounded explanation of TODAY's
+          notable move (|change| >= 5%). Shows only on a significant day (hides itself
+          on a quiet day / 404 / sub-threshold) — placed first so a big move is
+          explained up top, above the standing fundamentals/digest. */}
+      <MovementCard ticker={norm} />
 
       {/* Fundamentals + AI digest, each full-width, above the chart. (They were
           briefly a 2-col grid, but the AI digest's variable length left the

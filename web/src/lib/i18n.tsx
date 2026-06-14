@@ -189,6 +189,16 @@ const dict: Record<Lang, Record<string, string>> = {
     'ai.badge': 'AI generated',
     'ai.loading': 'Reading the latest…',
     'ai.disclaimer': 'AI-generated from recent news & community posts · for reference only · not investment advice',
+    // Move-explainer card: a move-triggered, evidence-grounded explanation of a
+    // notable (|change| >= 5%) daily move. The % is Go-owned; the prose hedges.
+    'move.title': "Why's it moving?",
+    'move.aiBadge': 'AI generated',
+    'move.evidence': 'Possibly related',
+    'move.type.news': 'News',
+    'move.type.filing': 'Filing',
+    'move.type.insider': 'Insider buy',
+    'move.disclaimer': 'AI generated · for reference only · not investment advice. The move % is computed from data; the explanation is a hedged guess, not a confirmed cause.',
+    'move.disclaimerData': 'Move % computed from data · for reference only · not investment advice. No confirmed cause.',
     // R2 deep-research report (chrome English-default; the report body is zh-by-design)
     'research.tab': 'Research',
     'research.title': 'Deep research',
@@ -853,6 +863,16 @@ const dict: Record<Lang, Record<string, string>> = {
     'ai.badge': 'AI 生成',
     'ai.loading': '正在解读最新动态…',
     'ai.disclaimer': '由 AI 基于近期新闻与社区讨论生成 · 仅供参考 · 不构成投资建议',
+    // 异动解读卡片：对显著（涨跌幅 >= 5%）单日异动的、有证据支撑的解读。
+    // 涨跌幅由后端计算，文字为对冲性推测。
+    'move.title': '为何异动？',
+    'move.aiBadge': 'AI 生成',
+    'move.evidence': '可能相关',
+    'move.type.news': '新闻',
+    'move.type.filing': '公告',
+    'move.type.insider': '内部人买入',
+    'move.disclaimer': 'AI 生成 · 仅供参考 · 非投资建议。涨跌幅由数据计算，解读为对冲性推测，非确定原因。',
+    'move.disclaimerData': '涨跌幅由数据计算 · 仅供参考 · 非投资建议。暂无确定催化原因。',
     // R2 深度研报（界面文案中英默认英文；报告正文按设计为中文）
     'research.tab': '深度研报',
     'research.title': '深度研报',
