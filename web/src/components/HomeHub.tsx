@@ -34,6 +34,7 @@ import {cx, timeAgo, tok} from '@/lib/ui';
 import {useQuotes} from '@/lib/useQuotes';
 import {BriefingCard} from '@/components/BriefingCard';
 import {IndicesStrip} from '@/components/IndicesStrip';
+import {MacroStrip} from '@/components/MacroStrip';
 import {SentimentChip} from '@/components/SentimentChip';
 import {
   changePct,
@@ -144,6 +145,10 @@ export function HomeHub() {
 
       {/* Fear & Greed index (own composite; self-hides until available) */}
       <SentimentChip />
+
+      {/* U.S. Treasury yield curve — 2Y/10Y + the 2s10s recession signal
+          (server-driven; self-hides until the Treasury curve is available) */}
+      <MacroStrip />
 
       {/* Markets strip (hero) */}
       <div className="mb-8">

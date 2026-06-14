@@ -57,6 +57,7 @@ import (
 	"github.com/wombow-ai/tickwind/internal/tickertick"
 	"github.com/wombow-ai/tickwind/internal/topics"
 	"github.com/wombow-ai/tickwind/internal/tpex"
+	"github.com/wombow-ai/tickwind/internal/treasury"
 	"github.com/wombow-ai/tickwind/internal/twse"
 	"github.com/wombow-ai/tickwind/internal/universe"
 	"github.com/wombow-ai/tickwind/internal/yahoo"
@@ -351,6 +352,16 @@ func main() {
 	go rateCutIngestor.Run(ctx)
 	log.Info("rate-cut markets ingestor enabled (Kalshi + Polymarket)")
 
+	// U.S. Treasury daily par yield curve: keyless public CSV from Treasury.gov
+	// (the 2Y/10Y tenors + the 2s10s recession-watch spread). The curve updates
+	// once per business day (~18:00 ET), so a 12h cadence is ample; the boot
+	// refresh warms it immediately and a failed fetch keeps the last good curve.
+	// Server-driven — /v1/macro reads only this cache, never fetches on request.
+	macroCache := treasury.NewCache()
+	macroIngestor := ingest.NewMacroIngestor(treasury.New(), macroCache, 12*time.Hour, log)
+	go macroIngestor.Run(ctx)
+	log.Info("treasury yield-curve ingestor enabled (2s10s macro strip)")
+
 	// US IPO calendar: Nasdaq's public IPO API, which BLOCKS datacenter IPs, so
 	// the client is routed through the residential proxy (RESIDENTIAL_PROXY_URL)
 	// + a full browser header set. Without the proxy the fetch fails and the
@@ -484,6 +495,7 @@ func main() {
 	apiServer.SetShortVolume(shortVolumeCache)
 	apiServer.SetSentiment(sentimentCache)
 	apiServer.SetRateCut(rateCutIngestor.Cache())
+	apiServer.SetMacro(macroCache)         // U.S. Treasury yield curve (2s10s macro strip)
 	apiServer.SetCongressTx(congressCache) // ticker-level / member PTR detail
 	apiServer.SetIPO(ipoIngestor)          // US IPO calendar (Nasdaq via residential proxy)
 

@@ -1335,6 +1335,40 @@ export function getRateCut(signal?: AbortSignal): Promise<RateCutResponse> {
   return getJson<RateCutResponse>('/v1/ratecut', signal);
 }
 
+/** One maturity tenor's par yield on the Treasury curve (e.g. 2Y @ 4.09%). */
+export interface MacroYield {
+  tenor: string; // canonical short label, e.g. "2Y", "10Y", "3M"
+  rate: number; // par yield, percent
+}
+
+/**
+ * The latest U.S. Treasury daily par yield curve from `GET /v1/macro` — the
+ * macro-context strip backing the 2s10s recession signal. `available` is false
+ * (and `yields` empty) until the server-side cache is first filled; the strip
+ * hides itself in that case. `spread_2s10s` is null when either the 2Y or 10Y
+ * leg is missing (never fabricated). Real Treasury data only.
+ */
+export interface Macro {
+  available: boolean;
+  as_of: string; // YYYY-MM-DD, the curve's business day
+  yields: MacroYield[];
+  spread_2s10s: number | null; // 10Y − 2Y, percentage points (null if a leg is absent)
+  inverted: boolean; // spread present and negative
+  source: string; // "U.S. Treasury"
+  source_zh: string; // "美国财政部"
+  source_url: string;
+  updated_at: string; // RFC 3339
+}
+
+/**
+ * Fetches the latest U.S. Treasury daily par yield curve (server-driven cache;
+ * refreshed ~12h). Public, keyless. Always resolves with a well-formed shape —
+ * `available: false` + empty `yields` until the curve is loaded.
+ */
+export function getMacro(signal?: AbortSignal): Promise<Macro> {
+  return getJson<Macro>('/v1/macro', signal);
+}
+
 /** A U.S. House Periodic Transaction Report filing (official Clerk disclosure). */
 export interface CongressFiling {
   name: string; // "Richard W. Allen"

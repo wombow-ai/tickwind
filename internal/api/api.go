@@ -46,6 +46,7 @@ import (
 	"github.com/wombow-ai/tickwind/internal/symbols"
 	"github.com/wombow-ai/tickwind/internal/thirteenf"
 	"github.com/wombow-ai/tickwind/internal/topics"
+	"github.com/wombow-ai/tickwind/internal/treasury"
 )
 
 // QuoteStream is the subset of the live hub the API needs to stream prices.
@@ -219,6 +220,16 @@ type RateCutSource interface {
 	UpdatedAt() time.Time
 }
 
+// MacroSource serves the latest U.S. Treasury daily par yield curve (the 2Y/10Y
+// tenors + the 2s10s recession-watch spread) for the macro-context strip.
+// nil-safe — a nil source (or one before its first refresh) yields an
+// "unavailable" empty shape, never fabricated rates. Satisfied by
+// *treasury.Cache.
+type MacroSource interface {
+	Latest() (treasury.Curve, bool)
+	UpdatedAt() time.Time
+}
+
 // IPOSource serves the latest US IPO calendar (recently priced / upcoming /
 // newly filed offerings, via Nasdaq through the residential proxy). nil-safe —
 // a nil source (or one before its first refresh) yields empty sections.
@@ -300,6 +311,7 @@ type Server struct {
 	shortVolume   ShortVolumeSource      // injected post-New via SetShortVolume (avoids growing the New signature)
 	sentiment     SentimentSource        // injected post-New via SetSentiment
 	rateCut       RateCutSource          // injected post-New via SetRateCut
+	macro         MacroSource            // injected post-New via SetMacro (Treasury yield curve)
 	congressTx    CongressTxSource       // injected post-New via SetCongressTx
 	ipo           IPOSource              // injected post-New via SetIPO
 	indicators    IndicatorSource        // injected post-New via SetIndicators (static catalog)
@@ -439,6 +451,7 @@ func New(st store.Store, hub QuoteStream, enricher enrich.Enricher, verifier *au
 	mux.HandleFunc("GET /v1/short-volume", s.getShortVolume)
 	mux.HandleFunc("GET /v1/sentiment", s.getSentiment)
 	mux.HandleFunc("GET /v1/ratecut", s.getRateCut)
+	mux.HandleFunc("GET /v1/macro", s.getMacro)
 	mux.HandleFunc("GET /v1/ipo", s.getIPO)
 	mux.HandleFunc("GET /v1/stocks/{ticker}/options", s.getOptions)
 	mux.HandleFunc("GET /v1/options/unusual", s.getUnusualOptions)
@@ -2083,6 +2096,44 @@ func (s *Server) getRateCut(w http.ResponseWriter, _ *http.Request) {
 		"updated_at": updatedAt.UTC().Format(time.RFC3339),
 	})
 }
+
+// getMacro returns the latest U.S. Treasury daily par yield curve as a compact
+// macro-context strip: the present tenors (e.g. 2Y/10Y) with their par yields,
+// the derived 2s10s spread (10Y − 2Y, percentage points) and whether the curve
+// is inverted (the classic recession-watch signal). Always 200; an unready or
+// nil source yields available=false with an empty yields list — the frontend
+// hides the strip. Only tenors the Treasury actually published appear; a missing
+// tenor (and the spread when either leg is absent) is omitted, never fabricated.
+func (s *Server) getMacro(w http.ResponseWriter, _ *http.Request) {
+	resp := map[string]any{
+		"available":    false,
+		"as_of":        "",
+		"yields":       []treasury.Yield{},
+		"inverted":     false,
+		"source":       "U.S. Treasury",
+		"source_zh":    "美国财政部",
+		"source_url":   "https://home.treasury.gov/resource-center/data-chart-center/interest-rates/TextView?type=daily_treasury_yield_curve",
+		"updated_at":   time.Time{}.UTC().Format(time.RFC3339),
+		"spread_2s10s": nil, // null (not 0) until a real curve with both legs is loaded
+	}
+	if s.macro != nil {
+		if curve, ok := s.macro.Latest(); ok && len(curve.Yields) > 0 {
+			resp["available"] = true
+			resp["as_of"] = curve.Date
+			resp["yields"] = curve.Yields
+			resp["inverted"] = curve.HasSpread && curve.Inverted
+			if curve.HasSpread {
+				resp["spread_2s10s"] = curve.Spread2s10s
+			}
+		}
+		resp["updated_at"] = s.macro.UpdatedAt().UTC().Format(time.RFC3339)
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+// SetMacro injects the Treasury yield-curve source after New (keeping New's
+// signature stable). nil-safe: /v1/macro reports available=false until set.
+func (s *Server) SetMacro(src MacroSource) { s.macro = src }
 
 // SetShortVolume injects the FINRA daily short-volume source after New (keeping
 // New's signature stable). nil-safe: the short-volume endpoints stay empty until set.

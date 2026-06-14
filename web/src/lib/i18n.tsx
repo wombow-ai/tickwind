@@ -244,6 +244,14 @@ const dict: Record<Lang, Record<string, string>> = {
     'sentiment.trendDays': '{n} days',
     'sentiment.updated': 'updated {t} ago',
     'sentiment.footer': 'Tickwind composite index. Methodology — not investment advice.',
+    // macro strip — U.S. Treasury yield curve (2s10s recession signal)
+    'macro.title': 'Treasury yields',
+    'macro.spread': '2s10s spread',
+    'macro.inverted': 'Inverted',
+    'macro.normal': 'Normal',
+    'macro.invertedHint': 'Inverted curve (10Y < 2Y) — a classic recession-watch signal',
+    'macro.normalHint': 'Upward-sloping curve (10Y > 2Y)',
+    'macro.updated': 'as of {t}',
     // share card ("propagation organ") — save/share a branded image card
     'share.save': 'Save image',
     'share.aria': 'Open a shareable image card in a new tab',
@@ -922,6 +930,14 @@ const dict: Record<Lang, Record<string, string>> = {
     'sentiment.trendDays': '{n} 天',
     'sentiment.updated': '{t}前更新',
     'sentiment.footer': '潮汐自有综合指数。方法论 —— 非投资建议。',
+    // macro strip — U.S. Treasury yield curve (2s10s recession signal)
+    'macro.title': '美国国债收益率',
+    'macro.spread': '2s10s 利差',
+    'macro.inverted': '倒挂',
+    'macro.normal': '正常',
+    'macro.invertedHint': '收益率曲线倒挂（10年期 < 2年期）—— 经典的衰退预警信号',
+    'macro.normalHint': '收益率曲线正常向上（10年期 > 2年期）',
+    'macro.updated': '数据日期 {t}',
     // share card ("propagation organ") — save/share a branded image card
     'share.save': '保存图片',
     'share.aria': '在新标签页打开可分享的图片卡',

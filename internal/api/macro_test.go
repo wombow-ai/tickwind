@@ -16,6 +16,7 @@ import (
 	"github.com/wombow-ai/tickwind/internal/sentiment"
 	"github.com/wombow-ai/tickwind/internal/store/memory"
 	"github.com/wombow-ai/tickwind/internal/stream"
+	"github.com/wombow-ai/tickwind/internal/treasury"
 )
 
 // newBareServer builds an *api.Server with every optional source nil, so a test
@@ -306,5 +307,109 @@ func TestRateCutEndpoint(t *testing.T) {
 	}
 	if got.UpdatedAt != "2026-06-12T12:00:00Z" {
 		t.Fatalf("updated_at = %q, want RFC3339", got.UpdatedAt)
+	}
+}
+
+// fakeMacro satisfies MacroSource.
+type fakeMacro struct {
+	curve treasury.Curve
+	has   bool
+	at    time.Time
+}
+
+func (f *fakeMacro) Latest() (treasury.Curve, bool) { return f.curve, f.has }
+func (f *fakeMacro) UpdatedAt() time.Time           { return f.at }
+
+func TestMacroEndpoint(t *testing.T) {
+	// nil source → available=false, empty yields (never null), 200.
+	srv := httptest.NewServer(newBareServer())
+	defer srv.Close()
+	resp, _ := http.Get(srv.URL + "/v1/macro")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("nil-source /v1/macro = %d, want 200", resp.StatusCode)
+	}
+	var empty struct {
+		Available bool             `json:"available"`
+		AsOf      string           `json:"as_of"`
+		Yields    []treasury.Yield `json:"yields"`
+		Source    string           `json:"source"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&empty); err != nil {
+		t.Fatal(err)
+	}
+	if empty.Available {
+		t.Fatal("nil source must report available=false")
+	}
+	if empty.Yields == nil {
+		t.Fatal("yields must marshal as [] not null")
+	}
+	if empty.Source != "U.S. Treasury" {
+		t.Fatalf("source = %q, want U.S. Treasury", empty.Source)
+	}
+
+	// Populated curve with both legs → spread present, inverted=false.
+	s := newBareServer()
+	s.SetMacro(&fakeMacro{
+		has: true,
+		at:  time.Date(2026, 6, 12, 22, 0, 0, 0, time.UTC),
+		curve: treasury.Curve{
+			Date: "2026-06-12",
+			Yields: []treasury.Yield{
+				{Tenor: "3M", Rate: 3.78}, {Tenor: "2Y", Rate: 4.09},
+				{Tenor: "10Y", Rate: 4.48}, {Tenor: "30Y", Rate: 4.97},
+			},
+			Spread2s10s: 0.39, HasSpread: true, Inverted: false,
+		},
+	})
+	srv2 := httptest.NewServer(s)
+	defer srv2.Close()
+	resp2, _ := http.Get(srv2.URL + "/v1/macro")
+	var got struct {
+		Available bool     `json:"available"`
+		AsOf      string   `json:"as_of"`
+		Inverted  bool     `json:"inverted"`
+		Spread    *float64 `json:"spread_2s10s"`
+		UpdatedAt string   `json:"updated_at"`
+		Yields    []struct {
+			Tenor string  `json:"tenor"`
+			Rate  float64 `json:"rate"`
+		} `json:"yields"`
+	}
+	if err := json.NewDecoder(resp2.Body).Decode(&got); err != nil {
+		t.Fatal(err)
+	}
+	if !got.Available || got.AsOf != "2026-06-12" {
+		t.Fatalf("response = %+v, want available + as_of 2026-06-12", got)
+	}
+	if got.Spread == nil || *got.Spread != 0.39 || got.Inverted {
+		t.Fatalf("spread = %v inverted = %v, want 0.39 / false", got.Spread, got.Inverted)
+	}
+	if len(got.Yields) != 4 || got.Yields[1].Tenor != "2Y" || got.Yields[1].Rate != 4.09 {
+		t.Fatalf("yields = %+v, want 4 tenors with 2Y@4.09", got.Yields)
+	}
+	if got.UpdatedAt != "2026-06-12T22:00:00Z" {
+		t.Fatalf("updated_at = %q, want RFC3339", got.UpdatedAt)
+	}
+
+	// Inverted curve (missing-leg guard verified in the treasury package): spread
+	// present + negative → inverted=true.
+	s2 := newBareServer()
+	s2.SetMacro(&fakeMacro{has: true, at: time.Now(), curve: treasury.Curve{
+		Date:        "2023-07-03",
+		Yields:      []treasury.Yield{{Tenor: "2Y", Rate: 4.94}, {Tenor: "10Y", Rate: 3.86}},
+		Spread2s10s: -1.08, HasSpread: true, Inverted: true,
+	}})
+	srv3 := httptest.NewServer(s2)
+	defer srv3.Close()
+	resp3, _ := http.Get(srv3.URL + "/v1/macro")
+	var inv struct {
+		Inverted bool     `json:"inverted"`
+		Spread   *float64 `json:"spread_2s10s"`
+	}
+	if err := json.NewDecoder(resp3.Body).Decode(&inv); err != nil {
+		t.Fatal(err)
+	}
+	if !inv.Inverted || inv.Spread == nil || *inv.Spread != -1.08 {
+		t.Fatalf("inverted curve = %+v, want inverted=true spread=-1.08", inv)
 	}
 }
