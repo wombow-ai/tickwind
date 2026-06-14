@@ -651,6 +651,34 @@ func (s *Store) FearGreedHistory(ctx context.Context, limit int) ([]store.FearGr
 	return out, nil
 }
 
+// SaveAISummary upserts the serialized AI digest for (ticker, day, lang),
+// idempotent on the composite key — a same-day re-save replaces the payload and
+// bumps created_at.
+func (s *Store) SaveAISummary(ctx context.Context, ticker, day, lang string, payload []byte) error {
+	const q = `INSERT INTO ai_summary (ticker, day, lang, payload) VALUES ($1, $2, $3, $4)
+ON CONFLICT (ticker, day, lang) DO UPDATE SET payload = $4, created_at = now()`
+	if _, err := s.pool.Exec(ctx, q, ticker, day, lang, payload); err != nil {
+		return fmt.Errorf("postgres: save ai_summary: %w", err)
+	}
+	return nil
+}
+
+// GetAISummary returns the stored digest payload for (ticker, day, lang), or
+// ok=false when there's no row (pgx.ErrNoRows → the caller generates).
+func (s *Store) GetAISummary(ctx context.Context, ticker, day, lang string) ([]byte, bool, error) {
+	var payload []byte
+	err := s.pool.QueryRow(ctx,
+		`SELECT payload FROM ai_summary WHERE ticker = $1 AND day = $2 AND lang = $3`,
+		ticker, day, lang).Scan(&payload)
+	switch {
+	case errors.Is(err, pgx.ErrNoRows):
+		return nil, false, nil
+	case err != nil:
+		return nil, false, fmt.Errorf("postgres: get ai_summary: %w", err)
+	}
+	return payload, true, nil
+}
+
 // Watchlist returns one user's tracked tickers, in insertion order.
 func (s *Store) Watchlist(ctx context.Context, userID string) ([]string, error) {
 	rows, err := s.pool.Query(ctx, `SELECT ticker FROM watchlist WHERE user_id = $1 ORDER BY added_at`, userID)

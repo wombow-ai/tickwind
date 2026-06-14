@@ -26,6 +26,7 @@ type Store struct {
 	earnings  map[string]store.Earning            // "TICKER|YYYY-MM-DD" -> Earning
 	seenF4    map[string]time.Time                // form-4 accession -> filed date
 	fearGreed map[string]int                      // "YYYY-MM-DD" -> headline F&G score
+	aiSum     map[string][]byte                   // "TICKER|DAY|LANG" -> serialized AI digest payload
 	watchlist map[string][]string                 // userID -> ordered tickers
 	clips     map[string]map[string]store.Clip    // userID -> clipID -> Clip
 	notes     map[string]map[string]store.Note    // userID -> noteID -> Note
@@ -49,6 +50,7 @@ func New() *Store {
 		earnings:  make(map[string]store.Earning),
 		seenF4:    make(map[string]time.Time),
 		fearGreed: make(map[string]int),
+		aiSum:     make(map[string][]byte),
 		watchlist: make(map[string][]string),
 		clips:     make(map[string]map[string]store.Clip),
 		notes:     make(map[string]map[string]store.Note),
@@ -365,6 +367,36 @@ func (s *Store) FearGreedHistory(_ context.Context, limit int) ([]store.FearGree
 		out = out[len(out)-limit:]
 	}
 	return out, nil
+}
+
+// aiSumKey builds the (ticker, day, lang) map key, mirroring the API's cache key.
+func aiSumKey(ticker, day, lang string) string {
+	return key(ticker) + "|" + day + "|" + lang
+}
+
+// SaveAISummary upserts the serialized AI digest for (ticker, day, lang),
+// storing a copy so a later mutation of the caller's slice can't corrupt the map.
+func (s *Store) SaveAISummary(_ context.Context, ticker, day, lang string, payload []byte) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	cp := make([]byte, len(payload))
+	copy(cp, payload)
+	s.aiSum[aiSumKey(ticker, day, lang)] = cp
+	return nil
+}
+
+// GetAISummary returns the stored digest payload (a defensive copy) for
+// (ticker, day, lang), or ok=false when there's no entry.
+func (s *Store) GetAISummary(_ context.Context, ticker, day, lang string) ([]byte, bool, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	blob, ok := s.aiSum[aiSumKey(ticker, day, lang)]
+	if !ok {
+		return nil, false, nil
+	}
+	cp := make([]byte, len(blob))
+	copy(cp, blob)
+	return cp, true, nil
 }
 
 func (s *Store) Watchlist(_ context.Context, userID string) ([]string, error) {

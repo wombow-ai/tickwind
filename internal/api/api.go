@@ -3395,15 +3395,28 @@ func (s *Server) getSummary(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	if s.sumDayCount >= summaryDailyCap {
-		s.sumMu.Unlock()
-		writeJSON(w, http.StatusTooManyRequests, errBody("daily AI digest budget reached — try again tomorrow"))
-		return
-	}
-	s.sumDayCount++
+	// Claim the slot (inflight + a provisional cap charge) and release the lock so
+	// the store read / LLM call below never holds sumMu. The cap is refunded on a
+	// store hit (nothing generated) or a failed generation.
 	ch := make(chan struct{})
 	s.sumInflight[key] = ch
+	chargedCap := false
+	if s.sumDayCount < summaryDailyCap {
+		s.sumDayCount++
+		chargedCap = true
+	}
 	s.sumMu.Unlock()
+
+	refundCap := func() {
+		if chargedCap {
+			s.sumMu.Lock()
+			if s.sumDayDate == day && s.sumDayCount > 0 {
+				s.sumDayCount--
+			}
+			s.sumMu.Unlock()
+			chargedCap = false
+		}
+	}
 
 	finish := func(e *summaryEntry) {
 		s.sumMu.Lock()
@@ -3415,25 +3428,59 @@ func (s *Server) getSummary(w http.ResponseWriter, r *http.Request) {
 		s.sumMu.Unlock()
 	}
 
+	// Cold/restart-survival layer: before generating, see if a previous process
+	// already persisted today's digest for this (ticker, day, lang). A store hit
+	// is a free cache hit — load it into memory, refund the cap, serve, NO LLM.
+	// Best-effort: a store error is treated exactly like a miss (log + generate).
+	if raw, ok, err := s.store.GetAISummary(r.Context(), ticker, day, lang); err != nil {
+		s.log.Debug("ai_summary store read failed", "ticker", ticker, "day", day, "lang", lang, "err", err)
+	} else if ok {
+		var e summaryEntry
+		if jerr := json.Unmarshal(raw, &e); jerr != nil {
+			s.log.Debug("ai_summary store payload decode failed", "ticker", ticker, "day", day, "lang", lang, "err", jerr)
+		} else {
+			refundCap()
+			finish(&e)
+			writeJSON(w, http.StatusOK, map[string]any{"ticker": ticker, "summary": e.Summary, "generated_at": e.At})
+			return
+		}
+	}
+
+	// Both the memory cache and the store missed → this is a genuinely-new
+	// generation, which must respect the daily cap.
+	if !chargedCap {
+		finish(nil)
+		writeJSON(w, http.StatusTooManyRequests, errBody("daily AI digest budget reached — try again tomorrow"))
+		return
+	}
+
+	persist := func(e summaryEntry) {
+		if raw, err := json.Marshal(e); err == nil {
+			if err := s.store.SaveAISummary(r.Context(), ticker, day, lang, raw); err != nil {
+				s.log.Debug("ai_summary store write failed", "ticker", ticker, "day", day, "lang", lang, "err", err)
+			}
+		}
+	}
+
 	news, _ := s.store.ListNews(r.Context(), ticker, 10)
 	posts, _ := s.store.ListSocial(r.Context(), ticker, 10)
 	input := summaryInput(ticker, news, posts)
 	if len(news) == 0 && len(posts) == 0 {
 		e := summaryEntry{Summary: "", At: time.Now().UTC()} // cache the emptiness too
+		persist(e)                                           // survive restarts (skip the LLM next time)
 		finish(&e)
 		writeJSON(w, http.StatusOK, map[string]any{"ticker": ticker, "summary": "", "generated_at": e.At})
 		return
 	}
 	summary, err := s.enrich.Summarize(r.Context(), input, lang)
 	if err != nil {
-		s.sumMu.Lock()
-		s.sumDayCount-- // failed generation shouldn't burn budget
-		s.sumMu.Unlock()
+		refundCap() // failed generation shouldn't burn budget
 		finish(nil)
 		writeJSON(w, http.StatusBadGateway, errBody(err.Error()))
 		return
 	}
 	e := summaryEntry{Summary: summary, At: time.Now().UTC()}
+	persist(e) // write to BOTH the in-memory cache (via finish) and the store
 	finish(&e)
 	writeJSON(w, http.StatusOK, map[string]any{"ticker": ticker, "summary": e.Summary, "generated_at": e.At})
 }

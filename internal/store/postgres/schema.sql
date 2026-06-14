@@ -156,6 +156,23 @@ CREATE TABLE IF NOT EXISTS fear_greed (
     updated_at timestamptz NOT NULL DEFAULT now()
 );
 
+-- Per-stock AI digest (the LLM summary at GET /v1/stocks/{ticker}/summary),
+-- persisted so it survives redeploys (the in-memory cache is wiped on restart →
+-- the next visitor would otherwise pay a fresh LLM generation). Keyed by
+-- (ticker, ET trading day, lang); the day is the ~1-day TTL boundary, so a
+-- new day generates afresh and yesterday's rows go stale (pruned/ignored).
+-- Costs tokens to regenerate → durable (Market store). One row per key.
+CREATE TABLE IF NOT EXISTS ai_summary (
+    ticker     text NOT NULL,
+    day        date NOT NULL,
+    lang       text NOT NULL,
+    payload    bytea NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (ticker, day, lang)
+);
+
+CREATE INDEX IF NOT EXISTS ai_summary_day_idx ON ai_summary (day);
+
 -- Migrate the legacy single-tenant watchlist (ticker PK, no user) to per-user.
 -- Runs at most once: the condition is false after user_id exists.
 DO $$

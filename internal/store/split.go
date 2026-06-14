@@ -135,6 +135,16 @@ func (s Split) FearGreedHistory(ctx context.Context, limit int) ([]FearGreedPoin
 	return s.Market.FearGreedHistory(ctx, limit)
 }
 
+// AI digests are public market data + costly to regenerate → durable Market store.
+
+func (s Split) SaveAISummary(ctx context.Context, ticker, day, lang string, payload []byte) error {
+	return s.Market.SaveAISummary(ctx, ticker, day, lang, payload)
+}
+
+func (s Split) GetAISummary(ctx context.Context, ticker, day, lang string) ([]byte, bool, error) {
+	return s.Market.GetAISummary(ctx, ticker, day, lang)
+}
+
 // ── User: per-user state (local/ephemeral) ───────────────────────────────
 
 func (s Split) Watchlist(ctx context.Context, userID string) ([]string, error) {

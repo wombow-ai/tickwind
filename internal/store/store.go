@@ -333,6 +333,21 @@ type Store interface {
 	SaveFearGreed(ctx context.Context, date string, score int) error
 	FearGreedHistory(ctx context.Context, limit int) ([]FearGreedPoint, error)
 
+	// AISummary persists one per-stock AI digest (the LLM summary served at
+	// GET /v1/stocks/{ticker}/summary) so it survives process restarts — a true
+	// ~1-day TTL keyed by (ticker, ET trading day, lang). Unlike the free-to-
+	// rebuild universe/opportunity caches, the digest costs LLM tokens to
+	// regenerate, so it earns durable storage (public market data → Market store).
+	// SaveAISummary upserts the serialized digest payload (opaque to the store);
+	// GetAISummary returns ok=false when there's no entry for that key (the caller
+	// then generates), so it's safe to call on every cache miss. The day key is the
+	// TTL boundary: yesterday's rows are stale (the caller ignores them by never
+	// asking for a past day; old rows are pruned by the retention pruner / harmless
+	// if left). Both are best-effort from the caller's view — a store error must not
+	// break serving (the caller logs and falls through to generate).
+	SaveAISummary(ctx context.Context, ticker, day, lang string, payload []byte) error
+	GetAISummary(ctx context.Context, ticker, day, lang string) ([]byte, bool, error)
+
 	// Watchlist is one user's tracked tickers, in insertion order.
 	Watchlist(ctx context.Context, userID string) ([]string, error)
 	AddToWatchlist(ctx context.Context, userID, ticker string) error
