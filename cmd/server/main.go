@@ -384,7 +384,12 @@ func main() {
 		sentimentCache.Seed(seed)
 		log.Info("sentiment history seeded from store", "points", len(seed))
 	}
-	sentimentIngestor := ingest.NewSentimentIngestor(yahoo.New(), cboe.New(), shortVolumeCache, sentimentCache, st, 24*time.Hour, log)
+	// Refresh hourly (was daily): the intraday components — breadth (universe price
+	// cache) and social heat (hot-list) — are stale at a 24h cadence, and the boot
+	// refresh races the universe cache warming (cold → breadth dropped for the whole
+	// day). Hourly keeps the reading fresh and lets breadth appear within ~1h of a
+	// deploy; same-day history points collapse so this adds no extra daily points.
+	sentimentIngestor := ingest.NewSentimentIngestor(yahoo.New(), cboe.New(), shortVolumeCache, sentimentCache, st, time.Hour, log)
 	// Server-driven extra components, computed from caches the app already maintains
 	// (never fetched on the fly): breadth from the universe price cache, social heat
 	// from the trending hot-list store. Both are nil-safe — an unswept cache / empty
