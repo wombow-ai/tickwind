@@ -296,7 +296,20 @@ feature-flagged plugin, never on the critical path. Web only.
   screen-preset + 16 topic + guides/funds/congress/sections = **a few thousand indexable pages with valid
   hreflang**, up from a single client-toggle URL. Each stage shipped via adversarial review + built-HTML + live
   verification. **Optional follow-ups (deferred, owner's call):** A-Z `/stocks` directory from `/v1/symbols`;
-  lift `MAX_STOCK_URLS` 3,000→~6,695 as crawl authority grows; the mega-cap screener fix (task_04cfaedd).
+  lift `MAX_STOCK_URLS` 3,000→~6,695 as crawl authority grows.
+- **Fixed 2026-06-14 (screener/universe mega-cap exclusion — poison-batch bug):** the price universe + screener
+  were silently missing **all S&P mega-caps** (AAPL/MSFT/NVDA/TSLA/GOOGL/AMZN/META…) plus ~3.7k other names.
+  Root cause (live-reproduced against the prod Alpaca account): the SEC symbol directory writes class shares
+  with a **hyphen** (`BRK-B`), but Alpaca wants a **dot** (`BRK.B`); `alpaca.SnapshotQuotes` batches 100/req and
+  the SEC feed **front-loads the mega-caps into batch 0 alongside `BRK-B`** → Alpaca **400s the WHOLE 100-symbol
+  batch** (`invalid symbol: BRK-B`) → the old `if !200 { continue }` silently dropped all 100 (every mega-cap).
+  540 hyphenated tickers poisoned 38/105 batches. **Fix** (`internal/alpaca/alpaca.go`, no feed change — stays
+  free `iex`): `NormalizeSymbol` maps the last hyphen class-suffix to a dot (`BRK-B`→`BRK.B`, foreign dot-form
+  like `0700.HK` + plain tickers untouched), responses keyed by the canonical dot form; plus **recursive
+  bisection** on HTTP 400 so a future bad symbol can only drop itself, never wipe a batch. `SnapshotQuotes`/
+  `Snapshots` both hardened; partial-map-on-error preserved (only errors if NOTHING priced — not a regression).
+  Live harness: priced **6,695 → 7,280** (+585), all mega-caps now `source=alpaca`. Verify post-deploy after the
+  next universe sweep (`UNIVERSE_SWEEP_EVERY`, ~5 min): `/v1/universe/symbols` + `/v1/screen` contain AAPL/NVDA.
 - **Ops (2026-06-14):** the new 4 GB VPS lacked the old box's fail2ban deploy-IP whitelist → a burst of
   deploy connects banned `154.29.158.47`; fixed durably via `/etc/fail2ban/jail.d/tickwind-ignore.conf`
   (owner VNC). The ssh unit on this box is **`ssh`, NOT `sshd`**. Box has 2 G swap + healthy RAM (not OOM).

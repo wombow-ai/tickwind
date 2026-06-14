@@ -53,6 +53,26 @@ func New(keyID, secret, dataURL, feed string) *Client {
 	}
 }
 
+// NormalizeSymbol converts a ticker to the form Alpaca's market-data API expects.
+// The SEC directory (the universe sweep's source) writes class / preferred shares
+// with a hyphen — e.g. "BRK-B", "BF-A" — while Alpaca (like most US vendors and
+// Tickwind's own canonical form) uses a dot: "BRK.B", "BF.A". Sending the hyphen
+// form makes Alpaca 400 the WHOLE batch ("invalid symbol: BRK-B"), which silently
+// drops every other symbol in that 100-ticker request — and because the SEC
+// directory front-loads the mega-caps (NVDA/AAPL/MSFT… in the first batch, which
+// also contains BRK-B), that one bad symbol was wiping out all the most-liquid
+// names from the universe/screener. Mapping the single internal "-" class suffix
+// to "." fixes the symbol so the batch succeeds; non-class tickers are unchanged.
+func NormalizeSymbol(ticker string) string {
+	// Only the LAST hyphen-separated segment is a class/series suffix (e.g.
+	// BRK-B, BAC-PK, WFC-PL). Replace just that separator with a dot; leave any
+	// hyphen-less ticker alone. Alpaca accepts the dotted class/preferred form.
+	if i := strings.LastIndexByte(ticker, '-'); i > 0 && i < len(ticker)-1 {
+		return ticker[:i] + "." + ticker[i+1:]
+	}
+	return ticker
+}
+
 // bar is a single OHLC bar; only the close is used here.
 type bar struct {
 	Close float64 `json:"c"`
@@ -252,133 +272,164 @@ func (c *Client) IntradayOHLC(ctx context.Context, ticker, timeframe string, sta
 	return out, nil
 }
 
-// Snapshots returns the latest price per symbol, fetched in bulk (the daily
-// bar's close, falling back to the previous daily bar off-hours, then the latest
-// trade). Symbols with no usable price are omitted. Batches at 100 symbols per
-// request to keep URLs sane; one call can price the whole small-cap candidate
-// set. Used to compute market cap (= shares × price) for the Opportunity board.
-func (c *Client) Snapshots(ctx context.Context, symbols []string) (map[string]float64, error) {
-	const batch = 100
-	out := make(map[string]float64, len(symbols))
+// snapshotBatch is the per-request cap. Alpaca's snapshots endpoint accepts a
+// comma-joined symbol list; 100 keeps URLs sane and one call can price a whole
+// small-cap candidate set.
+const snapshotBatch = 100
+
+// snapPrice extracts the usable price from a snapshot (daily-bar close, falling
+// back to the previous daily bar off-hours, then the latest trade). Returns 0
+// when none is usable (the caller omits the symbol).
+func snapPrice(snap snapshotResp) float64 {
+	if snap.DailyBar.Close > 0 {
+		return snap.DailyBar.Close
+	}
+	if snap.PrevDailyBar.Close > 0 {
+		return snap.PrevDailyBar.Close
+	}
+	if snap.LatestTrade.Price > 0 {
+		return snap.LatestTrade.Price
+	}
+	return 0
+}
+
+// fetchSnapshots requests a snapshot for each symbol and invokes emit for every
+// returned symbol. It batches at snapshotBatch and is RESILIENT to a poisoned
+// batch: when Alpaca rejects a whole batch with HTTP 400 (one invalid symbol
+// fails the entire request — e.g. a malformed ticker), it recursively bisects
+// that batch so only the genuinely-bad symbol(s) are dropped and every valid
+// symbol still gets priced. Without this, a single bad ticker would silently
+// drop up to 99 good ones (this was why the mega-caps and ~3.7k other names were
+// missing from the universe). Returns the last error if NOTHING was emitted.
+func (c *Client) fetchSnapshots(ctx context.Context, symbols []string, emit func(sym string, snap snapshotResp)) error {
 	var lastErr error
-	for i := 0; i < len(symbols); i += batch {
-		end := i + batch
+	for i := 0; i < len(symbols); i += snapshotBatch {
+		end := i + snapshotBatch
 		if end > len(symbols) {
 			end = len(symbols)
 		}
-		url := fmt.Sprintf("%s/v2/stocks/snapshots?symbols=%s&feed=%s",
-			c.dataURL, strings.Join(symbols[i:end], ","), c.feed)
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-		if err != nil {
-			return nil, err
-		}
-		req.Header.Set("APCA-API-KEY-ID", c.keyID)
-		req.Header.Set("APCA-API-SECRET-KEY", c.secret)
-
-		resp, err := c.http.Do(req)
-		if err != nil {
-			lastErr = fmt.Errorf("alpaca: get snapshots: %w", err)
-			continue
-		}
-		// Skip a bad batch (e.g. an unknown symbol → 400) rather than failing the
-		// whole call; surface the reason if every batch fails.
-		if resp.StatusCode != http.StatusOK {
-			b, _ := io.ReadAll(io.LimitReader(resp.Body, 300))
-			resp.Body.Close()
-			lastErr = fmt.Errorf("alpaca: snapshots %s: %s", resp.Status, strings.TrimSpace(string(b)))
-			continue
-		}
-		var body map[string]snapshotResp
-		err = json.NewDecoder(resp.Body).Decode(&body)
-		resp.Body.Close()
-		if err != nil {
-			lastErr = fmt.Errorf("alpaca: decode snapshots: %w", err)
-			continue
-		}
-		for sym, snap := range body {
-			price := snap.DailyBar.Close
-			if price <= 0 {
-				price = snap.PrevDailyBar.Close
-			}
-			if price <= 0 {
-				price = snap.LatestTrade.Price
-			}
-			if price > 0 {
-				out[sym] = price
-			}
+		if err := c.fetchSnapshotChunk(ctx, symbols[i:end], emit); err != nil {
+			lastErr = err
 		}
 	}
-	if len(out) == 0 && lastErr != nil {
-		return nil, lastErr
+	return lastErr
+}
+
+// fetchSnapshotChunk fetches one comma-joined request. On HTTP 400 (a single
+// invalid symbol poisons the request) it bisects and retries each half, so valid
+// symbols survive; a 1-symbol chunk that still 400s is simply the bad one,
+// dropped. Other failures (network, non-400 status, decode) are returned as-is.
+func (c *Client) fetchSnapshotChunk(ctx context.Context, chunk []string, emit func(sym string, snap snapshotResp)) error {
+	if len(chunk) == 0 {
+		return nil
+	}
+	url := fmt.Sprintf("%s/v2/stocks/snapshots?symbols=%s&feed=%s",
+		c.dataURL, strings.Join(chunk, ","), c.feed)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("APCA-API-KEY-ID", c.keyID)
+	req.Header.Set("APCA-API-SECRET-KEY", c.secret)
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return fmt.Errorf("alpaca: get snapshots: %w", err)
+	}
+	if resp.StatusCode == http.StatusBadRequest && len(chunk) > 1 {
+		// One symbol in the chunk is invalid and Alpaca rejects the whole request.
+		// Bisect so the valid symbols still get priced. (A 1-symbol chunk that
+		// 400s falls through below and is dropped — it's the bad one.)
+		resp.Body.Close()
+		mid := len(chunk) / 2
+		errA := c.fetchSnapshotChunk(ctx, chunk[:mid], emit)
+		errB := c.fetchSnapshotChunk(ctx, chunk[mid:], emit)
+		if errA != nil {
+			return errA
+		}
+		return errB
+	}
+	if resp.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(io.LimitReader(resp.Body, 300))
+		resp.Body.Close()
+		return fmt.Errorf("alpaca: snapshots %s: %s", resp.Status, strings.TrimSpace(string(b)))
+	}
+	var body map[string]snapshotResp
+	err = json.NewDecoder(resp.Body).Decode(&body)
+	resp.Body.Close()
+	if err != nil {
+		return fmt.Errorf("alpaca: decode snapshots: %w", err)
+	}
+	for sym, snap := range body {
+		emit(sym, snap)
+	}
+	return nil
+}
+
+// Snapshots returns the latest price per symbol, fetched in bulk. Symbols with no
+// usable price are omitted. Class/preferred tickers are normalized to Alpaca's
+// dot form (see NormalizeSymbol) and a poisoned batch is bisected rather than
+// dropped wholesale. Used to compute market cap (= shares × price) for the
+// Opportunity board.
+func (c *Client) Snapshots(ctx context.Context, symbols []string) (map[string]float64, error) {
+	out := make(map[string]float64, len(symbols))
+	norm := normalizeSymbols(symbols)
+	err := c.fetchSnapshots(ctx, norm, func(sym string, snap snapshotResp) {
+		if price := snapPrice(snap); price > 0 {
+			out[sym] = price
+		}
+	})
+	if len(out) == 0 && err != nil {
+		return nil, err
 	}
 	return out, nil
 }
 
 // SnapshotQuotes is like Snapshots but returns full quotes (price + prev-close +
 // session) per symbol — the change reference the universe price cache needs.
-// Symbols with no usable price are omitted; batches at 100/req.
+// Symbols with no usable price are omitted; class/preferred tickers are
+// normalized and a poisoned batch is bisected (so the mega-caps survive).
 func (c *Client) SnapshotQuotes(ctx context.Context, symbols []string) (map[string]store.Quote, error) {
-	const batch = 100
 	out := make(map[string]store.Quote, len(symbols))
-	var lastErr error
-	for i := 0; i < len(symbols); i += batch {
-		end := i + batch
-		if end > len(symbols) {
-			end = len(symbols)
+	norm := normalizeSymbols(symbols)
+	err := c.fetchSnapshots(ctx, norm, func(sym string, snap snapshotResp) {
+		price := snapPrice(snap)
+		if price <= 0 {
+			return
 		}
-		url := fmt.Sprintf("%s/v2/stocks/snapshots?symbols=%s&feed=%s",
-			c.dataURL, strings.Join(symbols[i:end], ","), c.feed)
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-		if err != nil {
-			return nil, err
+		out[sym] = store.Quote{
+			Ticker:       sym,
+			Price:        price,
+			PrevClose:    snap.PrevDailyBar.Close,
+			RegularClose: regularClose(snap.DailyBar.Close, snap.PrevDailyBar.Close),
+			Session:      c.sessionAt(snap.LatestTrade.Timestamp),
+			Source:       "alpaca",
+			At:           snap.LatestTrade.Timestamp,
 		}
-		req.Header.Set("APCA-API-KEY-ID", c.keyID)
-		req.Header.Set("APCA-API-SECRET-KEY", c.secret)
-
-		resp, err := c.http.Do(req)
-		if err != nil {
-			lastErr = fmt.Errorf("alpaca: get snapshot quotes: %w", err)
-			continue
-		}
-		if resp.StatusCode != http.StatusOK {
-			b, _ := io.ReadAll(io.LimitReader(resp.Body, 300))
-			resp.Body.Close()
-			lastErr = fmt.Errorf("alpaca: snapshot quotes %s: %s", resp.Status, strings.TrimSpace(string(b)))
-			continue
-		}
-		var body map[string]snapshotResp
-		err = json.NewDecoder(resp.Body).Decode(&body)
-		resp.Body.Close()
-		if err != nil {
-			lastErr = fmt.Errorf("alpaca: decode snapshot quotes: %w", err)
-			continue
-		}
-		for sym, snap := range body {
-			price := snap.DailyBar.Close
-			if price <= 0 {
-				price = snap.PrevDailyBar.Close
-			}
-			if price <= 0 {
-				price = snap.LatestTrade.Price
-			}
-			if price <= 0 {
-				continue
-			}
-			out[sym] = store.Quote{
-				Ticker:       sym,
-				Price:        price,
-				PrevClose:    snap.PrevDailyBar.Close,
-				RegularClose: regularClose(snap.DailyBar.Close, snap.PrevDailyBar.Close),
-				Session:      c.sessionAt(snap.LatestTrade.Timestamp),
-				Source:       "alpaca",
-				At:           snap.LatestTrade.Timestamp,
-			}
-		}
-	}
-	if len(out) == 0 && lastErr != nil {
-		return nil, lastErr
+	})
+	if len(out) == 0 && err != nil {
+		return nil, err
 	}
 	return out, nil
+}
+
+// normalizeSymbols maps each symbol to Alpaca's expected form (deduping after
+// normalization, since e.g. a directory rarely holds both forms). The response
+// is keyed by the SENT (normalized) symbol — which is Tickwind's own canonical
+// dot form for class shares — so the universe/screener key matches the rest of
+// the app (aliases, /stock/{t} URLs, cashtag parsing all use BRK.B, not BRK-B).
+func normalizeSymbols(symbols []string) []string {
+	out := make([]string, 0, len(symbols))
+	seen := make(map[string]struct{}, len(symbols))
+	for _, s := range symbols {
+		n := NormalizeSymbol(s)
+		if _, dup := seen[n]; dup {
+			continue
+		}
+		seen[n] = struct{}{}
+		out = append(out, n)
+	}
+	return out
 }
 
 // SessionAt is the exported session classifier (used by the WS streamer to
