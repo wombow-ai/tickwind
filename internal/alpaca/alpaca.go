@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/wombow-ai/tickwind/internal/store"
+	"github.com/wombow-ai/tickwind/internal/symbols"
 )
 
 // DefaultDataURL is the Alpaca market-data base URL.
@@ -63,14 +64,12 @@ func New(keyID, secret, dataURL, feed string) *Client {
 // also contains BRK-B), that one bad symbol was wiping out all the most-liquid
 // names from the universe/screener. Mapping the single internal "-" class suffix
 // to "." fixes the symbol so the batch succeeds; non-class tickers are unchanged.
+//
+// This delegates to symbols.Canonical so the dot/hyphen rule has exactly ONE
+// definition shared across the app (price universe, SEC symbols index, EDGAR
+// lookup) — the dotted form (BRK.B) is Tickwind's canonical symbol everywhere.
 func NormalizeSymbol(ticker string) string {
-	// Only the LAST hyphen-separated segment is a class/series suffix (e.g.
-	// BRK-B, BAC-PK, WFC-PL). Replace just that separator with a dot; leave any
-	// hyphen-less ticker alone. Alpaca accepts the dotted class/preferred form.
-	if i := strings.LastIndexByte(ticker, '-'); i > 0 && i < len(ticker)-1 {
-		return ticker[:i] + "." + ticker[i+1:]
-	}
-	return ticker
+	return symbols.Canonical(ticker)
 }
 
 // bar is a single OHLC bar; only the close is used here.

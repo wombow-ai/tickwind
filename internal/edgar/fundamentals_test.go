@@ -1,9 +1,65 @@
 package edgar
 
 import (
+	"encoding/json"
 	"fmt"
 	"testing"
 )
+
+// TestFactsRespDecode_StringCIK is the regression test for the recent-IPO bug:
+// SEC's companyfacts API emits the top-level "cik" as a zero-padded STRING for
+// newer filers (RDDT, CART/Instacart, ARM, CRWV/CoreWeave, RBRK, CAVA, DKNG…)
+// but as a NUMBER for older ones. The strict json decoder used to fail the WHOLE
+// payload on a string-vs-int mismatch, so every recent IPO's fundamentals errored
+// (→ /fundamentals 404, all 78 indicators "insufficient"). The fix dropped the
+// unused CIK field so the decode tolerates BOTH shapes. This feeds a recent-IPO-
+// shaped payload (string "cik") and asserts the facts still decode + extract.
+func TestFactsRespDecode_StringCIK(t *testing.T) {
+	// A minimal companyfacts payload shaped like a newer filer's: "cik" is a
+	// zero-padded STRING, with one revenue + net-income annual fact.
+	const stringCIK = `{
+		"cik": "0001713445",
+		"entityName": "Reddit, Inc.",
+		"facts": {
+			"us-gaap": {
+				"Revenues": {"units": {"USD": [
+					{"start":"2023-01-01","end":"2023-12-31","val":804000000,"fy":2023,"fp":"FY","form":"10-K","filed":"2024-02-15"}
+				]}},
+				"NetIncomeLoss": {"units": {"USD": [
+					{"start":"2023-01-01","end":"2023-12-31","val":-90800000,"fy":2023,"fp":"FY","form":"10-K","filed":"2024-02-15"}
+				]}}
+			}
+		}
+	}`
+
+	var resp factsResp
+	if err := json.Unmarshal([]byte(stringCIK), &resp); err != nil {
+		t.Fatalf("decode string-cik payload failed: %v (recent IPOs would lose all fundamentals)", err)
+	}
+	if resp.EntityName != "Reddit, Inc." {
+		t.Errorf("EntityName = %q, want %q", resp.EntityName, "Reddit, Inc.")
+	}
+	f := extractFundamentals(resp)
+	if !f.HasData() {
+		t.Fatalf("HasData() = false for a string-cik payload, want true (fundamentals recovered)")
+	}
+	if f.Revenue != 804000000 {
+		t.Errorf("Revenue = %v, want 804000000", f.Revenue)
+	}
+	if f.NetIncome != -90800000 {
+		t.Errorf("NetIncome = %v, want -90800000 (loss preserved)", f.NetIncome)
+	}
+
+	// And the legacy numeric "cik" shape must STILL decode (no regression).
+	const numericCIK = `{"cik": 320193, "entityName": "Apple Inc.", "facts": {"us-gaap": {}}}`
+	var resp2 factsResp
+	if err := json.Unmarshal([]byte(numericCIK), &resp2); err != nil {
+		t.Fatalf("decode numeric-cik payload failed: %v", err)
+	}
+	if resp2.EntityName != "Apple Inc." {
+		t.Errorf("EntityName = %q, want %q", resp2.EntityName, "Apple Inc.")
+	}
+}
 
 // gaap/dei builders keep the synthetic companyfacts terse.
 func usd(pts ...factPoint) xbrlConcept { return xbrlConcept{Units: map[string][]factPoint{"USD": pts}} }

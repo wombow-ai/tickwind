@@ -10,6 +10,25 @@ import (
 	"strings"
 )
 
+// Canonical returns the canonical Tickwind form of a ticker symbol. It is the
+// ONE definition of "canonical" shared across the app: class / preferred shares
+// use a DOT (e.g. "BRK.B", "BF.A", "BAC.PK"), matching the price universe
+// (Alpaca), the Chinese alias table, the Nasdaq-Trader feed, and the pSEO
+// sitemap (/stock/BRK.B). SEC sources, by contrast, key class shares with a
+// HYPHEN ("BRK-B") — so every place SEC data enters MUST be canonicalized through
+// here, or the canonical dot form silently misses (no fundamentals/filings).
+//
+// Only the LAST hyphen-separated segment is a class/series suffix (BRK-B, BAC-PK,
+// WFC-PL); that single separator becomes a dot. A hyphen-less ticker, a foreign
+// dot-form ticker ("0700.HK"), and an already-dotted class share are returned
+// unchanged. alpaca.NormalizeSymbol delegates here so there is one definition.
+func Canonical(ticker string) string {
+	if i := strings.LastIndexByte(ticker, '-'); i > 0 && i < len(ticker)-1 {
+		return ticker[:i] + "." + ticker[i+1:]
+	}
+	return ticker
+}
+
 // Symbol is one searchable security.
 type Symbol struct {
 	Ticker   string `json:"ticker"`
@@ -110,6 +129,20 @@ func (idx *Index) ByCIK(cik int) (Symbol, bool) {
 		return Symbol{}, false
 	}
 	return idx.all[i], true
+}
+
+// All returns a copy of every indexed Symbol (nil for a nil Index). Used by the
+// ingestor to carry last-good entries forward across a partial source outage —
+// e.g. folding the Nasdaq-Trader-only symbols (ETFs / IEX-Arca-only listings)
+// from the previous index into a rebuild when the Nasdaq-Trader feed is down, so
+// a transient outage never wholesale-drops them from search + the universe sweep.
+func (idx *Index) All() []Symbol {
+	if idx == nil {
+		return nil
+	}
+	out := make([]Symbol, len(idx.all))
+	copy(out, idx.all)
+	return out
 }
 
 // USTickers returns every indexed US ticker (for the universe price sweep). nil-safe.

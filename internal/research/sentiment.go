@@ -202,8 +202,12 @@ func corpusContext(ctx context.Context, ticker string, sr StoreReader) []string 
 			if body == "" {
 				continue
 			}
-			if len(body) > 200 {
-				body = body[:200] + "…"
+			// Truncate by RUNE, not byte: a social body is often Chinese, so a
+			// byte slice (body[:200]) can cut mid-rune and feed a garbled character
+			// to the LLM as attributed context. Mirrors the rune-aware truncation
+			// used in internal/edgar/material_events.go.
+			if r := []rune(body); len(r) > 200 {
+				body = string(r[:200]) + "…"
 			}
 			src := p.Source
 			if src == "" {

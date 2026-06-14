@@ -61,8 +61,15 @@ func FetchUS(ctx context.Context, hc *http.Client, userAgent string) ([]Symbol, 
 		if name == "" || ticker == "" {
 			continue
 		}
+		// Canonicalize to Tickwind's dot form for class / preferred shares: SEC
+		// keys these with a hyphen ("BRK-B"), but the canonical app form is the dot
+		// ("BRK.B") used by the price universe, aliases, the Nasdaq-Trader feed, and
+		// the pSEO sitemap. Indexing the canonical form lets the dedup in Build
+		// collapse the SEC (dot + CIK) and Nasdaq (dot + listing) entries into one
+		// searchable row that KEEPS the CIK, so /stock/BRK.B resolves both quote AND
+		// EDGAR data — and removes the duplicate search hits.
 		out = append(out, Symbol{
-			Ticker:   ticker,
+			Ticker:   Canonical(ticker),
 			Name:     name,
 			Exchange: cell(row, exchCol),
 			Country:  "US",

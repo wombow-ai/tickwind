@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/wombow-ai/tickwind/internal/store"
+	"github.com/wombow-ai/tickwind/internal/symbols"
 )
 
 const (
@@ -120,11 +121,42 @@ func (c *Client) lookup(ctx context.Context, ticker string) (tickerInfo, error) 
 		m = c.tickerMap
 		c.mu.RUnlock()
 	}
-	info, ok := m[strings.ToUpper(ticker)]
-	if !ok {
-		return tickerInfo{}, fmt.Errorf("edgar: ticker %q not found (US-listed only)", ticker)
+	up := strings.ToUpper(ticker)
+	if info, ok := m[up]; ok {
+		return info, nil
 	}
-	return info, nil
+	// Class / preferred shares: the SEC ticker directory keys them with a HYPHEN
+	// ("BRK-B"), but Tickwind's canonical form — used by the price universe, the
+	// pSEO /stock/BRK.B URLs, aliases, and the symbols index — is the DOT form
+	// ("BRK.B"). So a lookup for the canonical dot form misses the hyphen-keyed
+	// CIK. Retry both directions so either form resolves: the canonical (dot)
+	// form (in case the directory ever holds dots) AND the hyphen variant
+	// (dot→hyphen) which is how SEC actually keys these. This makes Fundamentals,
+	// RecentFilings, MaterialEvents, InsiderActivity, and the research path all
+	// resolve BRK.B → CIK.
+	if canon := strings.ToUpper(symbols.Canonical(ticker)); canon != up {
+		if info, ok := m[canon]; ok {
+			return info, nil
+		}
+	}
+	if hyphen := dotToHyphen(up); hyphen != up {
+		if info, ok := m[hyphen]; ok {
+			return info, nil
+		}
+	}
+	return tickerInfo{}, fmt.Errorf("edgar: ticker %q not found (US-listed only)", ticker)
+}
+
+// dotToHyphen converts the canonical dot class/preferred suffix back to the
+// hyphen form SEC's ticker directory uses ("BRK.B" → "BRK-B"). Only the LAST dot
+// is a class separator; a single-dot foreign ticker like "0700.HK" would also be
+// rewritten, but those are never US filers so they simply miss the (US-only) map
+// either way. Returns s unchanged when there is no convertible suffix.
+func dotToHyphen(s string) string {
+	if i := strings.LastIndexByte(s, '.'); i > 0 && i < len(s)-1 {
+		return s[:i] + "-" + s[i+1:]
+	}
+	return s
 }
 
 type submissionsResp struct {

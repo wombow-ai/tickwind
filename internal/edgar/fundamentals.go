@@ -98,7 +98,14 @@ func (f Fundamentals) HasData() bool {
 }
 
 type factsResp struct {
-	CIK        int    `json:"cik"`
+	// NOTE: the companyfacts payload also carries a top-level "cik", but SEC emits
+	// it as a NUMBER for old filers and a zero-padded STRING (e.g. "0001713445")
+	// for newer ones (RDDT, CART, ARM, CRWV, RBRK, CAVA, DKNG…). The strict decoder
+	// (encoding/json via Client.get) fails the WHOLE payload on the type it doesn't
+	// expect, which used to error every recent-IPO's fundamentals. The field is
+	// never read here (the CIK is already known from the ticker lookup), so it is
+	// intentionally OMITTED — an absent struct field is skipped regardless of the
+	// JSON type, making the decode tolerant of both shapes.
 	EntityName string `json:"entityName"`
 	Facts      struct {
 		Dei    map[string]xbrlConcept `json:"dei"`

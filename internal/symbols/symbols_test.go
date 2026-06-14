@@ -93,6 +93,57 @@ func TestBuildDedupesAndLimits(t *testing.T) {
 	}
 }
 
+func TestCanonical(t *testing.T) {
+	tests := []struct{ in, want string }{
+		{"AAPL", "AAPL"},       // plain ticker unchanged
+		{"BRK-B", "BRK.B"},     // SEC class share -> canonical dot form
+		{"BF-A", "BF.A"},       // class A
+		{"USB-PA", "USB.PA"},   // preferred series
+		{"BAC-PK", "BAC.PK"},   // preferred series
+		{"BRK.B", "BRK.B"},     // already dotted -> unchanged
+		{"0700.HK", "0700.HK"}, // foreign suffix untouched
+		{"-LEAD", "-LEAD"},     // leading hyphen -> not a class suffix
+		{"TRAIL-", "TRAIL-"},   // trailing hyphen -> untouched
+		{"A-B-C", "A-B.C"},     // only the LAST hyphen becomes a dot
+	}
+	for _, tc := range tests {
+		if got := Canonical(tc.in); got != tc.want {
+			t.Errorf("Canonical(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
+// TestBuildMergesClassShareKeepingCIK is the FIX-2 dedup regression: after the SEC
+// fetch canonicalizes class shares to the dot form, the index gets a SEC entry
+// (BRK.B + CIK, no quote) AND a Nasdaq-Trader entry (BRK.B + listing, no CIK) for
+// the SAME canonical ticker. The SEC entry is appended first (ingest order), so the
+// dedup must collapse them into ONE searchable row that KEEPS the CIK — otherwise
+// /stock/BRK.B loses EDGAR resolution and search returns duplicate hits.
+func TestBuildMergesClassShareKeepingCIK(t *testing.T) {
+	idx := Build([]Symbol{
+		// SEC first (carries the CIK, canonicalized to the dot form).
+		{Ticker: "BRK.B", Name: "BERKSHIRE HATHAWAY INC", Exchange: "NYSE", Country: "US", CIK: 1067983},
+		// Nasdaq-Trader second (carries the listing, no CIK) — must be deduped away.
+		{Ticker: "BRK.B", Name: "Berkshire Hathaway Inc Class B", Exchange: "NYSE", Country: "US"},
+	})
+	if idx.Len() != 1 {
+		t.Fatalf("Len() = %d, want 1 (the two BRK.B entries must collapse)", idx.Len())
+	}
+	// The surviving entry must keep the CIK so EDGAR resolves.
+	s, ok := idx.ByCIK(1067983)
+	if !ok || s.Ticker != "BRK.B" {
+		t.Fatalf("ByCIK(1067983) = %q,%v; want BRK.B,true (CIK must survive the merge)", s.Ticker, ok)
+	}
+	// ...and it must still be searchable by the canonical dot ticker.
+	got := idx.Search("BRK.B", 10)
+	if len(got) != 1 || got[0].Ticker != "BRK.B" {
+		t.Fatalf("Search(BRK.B) = %v, want exactly one BRK.B (no duplicate hits)", tickers(got))
+	}
+	if got[0].CIK != 1067983 {
+		t.Errorf("searched entry CIK = %d, want 1067983", got[0].CIK)
+	}
+}
+
 func TestByCIK(t *testing.T) {
 	idx := Build([]Symbol{
 		{Ticker: "NVDA", Name: "NVIDIA Corp", Exchange: "Nasdaq", Country: "US", CIK: 1045810},

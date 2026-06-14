@@ -310,6 +310,23 @@ feature-flagged plugin, never on the critical path. Web only.
   `Snapshots` both hardened; partial-map-on-error preserved (only errors if NOTHING priced — not a regression).
   Live harness: priced **6,695 → 7,280** (+585), all mega-caps now `source=alpaca`. Verify post-deploy after the
   next universe sweep (`UNIVERSE_SWEEP_EVERY`, ~5 min): `/v1/universe/symbols` + `/v1/screen` contain AAPL/NVDA.
+- **Fixed 2026-06-14 (data-integrity audit — 4 silent-data-loss fixes):** a 5-dimension adversarial audit
+  (8 raised → 5 confirmed, 3 rejected as latent-not-manifesting) found more bugs of the poison-batch *class*
+  (plausible-but-empty, no error). Fixed: **(HIGH) recent-IPO fundamentals** — SEC's companyfacts `cik` field is
+  a number for old filers but a zero-padded STRING for newer ones; `factsResp.CIK int` failed the whole strict
+  decode → ALL fundamentals + 78 fundamental indicators silently 404'd for RDDT/ARM/CART/CRWV/CAVA/RBRK… (the
+  growing recent-IPO cohort); the field was unused → dropped it. **(HIGH) class/preferred share split-brain** —
+  EDGAR keys class shares with a hyphen (`BRK-B`) but the app's canonical form is the dot (`BRK.B`, used by the
+  universe/aliases/sitemap), so `/stock/BRK.B` (which the sitemap *publishes*) silently had a quote but NO
+  fundamentals/filings/material-events/insider/research for ~539 class shares incl. mega-cap BRK.B. Fix: ONE
+  shared `symbols.Canonical` (dot form; `alpaca.NormalizeSymbol` now delegates — identical logic, universe
+  unaffected), SEC `symbols.FetchUS` canonicalizes (collapses the duplicate search hit, dedup keeps the CIK),
+  and `edgar.lookup` retries the dot↔hyphen variants so `BRK.B`→CIK resolves for all 5 EDGAR consumers.
+  **(LOW)** symbols refresh now folds last-good Nasdaq-Trader symbols on outage (was wholesale-clobbering ETFs)
+  + a <50% shrink guard. **(LOW)** social-body LLM context truncated by rune not byte (was garbling CJK).
+  gofmt/build/vet/-race all clean; new tests (string-cik fixture, `Canonical` mapping, class-share CIK round-trip,
+  dedup-keeps-CIK). Process restart on deploy reloads the edgar tickerMap + symbols index, so a normal redeploy
+  suffices. Verify live: `/v1/stocks/BRK.B/fundamentals` + `/v1/stocks/RDDT/fundamentals` → 200 w/ data.
 - **Ops (2026-06-14):** the new 4 GB VPS lacked the old box's fail2ban deploy-IP whitelist → a burst of
   deploy connects banned `154.29.158.47`; fixed durably via `/etc/fail2ban/jail.d/tickwind-ignore.conf`
   (owner VNC). The ssh unit on this box is **`ssh`, NOT `sshd`**. Box has 2 G swap + healthy RAM (not OOM).
