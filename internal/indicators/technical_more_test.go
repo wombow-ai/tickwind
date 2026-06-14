@@ -425,3 +425,164 @@ func TestDonchianExtraLines(t *testing.T) {
 		t.Errorf("dc channel not ordered: upper=%v mid=%v lower=%v", up, mid, lo)
 	}
 }
+
+// TestKAMASeedsOnceAndIteratesFullHistory verifies the recursive KAMA filter is
+// seeded ONCE at the first computable bar (closes[period-1]) and iterated forward
+// over the whole series, matching a hand-computed reference. The series
+// {10,11,12,11,10,11,12,13,12,11} with period=2, fast=2, slow=30 was traced by
+// hand bar-by-bar (seed=closes[1]=11; ER∈{0,1}; SC=(ER·(2/3−2/31)+2/31)²) to a
+// final value of 11.5969237770 — see the canonical recurrence
+// KAMA=KAMAₚᵣₑᵥ+SC·(C−KAMAₚᵣₑᵥ).
+func TestKAMASeedsOnceAndIteratesFullHistory(t *testing.T) {
+	closes := []float64{10, 11, 12, 11, 10, 11, 12, 13, 12, 11}
+	got, ok := kama(closes, 2, 2, 30)
+	if !ok {
+		t.Fatal("kama ok = false, want true")
+	}
+	const want = 11.5969237770
+	if !approx(got, want, 1e-9) {
+		t.Errorf("kama = %.10f, want %.10f (full-history seed-once)", got, want)
+	}
+	// Insufficiency guard: fewer than period+1 bars → not ok, no fabrication.
+	if _, ok := kama([]float64{10, 11}, 2, 2, 30); ok {
+		t.Error("kama with period+1−1 bars: ok = true, want false")
+	}
+}
+
+// TestKAMARangingDiffersFromTruncatedSeed proves the fix matters: on a long,
+// tight-range series the OLD buggy version reseeded at a raw close `period` bars
+// before the end and ran only `period` steps (gluing the value to that stale
+// seed via the SC floor), whereas the correct full-history filter has drifted.
+// The two differ by ~0.5% here — the bug's ~2.4% class of error in ranging
+// markets. The reference values are computed inline by the two algorithms so the
+// test is self-contained (no magic constants).
+func TestKAMARangingDiffersFromTruncatedSeed(t *testing.T) {
+	const period, fast, slow = 10, 2, 30
+	closes := make([]float64, 60)
+	for i := range closes {
+		closes[i] = 50 + math.Sin(float64(i)*0.5) // tight range around 50
+	}
+	full, ok := kama(closes, period, fast, slow)
+	if !ok {
+		t.Fatal("kama ok = false, want true")
+	}
+	// Reproduce the OLD truncated behavior (reseed period bars before the end,
+	// iterate only `period` steps) to show it lands materially elsewhere.
+	fastSC := 2.0 / (float64(fast) + 1)
+	slowSC := 2.0 / (float64(slow) + 1)
+	n := len(closes)
+	trunc := closes[n-period-1]
+	for i := n - period; i < n; i++ {
+		change := math.Abs(closes[i] - closes[i-period])
+		vol := 0.0
+		for j := i - period + 1; j <= i; j++ {
+			vol += math.Abs(closes[j] - closes[j-1])
+		}
+		er := 0.0
+		if vol != 0 {
+			er = change / vol
+		}
+		sc := er*(fastSC-slowSC) + slowSC
+		sc *= sc
+		trunc += sc * (closes[i] - trunc)
+	}
+	if approx(full, trunc, 1e-3) {
+		t.Errorf("full-history KAMA %.6f should differ from the old truncated seed %.6f on a ranging series", full, trunc)
+	}
+}
+
+// TestKVOVolumeForceMagnitudePresent proves the Volume Force carries the trend's
+// MAGNITUDE, not just its sign. Two series are byte-identical in closes, volumes
+// and HLC3 direction; they differ only in ONE bar's high-low range. The canonical
+// KVO responds to that range change (magnitude present); the old sign-only VF
+// (volume·±1) was blind to range, so it would have returned the identical KVO for
+// both. Verified per the TradingView/Investopedia Klinger Volume Force definition.
+func TestKVOVolumeForceMagnitudePresent(t *testing.T) {
+	const fast, slow = 34, 55
+	mk := func(rangeAt58 float64) (h, l, c, v []float64) {
+		for i := 0; i < 60; i++ {
+			base := 100 + float64(i)*0.3 + 2*math.Sin(float64(i)*0.5)
+			r := 1.0
+			if i == 58 {
+				r = rangeAt58 // one bar's range differs; everything else identical
+			}
+			h = append(h, base+r)
+			l = append(l, base-r)
+			c = append(c, base)
+			v = append(v, 1_000_000)
+		}
+		return
+	}
+	hN, lN, cN, vN := mk(1.0)
+	hW, lW, cW, vW := mk(3.0)
+	kvoN, okN := klingerVolumeOscillator(hN, lN, cN, vN, fast, slow)
+	kvoW, okW := klingerVolumeOscillator(hW, lW, cW, vW, fast, slow)
+	if !okN || !okW {
+		t.Fatalf("kvo ok = (%v,%v), want both true", okN, okW)
+	}
+	if approx(kvoN, kvoW, 1e-6) {
+		t.Errorf("KVO ignored a single-bar range change (%.6f == %.6f): volume-force magnitude missing", kvoN, kvoW)
+	}
+	// Too-short guard: no fabrication below slow+2 bars.
+	if _, ok := klingerVolumeOscillator(hN[:slow], lN[:slow], cN[:slow], vN[:slow], fast, slow); ok {
+		t.Error("kvo on too-few bars: ok = true, want false")
+	}
+}
+
+// TestSARTwoBarClampBinds verifies Wilder's SAR is bounded by the price range of
+// the prior TWO bars before the penetration test. On an uptrend with a pullback
+// where low[i-2] < low[i-1], the two-bar clamp (min of the two prior lows) pulls
+// the SAR to a strictly LOWER bound than a one-bar clamp would, so the corrected
+// SAR differs from the old one-bar-clamp value.
+func TestSARTwoBarClampBinds(t *testing.T) {
+	highs := []float64{10, 11, 12, 13, 14, 15, 16}
+	lows := []float64{9, 9.5, 8.0, 11, 12, 13, 14} // index2 low=8.0 dips below index1's 9.5
+	newSAR, trend, ok := parabolicSAR(highs, lows, 0.02, 0.20)
+	if !ok {
+		t.Fatal("sar ok = false, want true")
+	}
+	if trend != 1 {
+		t.Fatalf("sar trend = %v, want 1 (uptrend)", trend)
+	}
+	// Reproduce the OLD one-bar clamp (and reversal-test-on-unclamped-SAR) inline.
+	oldSAR := func() float64 {
+		up := highs[1] > highs[0]
+		af := 0.02
+		var ep, sar float64
+		if up {
+			sar = lows[0]
+			ep = highs[1]
+		} else {
+			sar = highs[0]
+			ep = lows[1]
+		}
+		for i := 1; i < len(highs); i++ {
+			sar = sar + af*(ep-sar)
+			if up {
+				if lows[i] < sar {
+					up = false
+					sar = ep
+					ep = lows[i]
+					af = 0.02
+					continue
+				}
+				if highs[i] > ep {
+					ep = highs[i]
+					af = math.Min(af+0.02, 0.20)
+				}
+				if sar > lows[i-1] {
+					sar = lows[i-1]
+				}
+			}
+		}
+		return sar
+	}()
+	if approx(newSAR, oldSAR, 1e-9) {
+		t.Errorf("two-bar clamp did not bind: new SAR %.6f == old one-bar SAR %.6f", newSAR, oldSAR)
+	}
+	// The two-bar clamp must produce a value at or below the one-bar clamp (it
+	// takes a min over MORE lows in an uptrend).
+	if newSAR > oldSAR+1e-9 {
+		t.Errorf("two-bar-clamped SAR %.6f exceeds one-bar SAR %.6f (clamp should not raise it)", newSAR, oldSAR)
+	}
+}

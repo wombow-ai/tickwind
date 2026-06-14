@@ -381,10 +381,11 @@ func TestExtractFundamentals_Inc2Fields(t *testing.T) {
 }
 
 // TestExtractFundamentals_Inc2FallbacksAndDerivations covers the tag-priority
-// fallbacks and the sign / derivation guards: the LiabilitiesNoncurrent fallback for
-// long-term debt, the NetIncome+tax pre-tax derivation when the reported concept is
-// absent, the EBIT-input-only path (no OperatingIncomeLoss), a sign-flipped buyback,
-// and a DERIVED gross profit leaving GrossProfitPrior 0 (no faithful prior pair).
+// fallbacks and the sign / derivation guards: long-term debt staying 0 when only the
+// non-debt LiabilitiesNoncurrent block is present (it is NOT substituted as debt), the
+// NetIncome+tax pre-tax derivation when the reported concept is absent, the
+// EBIT-input-only path (no OperatingIncomeLoss), a sign-flipped buyback, and a DERIVED
+// gross profit leaving GrossProfitPrior 0 (no faithful prior pair).
 func TestExtractFundamentals_Inc2FallbacksAndDerivations(t *testing.T) {
 	resp := factsResp{EntityName: "Fallback Inc"}
 	resp.Facts.UsGaap = map[string]xbrlConcept{
@@ -392,7 +393,9 @@ func TestExtractFundamentals_Inc2FallbacksAndDerivations(t *testing.T) {
 		"NetIncomeLoss": usd(fy(2024, 100)),
 		// Gross profit DERIVED (no GrossProfit concept) → GrossProfitPrior stays 0.
 		"CostOfGoodsAndServicesSold": usd(fy(2023, 300), fy(2024, 560)),
-		// No LongTermDebtNoncurrent / LongTermDebt → fall back to LiabilitiesNoncurrent.
+		// No LongTermDebtNoncurrent / LongTermDebt, only the (non-debt) total
+		// non-current-liability block → f.LongTermDebt must stay 0 (NOT substituted),
+		// so the EV/gearing/ROIC family reports insufficient rather than inflating debt.
 		"LiabilitiesNoncurrent": usd(inst("2024-12-31", 350)),
 		// Income tax present but NO reported pre-tax concept → derive NI + tax.
 		"IncomeTaxExpenseBenefit": usd(fy(2024, 25)),
@@ -406,8 +409,8 @@ func TestExtractFundamentals_Inc2FallbacksAndDerivations(t *testing.T) {
 	if f.GrossProfitPrior != 0 {
 		t.Errorf("GrossProfitPrior = %v, want 0 (derived path has no faithful prior)", f.GrossProfitPrior)
 	}
-	if f.LongTermDebt != 350 {
-		t.Errorf("LongTermDebt = %v, want 350 (LiabilitiesNoncurrent fallback)", f.LongTermDebt)
+	if f.LongTermDebt != 0 {
+		t.Errorf("LongTermDebt = %v, want 0 (LiabilitiesNoncurrent is NOT interest-bearing debt; never substituted)", f.LongTermDebt)
 	}
 	if f.PreTaxIncome != 0 {
 		t.Errorf("PreTaxIncome field = %v, want 0 (no reported concept; derivation happens in the ratio)", f.PreTaxIncome)

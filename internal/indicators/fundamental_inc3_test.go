@@ -69,6 +69,7 @@ func TestAltmanZ(t *testing.T) {
 // piotroskiFixture6 is a hand-computed fixture scoring exactly 6/9. Each point:
 //
 //	ROA = NetIncome/TotalAssets = 100/1000 = 0.10 ; ROAprior = 40/800 = 0.05
+//	leverage = LTD/TotalAssets = 240/1000 = 0.24 ; prior = 200/800 = 0.25
 //	current ratio = 400/200 = 2.0 ; prior = 300/200 = 1.5
 //	gross margin = 500/1000 = 0.50 ; prior = 360/900 = 0.40
 //	asset turnover = 1000/1000 = 1.0 ; prior = 900/800 = 1.125
@@ -77,7 +78,9 @@ func TestAltmanZ(t *testing.T) {
 //	(2) OCF>0:          90 > 0              → 1
 //	(3) ΔROA>0:         0.10 > 0.05         → 1
 //	(4) accrual:        OCF 90 > NI 100     → 0  (cash trails earnings)
-//	(5) ΔLeverage:      LTD 200 ≤ 250       → 1
+//	(5) ΔLeverage:      0.24 < 0.25         → 1  (leverage RATIO fell even though LTD
+//	                                              dollars ROSE 200→240 — a raw-level
+//	                                              ≤ test would WRONGLY deny this point)
 //	(6) ΔCurrentRatio:  2.0 > 1.5           → 1
 //	(7) no dilution:    Shares 1100 ≤ 1000  → 0  (shares grew)
 //	(8) ΔGrossMargin:   0.50 > 0.40         → 1
@@ -87,7 +90,7 @@ var piotroskiFixture6 = edgar.Fundamentals{
 	TotalAssets: 1000, TotalAssetsPrior: 800,
 	NetIncome: 100, NetIncomePrior: 40,
 	OperatingCashFlow: 90,
-	LongTermDebt:      200, LongTermDebtPrior: 250,
+	LongTermDebt:      240, LongTermDebtPrior: 200,
 	AssetsCurrent: 400, LiabilitiesCurrent: 200,
 	AssetsCurrentPrior: 300, LiabilitiesCurrentPrior: 200,
 	Shares: 1100, SharesPrior: 1000,
@@ -115,12 +118,35 @@ func TestPiotroskiF(t *testing.T) {
 		t.Fatalf("piotroskiF(perfect) = %d,%v, want 9,true", s, ok)
 	}
 
-	// A debt-free-vs-prior firm: current LongTermDebt 0, prior 250 (paid it all down)
-	// → point 5 awarded (0 ≤ 250). Prior debt present, so still sufficient.
+	// A debt-free-vs-prior firm: current LongTermDebt 0, prior 200 (paid it all down)
+	// → leverage ratio 0/1000 = 0 < 200/800 = 0.25 → point 5 awarded. Prior debt
+	// present, so still sufficient.
 	paidDown := piotroskiFixture6
 	paidDown.LongTermDebt = 0
 	if s, ok := piotroskiF(paidDown); !ok || s != 6 {
 		t.Fatalf("piotroskiF(paidDown debt-free) = %d,%v, want 6,true (point 5 still awarded)", s, ok)
+	}
+
+	// BUG-6 worked example: the ΔLEVER point is the LEVERAGE RATIO LTD/TA, not raw debt
+	// dollars. LTD rose 250→260 (a raw-level `LTD <= prior` test would DENY: 260 ≤ 250 is
+	// false) while total assets grew 800→1200, so leverage FELL: 260/1200 ≈ 0.2167 <
+	// 250/800 = 0.3125 → point 5 AWARDED. Holding the other 8 points at fixture6's outcomes
+	// (NI 100, OCF 90, current ratio, shares, margins, turnover), the score stays 6/9 —
+	// proving the ratio fix awards a point the raw-level comparison would have wrongly denied.
+	leveredButDeleveraging := piotroskiFixture6
+	leveredButDeleveraging.TotalAssets = 1200
+	leveredButDeleveraging.TotalAssetsPrior = 800
+	leveredButDeleveraging.LongTermDebt = 260
+	leveredButDeleveraging.LongTermDebtPrior = 250
+	// Sanity: the raw-level comparison this fix replaces WOULD have denied point 5.
+	if leveredButDeleveraging.LongTermDebt <= leveredButDeleveraging.LongTermDebtPrior {
+		t.Fatal("fixture invalid: LTD must have RISEN in dollars so the raw-level test would deny point 5")
+	}
+	// Recompute the expected score: TA 800→1200 changes ROA (100/1200>0, >0.05),
+	// turnover (1000/1200=0.833 < 900/800=1.125 → still 0); all other points match
+	// fixture6. Net: ROA still 1, ΔROA still 1, ΔLEVER now 1, turnover still 0 → 6/9.
+	if s, ok := piotroskiF(leveredButDeleveraging); !ok || s != 6 {
+		t.Fatalf("piotroskiF(leveredButDeleveraging) = %d,%v, want 6,true (leverage RATIO fell → point 5 awarded despite LTD dollars rising)", s, ok)
 	}
 
 	// All-or-nothing: any required denominator ≤ 0 OR any prior field absent → ok=false.

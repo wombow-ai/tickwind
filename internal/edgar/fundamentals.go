@@ -74,7 +74,7 @@ type Fundamentals struct {
 	RetainedEarnings   float64 `json:"retained_earnings,omitempty"`    // us-gaap:RetainedEarningsAccumulatedDeficit (latest instant); can be <0; Altman-Z X2
 
 	// Group 4 — debt / EV / capital-structure instants + flows.
-	LongTermDebt          float64 `json:"long_term_debt,omitempty"`          // us-gaap:LongTermDebtNoncurrent, else LiabilitiesNoncurrent (latest instant)
+	LongTermDebt          float64 `json:"long_term_debt,omitempty"`          // interest-bearing long-term debt: us-gaap:LongTermDebtNoncurrent, else us-gaap:LongTermDebt (latest instant). 0 when no debt-specific tag exists (NOT substituted from total non-current liabilities) so the EV/gearing/ROIC family reports insufficient rather than inflating debt.
 	DebtCurrent           float64 `json:"debt_current,omitempty"`            // us-gaap:DebtCurrent, else ShortTermBorrowings (latest instant)
 	Goodwill              float64 `json:"goodwill,omitempty"`                // us-gaap:Goodwill (latest instant)
 	IntangiblesExGoodwill float64 `json:"intangibles_ex_goodwill,omitempty"` // us-gaap:IntangibleAssetsNetExcludingGoodwill (latest instant)
@@ -429,8 +429,20 @@ func extractFundamentals(resp factsResp) Fundamentals {
 	// series so the prior period-end instant can be matched for the Piotroski ΔLeverage
 	// test (Group 5) — the prior MUST come from the SAME concept the current value was
 	// picked from (priorInstant of the chosen series), never a different tag.
+	//
+	// Tag-priority is GENUINE long-term DEBT only (us-gaap:LongTermDebtNoncurrent, else
+	// us-gaap:LongTermDebt). us-gaap:LiabilitiesNoncurrent is deliberately NOT a fallback:
+	// it is the entire non-current-liability block (deferred taxes, operating leases,
+	// pensions, deferred revenue, …), NOT interest-bearing debt, so substituting it would
+	// inflate interestBearingDebt() / ev() and cascade into netGearing / roic invested
+	// capital / evTo*. When neither debt-specific tag is present we leave LongTermDebt = 0:
+	// the consumers' existing <=0 guards then report INSUFFICIENT (or, for ev(), correctly
+	// treat the firm as carrying no long-term debt) rather than fabricating a debt figure
+	// from total liabilities. (DebtLongtermAndShorttermCombinedAmount is intentionally
+	// omitted: it bundles current + long-term debt, which DebtCurrent already adds
+	// separately in interestBearingDebt(), so including it here would double-count.)
 	ltdPts := pick(gaap, "USD",
-		"LongTermDebtNoncurrent", "LongTermDebt", "LiabilitiesNoncurrent")
+		"LongTermDebtNoncurrent", "LongTermDebt")
 	if p, ok := latestInstant(ltdPts); ok {
 		f.LongTermDebt = p.Val
 		if pp, ok := priorInstant(ltdPts, p.End); ok {

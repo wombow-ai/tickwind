@@ -3268,7 +3268,7 @@
     "name_zh": "长期资本负债率",
     "abbr": "",
     "definition": "",
-    "formula": "long-term liabilities / (long-term liabilities + equity)",
+    "formula": "long-term debt / (long-term debt + equity)",
     "inputs": null,
     "default_params": null,
     "talib_or_lib": null,

@@ -204,6 +204,67 @@ func TestInc2Ratios_EdgeInsufficient(t *testing.T) {
 	}
 }
 
+// TestInc2EVDebtFamily_NoSubstitutedLiabilities is the BUG-4 regression: a filer that
+// omits every debt-specific XBRL tag (so f.LongTermDebt stays 0 — us-gaap:Liabilities-
+// Noncurrent is NOT substituted as debt at the extraction layer) must NOT have its
+// EV/gearing/ROIC family inflated. The point: never substitute total non-current
+// liabilities for interest-bearing debt.
+//
+// Two faithful cases:
+//   - noLTDebt: NO debt tag at all (LongTermDebt 0, DebtCurrent 0) → the debt term is
+//     absent, so interestBearingDebt()/ev()/netGearing()/roic()/evTo* all report
+//     INSUFFICIENT (the existing <=0 guards) rather than an inflated value.
+//   - onlyCurrentDebt: NO long-term debt tag but a genuine current-debt tag present
+//     (LongTermDebt 0, DebtCurrent 300) → NOT over-suppressed: EV correctly uses
+//     0 long-term debt + the real current debt (EV = mktcap + 0 + 300 − cash) and the
+//     family stays VALID. This proves the fix stops at "stop substituting", without
+//     nulling a firm that does report some interest-bearing debt.
+func TestInc2EVDebtFamily_NoSubstitutedLiabilities(t *testing.T) {
+	const px = 40.0
+	// A profitable firm whose only non-current liability would have been the (dropped)
+	// LiabilitiesNoncurrent block: at the indicators layer that surfaces as LongTermDebt 0.
+	noLTDebt := edgar.Fundamentals{
+		Shares: 1000, Revenue: 5000, NetIncome: 800, Equity: 2000,
+		TotalAssets: 6000, TotalLiabilities: 4000, CashAndEquivalents: 600,
+		OperatingIncomeLoss: 1000, InterestExpense: 200, IncomeTaxExpense: 300,
+		PreTaxIncome: 1100, OperatingCashFlow: 1200, CapEx: 300, DepreciationAmort: 200,
+		// LongTermDebt 0 + DebtCurrent 0 → NO interest-bearing debt at all.
+	}
+	// The interest-bearing-debt term is absent → every debt-dependent ratio insufficient.
+	insufficient := []struct {
+		name string
+		eval func() (float64, bool)
+	}{
+		{"interest-bearing-debt", func() (float64, bool) { return interestBearingDebt(noLTDebt) }},
+		{"ev", func() (float64, bool) { return ev(px, noLTDebt) }},
+		{"ev-sales", func() (float64, bool) { return evToSales(px, noLTDebt) }},
+		{"ev-fcf", func() (float64, bool) { return evToFCF(px, noLTDebt) }},
+		{"ev-ebitda", func() (float64, bool) { return evToEBITDA(px, noLTDebt) }},
+		{"net-gearing", func() (float64, bool) { return netGearing(noLTDebt) }},
+		{"roic", func() (float64, bool) { return roic(noLTDebt) }},
+		{"lt-debt-ratio", func() (float64, bool) { return ltDebtRatio(noLTDebt) }},
+	}
+	for _, tc := range insufficient {
+		t.Run("noLTDebt/"+tc.name, func(t *testing.T) {
+			if v, ok := tc.eval(); ok {
+				t.Errorf("%s: ok=true (value %v) on a no-debt-tag filer, want insufficient — total liabilities must NEVER be substituted as debt", tc.name, v)
+			}
+		})
+	}
+
+	// NOT over-suppressed: a genuine current-debt tag present (long-term tag still absent)
+	// → the debt term forms from DebtCurrent alone, EV is VALID and uses 0 long-term debt.
+	onlyCurrentDebt := noLTDebt
+	onlyCurrentDebt.DebtCurrent = 300
+	if d, ok := interestBearingDebt(onlyCurrentDebt); !ok || !floatEq(d, 300, 1e-9) {
+		t.Errorf("interestBearingDebt(onlyCurrentDebt) = %v,%v, want 300,true (DebtCurrent alone forms the term)", d, ok)
+	}
+	// EV = mktcap 40000 + debt 300 − cash 600 = 39700 (long-term debt 0, NOT inflated).
+	if v, ok := ev(px, onlyCurrentDebt); !ok || !floatEq(v, 40000+300-600, 1e-9) {
+		t.Errorf("ev(onlyCurrentDebt) = %v,%v, want 39700,true (0 LT debt + real current debt)", v, ok)
+	}
+}
+
 // TestFundamentalRegistryInc2Coverage asserts the Increment-2 registry contains
 // exactly the expected Group 1/2/4 + faithful-Group-3 ids, and that each closure,
 // run over the empty (no-fundamentals) input, reports insufficient with no Value

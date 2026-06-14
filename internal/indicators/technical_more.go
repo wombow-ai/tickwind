@@ -806,6 +806,14 @@ func hma(closes []float64, period int) (float64, bool) {
 // kama returns the latest Kaufman Adaptive Moving Average over period with the
 // fast/slow EMA bounds (canonically 2 and 30): the efficiency ratio scales the
 // smoothing constant between the fast and slow limits. ok=false when too short.
+//
+// KAMA is a recursive IIR filter: it is SEEDED ONCE at the first computable bar
+// (index period-1, the first bar with a full period-window of changes behind it)
+// and iterated forward over the ENTIRE history, so the latest value depends on
+// every prior bar (like emaSeries / vidya). The seed is closes[period-1] (the
+// raw close at the first computable bar — the simplest seed; the SC floor pulls
+// it toward the price within a few bars, and over ~250 bars the choice of seed
+// is immaterial).
 func kama(closes []float64, period, fast, slow int) (float64, bool) {
 	n := len(closes)
 	if period <= 0 || n < period+1 {
@@ -813,8 +821,8 @@ func kama(closes []float64, period, fast, slow int) (float64, bool) {
 	}
 	fastSC := 2.0 / (float64(fast) + 1)
 	slowSC := 2.0 / (float64(slow) + 1)
-	kama := closes[n-period-1] // seed at the first computable bar's prior close
-	for i := n - period; i < n; i++ {
+	kama := closes[period-1] // seed once at the first computable bar
+	for i := period; i < n; i++ {
 		change := math.Abs(closes[i] - closes[i-period])
 		vol := 0.0
 		for j := i - period + 1; j <= i; j++ {
@@ -939,6 +947,11 @@ func supertrend(highs, lows, closes []float64, atrPeriod int, mult float64) (val
 // parabolicSAR returns the latest Parabolic SAR value and trend side (+1 up, −1
 // down) using the standard AF recursion (step accel, max cap). ok=false when too
 // short.
+//
+// Per Wilder, the projected SAR is first BOUNDED so it cannot penetrate the price
+// range of the prior TWO bars (uptrend: the lower of lows[i-1], lows[i-2];
+// downtrend: the higher of highs[i-1], highs[i-2]) — and only THEN is the
+// penetration/reversal test applied to that bounded SAR.
 func parabolicSAR(highs, lows []float64, step, maxAF float64) (sar, trend float64, ok bool) {
 	n := len(highs)
 	if n < 3 || len(lows) != n {
@@ -957,6 +970,13 @@ func parabolicSAR(highs, lows []float64, step, maxAF float64) (sar, trend float6
 	for i := 1; i < n; i++ {
 		sar = sar + af*(ep-sar)
 		if up {
+			// Bound the SAR by the lower of the prior two lows BEFORE the
+			// penetration test.
+			if i >= 2 {
+				sar = math.Min(sar, math.Min(lows[i-1], lows[i-2]))
+			} else {
+				sar = math.Min(sar, lows[i-1])
+			}
 			if lows[i] < sar { // flip to down
 				up = false
 				sar = ep
@@ -968,10 +988,14 @@ func parabolicSAR(highs, lows []float64, step, maxAF float64) (sar, trend float6
 				ep = highs[i]
 				af = math.Min(af+step, maxAF)
 			}
-			if i >= 1 && sar > lows[i-1] {
-				sar = lows[i-1]
-			}
 		} else {
+			// Bound the SAR by the higher of the prior two highs BEFORE the
+			// penetration test.
+			if i >= 2 {
+				sar = math.Max(sar, math.Max(highs[i-1], highs[i-2]))
+			} else {
+				sar = math.Max(sar, highs[i-1])
+			}
 			if highs[i] > sar { // flip to up
 				up = true
 				sar = ep
@@ -982,9 +1006,6 @@ func parabolicSAR(highs, lows []float64, step, maxAF float64) (sar, trend float6
 			if lows[i] < ep {
 				ep = lows[i]
 				af = math.Min(af+step, maxAF)
-			}
-			if i >= 1 && sar < highs[i-1] {
-				sar = highs[i-1]
 			}
 		}
 	}
@@ -1727,8 +1748,18 @@ func pviNvi(closes, volumes []float64) (pvi, nvi float64, ok bool) {
 }
 
 // klingerVolumeOscillator returns the latest Klinger Volume Oscillator:
-// EMA(volume-force,fast) − EMA(volume-force,slow), where the signed volume force
-// flips with the HLC3 trend. ok=false when too short.
+// EMA(VF,fast) − EMA(VF,slow), where VF is the canonical signed Volume Force.
+//
+// Volume Force carries BOTH the HLC3 trend direction AND the trend's magnitude
+// (Klinger, via TradingView/Investopedia): with dm = High−Low and cm a running
+// cumulative measurement that accumulates dm while the trend persists and resets
+// to dm + dm_prev on a trend flip,
+//
+//	trend = +1 if HLC3 > prior HLC3, −1 if lower, and CARRIES the prior bar's
+//	         trend forward when HLC3 is unchanged (never defaults to +1);
+//	VF    = volume · |2·((dm/cm) − 1)| · trend · 100   (cm==0 → VF contributes 0).
+//
+// ok=false when too short.
 func klingerVolumeOscillator(highs, lows, closes, volumes []float64, fast, slow int) (float64, bool) {
 	n := len(closes)
 	if n < slow+2 || len(highs) != n || len(lows) != n || len(volumes) != n {
@@ -1736,12 +1767,30 @@ func klingerVolumeOscillator(highs, lows, closes, volumes []float64, fast, slow 
 	}
 	tp := hlc3(highs, lows, closes)
 	vf := make([]float64, 0, n-1)
+	trend := 1.0  // prior-bar trend, carried forward on an unchanged HLC3
+	cm := 0.0     // cumulative measurement
+	dmPrev := 0.0 // prior bar's daily measurement (High−Low)
 	for i := 1; i < n; i++ {
-		trend := 1.0
-		if tp[i] < tp[i-1] {
-			trend = -1.0
+		dm := highs[i] - lows[i]
+		newTrend := trend // carry prior trend when HLC3 is unchanged
+		switch {
+		case tp[i] > tp[i-1]:
+			newTrend = 1.0
+		case tp[i] < tp[i-1]:
+			newTrend = -1.0
 		}
-		vf = append(vf, volumes[i]*trend)
+		if newTrend != trend {
+			cm = dm + dmPrev // reset on a trend flip
+		} else {
+			cm += dm // accumulate while the trend persists
+		}
+		force := 0.0
+		if cm != 0 {
+			force = volumes[i] * math.Abs(2*((dm/cm)-1)) * newTrend * 100
+		}
+		vf = append(vf, force)
+		trend = newTrend
+		dmPrev = dm
 	}
 	ef, okF := ema(vf, fast)
 	es, okS := ema(vf, slow)

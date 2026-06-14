@@ -374,8 +374,10 @@ func ocfRatio(f edgar.Fundamentals) (float64, bool) {
 
 // --- Group 4: debt / EV / capital-structure ratios ---
 
-// ltDebtRatio returns long-term liabilities / (long-term liabilities + equity) as a
-// PERCENT. ok=false when long-term debt is absent (0) or the denominator is
+// ltDebtRatio returns long-term debt / (long-term debt + equity) as a PERCENT — the
+// canonical long-term-debt-to-capitalization ratio (StockCharts/Investopedia). The
+// numerator is interest-bearing long-term debt (f.LongTermDebt), NOT total long-term
+// liabilities. ok=false when long-term debt is absent (0) or the denominator is
 // non-positive.
 func ltDebtRatio(f edgar.Fundamentals) (float64, bool) {
 	if f.LongTermDebt == 0 {

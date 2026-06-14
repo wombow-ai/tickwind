@@ -69,10 +69,10 @@ func altmanZ(price float64, f edgar.Fundamentals) (float64, bool) {
 // assets, revenue and a prior balance sheet reports net income, OCF, gross profit and
 // a current balance). LongTermDebtPrior > 0 is required (proves the prior balance
 // exists); the CURRENT LongTermDebt may be 0 — a firm that paid all long-term debt
-// down to 0 has 0 <= prior, so leverage did not rise → point 5 is awarded. A fully
-// debt-free firm (both 0) cannot reach this path because LongTermDebtPrior == 0 fails
-// the prior gate → insufficient; that is the conservative choice (we cannot prove a
-// prior balance sheet from an absent debt concept).
+// down to 0 has leverage ratio 0 < a positive prior, so leverage fell → point 5 is
+// awarded. A fully debt-free firm (both 0) cannot reach this path because
+// LongTermDebtPrior == 0 fails the prior gate → insufficient; that is the conservative
+// choice (we cannot prove a prior balance sheet from an absent debt concept).
 func piotroskiF(f edgar.Fundamentals) (int, bool) {
 	// Denominators must be strictly positive (a 0 here is an absent concept).
 	if f.TotalAssets <= 0 || f.TotalAssetsPrior <= 0 ||
@@ -104,7 +104,15 @@ func piotroskiF(f edgar.Fundamentals) (int, bool) {
 	b(f.OperatingCashFlow > f.NetIncome) // (4) accrual: OCF > net income (cash-backed earnings)
 
 	// LEVERAGE / LIQUIDITY (3).
-	b(f.LongTermDebt <= f.LongTermDebtPrior) // (5) leverage did not rise (≤; a debt-free-vs-prior firm passes)
+	// (5) ΔLEVER: the LEVERAGE RATIO long-term-debt/total-assets DECREASED YoY
+	// (lev < levPrior). Piotroski grades the leverage RATIO, not raw debt dollars: a
+	// firm that grew assets faster than debt deleveraged even as debt dollars rose.
+	// TotalAssets/TotalAssetsPrior are already gated >0 above (period-end on each side,
+	// matching the project's period-end convention). The debt-free edge still passes
+	// (LTD 0 → lev 0 < a positive prior).
+	lev := f.LongTermDebt / f.TotalAssets
+	levPrior := f.LongTermDebtPrior / f.TotalAssetsPrior
+	b(lev < levPrior) // (5) leverage ratio fell
 	curr := f.AssetsCurrent / f.LiabilitiesCurrent
 	currPrior := f.AssetsCurrentPrior / f.LiabilitiesCurrentPrior
 	b(curr > currPrior)          // (6) current ratio improved
