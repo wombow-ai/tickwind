@@ -154,6 +154,8 @@ export function KLineChart({ticker, quote}: {ticker: string; quote?: Quote}) {
   const [showBoll, setShowBoll] = useState(false);
   const [tf, setTf] = useState<TF>('1Day');
   const [intraday, setIntraday] = useState<Record<string, Candle[]>>({});
+  // OHLC of the candle under the crosshair (null when not hovering a bar).
+  const [legend, setLegend] = useState<{t: string; o: number; h: number; l: number; c: number; up: boolean} | null>(null);
   const intradayReq = useRef<Set<string>>(new Set());
   const containerRef = useRef<HTMLDivElement>(null);
   // Remembers the user's pan/zoom so a rebuild (dark or Bollinger toggle) doesn't
@@ -279,6 +281,28 @@ export function KLineChart({ticker, quote}: {ticker: string; quote?: Quote}) {
     seriesRef.current = candleSeries;
     stitchRef.current = {view, mode, resSec, toT};
 
+    // Crosshair OHLC legend: show the hovered bar's open/high/low/close + date.
+    chart.subscribeCrosshairMove(param => {
+      const pt = param.point;
+      if (!param.time || !pt || pt.x < 0) {
+        setLegend(null);
+        return;
+      }
+      const d = param.seriesData.get(candleSeries) as
+        | {open: number; high: number; low: number; close: number}
+        | undefined;
+      if (!d || typeof d.open !== 'number') {
+        setLegend(null);
+        return;
+      }
+      // toT emits a "YYYY-MM-DD" string for daily, a unix-seconds number for intraday.
+      const t =
+        typeof param.time === 'string'
+          ? param.time
+          : new Date((param.time as number) * 1000).toISOString().slice(0, 16).replace('T', ' ');
+      setLegend({t, o: d.open, h: d.high, l: d.low, c: d.close, up: d.close >= d.open});
+    });
+
     // MA overlays (pane 0).
     for (const ma of MAS) {
       const s = chart.addSeries(LineSeries, {
@@ -390,6 +414,7 @@ export function KLineChart({ticker, quote}: {ticker: string; quote?: Quote}) {
     return () => {
       seriesRef.current = null; // a tick must never update a removed chart
       stitchRef.current = null;
+      setLegend(null); // drop the hovered-bar readout when the chart is rebuilt
       chart.remove();
     };
   }, [status, candles, dark, showBoll, tf, intraday, ticker]);
@@ -477,7 +502,36 @@ export function KLineChart({ticker, quote}: {ticker: string; quote?: Quote}) {
           {tr('states.errorTitle')}
         </div>
       )}
-      <div ref={containerRef} className={cx('h-[520px] w-full', status === 'ready' ? 'block' : 'hidden')} />
+      <div className="relative">
+        <div ref={containerRef} className={cx('h-[520px] w-full', status === 'ready' ? 'block' : 'hidden')} />
+        {legend && status === 'ready' && (
+          <div
+            className={cx(
+              'pointer-events-none absolute left-2 top-1.5 z-10 flex flex-wrap items-center gap-x-2 gap-y-0.5 rounded-md border px-2 py-1 text-[10.5px] font-semibold tabular-nums',
+              t.card,
+              t.border,
+            )}
+          >
+            <span className={t.faint}>{legend.t}</span>
+            <span className={t.sub}>{tr('kline.o')} {legend.o.toFixed(2)}</span>
+            <span className={t.sub}>{tr('kline.h')} {legend.h.toFixed(2)}</span>
+            <span className={t.sub}>{tr('kline.l')} {legend.l.toFixed(2)}</span>
+            <span
+              className={
+                legend.up
+                  ? dark
+                    ? 'text-emerald-400'
+                    : 'text-emerald-600'
+                  : dark
+                    ? 'text-rose-400'
+                    : 'text-rose-500'
+              }
+            >
+              {tr('kline.c')} {legend.c.toFixed(2)}
+            </span>
+          </div>
+        )}
+      </div>
 
       <p className={cx('mt-2 text-[10.5px]', t.faint)}>{tr('kline.footer')}</p>
     </section>
