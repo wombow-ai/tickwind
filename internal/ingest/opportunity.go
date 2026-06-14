@@ -164,18 +164,51 @@ func (o *OpportunityIngestor) loadSeen(ctx context.Context) {
 	o.log.Info("opportunity: loaded seen form-4", "count", len(accs))
 }
 
-// refreshShares pulls shares-outstanding from the last few dei frames and merges.
+// refreshShares pulls shares-outstanding from the last few quarterly XBRL frames
+// and merges them, keeping the freshest count per CIK. The canonical source is
+// the dei cover-page concept (dei:EntityCommonStockSharesOutstanding); a cohort
+// of small/mid-cap issuers omit it entirely, so for any CIK the dei frames leave
+// unresolved we fall back to the us-gaap concept (us-gaap:CommonStockSharesOut-
+// standing) from the SAME quarters — widening board coverage. Both sources
+// already reject frozen-ancient and 0/1-share-garbage rows at the frame layer
+// (anti-hallucination), so a candidate without a recent, plausible share count
+// stays off the board rather than being gated by a wrong market cap. The fallback
+// is read-only-when-missing, so it cannot override a present dei count.
 func (o *OpportunityIngestor) refreshShares(ctx context.Context) {
+	quarters := recentQuarters(time.Now().UTC(), 3)
 	merged := make(map[int]int64)
-	for _, qd := range recentQuarters(time.Now().UTC(), 3) {
+	dei := make(map[int]struct{}) // CIKs resolved by the canonical dei concept
+	for _, qd := range quarters {
 		m, err := o.sec.Shares(ctx, qd[0], qd[1])
 		if err != nil {
 			o.log.Warn("opportunity: shares fetch failed", "quarter", fmt.Sprintf("CY%dQ%d", qd[0], qd[1]), "err", err)
 			continue
 		}
 		for cik, v := range m {
+			dei[cik] = struct{}{}
 			if v > merged[cik] {
 				merged[cik] = v
+			}
+		}
+	}
+	// Fallback for issuers lacking the dei cover-page concept: us-gaap shares from
+	// the same quarters, applied ONLY to CIKs the dei frames did not resolve (dei
+	// is canonical — the fallback never overrides a present dei count). Across
+	// quarters keep the largest, mirroring the dei merge.
+	fallbackCIKs := make(map[int]struct{})
+	for _, qd := range quarters {
+		m, err := o.sec.SharesFallback(ctx, qd[0], qd[1])
+		if err != nil {
+			o.log.Warn("opportunity: shares fallback fetch failed", "quarter", fmt.Sprintf("CY%dQ%d", qd[0], qd[1]), "err", err)
+			continue
+		}
+		for cik, v := range m {
+			if _, ok := dei[cik]; ok {
+				continue
+			}
+			if v > merged[cik] { // 0/1-garbage already dropped in the frame layer
+				merged[cik] = v
+				fallbackCIKs[cik] = struct{}{}
 			}
 		}
 	}
@@ -183,7 +216,7 @@ func (o *OpportunityIngestor) refreshShares(ctx context.Context) {
 		o.shares = merged
 		o.sharesAt = time.Now().UTC()
 	}
-	o.log.Info("opportunity: refreshed shares", "ciks", len(merged))
+	o.log.Info("opportunity: refreshed shares", "ciks", len(merged), "via_fallback", len(fallbackCIKs))
 }
 
 // recompute rebuilds the board from the trailing-30-day buys + live prices.

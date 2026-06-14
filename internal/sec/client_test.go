@@ -33,6 +33,65 @@ func TestShares(t *testing.T) {
 	}
 }
 
+// TestSharesFrameGuards verifies the anti-hallucination guards on the shares
+// frame fetch: a fresh, plausible row is kept; a frozen-ancient row (its "end"
+// instant far older than the frame's quarter) is rejected; and 0/1-share garbage
+// is dropped — so a candidate is left off the board rather than gated by a wrong
+// market cap. It also confirms Shares hits dei and SharesFallback hits us-gaap.
+func TestSharesFrameGuards(t *testing.T) {
+	// Frame named CY2025Q1I → quarter end 2025-03-31. A row dated 2011-12-31 is
+	// ~13 years stale (> sharesFrameStaleAfterDays) and must be dropped.
+	const frame = `{"data":[
+		{"cik":111,"end":"2025-02-28","val":50000000},
+		{"cik":222,"end":"2011-12-31","val":941481},
+		{"cik":333,"end":"2025-03-15","val":1},
+		{"cik":444,"end":"2025-03-15","val":0}
+	]}`
+
+	tests := []struct {
+		name    string
+		call    func(c *Client) (map[int]int64, error)
+		wantSub string // substring the frame URL must contain
+	}{
+		{"dei", func(c *Client) (map[int]int64, error) { return c.Shares(context.Background(), 2025, 1) },
+			"/dei/EntityCommonStockSharesOutstanding/"},
+		{"us-gaap-fallback", func(c *Client) (map[int]int64, error) { return c.SharesFallback(context.Background(), 2025, 1) },
+			"/us-gaap/CommonStockSharesOutstanding/"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if !strings.Contains(r.URL.Path, tc.wantSub) {
+					t.Errorf("path = %q, want substring %q", r.URL.Path, tc.wantSub)
+				}
+				_, _ = w.Write([]byte(frame))
+			}))
+			defer srv.Close()
+
+			c := New("Tickwind (test@tickwind.com)")
+			c.dataBase = srv.URL
+			c.minGap = 0
+
+			m, err := tc.call(c)
+			if err != nil {
+				t.Fatalf("fetch: %v", err)
+			}
+			if m[111] != 50000000 {
+				t.Errorf("fresh row: got %d, want 50000000", m[111])
+			}
+			if _, ok := m[222]; ok {
+				t.Errorf("frozen 2011 row should be dropped, got %d", m[222])
+			}
+			if _, ok := m[333]; ok {
+				t.Error("1-share garbage row should be dropped")
+			}
+			if _, ok := m[444]; ok {
+				t.Error("0-share garbage row should be dropped")
+			}
+		})
+	}
+}
+
 func TestParseFormIndex(t *testing.T) {
 	idx := strings.Join([]string{
 		"Description:  Master Index of EDGAR Dissemination Feed by Form Type",
