@@ -86,6 +86,10 @@ type OpportunitySource interface {
 type UniverseSource interface {
 	Get(ticker string) (store.Quote, bool)
 	Snapshot() map[string]store.Quote
+	// Tickers returns the sorted quote-bearing symbols (every ticker with a
+	// usable price), powering /v1/universe/symbols — the full ~6,695 pSEO
+	// /stock universe, a subset of the SEC+Nasdaq listing /v1/symbols exposes.
+	Tickers() []string
 	Len() int
 	UpdatedAt() time.Time
 }
@@ -508,6 +512,7 @@ func New(st store.Store, hub QuoteStream, enricher enrich.Enricher, verifier *au
 	mux.HandleFunc("GET /v1/topics", s.getTopics)
 	mux.HandleFunc("GET /v1/opportunities", s.getOpportunities)
 	mux.HandleFunc("GET /v1/universe", s.getUniverse)
+	mux.HandleFunc("GET /v1/universe/symbols", s.getUniverseSymbols)
 	mux.HandleFunc("GET /v1/screen", s.getScreen)
 	mux.HandleFunc("GET /v1/gurus", s.getGurus)
 	mux.HandleFunc("GET /v1/search", s.getSearch)
@@ -1594,6 +1599,30 @@ func (s *Server) getUniverse(w http.ResponseWriter, r *http.Request) {
 		"count":      s.universe.Len(),
 		"updated_at": s.universe.UpdatedAt(),
 	})
+}
+
+// getUniverseSymbols enumerates every quote-bearing US ticker (~6,695) — the
+// symbols the universe sweep has a usable price for (matching /v1/universe's
+// count + the /v1/screen source). This is the pSEO /stock universe: each name
+// has real content (live price + indicators + 52w range). Distinct from
+// /v1/symbols, which lists the full SEC+Nasdaq directory (~16,118, ~9,400 of
+// them quote-less/thin and excluded here). Always 200 with a non-nil list —
+// empty when the cache is unswept/nil. ?limit= caps the slice (the sitemap
+// requests the full list with no limit). Tickers are sorted; dotted names like
+// BRK.B pass through verbatim. The set changes ~daily, so it's cacheable.
+func (s *Server) getUniverseSymbols(w http.ResponseWriter, r *http.Request) {
+	var tickers []string
+	if s.universe != nil {
+		tickers = s.universe.Tickers()
+	}
+	if tickers == nil {
+		tickers = []string{}
+	}
+	if lim := queryLimit(r, 0); lim > 0 && len(tickers) > lim {
+		tickers = tickers[:lim]
+	}
+	w.Header().Set("Cache-Control", "public, max-age=3600")
+	writeJSON(w, http.StatusOK, map[string]any{"symbols": tickers, "count": len(tickers)})
 }
 
 // screenCriteria captures the /v1/screen filters. Price bounds of 0 mean

@@ -6,6 +6,7 @@
 package universe
 
 import (
+	"sort"
 	"sync/atomic"
 	"time"
 
@@ -55,6 +56,25 @@ func (c *Cache) Snapshot() map[string]store.Quote {
 		return s.Quotes
 	}
 	return map[string]store.Quote{}
+}
+
+// Tickers returns the sorted list of quote-bearing symbols in the snapshot —
+// every ticker the sweep got a usable price for (the ingestor only stores
+// price>0 quotes, so this is exactly the screener/Len universe). Returns a
+// non-nil (possibly empty) slice; safe for concurrent reads (the underlying map
+// is swapped wholesale, never mutated). Used by the pSEO sitemap to emit a
+// /stock/{t} page per quote-bearing name.
+func (c *Cache) Tickers() []string {
+	s := c.snap()
+	if s == nil || len(s.Quotes) == 0 {
+		return []string{}
+	}
+	out := make([]string, 0, len(s.Quotes))
+	for tk := range s.Quotes {
+		out = append(out, tk)
+	}
+	sort.Strings(out)
+	return out
 }
 
 // Len is the number of pre-cached tickers (0 for an empty cache).
