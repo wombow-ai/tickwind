@@ -16,20 +16,25 @@ export const revalidate = 3600;
 /** Hard ceiling on `/stock/*` entries PER LOCALE — a sanity cap so a future,
  *  larger quote universe can't bloat the sitemap (and we never dump the full
  *  ~16k SEC+Nasdaq listing, only quote-bearing names). */
-const MAX_STOCK_URLS = 5000;
+// Measured cap for a young domain: the full quote-bearing universe is ~6,700,
+// but we ramp indexable coverage gradually (popular set first, then alphabetical
+// fill) rather than dumping every page at once. Lift toward ~6,700 as the domain
+// gains crawl authority. The popular set is unioned FIRST so the highest-value
+// names (incl. the mega-caps the Alpaca universe omits) are never sliced off.
+const MAX_STOCK_URLS = 3000;
 
 /**
- * The indexable stock universe: the popular set ∪ the quote-bearing screener
- * universe (every symbol with a usable live price — the natural "has real
- * content" set, so we avoid thin/delisted pages). Deduped, and capped at
- * {@link MAX_STOCK_URLS} per locale. Both sub-fetches are best-effort (short
- * timeout + graceful fallback) so a slow/down API never breaks sitemap
- * generation; at worst we fall back to just the popular set.
+ * The indexable stock universe: the popular set ∪ the quote-bearing price
+ * universe (`/v1/universe/symbols` — every symbol with a usable live price, the
+ * natural "has real content" set, so we avoid thin/delisted pages). Deduped,
+ * popular-first, capped at {@link MAX_STOCK_URLS}. Both sub-fetches are
+ * best-effort (short timeout + graceful fallback) so a slow/down API never
+ * breaks sitemap generation; at worst we fall back to just the popular set.
  */
 async function indexableTickers(): Promise<string[]> {
   const [popular, quoted] = await Promise.all([
     popularTickers(),
-    quoteBearingTickers(MAX_STOCK_URLS),
+    quoteBearingTickers(),
   ]);
   const set = new Set<string>(popular);
   for (const t of quoted) set.add(t);

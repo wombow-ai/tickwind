@@ -262,8 +262,18 @@ feature-flagged plugin, never on the critical path. Web only.
   errors never deindex a real page). Shared `web/src/lib/pseo.ts` keeps the page + sitemap DRY. **Known limiter:**
   the backend `getScreen` hard-caps `limit` at 200, so the sitemap expansion is currently ~265/locale; reaching
   the full ~6,695 quote-bearing universe needs a Go follow-up (a price-universe ticker endpoint or raising the
-  cap). **Next:** that price-universe endpoint → scale the sitemap to thousands; then `/screen/[preset]` preset
-  landing pages, `/topic/[key]` → static pSEO, optional A-Z `/stocks` directory from `/v1/symbols`.
+  cap).
+- **Shipped 2026-06-14 (pSEO Stage 3③ — quote-universe sitemap scale-up):** **`GET /v1/universe/symbols`** (Go,
+  `universe.Cache.Tickers()` → the price-universe snapshot keys, LIVE **count 6,695** = matches `/v1/universe`,
+  a strict subset of `/v1/symbols`' 16,118) lifts the `/v1/screen` 200-cap. The sitemap's `quoteBearingTickers`
+  now sources it, so `/stock` sitemap URLs jumped **530 → 6,000** (3,000 tickers × 2 locales; `MAX_STOCK_URLS`
+  measured at 3,000 for a young domain, popular-first union so mega-caps are never sliced; `generateStaticParams`
+  still the popular ~130 only, build bounded; 2.8 MB sitemap). **⚠️ Discovered:** the Alpaca quote-universe
+  EXCLUDES S&P mega-caps (AAPL/MSFT/NVDA absent from `/v1/universe/symbols` + `/v1/screen`, though `/v1/stocks/
+  AAPL/quote` works on-demand) — a pre-existing data quirk that also means the **screener can't surface mega-caps**
+  (flagged as a separate task to root-cause; pSEO sitemap unaffected — mega-caps come via the popular union).
+  **Next:** `/screen/[preset]` preset landing pages, `/topic/[key]` → static pSEO, optional A-Z `/stocks`
+  directory from `/v1/symbols`; lift `MAX_STOCK_URLS` toward 6,695 as the domain gains crawl authority.
 - **Ops (2026-06-14):** the new 4 GB VPS lacked the old box's fail2ban deploy-IP whitelist → a burst of
   deploy connects banned `154.29.158.47`; fixed durably via `/etc/fail2ban/jail.d/tickwind-ignore.conf`
   (owner VNC). The ssh unit on this box is **`ssh`, NOT `sshd`**. Box has 2 G swap + healthy RAM (not OOM).

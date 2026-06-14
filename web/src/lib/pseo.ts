@@ -5,7 +5,7 @@
  * so a slow/down API can never break a build or sitemap generation.
  */
 
-import {getHot, getOpportunities, getScreen} from '@/lib/api';
+import {getHot, getOpportunities, getUniverseSymbols} from '@/lib/api';
 import {POPULAR_TICKERS} from '@/lib/config';
 
 /**
@@ -39,24 +39,20 @@ export async function popularTickers(): Promise<string[]> {
 }
 
 /**
- * The *quote-bearing* ticker universe: every symbol the screener returns (it
- * iterates the live price cache and drops anything without a usable price), so
- * each one has real, ingestible content — the natural "not thin" set. We use
- * the highest sort + a high `limit`; the backend currently caps `/v1/screen` at
- * 200 rows, so this returns up to 200 quote-bearing tickers (still a meaningful
- * expansion over the ~popular set). Deduped against `POPULAR_TICKERS` by the
- * caller via a Set. Best-effort: a slow/down API yields `[]`.
+ * The *quote-bearing* ticker universe (~6,700): every symbol the server has a
+ * live price for, via `GET /v1/universe/symbols` — each has real, ingestible
+ * content (live price + indicators + 52w range), the natural "not thin" set.
+ * This is the full price universe (NOT capped at 200 like `/v1/screen`), a
+ * strict subset of `/v1/symbols`' ~16k full index (the ~9,400 quote-less names
+ * are excluded). Deduped against `POPULAR_TICKERS` by the caller via a Set.
+ * Best-effort: a slow/down API yields `[]` (the popular set still ships).
  *
- * @param limit upper bound requested from the API (the server clamps it).
+ * NOTE: this universe (the Alpaca snapshot) currently excludes S&P mega-caps
+ * (AAPL/MSFT/…); they are covered in the sitemap via {@link popularTickers}.
  */
-export async function quoteBearingTickers(limit = 5000): Promise<string[]> {
+export async function quoteBearingTickers(): Promise<string[]> {
   try {
-    const r = await getScreen({limit}, AbortSignal.timeout(8000));
-    const out: string[] = [];
-    for (const row of r.results ?? []) {
-      if (row?.ticker) out.push(row.ticker);
-    }
-    return out;
+    return await getUniverseSymbols(AbortSignal.timeout(8000));
   } catch {
     // API hiccup → no expansion this build; the popular set still ships.
     return [];

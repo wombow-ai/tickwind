@@ -1833,6 +1833,23 @@ export function getScreen(
   return getJson<ScreenResponse>(`/v1/screen${q ? `?${q}` : ''}`, signal);
 }
 
+/** Envelope returned by `GET /v1/universe/symbols`. */
+export interface UniverseSymbolsResponse {
+  symbols: string[];
+  count: number;
+}
+
+/**
+ * The quote-bearing US ticker universe (~6,700 — every symbol the server has a
+ * live price for; a strict subset of `/v1/symbols`' full ~16k SEC+Nasdaq
+ * index). Public, no auth. Used by the pSEO sitemap to seed a content-bearing
+ * `/stock/{t}` page per name (unlike `/v1/screen`, it is not capped at 200).
+ */
+export async function getUniverseSymbols(signal?: AbortSignal): Promise<string[]> {
+  const r = await getJson<UniverseSymbolsResponse>('/v1/universe/symbols', signal);
+  return r.symbols ?? [];
+}
+
 /**
  * One indicator-catalog record, as returned by `GET /v1/indicators`. Mirrors the
  * backend dataset schema (see docs/indicators/SPEC.md). All fields are English
