@@ -63,6 +63,10 @@ export const dict: Record<Lang, Record<string, string>> = {
     'ind2.fearGreed': 'Fear & Greed',
     'ind2.learnMore': 'View in the indicator library',
     'ind2.empty': '—',
+    // anonymous preview gate (sign in to see the full indicator set)
+    'ind2.gate.title': 'Sign in to see all {n} indicators',
+    'ind2.gate.sub': "You're viewing a preview. Sign in to unlock the full set and customize it.",
+    'ind2.gate.cta': 'Sign in to view all',
     // indicator picker (customize the selected indicators)
     'ind2.picker.customize': 'Customize',
     'ind2.picker.title': 'Customize indicators',
@@ -805,6 +809,10 @@ export const dict: Record<Lang, Record<string, string>> = {
     'ind2.fearGreed': '恐慌贪婪',
     'ind2.learnMore': '在指标大全中查看',
     'ind2.empty': '—',
+    // anonymous preview gate (sign in to see the full indicator set)
+    'ind2.gate.title': '登录查看全部 {n} 项指标',
+    'ind2.gate.sub': '当前为预览。登录即可解锁全部指标并自定义。',
+    'ind2.gate.cta': '登录查看全部',
     // indicator picker (customize the selected indicators)
     'ind2.picker.customize': '自定义',
     'ind2.picker.title': '自定义指标',

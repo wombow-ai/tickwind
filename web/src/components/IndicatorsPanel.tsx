@@ -1,6 +1,6 @@
 'use client';
 
-import {Activity, Gauge, SlidersHorizontal} from 'lucide-react';
+import {Activity, ArrowRight, Gauge, Lock, SlidersHorizontal} from 'lucide-react';
 import Link from '@/components/LocalLink';
 import {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {
@@ -27,6 +27,14 @@ import {
 
 type Tokens = ReturnType<typeof tok>;
 type Status = 'loading' | 'ready' | 'hidden';
+
+/**
+ * Anonymous preview size: the first N displayable indicator rows are shown to
+ * signed-out users (enough to be genuinely useful), then a soft fade + sign-in
+ * CTA at the cut line. Logged-in users always see the full set. Kept small so
+ * the gate is a gentle nudge, not a hard wall.
+ */
+const ANON_PREVIEW_ROWS = 5;
 
 /** Display order of the domain groups (technical → fundamental → sentiment). */
 const DOMAIN_ORDER: Record<string, number> = {technical: 0, fundamental: 1, sentiment: 2};
@@ -185,6 +193,25 @@ export function IndicatorsPanel({ticker}: {ticker: string}) {
     );
   }, [data, selected]);
 
+  // Anonymous gating: a pure VIEW layer over the already-computed `groups`.
+  // Signed-out users see the first N rows (flattened across domains in display
+  // order, so each preview row is real data), then a soft fade + sign-in CTA.
+  // Signed-in users see everything (`gated` false → full `groups`).
+  const totalRows = useMemo(() => groups.reduce((n, [, items]) => n + items.length, 0), [groups]);
+  const gated = !signedIn && totalRows > ANON_PREVIEW_ROWS;
+  const previewGroups = useMemo(() => {
+    if (!gated) return groups;
+    let budget = ANON_PREVIEW_ROWS;
+    const out: typeof groups = [];
+    for (const [domain, items] of groups) {
+      if (budget <= 0) break;
+      const slice = items.slice(0, budget);
+      budget -= slice.length;
+      out.push([domain, slice]);
+    }
+    return out;
+  }, [gated, groups]);
+
   if (status === 'hidden') return null;
 
   if (status === 'loading' || !data) {
@@ -212,21 +239,27 @@ export function IndicatorsPanel({ticker}: {ticker: string}) {
             {tr('ind2.asOf').replace('{d}', data.as_of)}
           </span>
         )}
-        <button
-          onClick={() => setPickerOpen(true)}
-          aria-expanded={pickerOpen}
-          aria-haspopup="dialog"
-          className={cx(
-            'ml-auto inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[10.5px] font-medium',
-            t.surf2,
-            t.sub,
-            'hover:opacity-80',
-          )}
-        >
-          <SlidersHorizontal size={12} />
-          {tr('ind2.picker.customize')}
-        </button>
-        <span className={cx('text-[10.5px]', t.faint)}>
+        {/* The picker persists a per-user selection (server prefs / localStorage),
+            so it's offered to signed-in users; anonymous users get the preview +
+            sign-in CTA below instead. `ml-auto` moves to the learn-more link when
+            the button is absent so the right-edge layout is preserved. */}
+        {signedIn && (
+          <button
+            onClick={() => setPickerOpen(true)}
+            aria-expanded={pickerOpen}
+            aria-haspopup="dialog"
+            className={cx(
+              'ml-auto inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[10.5px] font-medium',
+              t.surf2,
+              t.sub,
+              'hover:opacity-80',
+            )}
+          >
+            <SlidersHorizontal size={12} />
+            {tr('ind2.picker.customize')}
+          </button>
+        )}
+        <span className={cx('text-[10.5px]', t.faint, !signedIn && 'ml-auto')}>
           <Link href="/indicators" className="hover:underline">
             {tr('ind2.learnMore')}
           </Link>
@@ -237,11 +270,26 @@ export function IndicatorsPanel({ticker}: {ticker: string}) {
         <MarketContextStrip ctx={data.market_context} dark={dark} t={t} tr={tr} />
       )}
 
-      <div className="space-y-4">
-        {groups.map(([domain, items]) => (
+      <div className={cx('space-y-4', gated && 'relative')}>
+        {previewGroups.map(([domain, items]) => (
           <DomainGroup key={domain} domain={domain} items={items} dark={dark} t={t} tr={tr} />
         ))}
+        {/* Soft fade over the bottom of the last preview row → signals "more below"
+            without hiding any real data (the rows above stay fully readable). */}
+        {gated && (
+          <div
+            aria-hidden
+            className="pointer-events-none absolute inset-x-0 bottom-0 h-16 rounded-b-xl"
+            style={{
+              background: dark
+                ? 'linear-gradient(to bottom, transparent, rgba(2,6,23,.9))'
+                : 'linear-gradient(to bottom, transparent, rgba(255,255,255,.95))',
+            }}
+          />
+        )}
       </div>
+
+      {gated && <GateCard total={totalRows} dark={dark} t={t} tr={tr} />}
 
       {pickerOpen && (
         <IndicatorPicker
@@ -253,6 +301,57 @@ export function IndicatorsPanel({ticker}: {ticker: string}) {
         />
       )}
     </section>
+  );
+}
+
+/**
+ * The anonymous sign-in CTA shown at the preview cut line: a soft, unobtrusive
+ * card (no modal, no hard wall) that names the full indicator count and links to
+ * the login route via `LocalLink` (locale-prefixed). The preview rows above stay
+ * fully visible so the panel never looks broken for signed-out visitors.
+ */
+function GateCard({
+  total,
+  dark,
+  t,
+  tr,
+}: {
+  total: number;
+  dark: boolean;
+  t: Tokens;
+  tr: (key: string) => string;
+}) {
+  return (
+    <Link
+      href="/login"
+      className={cx(
+        'mt-3 flex items-center gap-3 rounded-xl border p-3 transition hover:opacity-90',
+        t.border,
+        dark ? 'bg-teal-500/5' : 'bg-teal-50/70',
+      )}
+    >
+      <span
+        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg"
+        style={{background: dark ? 'rgba(20,184,166,.14)' : 'rgba(13,148,136,.1)'}}
+      >
+        <Lock size={16} className={dark ? 'text-teal-300' : 'text-teal-600'} />
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className={cx('text-[13px] font-semibold', t.text)}>
+          {tr('ind2.gate.title').replace('{n}', String(total))}
+        </p>
+        <p className={cx('mt-0.5 text-[11.5px]', t.sub)}>{tr('ind2.gate.sub')}</p>
+      </div>
+      <span
+        className={cx(
+          'inline-flex shrink-0 items-center gap-1 text-[12px] font-semibold',
+          dark ? 'text-teal-300' : 'text-teal-600',
+        )}
+      >
+        {tr('ind2.gate.cta')}
+        <ArrowRight size={13} />
+      </span>
+    </Link>
   );
 }
 
