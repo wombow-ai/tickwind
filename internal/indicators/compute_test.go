@@ -526,3 +526,132 @@ func TestComputeNeverFabricates(t *testing.T) {
 		}
 	}
 }
+
+// TestRegistryNoDuplicateIDs asserts the four sub-registries merged in NewComputer
+// have disjoint ids. A double-registered id would silently shadow one closure when
+// the maps are copied in, so this fails loudly if any id appears in more than one
+// registry (the merge itself cannot detect the collision).
+func TestRegistryNoDuplicateIDs(t *testing.T) {
+	subs := []struct {
+		name string
+		reg  map[string]computeFn
+	}{
+		{"technicalRegistry", technicalRegistry()},
+		{"fundamentalRegistry", fundamentalRegistry()},
+		{"technicalRegistryMore", technicalRegistryMore()},
+		{"fundamentalRegistryMore", fundamentalRegistryMore()},
+	}
+	seen := make(map[string]string)
+	for _, s := range subs {
+		for id := range s.reg {
+			if prev, dup := seen[id]; dup {
+				t.Errorf("indicator id %q is registered in both %s and %s", id, prev, s.name)
+				continue
+			}
+			seen[id] = s.name
+		}
+	}
+}
+
+// TestRegistryIDsAreRealCatalogIDs asserts every registered closure key is a real
+// catalog id (catches typos: a key that no catalog record carries would silently
+// never be evaluated, since computedIDs iterates the catalog).
+func TestRegistryIDsAreRealCatalogIDs(t *testing.T) {
+	cat := MustLoad()
+	c := NewComputer(cat, nil, nil, nil, nil)
+
+	catIDs := make(map[string]struct{}, cat.Len())
+	for _, rec := range cat.All() {
+		catIDs[rec.ID] = struct{}{}
+	}
+	for id := range c.registry {
+		if _, ok := catIDs[id]; !ok {
+			t.Errorf("registry id %q is not a real catalog id (typo?)", id)
+		}
+	}
+}
+
+// syntheticInput builds a fully-populated computeInput large enough to satisfy
+// every registered closure's longest window (Connors RSI needs ~102 bars), with a
+// mildly varying OHLCV so deltas, ranges, and volumes are all non-zero, plus a
+// profitable, dividend-paying fundamentals fixture and a price. It is "valid" input
+// — every closure should return ok or insufficient over it, never panic or fabricate.
+func syntheticInput() computeInput {
+	const n = 140
+	opens := make([]float64, n)
+	highs := make([]float64, n)
+	lows := make([]float64, n)
+	closes := make([]float64, n)
+	volumes := make([]float64, n)
+	for i := 0; i < n; i++ {
+		// A gentle wave on a rising trend so windows are never flat (zero range /
+		// zero deviation would legitimately be insufficient, which is fine, but the
+		// wave exercises the ok path of more closures).
+		base := 100 + float64(i)*0.5 + 5*math.Sin(float64(i)/4)
+		opens[i] = base
+		closes[i] = base + math.Cos(float64(i)/3)
+		highs[i] = math.Max(opens[i], closes[i]) + 1.5
+		lows[i] = math.Min(opens[i], closes[i]) - 1.5
+		volumes[i] = 1_000_000 + float64(i*1000) + 5000*math.Sin(float64(i)/2)
+	}
+	return computeInput{
+		opens:   opens,
+		highs:   highs,
+		lows:    lows,
+		closes:  closes,
+		volumes: volumes,
+		fund: edgar.Fundamentals{
+			Ticker: "SYNT", Shares: 1000, Revenue: 5000, NetIncome: 800, EPSDiluted: 4,
+			Equity: 2000, GrossProfit: 2500, TotalAssets: 6000, TotalLiabilities: 4000,
+			OperatingCashFlow: 1200, CapEx: 300, DividendsPaid: 100,
+			RevenuePrior: 4000, NetIncomePrior: 500, AsOf: "2025-12-31",
+		},
+		hasFund: true,
+		price:   40,
+	}
+}
+
+// TestComputedClosuresNeverPanicOrFabricate runs EVERY registered closure over a
+// synthetic-but-valid computeInput and over an empty one, asserting (a) no closure
+// panics on either input and (b) any non-ok result carries no Value (the
+// no-fabrication guarantee). It complements TestComputeNeverFabricates by exercising
+// each closure directly (including the ok path on rich data) rather than only the
+// empty-data path through StockIndicators.
+func TestComputedClosuresNeverPanicOrFabricate(t *testing.T) {
+	cat := MustLoad()
+	c := NewComputer(cat, nil, nil, nil, nil)
+
+	// Attach each registry id's catalog record so closures that read DefaultParams
+	// see the real default_params, exactly as StockIndicators would.
+	recByID := make(map[string]Indicator, cat.Len())
+	for _, rec := range cat.All() {
+		recByID[rec.ID] = rec
+	}
+
+	inputs := map[string]computeInput{
+		"synthetic": syntheticInput(),
+		"empty":     {},
+	}
+
+	for id, fn := range c.registry {
+		rec := recByID[id] // zero Indicator if absent; TestRegistryIDsAreRealCatalogIDs guards that
+		for label, in := range inputs {
+			func() {
+				defer func() {
+					if r := recover(); r != nil {
+						t.Errorf("closure %s panicked on %s input: %v", id, label, r)
+					}
+				}()
+				si := StockIndicator{Indicator: rec, Status: StatusInsufficient, Reason: "not computed"}
+				fn(in, &si)
+				if si.Status != StatusOK && si.Value != nil {
+					t.Errorf("closure %s on %s input is %s but carries a value %v",
+						id, label, si.Status, *si.Value)
+				}
+				if si.Status == StatusOK && si.Value == nil {
+					t.Errorf("closure %s on %s input is ok but has no value", id, label)
+				}
+			}()
+		}
+	}
+}

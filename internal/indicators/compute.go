@@ -59,6 +59,7 @@ type StockIndicator struct {
 // Candles are oldest→newest (the K-line ordering); HasFund reports whether XBRL
 // fundamentals were available; Price is the latest price (0 when unavailable).
 type computeInput struct {
+	opens   []float64
 	highs   []float64
 	lows    []float64
 	closes  []float64
@@ -368,10 +369,20 @@ type Computer struct {
 }
 
 // NewComputer builds a Computer from the catalog and the (possibly nil) data
-// sources. The technical + fundamental registries are merged once at construction.
+// sources. The P0 technical + fundamental registries and the expanded
+// technicalRegistryMore / fundamentalRegistryMore sets (design §1.1/§1.2) are
+// merged once at construction. The four registries must have disjoint ids — a
+// double-registered id would silently shadow one closure; TestRegistryNoDuplicateIDs
+// guards against that.
 func NewComputer(catalog *Catalog, ohlcv OHLCVSource, fund FundamentalsProvider, price PriceProvider, market MarketContextProvider) *Computer {
 	reg := technicalRegistry()
 	for id, fn := range fundamentalRegistry() {
+		reg[id] = fn
+	}
+	for id, fn := range technicalRegistryMore() {
+		reg[id] = fn
+	}
+	for id, fn := range fundamentalRegistryMore() {
 		reg[id] = fn
 	}
 	return &Computer{
@@ -384,10 +395,23 @@ func NewComputer(catalog *Catalog, ohlcv OHLCVSource, fund FundamentalsProvider,
 	}
 }
 
-// p0StockIDs returns the catalog records that are P0 and stock-applicable, in
-// catalog order. These are exactly the records Compute evaluates.
-func (c *Computer) p0StockIDs() []Indicator {
-	return c.catalog.Filter(Query{Priority: "P0"})
+// computedIDs returns the catalog records this Computer evaluates: every id with a
+// registered closure, plus the market-context and crypto-only ids (whose dispatch
+// lives in evaluate). Iterating the registry — not a priority filter — means adding
+// a closure is the ONLY step needed to surface a new indicator, and unimplemented
+// ids are simply absent (never shown as a broken "not computed" row). Catalog order
+// is preserved so the response keeps the dataset's grouping.
+func (c *Computer) computedIDs() []Indicator {
+	out := make([]Indicator, 0, len(c.registry)+len(cryptoOnlyIDs)+2)
+	for _, rec := range c.catalog.All() { // catalog order preserved
+		_, registered := c.registry[rec.ID]
+		_, crypto := cryptoOnlyIDs[rec.ID]
+		isCtx := rec.ID == idVIX || rec.ID == idFearGreed
+		if registered || crypto || isCtx {
+			out = append(out, rec)
+		}
+	}
+	return out
 }
 
 // StockIndicatorsResult is the value the api handler marshals to the wire
@@ -408,16 +432,18 @@ type FearGreed struct {
 	Label string `json:"label"`
 }
 
-// StockIndicators computes the full P0 stock-applicable indicator set for a
-// ticker, fetching candles, fundamentals, and price once. It never errors on
-// missing data: an unavailable source degrades the dependent indicators to
-// insufficient (graceful — a name with bars but no XBRL still returns the
+// StockIndicators computes every implemented stock-applicable indicator for a
+// ticker (the registered closures plus the market-context and crypto-only ids —
+// see computedIDs), fetching candles, fundamentals, and price once. Unimplemented
+// catalog ids are absent from the result, not surfaced as broken rows. It never
+// errors on missing data: an unavailable source degrades the dependent indicators
+// to insufficient (graceful — a name with bars but no XBRL still returns the
 // technicals). The returned Indicators are sorted ok → insufficient →
 // unsupported.
 func (c *Computer) StockIndicators(ctx context.Context, ticker string) StockIndicatorsResult {
 	in, asOf := c.gather(ctx, ticker)
 
-	records := c.p0StockIDs()
+	records := c.computedIDs()
 	out := make([]StockIndicator, 0, len(records))
 	for _, rec := range records {
 		si := StockIndicator{Indicator: rec, Status: StatusInsufficient, Reason: "not computed"}
@@ -448,11 +474,13 @@ func (c *Computer) gather(ctx context.Context, ticker string) (computeInput, str
 
 	if c.ohlcv != nil {
 		if candles, err := c.ohlcv.DailyCandles(ctx, ticker); err == nil && len(candles) > 0 {
+			in.opens = make([]float64, len(candles))
 			in.highs = make([]float64, len(candles))
 			in.lows = make([]float64, len(candles))
 			in.closes = make([]float64, len(candles))
 			in.volumes = make([]float64, len(candles))
 			for i, cd := range candles {
+				in.opens[i] = cd.Open
 				in.highs[i] = cd.High
 				in.lows[i] = cd.Low
 				in.closes[i] = cd.Close

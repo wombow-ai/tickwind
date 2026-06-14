@@ -1,8 +1,8 @@
 'use client';
 
-import {Activity, Gauge} from 'lucide-react';
+import {Activity, Gauge, SlidersHorizontal} from 'lucide-react';
 import Link from 'next/link';
-import {useEffect, useMemo, useState} from 'react';
+import {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {
   getStockIndicators,
   indicatorSlug,
@@ -12,6 +12,13 @@ import {
 import {useLang, useT} from '@/lib/i18n';
 import {useDark} from '@/lib/theme';
 import {cx, fmtPrice, tok} from '@/lib/ui';
+import {IndicatorPicker} from './IndicatorPicker';
+import {
+  clearSelection,
+  loadSelection,
+  resolveSelection,
+  saveSelection,
+} from '@/lib/indicatorSelection';
 
 type Tokens = ReturnType<typeof tok>;
 type Status = 'loading' | 'ready' | 'hidden';
@@ -62,10 +69,18 @@ export function IndicatorsPanel({ticker}: {ticker: string}) {
   const tr = useT();
   const [data, setData] = useState<StockIndicatorsResponse | null>(null);
   const [status, setStatus] = useState<Status>('loading');
+  // Selected ids in display order. A pure VIEW filter + ordering over the
+  // already-computed payload (default = the payload's P0 set, derived so it
+  // equals today's panel and grows with the catalog). Global preference,
+  // resolved from anonymous localStorage once the payload lands.
+  const [selected, setSelected] = useState<string[]>([]);
+  const [resolved, setResolved] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
 
   useEffect(() => {
     const c = new AbortController();
     setStatus('loading');
+    setResolved(false);
     getStockIndicators(ticker, c.signal).then(
       r => {
         // 404 (null) or nothing displayable → hide the whole panel.
@@ -75,6 +90,10 @@ export function IndicatorsPanel({ticker}: {ticker: string}) {
           setStatus('hidden');
           return;
         }
+        // Resolve the selection against THIS payload: saved (anon localStorage)
+        // filtered to available ids, else the P0 default.
+        setSelected(resolveSelection(r.indicators, loadSelection()));
+        setResolved(true);
         setData(r);
         setStatus('ready');
       },
@@ -83,27 +102,44 @@ export function IndicatorsPanel({ticker}: {ticker: string}) {
     return () => c.abort();
   }, [ticker]);
 
-  // Group ok + insufficient indicators by domain in canonical order; ok rows lead
-  // each group, insufficient ("—") trail it. Unsupported are dropped entirely.
+  // Persist the selection (anonymous localStorage), debounced ~500ms. Skipped
+  // until the selection is resolved so the initial resolve never overwrites a
+  // saved blob with the default.
+  const persistTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (!resolved) return;
+    if (persistTimer.current) clearTimeout(persistTimer.current);
+    persistTimer.current = setTimeout(() => saveSelection(selected), 500);
+    return () => {
+      if (persistTimer.current) clearTimeout(persistTimer.current);
+    };
+  }, [selected, resolved]);
+
+  // "Reset to default" — clear the saved blob and fall back to the payload's
+  // P0 default. The persist effect re-saves the default, which is harmless.
+  const reset = useCallback(() => {
+    clearSelection();
+    if (data) setSelected(resolveSelection(data.indicators, null));
+  }, [data]);
+
+  // Render only the SELECTED subset, in saved order, grouped by domain in
+  // canonical order. `unsupported` stay hidden; a selected id a stock can't
+  // compute shows the existing insufficient ("—") row.
   const groups = useMemo(() => {
     if (!data) return [];
+    const byId = new Map(data.indicators.map(i => [i.id, i] as const));
     const map = new Map<string, StockIndicator[]>();
-    for (const ind of data.indicators) {
-      if (ind.status === 'unsupported') continue;
+    for (const id of selected) {
+      const ind = byId.get(id);
+      if (!ind || ind.status === 'unsupported') continue;
       const list = map.get(ind.domain) ?? [];
-      list.push(ind);
+      list.push(ind); // preserve the user's chosen order within each domain
       map.set(ind.domain, list);
-    }
-    for (const list of map.values()) {
-      list.sort((a, b) => {
-        if (a.status !== b.status) return a.status === 'ok' ? -1 : 1;
-        return a.name_en.localeCompare(b.name_en);
-      });
     }
     return [...map.entries()].sort(
       (a, b) => (DOMAIN_ORDER[a[0]] ?? 9) - (DOMAIN_ORDER[b[0]] ?? 9),
     );
-  }, [data]);
+  }, [data, selected]);
 
   if (status === 'hidden') return null;
 
@@ -132,7 +168,21 @@ export function IndicatorsPanel({ticker}: {ticker: string}) {
             {tr('ind2.asOf').replace('{d}', data.as_of)}
           </span>
         )}
-        <span className={cx('ml-auto text-[10.5px]', t.faint)}>
+        <button
+          onClick={() => setPickerOpen(true)}
+          aria-expanded={pickerOpen}
+          aria-haspopup="dialog"
+          className={cx(
+            'ml-auto inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[10.5px] font-medium',
+            t.surf2,
+            t.sub,
+            'hover:opacity-80',
+          )}
+        >
+          <SlidersHorizontal size={12} />
+          {tr('ind2.picker.customize')}
+        </button>
+        <span className={cx('text-[10.5px]', t.faint)}>
           <Link href="/indicators" className="hover:underline">
             {tr('ind2.learnMore')}
           </Link>
@@ -148,6 +198,16 @@ export function IndicatorsPanel({ticker}: {ticker: string}) {
           <DomainGroup key={domain} domain={domain} items={items} dark={dark} t={t} tr={tr} />
         ))}
       </div>
+
+      {pickerOpen && (
+        <IndicatorPicker
+          indicators={data.indicators}
+          selected={selected}
+          onChange={setSelected}
+          onReset={reset}
+          onClose={() => setPickerOpen(false)}
+        />
+      )}
     </section>
   );
 }
