@@ -395,3 +395,84 @@ func TestExtractFundamentals_Inc2Absent(t *testing.T) {
 		}
 	}
 }
+
+// TestExtractFundamentals_Inc3PriorFields exercises the Increment-3 (Piotroski Group 5)
+// prior period-end fields: LongTermDebtPrior / AssetsCurrentPrior /
+// LiabilitiesCurrentPrior via priorInstant of their respective concept series, and
+// SharesPrior via priorInstant of the dei share series the current Shares prefers. Two
+// annual period-ends are supplied (the prior cleanly ≥300 days before the latest).
+func TestExtractFundamentals_Inc3PriorFields(t *testing.T) {
+	resp := factsResp{EntityName: "TwoYear Inc"}
+	resp.Facts.Dei = map[string]xbrlConcept{
+		"EntityCommonStockSharesOutstanding": shares(
+			inst("2023-12-31", 1000), // prior
+			inst("2024-12-31", 1100), // latest
+		),
+	}
+	resp.Facts.UsGaap = map[string]xbrlConcept{
+		"Revenues":      usd(fy(2023, 900), fy(2024, 1000)),
+		"NetIncomeLoss": usd(fy(2023, 50), fy(2024, 120)),
+		// Long-term debt: prior + latest instants (same concept → priorInstant).
+		"LongTermDebtNoncurrent": usd(inst("2023-12-31", 250), inst("2024-12-31", 200)),
+		// Current assets / liabilities: prior + latest instants.
+		"AssetsCurrent":      usd(inst("2023-12-31", 300), inst("2024-12-31", 400)),
+		"LiabilitiesCurrent": usd(inst("2023-12-31", 200), inst("2024-12-31", 220)),
+	}
+
+	f := extractFundamentals(resp)
+	tests := []struct {
+		name string
+		got  float64
+		want float64
+	}{
+		{"Shares", float64(f.Shares), 1100},
+		{"SharesPrior", float64(f.SharesPrior), 1000},
+		{"LongTermDebt", f.LongTermDebt, 200},
+		{"LongTermDebtPrior", f.LongTermDebtPrior, 250},
+		{"AssetsCurrent", f.AssetsCurrent, 400},
+		{"AssetsCurrentPrior", f.AssetsCurrentPrior, 300},
+		{"LiabilitiesCurrent", f.LiabilitiesCurrent, 220},
+		{"LiabilitiesCurrentPrior", f.LiabilitiesCurrentPrior, 200},
+	}
+	for _, tc := range tests {
+		if tc.got != tc.want {
+			t.Errorf("%s = %v, want %v", tc.name, tc.got, tc.want)
+		}
+	}
+}
+
+// TestExtractFundamentals_Inc3PriorAbsentSinglePeriod asserts that with only ONE
+// period-end for each concept, the Increment-3 prior fields stay 0 (no prior instant
+// to match) — so the Piotroski F-score downstream reports insufficient, never a
+// fabricated partial score from a single year of data.
+func TestExtractFundamentals_Inc3PriorAbsentSinglePeriod(t *testing.T) {
+	resp := factsResp{EntityName: "OneYear Inc"}
+	resp.Facts.Dei = map[string]xbrlConcept{
+		"EntityCommonStockSharesOutstanding": shares(inst("2024-12-31", 1100)),
+	}
+	resp.Facts.UsGaap = map[string]xbrlConcept{
+		"Revenues":               usd(fy(2024, 1000)),
+		"NetIncomeLoss":          usd(fy(2024, 120)),
+		"LongTermDebtNoncurrent": usd(inst("2024-12-31", 200)),
+		"AssetsCurrent":          usd(inst("2024-12-31", 400)),
+		"LiabilitiesCurrent":     usd(inst("2024-12-31", 220)),
+	}
+
+	f := extractFundamentals(resp)
+	// Current values present...
+	if f.Shares != 1100 || f.LongTermDebt != 200 || f.AssetsCurrent != 400 || f.LiabilitiesCurrent != 220 {
+		t.Fatalf("current values not extracted: %+v", f)
+	}
+	// ...but every prior field 0 (no prior period to match).
+	priors := map[string]float64{
+		"SharesPrior":             float64(f.SharesPrior),
+		"LongTermDebtPrior":       f.LongTermDebtPrior,
+		"AssetsCurrentPrior":      f.AssetsCurrentPrior,
+		"LiabilitiesCurrentPrior": f.LiabilitiesCurrentPrior,
+	}
+	for name, v := range priors {
+		if v != 0 {
+			t.Errorf("%s = %v on a single period, want 0 (no prior to invent)", name, v)
+		}
+	}
+}

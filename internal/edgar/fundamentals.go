@@ -79,6 +79,17 @@ type Fundamentals struct {
 	GrossProfitPrior float64 `json:"gross_profit_prior,omitempty"` // prior-FY gross profit (for gp-growth)
 	EquityPrior      float64 `json:"equity_prior,omitempty"`       // prior period-end equity (for equity-growth)
 	TotalAssetsPrior float64 `json:"total_assets_prior,omitempty"` // prior period-end total assets (for asset-growth)
+
+	// --- Increment 3 (design §1.2 Group 5): prior-FY balance-sheet instants the
+	// Piotroski F-score's leverage/liquidity/dilution tests compare against the
+	// current period. Each is the prior period-end instant (priorInstant) of the
+	// SAME concept/tag-priority its current sibling uses, so the YoY pair is
+	// consistent. 0 when the prior period is absent → the F-score reports
+	// insufficient (the score is all-or-nothing; a partial score would mislead).
+	LongTermDebtPrior       float64 `json:"long_term_debt_prior,omitempty"`      // prior period-end long-term debt (same pick as LongTermDebt); for ΔLeverage
+	AssetsCurrentPrior      float64 `json:"assets_current_prior,omitempty"`      // prior period-end current assets; for ΔCurrentRatio
+	LiabilitiesCurrentPrior float64 `json:"liabilities_current_prior,omitempty"` // prior period-end current liabilities; for ΔCurrentRatio
+	SharesPrior             int64   `json:"shares_prior,omitempty"`              // prior period-end common shares outstanding (dei series); for the no-dilution test
 }
 
 // HasData reports whether any meaningful figure was extracted.
@@ -138,8 +149,17 @@ func extractFundamentals(resp factsResp) Fundamentals {
 	f := Fundamentals{Name: resp.EntityName, Currency: "USD"}
 
 	// Shares outstanding (point-in-time): dei is canonical, us-gaap as fallback.
-	if p, ok := latestInstant(pick(dei, "shares", "EntityCommonStockSharesOutstanding")); ok {
+	// Keep the dei series so the prior period-end share count can be matched for the
+	// Piotroski no-dilution test (Group 5). The prior is taken from the SAME primary
+	// dei series the current count prefers; if that primary path is absent (only the
+	// us-gaap/weighted-avg fallbacks have a current value) SharesPrior stays 0 and the
+	// F-score reports insufficient rather than mixing series.
+	deiSharePts := pick(dei, "shares", "EntityCommonStockSharesOutstanding")
+	if p, ok := latestInstant(deiSharePts); ok {
 		f.Shares = int64(p.Val)
+		if pp, ok := priorInstant(deiSharePts, p.End); ok {
+			f.SharesPrior = int64(pp.Val)
+		}
 	} else if p, ok := latestInstant(pick(gaap, "shares", "CommonStockSharesOutstanding")); ok {
 		f.Shares = int64(p.Val)
 	}
@@ -325,11 +345,21 @@ func extractFundamentals(resp factsResp) Fundamentals {
 			}
 		}
 	}
-	if p, ok := latestInstant(pick(gaap, "USD", "AssetsCurrent")); ok {
+	// Current assets / liabilities — keep each concept's series so the prior
+	// period-end instant can be matched for the Piotroski ΔCurrentRatio test (Group 5).
+	acPts := pick(gaap, "USD", "AssetsCurrent")
+	if p, ok := latestInstant(acPts); ok {
 		f.AssetsCurrent = p.Val
+		if pp, ok := priorInstant(acPts, p.End); ok {
+			f.AssetsCurrentPrior = pp.Val
+		}
 	}
-	if p, ok := latestInstant(pick(gaap, "USD", "LiabilitiesCurrent")); ok {
+	lcPts := pick(gaap, "USD", "LiabilitiesCurrent")
+	if p, ok := latestInstant(lcPts); ok {
 		f.LiabilitiesCurrent = p.Val
+		if pp, ok := priorInstant(lcPts, p.End); ok {
+			f.LiabilitiesCurrentPrior = pp.Val
+		}
 	}
 	if p, ok := latestInstant(pick(gaap, "USD", "RetainedEarningsAccumulatedDeficit")); ok {
 		f.RetainedEarnings = p.Val // can be negative (accumulated deficit / heavy buybacks); for Altman-Z X2
@@ -357,10 +387,17 @@ func extractFundamentals(resp factsResp) Fundamentals {
 		f.PropertyPlantNet = p.Val
 	}
 
-	// Group 4 — debt / EV / capital-structure instants + flows.
-	if p, ok := latestInstant(pick(gaap, "USD",
-		"LongTermDebtNoncurrent", "LongTermDebt", "LiabilitiesNoncurrent")); ok {
+	// Group 4 — debt / EV / capital-structure instants + flows. Keep the long-term-debt
+	// series so the prior period-end instant can be matched for the Piotroski ΔLeverage
+	// test (Group 5) — the prior MUST come from the SAME concept the current value was
+	// picked from (priorInstant of the chosen series), never a different tag.
+	ltdPts := pick(gaap, "USD",
+		"LongTermDebtNoncurrent", "LongTermDebt", "LiabilitiesNoncurrent")
+	if p, ok := latestInstant(ltdPts); ok {
 		f.LongTermDebt = p.Val
+		if pp, ok := priorInstant(ltdPts, p.End); ok {
+			f.LongTermDebtPrior = pp.Val
+		}
 	}
 	if p, ok := latestInstant(pick(gaap, "USD",
 		"DebtCurrent", "ShortTermBorrowings", "LongTermDebtCurrent")); ok {
