@@ -36,6 +36,7 @@ import (
 	"github.com/wombow-ai/tickwind/internal/guru"
 	"github.com/wombow-ai/tickwind/internal/indicators"
 	"github.com/wombow-ai/tickwind/internal/ingest"
+	"github.com/wombow-ai/tickwind/internal/insideractivity"
 	"github.com/wombow-ai/tickwind/internal/materialevents"
 	"github.com/wombow-ai/tickwind/internal/movement"
 	"github.com/wombow-ai/tickwind/internal/nasdaq"
@@ -314,6 +315,19 @@ type MaterialEventsSource interface {
 	Model() string
 }
 
+// InsiderActivitySource produces a company's recent insider-activity timeline —
+// open-market Form 4 buys AND sells, newest first, each with the Go-owned facts
+// (shares/price/value/date, insider name + role, buy/sell, the best-effort
+// Rule 10b5-1 planned-sale flag, accession URL) plus cheap aggregates. There is
+// NO LLM in this feature: it is pure structured data. Report errors only when the
+// ticker/CIK can't be resolved or the SEC feed fetch fails (the handler 404s on
+// that); an existing company with zero recent Form 4s returns an empty (non-nil)
+// Transactions slice. nil-safe — a nil source makes
+// /v1/stocks/{ticker}/insider-activity 404. Satisfied by *insideractivity.Service.
+type InsiderActivitySource interface {
+	Report(ctx context.Context, ticker string) (insideractivity.Report, error)
+}
+
 type Server struct {
 	store         store.Store
 	hub           QuoteStream
@@ -350,6 +364,7 @@ type Server struct {
 	researchCalc  ResearchSource         // injected post-New via SetResearch (deep-research report)
 	movementCalc  MovementSource         // injected post-New via SetMovement (move-explainer)
 	materialCalc  MaterialEventsSource   // injected post-New via SetMaterialEvents (8-K material events + AI summary)
+	insiderCalc   InsiderActivitySource  // injected post-New via SetInsiderActivity (Form 4 buy/sell timeline; no LLM)
 	admins        map[string]bool        // user UUIDs and/or emails (lowercased) allowed to delete any comment
 	commentRL     *rateLimiter           // per-user comment-post throttle
 	// AI digest cache: one LLM generation per (ticker, ET day), then served from
@@ -395,6 +410,16 @@ type Server struct {
 	meInflight map[string]chan struct{}
 	meDayDate  string
 	meDayCount int
+	// Insider-activity (Form 4 buy/sell) cache: the timeline is pure structured
+	// data (no LLM), but assembling it fetches each recent Form 4's XML (N throttled
+	// SEC requests), so the assembled report is built at most once per (ticker, ET
+	// day) and served from memory — mirrors the material-events cache, minus the
+	// LLM/daily-cap machinery. Guarded by iaMu; iaInflight dedupes concurrent first
+	// requests. Old days are swept lazily on the first hit of a new ET day.
+	iaMu       sync.Mutex
+	iaCache    map[string]insiderActivityEntry
+	iaInflight map[string]chan struct{}
+	iaDay      string
 	// Follow-trade backtest cache: the simulation is deterministic for a given
 	// (member, price-day), so compute once per slug per UTC day and serve from
 	// memory (the per-ticker DailyCandles fetch is the only cost). Guarded by btMu.
@@ -428,7 +453,7 @@ func New(st store.Store, hub QuoteStream, enricher enrich.Enricher, verifier *au
 			admins[id] = true
 		}
 	}
-	s := &Server{store: st, hub: hub, clip: clip.NewFetcher(), enrich: enricher, auth: verifier, bars: bars, topics: topicSrc, opps: oppSrc, universe: universeSrc, gurus: guruSrc, ingestor: ingestor, symbols: symbolSrc, events: eventSrc, fundamentals: fundSrc, earnings: earningsSrc, congress: congressSrc, institutional: institutionalSrc, live: liveSub, indices: indicesSrc, short: shortSrc, briefing: briefingSrc, options: optionsSrc, thirteenf: thirteenfSrc, admins: admins, commentRL: newRateLimiter(10, 10*time.Minute), sumCache: map[string]summaryEntry{}, sumInflight: map[string]chan struct{}{}, researchCache: map[string]researchEntry{}, researchInflight: map[string]chan struct{}{}, moveCache: map[string]movementEntry{}, moveInflight: map[string]chan struct{}{}, meCache: map[string]materialEventsEntry{}, meInflight: map[string]chan struct{}{}, btCache: map[string]backtestEntry{}, digestCache: map[string]digestEntry{}, log: log}
+	s := &Server{store: st, hub: hub, clip: clip.NewFetcher(), enrich: enricher, auth: verifier, bars: bars, topics: topicSrc, opps: oppSrc, universe: universeSrc, gurus: guruSrc, ingestor: ingestor, symbols: symbolSrc, events: eventSrc, fundamentals: fundSrc, earnings: earningsSrc, congress: congressSrc, institutional: institutionalSrc, live: liveSub, indices: indicesSrc, short: shortSrc, briefing: briefingSrc, options: optionsSrc, thirteenf: thirteenfSrc, admins: admins, commentRL: newRateLimiter(10, 10*time.Minute), sumCache: map[string]summaryEntry{}, sumInflight: map[string]chan struct{}{}, researchCache: map[string]researchEntry{}, researchInflight: map[string]chan struct{}{}, moveCache: map[string]movementEntry{}, moveInflight: map[string]chan struct{}{}, meCache: map[string]materialEventsEntry{}, meInflight: map[string]chan struct{}{}, iaCache: map[string]insiderActivityEntry{}, iaInflight: map[string]chan struct{}{}, btCache: map[string]backtestEntry{}, digestCache: map[string]digestEntry{}, log: log}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", s.health)
 
@@ -507,6 +532,7 @@ func New(st store.Store, hub QuoteStream, enricher enrich.Enricher, verifier *au
 	mux.HandleFunc("GET /v1/stocks/{ticker}/research", s.getResearch)
 	mux.HandleFunc("GET /v1/stocks/{ticker}/movement", s.getMovement)
 	mux.HandleFunc("GET /v1/stocks/{ticker}/material-events", s.getMaterialEvents)
+	mux.HandleFunc("GET /v1/stocks/{ticker}/insider-activity", s.getInsiderActivity)
 	mux.HandleFunc("GET /v1/indicators", s.getIndicators)
 	mux.HandleFunc("GET /v1/stream", s.getStream)
 
@@ -2827,6 +2853,118 @@ func (s *Server) writeMaterialEvents(w http.ResponseWriter, e materialEventsEntr
 	}
 	if rep.LLM {
 		out["disclaimer"] = rep.Disclaimer
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+// SetInsiderActivity injects the Form 4 insider-activity source after New (keeps
+// api.New's positional signature stable). nil-safe: the endpoint 404s until set.
+func (s *Server) SetInsiderActivity(src InsiderActivitySource) { s.insiderCalc = src }
+
+// insiderActivityEntry is one cached insider-activity report (per ticker per ET
+// day). It holds the assembled Report and the generation timestamp.
+type insiderActivityEntry struct {
+	rep insideractivity.Report
+	at  time.Time
+}
+
+// getInsiderActivity serves a company's recent insider-activity timeline — Form 4
+// open-market buys AND sells, newest first. Go owns EVERY fact: shares, price,
+// value (= shares×price), transaction date, the insider's name + role, buy/sell,
+// and the best-effort Rule 10b5-1 planned-sale flag — all parsed straight from
+// the Form 4 XML. There is NO LLM in this feature. The report is assembled at
+// most once per (ticker, ET day) — the day's first visit pays the per-filing XML
+// fetch (capped), everyone else (and every refresh) hits the cache — then served
+// from memory; server-driven, never an external operator. 404 only when the
+// ticker/CIK can't be resolved; an existing company with zero recent Form 4s
+// returns {"transactions":[]} with 200.
+func (s *Server) getInsiderActivity(w http.ResponseWriter, r *http.Request) {
+	if s.insiderCalc == nil {
+		writeJSON(w, http.StatusNotFound, errBody("insider activity unavailable"))
+		return
+	}
+	ticker := strings.ToUpper(strings.TrimSpace(r.PathValue("ticker")))
+	if ticker == "" {
+		writeJSON(w, http.StatusNotFound, errBody("no ticker"))
+		return
+	}
+	day := summaryDay() // ET trading day, shared with the other per-ticker caches
+	key := ticker + "|" + day
+
+	for {
+		s.iaMu.Lock()
+		if s.iaDay != day { // a new ET day: yesterday's reports are dead weight
+			s.iaDay = day
+			for k := range s.iaCache {
+				if !strings.HasSuffix(k, "|"+day) {
+					delete(s.iaCache, k)
+				}
+			}
+		}
+		if e, ok := s.iaCache[key]; ok {
+			s.iaMu.Unlock()
+			s.writeInsiderActivity(w, e)
+			return
+		}
+		ch, busy := s.iaInflight[key]
+		if !busy {
+			break // we'll generate
+		}
+		s.iaMu.Unlock()
+		select { // someone else is generating: wait, then re-check the cache
+		case <-ch:
+		case <-r.Context().Done():
+			return
+		}
+	}
+	// We hold iaMu and are the generator for this key.
+	ch := make(chan struct{})
+	s.iaInflight[key] = ch
+	s.iaMu.Unlock()
+
+	finish := func(e *insiderActivityEntry) {
+		s.iaMu.Lock()
+		if e != nil {
+			s.iaCache[key] = *e
+		}
+		delete(s.iaInflight, key)
+		close(ch)
+		s.iaMu.Unlock()
+	}
+
+	rep, err := s.insiderCalc.Report(r.Context(), ticker)
+	if err != nil {
+		// The ticker/CIK couldn't be resolved or the SEC feed fetch failed → no
+		// cache entry (let a later visit retry), kick off on-demand collection, 404.
+		finish(nil)
+		s.maybeCollect(ticker)
+		writeJSON(w, http.StatusNotFound, errBody("no insider activity for "+ticker))
+		return
+	}
+	e := insiderActivityEntry{rep: rep, at: time.Now().UTC()}
+	finish(&e)
+	s.writeInsiderActivity(w, e)
+}
+
+// writeInsiderActivity marshals a cached insider-activity report into the wire
+// shape. Always 200. The transactions array is ALWAYS present and non-null (an
+// existing company with no recent Form 4s serializes "transactions":[]); each
+// transaction carries the Go-owned facts + the 10b5-1 flag.
+func (s *Server) writeInsiderActivity(w http.ResponseWriter, e insiderActivityEntry) {
+	rep := e.rep
+	txns := rep.Transactions
+	if txns == nil {
+		txns = []edgar.InsiderTransaction{}
+	}
+	out := map[string]any{
+		"ticker":       rep.Ticker,
+		"transactions": txns,
+		"count":        len(txns),
+		"buy_count":    rep.BuyCount,
+		"sell_count":   rep.SellCount,
+		"net_value":    rep.NetValue,
+		"source":       "SEC EDGAR Form 4",
+		"generated_at": e.at,
 	}
 	writeJSON(w, http.StatusOK, out)
 }

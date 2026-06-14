@@ -59,6 +59,7 @@ import {IndicatorsPanel} from '@/components/IndicatorsPanel';
 import {AISummaryCard} from '@/components/AISummaryCard';
 import {MovementCard} from '@/components/MovementCard';
 import {FilingsCard} from '@/components/FilingsCard';
+import {InsiderActivityCard} from '@/components/InsiderActivityCard';
 import {EarningsChip} from '@/components/EarningsChip';
 import {OptionsCard} from '@/components/OptionsCard';
 import {ShortChip} from '@/components/ShortChip';
@@ -596,6 +597,14 @@ export function StockView({ticker}: {ticker: string}) {
           symbol; shows a subtle empty line when a known company has no recent 8-Ks. */}
       <div id="material-events" className="scroll-mt-20">
         <FilingsCard ticker={norm} />
+      </div>
+
+      {/* Insider activity (Form 4): recent open-market buys AND sells, newest first,
+          with shares/price/value/date, the insider + role, and a 10b5-1 planned-sale
+          tag. Pure structured data (no LLM) — Go owns every number. Hides on an
+          unknown symbol; shows a subtle empty line when a known company has none. */}
+      <div id="insider-activity" className="scroll-mt-20">
+        <InsiderActivityCard ticker={norm} />
       </div>
 
       {/* K-line candlestick chart + indicators — the price-and-indicators anchor,

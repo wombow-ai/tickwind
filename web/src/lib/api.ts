@@ -1276,6 +1276,75 @@ export async function getMaterialEvents(
   }
 }
 
+/**
+ * One open-market insider transaction (a buy or a sell) from a Form 4 filing —
+ * the building block of the per-ticker insider-activity timeline. EVERY field is
+ * a Go-owned fact parsed straight from the Form 4 XML (no LLM, no derived guess):
+ * `value` = `shares` × `price`. `planned_10b5_1` is the best-effort Rule 10b5-1
+ * planned-sale flag (always false for buys, and false for a sale lacking a
+ * reliable indicator — never fabricated).
+ */
+export interface InsiderTransaction {
+  /** "buy" (Form 4 code P) or "sell" (code S). */
+  type: 'buy' | 'sell';
+  /** Reporting insider's name as filed (e.g. "Cook Timothy D"). */
+  owner: string;
+  /** Insider role/title (filed officer title, else "Director"/"Officer", else ""). */
+  role?: string;
+  shares: number;
+  price: number;
+  /** shares × price (Go-computed from the source figures). */
+  value: number;
+  /** Transaction date (YYYY-MM-DD); filing date as a fallback when absent. */
+  date: string;
+  /** Affirmed Rule 10b5-1 planned sale (sells only). */
+  planned_10b5_1: boolean;
+  /** Human-readable SEC filing index page. */
+  accession_url: string;
+}
+
+/**
+ * Envelope returned by `GET /v1/stocks/{ticker}/insider-activity`.
+ * `transactions` is ALWAYS present and non-null, newest first (an existing
+ * company with no recent Form 4s yields `[]`). `buy_count`/`sell_count`/
+ * `net_value` (buy $ − sell $) are cheap Go-owned aggregates. `source` is the
+ * attribution ("SEC EDGAR Form 4"). 404 → null (the card hides) only when the
+ * ticker/CIK can't be resolved.
+ */
+export interface InsiderActivityResponse {
+  ticker: string;
+  transactions: InsiderTransaction[];
+  count: number;
+  buy_count: number;
+  sell_count: number;
+  net_value: number;
+  source: string;
+  /** RFC3339 generation timestamp (the as-of for the data). */
+  generated_at: string;
+}
+
+/**
+ * Fetches a company's recent insider-activity timeline (Form 4 open-market buys
+ * AND sells) for a ticker. Pure structured data — no LLM. Always 200 with the
+ * Go-owned facts; resolves to `null` only when the symbol is unknown (the API
+ * 404s) so the caller hides the card. An existing company with zero recent
+ * Form 4s resolves with `transactions: []`.
+ */
+export async function getInsiderActivity(
+  ticker: string,
+  signal?: AbortSignal,
+): Promise<InsiderActivityResponse | null> {
+  try {
+    return await getJson<InsiderActivityResponse>(
+      `/v1/stocks/${encodeURIComponent(normalizeTicker(ticker))}/insider-activity`,
+      signal,
+    );
+  } catch (e) {
+    if (e instanceof ApiError && e.status === 404) return null;
+    throw e;
+  }
+}
+
 /** A symbol's latest FINRA short-interest row (twice-monthly settlement). */
 export interface ShortInterest {
   symbol: string;

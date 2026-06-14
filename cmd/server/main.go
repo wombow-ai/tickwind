@@ -35,6 +35,7 @@ import (
 	"github.com/wombow-ai/tickwind/internal/guru"
 	"github.com/wombow-ai/tickwind/internal/indicators"
 	"github.com/wombow-ai/tickwind/internal/ingest"
+	"github.com/wombow-ai/tickwind/internal/insideractivity"
 	"github.com/wombow-ai/tickwind/internal/institutional"
 	"github.com/wombow-ai/tickwind/internal/krx"
 	"github.com/wombow-ai/tickwind/internal/market"
@@ -616,6 +617,17 @@ func main() {
 	// access when stale, never by an external operator.
 	apiServer.SetMaterialEvents(materialevents.NewService(edgarClient, enricher, cfg.LLMModel))
 	log.Info("material-events (8-K) enabled", "llm", enricher.Enabled())
+
+	// Per-ticker insider-activity timeline: a company's recent Form 4 open-market
+	// buys AND sells (newest first) with shares/price/value/date, the insider's
+	// name + role, and a best-effort Rule 10b5-1 planned-sale flag. PURE STRUCTURED
+	// DATA — there is NO LLM in this feature: Go owns every number/fact straight
+	// from the Form 4 XML (internal/sec.ParseForm4). Reuses the existing EDGAR
+	// client (CIK lookup + SEC-compliant, rate-limited fetch); the per-ticker report
+	// is cached in the API handler (once per ticker/ET-day), server-driven, never by
+	// an external operator. Mirrors the material-events wiring, minus the enricher.
+	apiServer.SetInsiderActivity(insideractivity.NewService(edgarClient))
+	log.Info("insider-activity (Form 4) enabled")
 
 	srv := &http.Server{
 		Addr:              ":" + cfg.Port,

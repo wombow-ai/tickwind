@@ -26,6 +26,14 @@ type Client struct {
 
 	mu        sync.RWMutex
 	tickerMap map[string]tickerInfo // UPPER(ticker) -> info
+
+	// throttleMu paces outbound requests to stay under SEC's 10 req/s limit even
+	// when one goroutine issues many sequential fetches (e.g. an insider-activity
+	// sweep of ≤25 Form 4s). Kept separate from mu so request pacing never blocks
+	// tickerMap reads.
+	throttleMu sync.Mutex
+	last       time.Time
+	minGap     time.Duration
 }
 
 type tickerInfo struct {
@@ -37,10 +45,29 @@ func New(userAgent string) *Client {
 	return &Client{
 		http:      &http.Client{Timeout: 20 * time.Second},
 		userAgent: userAgent,
+		minGap:    120 * time.Millisecond, // ≈8 req/s, safely under SEC's 10/s
 	}
 }
 
+// throttle blocks until at least minGap has elapsed since the previous request,
+// serializing outbound SEC calls under the 10 req/s fair-access limit. Safe for
+// concurrent use.
+func (c *Client) throttle(ctx context.Context) {
+	c.throttleMu.Lock()
+	defer c.throttleMu.Unlock()
+	if wait := c.minGap - time.Since(c.last); wait > 0 {
+		t := time.NewTimer(wait)
+		defer t.Stop()
+		select {
+		case <-ctx.Done():
+		case <-t.C:
+		}
+	}
+	c.last = time.Now()
+}
+
 func (c *Client) get(ctx context.Context, url string, v any) error {
+	c.throttle(ctx)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return err

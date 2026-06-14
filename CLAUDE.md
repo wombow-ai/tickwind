@@ -47,6 +47,14 @@ feature-flagged plugin, never on the critical path. Web only.
   only the build) got dropped; a sub-second launch survives. `IPQoS=none` also helps on some paths.
   (commit+push first so GitHub has the code.) Verify via PUBLIC curl (`/v1/universe` count, `/healthz`,
   `/v1/holdings`→401). **Never copies `.env`** (gitignored). Repo `wombow-ai/tickwind` is public.
+- **Deploy script lives at `/root/deploy-ptr.sh` (persistent), NOT `/tmp`.** ⚠️ 2026-06-14: `/tmp/deploy-ptr.sh`
+  was swept by systemd-tmpfiles, so `sh /tmp/deploy-ptr.sh` printed `cannot open … No such file` yet the
+  wrapping `& echo DEPLOY_LAUNCHED` STILL returned exit 0 → several "successful" deploys were silent no-ops,
+  caught only because the NEW route 404'd on public curl while `/healthz`+old routes stayed 200. Recreated it in
+  `/root/` (the tarball-pull script above). **Deploy = `ssh -i ~/.ssh/tickwind_deploy -o IdentitiesOnly=yes …
+  root@VPS '(nohup sh /root/deploy-ptr.sh > /tmp/deploy.log 2>&1 &) && echo DEPLOY_LAUNCHED'`.** A bare `ssh`
+  (no `-i`) offers id_rsa and fails `Permission denied`. **ALWAYS verify the new code is live via public curl of
+  the NEW route — never trust DEPLOY_LAUNCHED.**
 - **VPS infra (1GB RAM!) — root-caused 2026-06-09:** a `docker build` (Go compile) can exhaust RAM+
   swap → the OOM killer kills NEW sshd sessions ("Accepted publickey … session opened" then the
   client sees "Connection closed by remote host"), which also drops rsync/tar mid-stream and trips
@@ -195,7 +203,20 @@ feature-flagged plugin, never on the critical path. Web only.
   ~7k-rune cap); degrades to labels-only when LLM off / over daily cap / source too thin — never invents facts,
   never on the critical path. Per-ticker/ET-day/lang in-memory cache + daily LLM-report cap; on-demand
   server-driven refresh; StockView `FilingsCard` (bilingual, SEC EDGAR attribution + as-of). v2: EX-99.1
-  exhibit fetch when the primary doc is thin.
+  exhibit fetch when the primary doc is thin. **LIVE-verified** (AAPL: 2.02 earnings + 9.01 exhibits, Chinese
+  AI summary + disclaimer). **Insider Activity timeline** `GET /v1/stocks/{t}/insider-activity`
+  (`internal/insideractivity` + `internal/edgar/insider_activity.go`) — a company's recent Form 4 open-market
+  **buys AND sells** (≤25 within 90 days, newest-first), each `{type, owner, role, shares, price, value=
+  shares×price, date, planned_10b5_1, accession_url}`. **Go owns every number** (pure structured data, NO LLM);
+  the buy half of `sec.ParseForm4` is untouched (strictly additive `Sells`/`Sale` + `Date` + `Planned10b5_1`,
+  so the Opportunity buy board is unaffected). **10b5-1 planned-sale flag**: document-level `<aff10b5One>`
+  (the post-2023 SEC checkbox) is primary, a boundary-guarded footnote scan (`10b5-1` not followed by a digit,
+  so "10b5-10" can't false-positive) is the pre-2023 backstop — never guessed, default false. Per-ticker/ET-day
+  cache + single-flight; StockView `InsiderActivityCard` (green BUY / red SELL, 10b5-1 tag, SEC source + 2-day
+  filing-delay note). Footnote-only-priced lines (weighted-avg, no `<value>`) are dropped, not fabricated.
+  Shipped after a 5-dimension adversarial review (3 low/nit findings fixed: edgar.Client now self-throttles
+  ≥120 ms/req like `sec.Client`, so the ≤25-filing sweep stays under SEC's 10 req/s — also hardens material-
+  events). v2: derivative-table option exercises (code M).
 - **Ops (2026-06-14):** the new 4 GB VPS lacked the old box's fail2ban deploy-IP whitelist → a burst of
   deploy connects banned `154.29.158.47`; fixed durably via `/etc/fail2ban/jail.d/tickwind-ignore.conf`
   (owner VNC). The ssh unit on this box is **`ssh`, NOT `sshd`**. Box has 2 G swap + healthy RAM (not OOM).

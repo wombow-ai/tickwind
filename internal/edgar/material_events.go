@@ -305,6 +305,7 @@ func (c *Client) EventSummarySource(ctx context.Context, ev MaterialEvent) (stri
 // body as a string. Mirrors get() but reads text (HTML) rather than decoding
 // JSON — used for the primary-document body of an 8-K.
 func (c *Client) getText(ctx context.Context, url string) (string, error) {
+	c.throttle(ctx)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return "", err
