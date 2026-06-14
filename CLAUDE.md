@@ -302,6 +302,18 @@ feature-flagged plugin, never on the critical path. Web only.
   Added to the sitemap (+54) + a Footer + TopNav More entry point. **LIVE: /en/stocks + /en/stocks/{a,b,x}
   + /zh/stocks all 200; /en/stocks/a carries 173 distinct /stock/{ticker} links; /zh/stocks single-locale
   (`<html lang=zh>` + 美股代码大全); sitemap +54.**
+- **Investigated + deferred 2026-06-15 (dual-class total market cap):** BRK.A/BRK.B show `market_cap=
+  insufficient` (the stale-shares guard correctly zeroes the 2011-frozen undimensioned count).
+  Investigate-first verdict: **companyfacts (the only XBRL source the app calls) has NO dimensional
+  data and NO current BRK share count** (only the 2011 freeze; frames API 404s on member paths) — the
+  per-class current shares live only in raw inline-XBRL instance docs the app doesn't fetch. GOOGL/GOOG
+  are ALREADY correct (companyfacts current aggregate 12.116B × class price ≈ $4.37T; verified GOOGL
+  quote $360.87 is the real live price, not a 2x bug). So only "no-current-aggregate" dual-class filers
+  (BRK-class) are affected. A correct fix needs a NEW raw-XBRL fetch+parse pipeline (FilingSummary →
+  cover instance → `StatementClassOfStockAxis`-dimensioned shares + scale + TradingSymbol/
+  NoTradingSymbolFlag join, excluding bond rows) + a proxy-price rule for non-traded classes — bespoke,
+  per-issuer, low generality, for a few high-profile names. Math checks out ($1.066T BRK) but **deferred
+  to owner** (`insufficient` is honest; ROI low). See `docs/owner-confirm.md` #6. Don't re-investigate.
 - **Shipped 2026-06-14 (owner batch + greenlit follow-ups, all live-verified):** R2 now has all **6
   sections** (估值/基本面/技术面/资金面/情绪面/概览) + a **two-sided 看多/看空 (bull/bear)** reading on the
   overview (one ComposeReport call gains `bull`/`bear` keys; a deterministic Go advice-guard strips any

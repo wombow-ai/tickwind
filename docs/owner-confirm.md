@@ -27,5 +27,11 @@
 ## 5.（FYI，需你 CF 面板）冷门股研报首请求间歇性 ~3s 空响应
 发现(2026-06-15):未缓存的冷门股 on-demand 端点(如 `/v1/stocks/{t}/research`)**首次**请求**间歇性**在 **~3.0s** 被重置/空响应(curl exit 52/16,无 CF 错误头、无 body),立即重试即成功(数据已缓存)。**已定位到 Cloudflare Tunnel 那一跳,不是代码 bug**(Go 无 WriteTimeout、无 3s 字面量、容器无 panic;CF 边缘超时会回 524+cf-ray,这里都没有)。`cloudflared` 是 token 隧道,ingress/超时在 **CF Zero-Trust 面板**配置,VPS 上无本地 config 可调。**对深度研报实际影响低**(用户从已预热的 /stock 页进入→装配快→不触发)。**缓解方案(待定/可选):** (a) 前端对网络/空响应错误**重试一次**(便宜,我可自主做,下一轮);(b) 你在 CF 面板调隧道 HTTP 超时;(c) 异步生成研报(返回 data-only 即时+后台预热)。详见记忆 tickwind-cold-research-3s-reset。
 
+## 6.（已调研,owner 拍板:做不做)dual-class 正确总市值
+BRK.A/BRK.B 现 `market_cap=insufficient`(stale-shares 守护正确零化了 2011 冻结的股本)。**已 investigate-first 调研**:companyfacts(app 唯一 XBRL 源)**无维度信息、且 BRK 无任何当前股本**(仅 2011 冻结值;frames API 对 member 路径 404)。per-class 当前股本只存在于 **raw inline-XBRL 实例文档**(app 不抓)。**GOOGL/GOOG 已正确**(companyfacts 有当前聚合股本 12.116B × 类价≈$4.37T;A/B/C 价相近故聚合×类价≈真总值;实测 GOOGL quote $360.87 真实非翻倍)。**故只有"无当前聚合"的双类发行人(BRK 这类)受影响。** 修需**新建 raw-XBRL 抓取+解析管线**(FilingSummary→封面实例→按 `StatementClassOfStockAxis` 维度+scale+`TradingSymbol`/`NoTradingSymbolFlag` 解析,排除债券行)+ 非交易类代理定价(如 Alphabet Class B 836M 股无 ticker,~$150B/7%)——bespoke、per-issuer、低通用性,为少数高知名度票。数学验证可行(BRK $1.066T、GOOGL $2.19T 均吻合)。**建议:defer**——`insufficient` 已诚实满足质量线,ROI 对少数票偏低,且新管线是可观工程面。**请你定:值得为 Berkshire 等建这条管线吗?**
+
+## 7.（owner 拍板:做不做+怎么做)冷门股研报同步生成慢(付费旗舰 UX)
+未缓存研报(尤其 `?depth=deep`)同步 assemble+LLM 生成,LLM 慢时阻塞 10-60s。已缓解急性问题:retry-once(c5560d4,治冷门股 Cloudflare 3s 重置)+ LLM per-call 超时(88eb75c,慢则快降 data-only)。剩余:首次未缓存请求的 10-60s 等待对**付费**旗舰首印象不佳。**根治=异步生成**:返回 data-only 即时 +"AI 分析生成中" + 后台生成 prose + 前端轮询/SSE 直到 prose 就绪。多数研报命中热门/已缓存票(快),仅冷门首次慢。**这是付费旗舰的架构/UX 决策**(轮询 vs SSE、loading 体验、是否值得),故记此待你拍板而非擅自大改。**请你定:要做异步生成吗?偏好轮询还是 SSE?**
+
 ---
-*更新于 2026-06-15。Claude 在等待期间持续推进 #3 的设计 + 不需确认的 roadmap 工作;#1、#2 待你回来拍板。*
+*更新于 2026-06-15。Claude 在等待期间持续推进不需确认的 roadmap/数据质量工作(三次数据审计+pSEO /stocks 目录等);#1、#2 待你回来拍板;#6、#7 为已调研的 owner-facing options。*
