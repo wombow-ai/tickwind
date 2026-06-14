@@ -674,4 +674,8 @@ verifies (build/vet/lint), updates this file + `CLAUDE.md`, and commits._
 
 ### D. 付费:研报收费 + 法律调研(先做)
 - 计划对 AI 深度研报收费(更贵模型 + 高 token)。**monetization 解冻(此前 DEFERRED)。**
-- **先调研(addc6f274b):只对 AI 收费、底层仍用免费数据源,有无 ToS/法律风险?** 逐源 ToS(Alpaca IEX / Yahoo 非官方 / Finnhub 免费 / SEC 公有域 / …)+ 缓解。结论决定能否直接开付费,或先换/授权某些源。
+- **✅法律调研结论(docs/research/2026-06-14-monetization-legal-risk.md)**:ToS 看「产品是否商用」,非「哪个功能收费」→「免费数据+付费AI」**不**为 non-commercial-only 源开脱。**结论:不处理 Yahoo 不能开付费。** 安全底座=EDGAR+Treasury+FINRA(展示)+Tickertick+Bluesky+CoinGecko(署名)+alternative.me(署名)+Alpaca IEX(发商用通知)。
+  - **收费前必修**:①**移除 Yahoo Finance**(商用禁+爬非官方端点;载重:美股报价兜底/港股/指数→走 Alpaca;**港股可能要砍**=owner 权衡)②**Nasdaq Trader 符号表→SEC company_tickers**(琐碎,且 SEC 已是源)。
+  - **应修**:③弃 StockTwits(换 Bluesky+Tickertick+ApeWisdom)④少依赖 Finnhub 免费(news 走 Tickertick+SEC 或买商用)。
+  - **本周免费做**:Alpaca 发 30 天商用通知;加 CoinGecko + alternative.me 署名;加"数据延迟·非投资建议"页脚;国会交易**展示保持免费**;绝不转售原始批量数据。
+  - **最低风险付费**:研报内容优先用 EDGAR/Treasury/FINRA 公有域(正好契合规划)。**待 owner 拍板:何时做合规迁移(Yahoo 移除有港股取舍)+ 何时开 paywall。**
