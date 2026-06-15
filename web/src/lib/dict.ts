@@ -651,6 +651,8 @@ export const dict: Record<Lang, Record<string, string>> = {
     'stock.collecting': 'Gathering news & filings…',
     'stock.collectingSub':
       "First time we've tracked this one — the price is live; news, filings and discussion arrive shortly. This page updates on its own.",
+    'stock.tabOverview': 'Overview',
+    'stock.tabDetails': 'Details',
     'stock.filings': 'Filings',
     'stock.savedLinks': 'Saved links',
     'stock.noNewsSub': 'New headlines will land here first.',
@@ -1385,6 +1387,8 @@ export const dict: Record<Lang, Record<string, string>> = {
     'settings.themeHint': '—— 随时可切换。',
     'stock.collecting': '正在收集新闻与申报…',
     'stock.collectingSub': '这是我们首次收录该股票 —— 价格已就绪，新闻、申报与讨论稍后到位，页面会自动更新。',
+    'stock.tabOverview': '概览',
+    'stock.tabDetails': '详情',
     'stock.filings': '申报',
     'stock.savedLinks': '收藏链接',
     'stock.noNewsSub': '新的相关新闻会最先出现在这里。',

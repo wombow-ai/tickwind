@@ -97,6 +97,33 @@ const TAB_LABELS: Record<string, string> = {
   Filings: 'stock.filings',
 };
 
+// Top-level page tabs. 'Overview' = the essentials (price/core indicators/K-line/
+// digest/signals); 'Details' = the secondary/deep info (smart-money cards, options,
+// earnings/short, plus the per-section feed/community tabs).
+type TopTab = 'Overview' | 'Details';
+const TOP_TABS: readonly TopTab[] = ['Overview', 'Details'];
+const TOP_TAB_LABELS: Record<TopTab, string> = {
+  Overview: 'stock.tabOverview',
+  Details: 'stock.tabDetails',
+};
+
+// Research-report citations deep-link to these `#…` anchors (scroll-mt-20 on the
+// cards). Each anchor that lives in the Details tab is mapped here so a deep-link
+// can auto-switch tabs before scrolling; anchors NOT listed default to Overview.
+const ANCHOR_TAB: Record<string, TopTab> = {
+  // Overview anchors
+  signals: 'Overview',
+  fundamentals: 'Overview',
+  indicators: 'Overview',
+  // Details anchors
+  short: 'Details',
+  'material-events': 'Details',
+  'insider-activity': 'Details',
+  congress: 'Details',
+  whales: 'Details',
+  options: 'Details',
+};
+
 /** Full per-stock view: live header, add-to-watchlist, and source feeds. */
 export function StockView({ticker}: {ticker: string}) {
   const norm = ticker.toUpperCase();
@@ -130,6 +157,7 @@ export function StockView({ticker}: {ticker: string}) {
 
   const tabs = isAuthed ? TABS_AUTH : TABS_ANON;
   const [tab, setTab] = useState<string>('News');
+  const [topTab, setTopTab] = useState<TopTab>('Overview');
   const [clipUrl, setClipUrl] = useState('');
   const [inList, setInList] = useState(false);
   const [collecting, setCollecting] = useState(false);
@@ -275,6 +303,29 @@ export function StockView({ticker}: {ticker: string}) {
   useEffect(() => {
     if (!tabs.includes(tab as never)) setTab('News');
   }, [tabs, tab]);
+
+  // Research-citation deep-links resolve across the top-level tabs. A citation
+  // links to `#fundamentals`, `#options`, … — if that anchor lives on the Details
+  // tab while Overview is showing, the browser's native scroll never reaches it
+  // (the target isn't mounted). So on mount AND on hashchange we read the hash,
+  // switch to the tab that owns the anchor, then scroll once the target paints.
+  // Default stays Overview, but arriving via a Details-anchored hash opens Details.
+  useEffect(() => {
+    const applyHash = () => {
+      const id = decodeURIComponent(window.location.hash.replace(/^#/, ''));
+      if (!id) return;
+      const owner = ANCHOR_TAB[id];
+      if (owner) setTopTab(owner);
+      // Wait a frame so the (possibly just-switched) tab's content is in the DOM,
+      // then scroll the anchor into view. scroll-mt-20 keeps it clear of the header.
+      requestAnimationFrame(() => {
+        document.getElementById(id)?.scrollIntoView({behavior: 'smooth', block: 'start'});
+      });
+    };
+    applyHash(); // on mount (deep-link arrival)
+    window.addEventListener('hashchange', applyHash);
+    return () => window.removeEventListener('hashchange', applyHash);
+  }, []);
 
   async function toggleWatch() {
     if (inList) {
@@ -549,93 +600,136 @@ export function StockView({ticker}: {ticker: string}) {
         </div>
       )}
 
-      {/* pulse: Reddit buzz + news sentiment (renders nothing when empty) */}
-      {/* id anchors below let research-report citations deep-link to each card */}
-      <div id="signals" className="scroll-mt-20">
-        <PulseBar signals={signals} />
-      </div>
-
-      {/* Next-earnings signals group: the upcoming-earnings chip + the FINRA
-          short-pressure strips read as one coherent, aligned row (equal-height
-          pills, shared gap). Each piece still self-hides when it has no data, so
-          the row collapses cleanly. The #short anchor wraps the short pills so
-          research-report deep-links still resolve. */}
-      <div className="mb-6 flex flex-wrap items-center gap-2">
-        <EarningsChip ticker={norm} />
-        {/* FINRA short pressure (squeeze radar; hides when the symbol has no row) */}
-        <div id="short" className="scroll-mt-20">
-          <ShortChip ticker={norm} />
+      {/* Top-level page tabs: Overview (the essentials) vs Details (secondary/deep
+          info). The stock header above stays visible on both. Same pill styling +
+          a11y pattern as the per-section tabs below. Anchored research-citation
+          deep-links auto-switch to the owning tab (see the hashchange useEffect). */}
+      <div className="mb-6">
+        <div
+          role="tablist"
+          aria-label="Stock view"
+          className={cx(
+            'inline-flex items-center gap-1 rounded-xl border p-1',
+            t.border,
+            t.surf2,
+          )}
+        >
+          {TOP_TABS.map(tb => (
+            <button
+              key={tb}
+              role="tab"
+              onClick={() => setTopTab(tb)}
+              aria-selected={topTab === tb}
+              className={cx(
+                'whitespace-nowrap rounded-lg px-4 py-1.5 text-[13px] font-semibold transition',
+                topTab === tb
+                  ? dark
+                    ? 'bg-slate-700 text-white'
+                    : 'bg-white text-slate-900 shadow-sm'
+                  : t.sub,
+              )}
+            >
+              {tr(TOP_TAB_LABELS[tb])}
+            </button>
+          ))}
         </div>
       </div>
 
-      {/* Move-explainer: a move-triggered, evidence-grounded explanation of TODAY's
-          notable move (|change| >= 5%). Shows only on a significant day (hides itself
-          on a quiet day / 404 / sub-threshold) — placed first so a big move is
-          explained up top, above the standing fundamentals/digest. */}
-      <MovementCard ticker={norm} />
+      {/* ─────────────────────────── OVERVIEW TAB ─────────────────────────── */}
+      {/* The essentials a user wants first: the move-explainer, core fundamentals,
+          AI digest, K-line chart, computed indicators, and the buzz/sentiment pulse.
+          The #fundamentals/#indicators/#signals anchors live here; the rest are in
+          Details (see ANCHOR_TAB). */}
+      {/* The anchored cards keep their id + scroll-mt-20 so research-citation
+          deep-links still resolve once this tab is active. */}
+      <div hidden={topTab !== 'Overview'}>
+        {/* Move-explainer: a move-triggered, evidence-grounded explanation of TODAY's
+            notable move (|change| >= 5%). Shows only on a significant day (hides itself
+            on a quiet day / 404 / sub-threshold) — placed first so a big move is
+            explained up top, above the standing fundamentals/digest. */}
+        <MovementCard ticker={norm} />
 
-      {/* Fundamentals + AI digest, each full-width, above the chart. (They were
-          briefly a 2-col grid, but the AI digest's variable length left the
-          fundamentals card with a tall empty gap beside it — owner 2026-06-12.) */}
-      {/* fundamentals: market cap / P/E / revenue / net income (SEC XBRL; hides for non-US) */}
-      <div id="fundamentals" className="scroll-mt-20">
-        <FundamentalsCard ticker={norm} />
-      </div>
-      {/* AI digest: daily-cached bullets from news+social (hides when LLM off/empty) */}
-      <AISummaryCard ticker={norm} />
+        {/* Fundamentals + AI digest, each full-width, above the chart. (They were
+            briefly a 2-col grid, but the AI digest's variable length left the
+            fundamentals card with a tall empty gap beside it — owner 2026-06-12.) */}
+        {/* fundamentals: market cap / P/E / revenue / net income (SEC XBRL; hides for non-US) */}
+        <div id="fundamentals" className="scroll-mt-20">
+          <FundamentalsCard ticker={norm} />
+        </div>
+        {/* AI digest: daily-cached bullets from news+social (hides when LLM off/empty) */}
+        <AISummaryCard ticker={norm} />
 
-      {/* K-line candlestick chart + indicators — the price-and-indicators anchor,
-          with the options panel directly below it */}
-      <div className="mb-6">
-        <KLineChart ticker={norm} quote={quote} />
-      </div>
+        {/* K-line candlestick chart + indicators — the price-and-indicators anchor */}
+        <div className="mb-6">
+          <KLineChart ticker={norm} quote={quote} />
+        </div>
 
-      {/* Computed per-stock indicators (latest values, grouped by domain) — the
-          readout companion to the chart's client-side overlays + FundamentalsCard;
-          hides entirely when no indicators are computable */}
-      <div id="indicators" className="scroll-mt-20">
-        <IndicatorsPanel ticker={norm} />
-      </div>
+        {/* Computed per-stock indicators (latest values, grouped by domain) — the
+            readout companion to the chart's client-side overlays + FundamentalsCard;
+            hides entirely when no indicators are computable */}
+        <div id="indicators" className="scroll-mt-20">
+          <IndicatorsPanel ticker={norm} />
+        </div>
 
-      {/* Material events + Insider activity are secondary, lower-priority detail —
-          they sit BELOW the core price/fundamentals/chart/indicators/summary block,
-          alongside the other smart-money/secondary cards (owner 2026-06-15). The
-          #material-events / #insider-activity anchors are preserved so research-report
-          citation deep-links still resolve. */}
-      {/* 8-K material events (current reports) + optional AI summary. Go owns every
-          fact (form/dates/item-code labels/source link); only the per-filing summary
-          is AI-written (omitted when LLM off / source too thin). Hides on an unknown
-          symbol; shows a subtle empty line when a known company has no recent 8-Ks. */}
-      <div id="material-events" className="scroll-mt-20">
-        <FilingsCard ticker={norm} />
-      </div>
-
-      {/* Insider activity (Form 4): recent open-market buys AND sells, newest first,
-          with shares/price/value/date, the insider + role, and a 10b5-1 planned-sale
-          tag. Pure structured data (no LLM) — Go owns every number. Hides on an
-          unknown symbol; shows a subtle empty line when a known company has none. */}
-      <div id="insider-activity" className="scroll-mt-20">
-        <InsiderActivityCard ticker={norm} />
+        {/* pulse: Reddit buzz + news sentiment (renders nothing when empty) */}
+        <div id="signals" className="scroll-mt-20">
+          <PulseBar signals={signals} />
+        </div>
       </div>
 
-      {/* Smart-money cards sit directly below the indicators — the "who else is
-          positioned here" read after the technical/fundamental readout. */}
-      {/* Congress trades in this ticker (House Clerk PTRs; hides when none) —
-          each member links to their /congress/member/{slug} detail page */}
-      <div id="congress" className="scroll-mt-20">
-        <CongressChip ticker={norm} />
-      </div>
+      {/* ─────────────────────────── DETAILS TAB ──────────────────────────── */}
+      {/* Secondary / deep info: earnings & short pressure, material events, insider
+          activity, smart-money (congress/whales), options — plus the per-section
+          feed & community tabs (news/discussion/comments/research/notes/…). The
+          #short/#material-events/#insider-activity/#congress/#whales/#options anchors
+          live here; a research-citation deep-link auto-switches to this tab. */}
+      <div hidden={topTab !== 'Details'}>
+        {/* Next-earnings signals group: the upcoming-earnings chip + the FINRA
+            short-pressure strips read as one coherent, aligned row (equal-height
+            pills, shared gap). Each piece still self-hides when it has no data, so
+            the row collapses cleanly. The #short anchor wraps the short pills so
+            research-report deep-links still resolve. */}
+        <div className="mb-6 flex flex-wrap items-center gap-2">
+          <EarningsChip ticker={norm} />
+          {/* FINRA short pressure (squeeze radar; hides when the symbol has no row) */}
+          <div id="short" className="scroll-mt-20">
+            <ShortChip ticker={norm} />
+          </div>
+        </div>
 
-      {/* Which famous 13F funds hold this ticker (reverse whale lookup; hides
-          when none) — each fund links to its /fund/{slug} page */}
-      <div id="whales" className="scroll-mt-20">
-        <WhalesChip ticker={norm} />
-      </div>
+        {/* 8-K material events (current reports) + optional AI summary. Go owns every
+            fact (form/dates/item-code labels/source link); only the per-filing summary
+            is AI-written (omitted when LLM off / source too thin). Hides on an unknown
+            symbol; shows a subtle empty line when a known company has no recent 8-Ks. */}
+        <div id="material-events" className="scroll-mt-20">
+          <FilingsCard ticker={norm} />
+        </div>
 
-      {/* Options overview: delayed Cboe P/C, max pain, OI leaders (hides for non-US/no options) */}
-      <div id="options" className="scroll-mt-20">
-        <OptionsCard ticker={norm} />
-      </div>
+        {/* Insider activity (Form 4): recent open-market buys AND sells, newest first,
+            with shares/price/value/date, the insider + role, and a 10b5-1 planned-sale
+            tag. Pure structured data (no LLM) — Go owns every number. Hides on an
+            unknown symbol; shows a subtle empty line when a known company has none. */}
+        <div id="insider-activity" className="scroll-mt-20">
+          <InsiderActivityCard ticker={norm} />
+        </div>
+
+        {/* Smart-money cards: the "who else is positioned here" read. */}
+        {/* Congress trades in this ticker (House Clerk PTRs; hides when none) —
+            each member links to their /congress/member/{slug} detail page */}
+        <div id="congress" className="scroll-mt-20">
+          <CongressChip ticker={norm} />
+        </div>
+
+        {/* Which famous 13F funds hold this ticker (reverse whale lookup; hides
+            when none) — each fund links to its /fund/{slug} page */}
+        <div id="whales" className="scroll-mt-20">
+          <WhalesChip ticker={norm} />
+        </div>
+
+        {/* Options overview: delayed Cboe P/C, max pain, OI leaders (hides for non-US/no options) */}
+        <div id="options" className="scroll-mt-20">
+          <OptionsCard ticker={norm} />
+        </div>
 
       {/* login gate */}
       {!isAuthed && (
@@ -809,6 +903,7 @@ export function StockView({ticker}: {ticker: string}) {
           </div>
         )}
       </div>
+      </div>{/* end Details tab */}
     </div>
   );
 }
