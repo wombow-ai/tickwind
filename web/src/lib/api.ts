@@ -1221,6 +1221,17 @@ export interface ResearchReportResponse {
   model: string;
   /** Whether prose is present (true) or this is the data-only report (false). */
   llm: boolean;
+  /**
+   * Prose-generation lifecycle for the now-ASYNC deep report (`?depth=deep`):
+   * - `ready` — prose is present (`sections[].prose` + overview bull/bear); render the full report;
+   * - `generating` — data-only NOW (Go-owned facts/citations/as_of/price_label/disclaimer all
+   *   present, prose empty); a background generation is in flight → poll the same URL;
+   * - `quota_exhausted` — over the monthly quota (1/user/month), no cached prose → data-only is final;
+   * - `llm_disabled` — LLM off → data-only is final.
+   * OPTIONAL: an OLDER (synchronous) backend omits this field — absent ⇒ treat as ready/done (no poll).
+   * All four are HTTP 200; 401/404 still flow through {@link getDeepResearch} as today.
+   */
+  prose_status?: 'ready' | 'generating' | 'quota_exhausted' | 'llm_disabled';
   disclaimer: string;
   sections: ResearchSection[];
 }

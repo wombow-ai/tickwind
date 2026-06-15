@@ -6,10 +6,11 @@ import {
   ExternalLink,
   Loader2,
   Lock,
+  RefreshCw,
   Sparkles,
 } from 'lucide-react';
 import Link from '@/components/LocalLink';
-import {useEffect, useState} from 'react';
+import {useCallback, useEffect, useState} from 'react';
 import {
   ApiError,
   getDeepResearch,
@@ -36,13 +37,30 @@ import {type OgParams} from '@/lib/og';
  * The state machine for the gated deep-research fetch:
  * - `auth-wait`  — still resolving the Supabase session (don't flash the gate);
  * - `anon`       — not logged in → render the login gate (never calls the API);
- * - `loading`    — authed, deep generation in flight (can take 10–60s);
- * - `ready`      — got a report (prose when `llm`, data-only when not);
- * - `quota`      — 429: today's 1/day generation is spent;
+ * - `loading`    — authed, first fetch in flight (skeleton);
+ * - `ready`      — got a report (prose when ready, data-only otherwise); the data
+ *                  layer always renders here, the prose affordance is keyed off
+ *                  {@link ProseStatus};
+ * - `quota`      — 429: the per-user generation quota is spent (no report at all);
  * - `notfound`   — 404: unknown symbol;
  * - `error`      — network / 5xx / other.
  */
 type State = 'auth-wait' | 'anon' | 'loading' | 'ready' | 'quota' | 'notfound' | 'error';
+
+/**
+ * The prose-generation lifecycle of a `ready` report, driving the inline affordance:
+ * - `done`       — full report (prose present OR no `prose_status` from an older,
+ *                  synchronous backend OR `llm_disabled`); polling stopped;
+ * - `generating` — data-only now, a background generation is in flight → polling;
+ * - `slow`       — hit the poll safety cap → stopped polling, offer a manual retry;
+ * - `quota`      — `quota_exhausted`: data-only is final, monthly limit note shown.
+ */
+type ProseStatus = 'done' | 'generating' | 'slow' | 'quota';
+
+/** Re-fetch cadence while a background prose generation is in flight (~4s). */
+const POLL_INTERVAL_MS = 4000;
+/** Safety cap on automatic polls (~25 × 4s ≈ 100s) before offering a manual retry. */
+const MAX_POLLS = 25;
 
 /**
  * The dedicated **AI Deep Research** report view (the gated, login-required deep
@@ -71,7 +89,13 @@ export function DeepResearchView({ticker}: {ticker: string}) {
 
   const [state, setState] = useState<State>('auth-wait');
   const [data, setData] = useState<ResearchReportResponse | null>(null);
+  const [prose, setProse] = useState<ProseStatus>('done');
   const [reload, setReload] = useState(0);
+
+  // Manual re-poll trigger for the "taking a while" affordance — bumped to resume
+  // polling without re-running the whole effect from scratch (preserves the data).
+  const [repoll, setRepoll] = useState(0);
+  const onRetryProse = useCallback(() => setRepoll(n => n + 1), []);
 
   useEffect(() => {
     // Wait for the session check before deciding anon vs fetch, so we never
@@ -85,10 +109,43 @@ export function DeepResearchView({ticker}: {ticker: string}) {
       return;
     }
 
+    // One AbortController + one timer span this effect run. `active` guards every
+    // setState so a late resolve after unmount / ticker / lang change is dropped;
+    // cleanup aborts the in-flight fetch AND clears the pending poll timer.
     const c = new AbortController();
     let active = true;
-    setState('loading');
-    (async () => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let polls = 0;
+
+    // The first run shows the skeleton; a re-poll keeps the already-rendered
+    // data-only report on screen (only `repoll>0` re-enters mid-data).
+    if (repoll === 0) setState('loading');
+
+    /**
+     * Decide whether the report is final or a background generation is still in
+     * flight. BACKWARD-COMPATIBILITY: an older synchronous backend returns the
+     * full prose and NO `prose_status` — absent/undefined OR any section already
+     * carrying prose ⇒ DONE (no poll), so the current synchronous backend renders
+     * the full report immediately during the deploy window (no regression).
+     */
+    const resolveProse = (r: ResearchReportResponse): ProseStatus => {
+      const hasProse = (r.sections ?? []).some(s => (s.prose ?? '').trim().length > 0);
+      if (r.prose_status == null || hasProse) return 'done';
+      switch (r.prose_status) {
+        case 'generating':
+          return 'generating';
+        case 'quota_exhausted':
+          return 'quota';
+        // 'ready' (without prose, e.g. an empty report) and 'llm_disabled' are
+        // both final, data-only renders.
+        case 'ready':
+        case 'llm_disabled':
+        default:
+          return 'done';
+      }
+    };
+
+    const tick = async () => {
       try {
         const token = await getToken();
         const r = await getDeepResearch(ticker, token, lang, c.signal);
@@ -99,6 +156,21 @@ export function DeepResearchView({ticker}: {ticker: string}) {
         }
         setData(r);
         setState('ready');
+
+        const status = resolveProse(r);
+        if (status === 'generating') {
+          polls += 1;
+          if (polls >= MAX_POLLS) {
+            // Safety cap reached — stop polling, offer a manual retry instead of
+            // spinning forever.
+            setProse('slow');
+            return;
+          }
+          setProse('generating');
+          timer = setTimeout(tick, POLL_INTERVAL_MS); // keep polling
+        } else {
+          setProse(status); // 'done' | 'quota' — terminal, no further poll
+        }
       } catch (e) {
         if (!active) return;
         if (c.signal.aborted) return;
@@ -110,12 +182,16 @@ export function DeepResearchView({ticker}: {ticker: string}) {
           setState('error');
         }
       }
-    })();
+    };
+
+    void tick();
+
     return () => {
       active = false;
-      c.abort();
+      c.abort(); // cancel any in-flight fetch
+      if (timer) clearTimeout(timer); // clear the pending poll timer
     };
-  }, [ticker, lang, user, authLoading, getToken, reload]);
+  }, [ticker, lang, user, authLoading, getToken, reload, repoll]);
 
   // ---- chrome: a header that's shared across every state ----
   const header = <DeepHeader ticker={ticker} dark={dark} t={t} tr={tr} report={data} lang={lang} />;
@@ -185,8 +261,23 @@ export function DeepResearchView({ticker}: {ticker: string}) {
 
   return (
     <Shell header={header}>
-      {/* data-only note: the LLM was off / over cap / failed (no prose) */}
-      {!data.llm && (
+      {/* Monthly-limit note: over the per-user quota with no cached prose → the
+          data-only report below is final. */}
+      {prose === 'quota' && (
+        <Notice
+          tone="amber"
+          icon={<CalendarClock size={18} />}
+          title={tr('deep.proseQuota')}
+          body={tr('deep.quota.body')}
+          dark={dark}
+          t={t}
+        />
+      )}
+
+      {/* data-only note: the LLM is off / failed (no prose, and NOT still
+          generating — while generating we show the inline affordance instead, and
+          while quota-exhausted we show the monthly-limit note above). */}
+      {!data.llm && prose === 'done' && (
         <Notice
           tone="slate"
           icon={<Sparkles size={16} />}
@@ -202,6 +293,8 @@ export function DeepResearchView({ticker}: {ticker: string}) {
           <h2 className={cx('mb-2 text-[15px] font-bold', t.text)}>{tr('deep.overview')}</h2>
           {overview.prose.trim() ? (
             <Markdown>{overview.prose}</Markdown>
+          ) : prose === 'generating' || prose === 'slow' ? (
+            <ProseAffordance status={prose} onRetry={onRetryProse} dark={dark} t={t} tr={tr} />
           ) : (
             data.price_label && <p className={cx('text-[12.5px] tabular-nums', t.sub)}>{data.price_label}</p>
           )}
@@ -359,6 +452,51 @@ function DeepLoading({
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+/**
+ * The INLINE prose affordance shown inside the data-only report while a background
+ * AI generation is in flight (the page already renders every Go-owned fact/table;
+ * only the qualitative prose is pending):
+ * - `generating` — a subtle pulsing spinner + "正在生成深度分析…" while polling;
+ * - `slow`       — after the poll safety cap, a manual "生成较慢,点此重试" retry.
+ */
+function ProseAffordance({
+  status,
+  onRetry,
+  dark,
+  t,
+  tr,
+}: {
+  status: 'generating' | 'slow';
+  onRetry: () => void;
+  dark: boolean;
+  t: Tokens;
+  tr: (key: string) => string;
+}) {
+  if (status === 'slow') {
+    return (
+      <button
+        type="button"
+        onClick={onRetry}
+        className={cx(
+          'inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-[12px] font-semibold',
+          t.border,
+          t.sub,
+          dark ? 'hover:bg-slate-800/60' : 'hover:bg-slate-50',
+        )}
+      >
+        <RefreshCw size={13} />
+        {tr('deep.proseSlow')}
+      </button>
+    );
+  }
+  return (
+    <div className={cx('flex animate-pulse items-center gap-2 text-[12.5px] font-medium', t.sub)}>
+      <Loader2 size={14} className="animate-spin" />
+      {tr('deep.proseGenerating')}
     </div>
   );
 }
