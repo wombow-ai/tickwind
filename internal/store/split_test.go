@@ -74,4 +74,20 @@ func TestSplitRoutesMarketAndUser(t *testing.T) {
 	if got, ok, _ := s.GetPrefs(ctx, uid); !ok || string(got) != string(blob) {
 		t.Errorf("Split.GetPrefs = (%s, %v); want the blob via User", got, ok)
 	}
+
+	// The deep-research MONTHLY quota counter is per-user state → it must route to
+	// the cheap-to-rebuild User store, never the durable Market store.
+	const period = "2026-06" // ET-month period key
+	if err := s.IncrDeepQuotaUsed(ctx, uid, period); err != nil {
+		t.Fatal(err)
+	}
+	if used, _ := user.GetDeepQuotaUsed(ctx, uid, period); used != 1 {
+		t.Errorf("deep quota should be in the User store; got %d", used)
+	}
+	if used, _ := market.GetDeepQuotaUsed(ctx, uid, period); used != 0 {
+		t.Errorf("deep quota must NOT be in the Market store; got %d", used)
+	}
+	if used, _ := s.GetDeepQuotaUsed(ctx, uid, period); used != 1 {
+		t.Errorf("Split.GetDeepQuotaUsed = %d; want 1 via User", used)
+	}
 }

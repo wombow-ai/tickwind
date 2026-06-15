@@ -492,3 +492,48 @@ func TestPrefsRoundTrip(t *testing.T) {
 		t.Fatalf("u2 prefs = (%s, %v); want u2's own blob", got4, ok)
 	}
 }
+
+// TestDeepQuotaMonthly verifies the deep-research quota counter is keyed by
+// (userID, period) where period is now an ET-MONTH string: it is per-user and
+// per-period, a new period starts fresh, and an OLD per-day-style key (the legacy
+// daily scheme) never collides with a month key (so old rows are harmless).
+func TestDeepQuotaMonthly(t *testing.T) {
+	s := New()
+	ctx := context.Background()
+	const month = "2026-06" // ET-month period key (the new scheme)
+
+	// No row yet → 0.
+	if used, err := s.GetDeepQuotaUsed(ctx, "u1", month); err != nil || used != 0 {
+		t.Fatalf("GetDeepQuotaUsed before any incr = (%d, %v); want (0, nil)", used, err)
+	}
+
+	// Two increments in the same month accumulate.
+	for i := 0; i < 2; i++ {
+		if err := s.IncrDeepQuotaUsed(ctx, "u1", month); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if used, _ := s.GetDeepQuotaUsed(ctx, "u1", month); used != 2 {
+		t.Fatalf("u1 %s used = %d; want 2", month, used)
+	}
+
+	// Per-user: u2 is unaffected.
+	if used, _ := s.GetDeepQuotaUsed(ctx, "u2", month); used != 0 {
+		t.Fatalf("u2 %s used = %d; want 0 (per-user)", month, used)
+	}
+
+	// Per-period: the next month starts fresh (the monthly allowance rolls over).
+	if used, _ := s.GetDeepQuotaUsed(ctx, "u1", "2026-07"); used != 0 {
+		t.Fatalf("u1 next-month used = %d; want 0 (monthly rollover)", used)
+	}
+
+	// A legacy per-DAY key ("2026-06-15") is a DISTINCT counter from the month key
+	// ("2026-06"): incrementing the day key must not affect the month total, proving
+	// old daily rows are harmless dead weight after the day→month switch.
+	if err := s.IncrDeepQuotaUsed(ctx, "u1", "2026-06-15"); err != nil {
+		t.Fatal(err)
+	}
+	if used, _ := s.GetDeepQuotaUsed(ctx, "u1", month); used != 2 {
+		t.Fatalf("u1 %s used after a legacy day-key incr = %d; want still 2 (no collision)", month, used)
+	}
+}

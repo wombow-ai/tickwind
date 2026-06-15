@@ -1016,11 +1016,13 @@ ON CONFLICT (user_id) DO UPDATE SET prefs = $2, updated_at = now()`
 	return nil
 }
 
-// GetDeepQuotaUsed returns the user's deep-research generation count for the day
-// (0 when there's no row yet → sql.ErrNoRows is a clean zero).
-func (s *Store) GetDeepQuotaUsed(ctx context.Context, userID, day string) (int, error) {
+// GetDeepQuotaUsed returns the user's deep-research generation count for the
+// period (ET month, e.g. "2026-06"); 0 when there's no row yet (pgx.ErrNoRows is
+// a clean zero). The `day` column is reused for the period key — old per-day rows
+// never match a month key, so they are harmless.
+func (s *Store) GetDeepQuotaUsed(ctx context.Context, userID, period string) (int, error) {
 	var used int
-	err := s.pool.QueryRow(ctx, `SELECT used FROM deep_research_quota WHERE user_id = $1 AND day = $2`, userID, day).Scan(&used)
+	err := s.pool.QueryRow(ctx, `SELECT used FROM deep_research_quota WHERE user_id = $1 AND day = $2`, userID, period).Scan(&used)
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
 		return 0, nil
@@ -1030,14 +1032,15 @@ func (s *Store) GetDeepQuotaUsed(ctx context.Context, userID, day string) (int, 
 	return used, nil
 }
 
-// IncrDeepQuotaUsed upserts the user's deep-research generation count for the day
-// by one (insert with used=1, or increment an existing row's used).
-func (s *Store) IncrDeepQuotaUsed(ctx context.Context, userID, day string) error {
+// IncrDeepQuotaUsed upserts the user's deep-research generation count for the
+// period (ET month) by one (insert with used=1, or increment an existing row's
+// used). The `day` column carries the month key (e.g. "2026-06").
+func (s *Store) IncrDeepQuotaUsed(ctx context.Context, userID, period string) error {
 	const query = `
 INSERT INTO deep_research_quota (user_id, day, used, updated_at)
 VALUES ($1, $2, 1, now())
 ON CONFLICT (user_id, day) DO UPDATE SET used = deep_research_quota.used + 1, updated_at = now()`
-	if _, err := s.pool.Exec(ctx, query, userID, day); err != nil {
+	if _, err := s.pool.Exec(ctx, query, userID, period); err != nil {
 		return fmt.Errorf("postgres: incr deep-research quota: %w", err)
 	}
 	return nil

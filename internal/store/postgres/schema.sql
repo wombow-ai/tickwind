@@ -262,15 +262,19 @@ CREATE TABLE IF NOT EXISTS user_prefs (
     updated_at timestamptz NOT NULL DEFAULT now()
 );
 
--- Per-user, per-day generation quota for the AI Deep Research report
+-- Per-user, per-MONTH generation quota for the AI Deep Research report
 -- (depth=deep): each user gets a small number of NEW deep-report generations
--- per ET trading day, site-wide (not per stock). One row per (user, day),
--- upserted/incremented on a genuinely-new generation; viewing a globally cached
--- report never touches this. Cheap to rebuild (User store) — losing it just
--- resets the day's quota. Old days accumulate harmlessly (pruneable later).
+-- per ET CALENDAR MONTH, site-wide (not per stock; free = 1 report/user/month).
+-- The `day` column is reused as the PERIOD key and now holds an ET-month string
+-- ("2026-06" style, America/New_York) rather than a per-day date — so one row per
+-- (user, month), upserted/incremented on a genuinely-new generation; viewing a
+-- globally cached report never touches this. Old per-day rows ("2026-06-15") from
+-- the previous daily scheme never match a month key, so they are harmless dead
+-- weight. Cheap to rebuild (User store) — losing it just resets the period's
+-- quota. Old periods accumulate harmlessly (pruneable later).
 CREATE TABLE IF NOT EXISTS deep_research_quota (
     user_id    text NOT NULL,
-    day        text NOT NULL,
+    day        text NOT NULL, -- reused as the ET-month period key (e.g. "2026-06")
     used       integer NOT NULL DEFAULT 0,
     updated_at timestamptz NOT NULL DEFAULT now(),
     PRIMARY KEY (user_id, day)

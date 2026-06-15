@@ -396,19 +396,22 @@ type Store interface {
 	GetPrefs(ctx context.Context, userID string) (json.RawMessage, bool, error)
 	PutPrefs(ctx context.Context, userID string, blob json.RawMessage) error
 
-	// DeepResearchQuota is the per-user, per-day generation counter that gates the
+	// DeepResearchQuota is the per-user, per-MONTH generation counter that gates the
 	// AI Deep Research report (depth=deep): each user gets a small number of NEW
-	// deep-report generations per ET trading day, site-wide (not per stock). Viewing
-	// an already-generated (globally cached) report does NOT touch this — only a
-	// genuinely-new LLM generation increments it. Keyed by (userID, ET day); routed
-	// to the cheap-to-rebuild User store via Split (same class as prefs/holdings —
-	// losing it just resets the day's quota, never market data). GetDeepQuotaUsed
-	// returns the count used today (0 when no row); IncrDeepQuotaUsed upserts +1.
+	// deep-report generations per ET CALENDAR MONTH, site-wide (not per stock; free =
+	// 1 report/user/month). Viewing an already-generated (globally cached) report
+	// does NOT touch this — only a genuinely-new LLM generation increments it. The
+	// `period` argument is the ET-month key ("2026-06" style, America/New_York); the
+	// underlying column is reused as-is (old per-day rows like "2026-06-15" simply
+	// never match a month key, so they become harmless dead weight). Routed to the
+	// cheap-to-rebuild User store via Split (same class as prefs/holdings — losing it
+	// just resets the period's quota, never market data). GetDeepQuotaUsed returns
+	// the count used in the period (0 when no row); IncrDeepQuotaUsed upserts +1.
 	// Both are best-effort from the caller's view: a read error fails OPEN (the
 	// handler logs + allows, never locking a user out), and an increment error is
 	// logged, not fatal.
-	GetDeepQuotaUsed(ctx context.Context, userID, day string) (int, error)
-	IncrDeepQuotaUsed(ctx context.Context, userID, day string) error
+	GetDeepQuotaUsed(ctx context.Context, userID, period string) (int, error)
+	IncrDeepQuotaUsed(ctx context.Context, userID, period string) error
 
 	// Comments are PUBLIC user posts on a stock (Ticker) or the global board
 	// (Ticker == ""). Durable (Market store). List excludes soft-deleted rows;

@@ -33,7 +33,7 @@ type Store struct {
 	alerts    map[string]map[string]store.Alert   // userID -> alertID -> Alert
 	holdings  map[string]map[string]store.Holding // userID -> holdingID -> Holding
 	prefs     map[string]json.RawMessage          // userID -> opaque JSON prefs blob
-	deepQuota map[string]int                      // "userID|DAY" -> deep-research generations used
+	deepQuota map[string]int                      // "userID|PERIOD" (ET month, e.g. 2026-06) -> deep-research generations used
 	comments  map[string]store.Comment            // commentID -> Comment (public)
 	cmtLikes  map[string]map[string]bool          // commentID -> set of userIDs who liked
 }
@@ -660,23 +660,23 @@ func (s *Store) PutPrefs(_ context.Context, userID string, blob json.RawMessage)
 	return nil
 }
 
-// deepQuotaKey is the per-(user, ET day) deep-research quota counter key.
-func deepQuotaKey(userID, day string) string { return userID + "|" + day }
+// deepQuotaKey is the per-(user, ET month) deep-research quota counter key.
+func deepQuotaKey(userID, period string) string { return userID + "|" + period }
 
 // GetDeepQuotaUsed returns how many deep-research generations the user has used
-// on the given day (0 when there's no row).
-func (s *Store) GetDeepQuotaUsed(_ context.Context, userID, day string) (int, error) {
+// in the given period (ET month, e.g. "2026-06"); 0 when there's no row.
+func (s *Store) GetDeepQuotaUsed(_ context.Context, userID, period string) (int, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return s.deepQuota[deepQuotaKey(userID, day)], nil
+	return s.deepQuota[deepQuotaKey(userID, period)], nil
 }
 
 // IncrDeepQuotaUsed increments the user's deep-research generation count for the
-// given day by one.
-func (s *Store) IncrDeepQuotaUsed(_ context.Context, userID, day string) error {
+// given period (ET month) by one.
+func (s *Store) IncrDeepQuotaUsed(_ context.Context, userID, period string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.deepQuota[deepQuotaKey(userID, day)]++
+	s.deepQuota[deepQuotaKey(userID, period)]++
 	return nil
 }
 
