@@ -129,6 +129,16 @@ type Config struct {
 	// Retention tunes the tiered Pruner (off the request path) that bounds the
 	// durable market tables; see RetentionConfig.
 	Retention RetentionConfig
+
+	// RateLimitRPM / RateLimitBurst tune the per-client-IP API rate limiter
+	// (internal/ratelimit), the defense against scraping/bot abuse on the small
+	// VPS. RPM is the sustained per-IP allowance, Burst the instantaneous bucket
+	// capacity. Defaults are deliberately generous so a heavy but legitimate page
+	// load (news/social/batched bars+quotes for ~30 tickers = dozens of requests
+	// in a burst) is never throttled; only a bot doing thousands/min gets 429'd.
+	// Env: RATELIMIT_RPM, RATELIMIT_BURST.
+	RateLimitRPM   int
+	RateLimitBurst int
 }
 
 // RetentionConfig tunes the tiered Pruner (internal/ingest/prune.go). A *Days
@@ -193,6 +203,8 @@ func Load() Config {
 		SupabaseURL:             strings.TrimRight(env("SUPABASE_URL", ""), "/"),
 		SupabaseJWTSecret:       env("SUPABASE_JWT_SECRET", ""),
 		AdminUserIDs:            splitCSVRaw(env("ADMIN_USER_IDS", "")),
+		RateLimitRPM:            envInt("RATELIMIT_RPM", 300),
+		RateLimitBurst:          envInt("RATELIMIT_BURST", 60),
 		Retention: RetentionConfig{
 			NewsDays:             envInt("RETAIN_NEWS_DAYS", 60),
 			NewsHotDays:          envInt("RETAIN_NEWS_HOT_DAYS", 120),

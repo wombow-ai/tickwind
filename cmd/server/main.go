@@ -45,6 +45,7 @@ import (
 	"github.com/wombow-ai/tickwind/internal/openfigi"
 	"github.com/wombow-ai/tickwind/internal/opportunity"
 	"github.com/wombow-ai/tickwind/internal/ratecut"
+	"github.com/wombow-ai/tickwind/internal/ratelimit"
 	"github.com/wombow-ai/tickwind/internal/research"
 	"github.com/wombow-ai/tickwind/internal/sec"
 	"github.com/wombow-ai/tickwind/internal/sentiment"
@@ -636,9 +637,27 @@ func main() {
 	apiServer.SetInsiderActivity(insideractivity.NewService(edgarClient))
 	log.Info("insider-activity (Form 4) enabled")
 
+	// Per-client-IP rate limiter (anti-scraping/bot defense on the small VPS).
+	// Wraps the WHOLE API handler; the client IP is resolved from Cloudflare's
+	// CF-Connecting-IP header (the API is behind a Cloudflare Tunnel, so
+	// RemoteAddr is the tunnel hop, not the visitor). Limits are generous and
+	// env-tunable (RATELIMIT_RPM/RATELIMIT_BURST) so a heavy legit page load
+	// (dozens of batched requests) is never throttled — only a flooding bot is.
+	// /healthz (uptime probes) and /v1/stream (the long-lived SSE connection)
+	// are exempt; the limiter fails OPEN on any internal doubt.
+	limiter := ratelimit.New(ratelimit.Config{
+		RPM:   cfg.RateLimitRPM,
+		Burst: cfg.RateLimitBurst,
+		Exempt: func(path string) bool {
+			return path == "/healthz" || path == "/v1/stream"
+		},
+		Logger: log,
+	})
+	log.Info("api rate limiter enabled", "rpm", cfg.RateLimitRPM, "burst", cfg.RateLimitBurst, "exempt", "/healthz,/v1/stream")
+
 	srv := &http.Server{
 		Addr:              ":" + cfg.Port,
-		Handler:           apiServer,
+		Handler:           limiter.Middleware(apiServer),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
