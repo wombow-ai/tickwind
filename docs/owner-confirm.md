@@ -2,6 +2,17 @@
 
 > 这些点需要你（owner）的决策才能继续；Claude 在等待期间**只做不需确认的事**（AI 研报增量 2/3、登录门控、roadmap 功能/bug-check/数据校验/UI 优化）。
 
+## ✅ owner 决策 (2026-06-15 owner 回来后) + 待确认开发计划
+- **#1 Yahoo/paywall**:owner=移除 Yahoo 依赖,**paywall 推迟到用户起量**(没用户开浪费钱)。⚠️**仍待 owner 拍**:移除 Yahoo=港股(腾讯0700/智谱2513/MiniMax0100)报价下线(无￥0 授权替代)——Claude 荐**留到 paywall 前再移除**(现移除丢港股却无收益);owner 定:现移除 / 留到 paywall 前。
+- **#2 深度研报**:(a) 模型=Claude 荐 **DeepSeek-R1**(`deepseek/deepseek-r1` 付费,强且性价比,~$0.02-0.04/篇)或 V3 付费(~$0.01/篇);(b) 配额=**每用户每月 1 篇**(付费更多)[从每天1篇改];(c) owner 充了 **$5** 测试——设付费模型即不限流(限流是免费档)。
+- **#5 CF Timeout**:owner 调到 **120s**(原30s)。Claude:够(per-call 超时 25/60s),异步生成后更无所谓。
+- **#6 dual-class**:owner=暂不建管线,放 roadmap + 标原因(已做)。
+- **#7 异步生成**:owner=**异步生成 + 轮询**(确认)。
+- **待 owner 点头的开发计划(顺序 A→D→C→B)**:**A** 深度研报升级(LLM_DEEP_MODEL=付费R1 + 配额日→月 + 异步生成+前端轮询);**D** 个股页分 Tab(概览/详情,owner"在考虑");**C** 反爬(app层限流已上线 c7eae11;荐 owner 开 CF 边缘 Rate-Limiting + Bot Fight);**B** Yahoo 移除(待 #1 港股取舍)。
+- **已修(owner 报的4问题,本批,LIVE 验证)**:新IPO价兜底、movement 中英、Material/Insider 下移、per-IP 限流。rate-cut 移出首页。
+
+---
+
 ## 1. 付费上线 + Yahoo 移除（最关键，互相绑定）
 法律调研结论（`docs/research/2026-06-14-monetization-legal-risk.md`）：**一旦开始收费，整个产品即"商用"**，而 ToS 看产品是否商用、不看哪个功能收费 → "免费数据 + 付费 AI" **不**能为 non-commercial-only 数据源开脱。
 - **必须在开 paywall 前移除 Yahoo Finance**（明确禁商用 + 爬非官方端点）。Yahoo 当前载重:美股报价兜底、**港股延迟报价**、指数。移除后:美股走 Alpaca(OK);**港股报价很可能要砍**(￥0 预算下无授权替代源);指数另寻。

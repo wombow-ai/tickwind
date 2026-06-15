@@ -314,6 +314,27 @@ feature-flagged plugin, never on the critical path. Web only.
   NoTradingSymbolFlag join, excluding bond rows) + a proxy-price rule for non-traded classes — bespoke,
   per-issuer, low generality, for a few high-profile names. Math checks out ($1.066T BRK) but **deferred
   to owner** (`insufficient` is honest; ROI low). See `docs/owner-confirm.md` #6. Don't re-investigate.
+- **Shipped + LIVE-verified 2026-06-15 (owner returned — problem batch):** ① **rate-cut odds removed
+  from the homepage** (`5d46f22`) → relocated to `/calendar/macro` (its documented home, below the
+  events timeline). ② **new-IPO price** (`9b4ca63`): `BarCache.LatestQuote` now falls back to the
+  latest REAL daily candle close (`source="daily"`, `session="closed"`, PrevClose==Price so no phantom
+  change, never fabricated) when the live snapshot + Yahoo consolidated overlay are both empty — fixes
+  brand-new IPOs (e.g. SPCX) showing no price on the cards while the K-line had it (free Alpaca=IEX-only,
+  a thin new listing has no IEX print yet). LIVE: SPCX $173.95. ③ **movement explainer language**
+  (`9b4ca63`): "Why's it moving?" showed Chinese even in EN mode — the movement CALLER built the LLM
+  user-prompt material + the canned data-only line + the Go evidence titles/source labels in Chinese
+  ONLY (biasing the model to answer Chinese under the EN system prompt). Now built per `lang`
+  (`Assemble`/`Report`/`Material` thread lang). Audited every other backend LLM-text path
+  (summary/my-digest/research/material-events/briefing) — all already respected lang; movement was the
+  only one. Anti-hallucination contract unchanged. ④ **per-IP rate limiter** (`c7eae11`,
+  `internal/ratelimit`): token bucket (default 300 rpm / 60 burst, env `RATELIMIT_RPM`/`RATELIMIT_BURST`),
+  client IP from **CF-Connecting-IP** (behind the CF Tunnel), exempt `/healthz` + `/v1/stream`, fail-open,
+  429+Retry-After, sharded + idle-sweeper, wired in `cmd/server/main.go` (not api.go). Added because
+  requests jumped to ~40-50k from ~20 users (scrapers). **LIVE-verified SAFE: a 45-req page-load burst →
+  all 200 (legit unaffected); a 150-req burst → 106×429 (bot throttled); /healthz 200 throughout.**
+  ⑤ **Material events + Insider activity moved lower** on StockView (`bb3ae06`, `#material-events`/
+  `#insider-activity` anchors preserved for research-citation deep-links). The frontend zh/en audit found
+  NO other hardcoded-Chinese-in-EN bugs (i18n otherwise solid). All deployed + verified.
 - **Shipped 2026-06-14 (owner batch + greenlit follow-ups, all live-verified):** R2 now has all **6
   sections** (估值/基本面/技术面/资金面/情绪面/概览) + a **two-sided 看多/看空 (bull/bear)** reading on the
   overview (one ComposeReport call gains `bull`/`bear` keys; a deterministic Go advice-guard strips any

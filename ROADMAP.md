@@ -709,3 +709,7 @@ verifies (build/vet/lint), updates this file + `CLAUDE.md`, and commits._
 
 ## 🌱 v8 SEO 收尾:A-Z /stocks 目录(2026-06-15,首个非audit pivot)
 - **✅已做+LIVE验证(commit 0729777,web)**:pSEO A-Z `/stocks` 目录页——`/stocks` hub(A-Z索引)+ `/stocks/[letter]`(26字母×2 locale,+54静态页→972总)列出该字母 quote-bearing tickers 链到 /stock/{ticker},助 Google 爬取发现+内链(~6695个股页)+ browse UX。复用 pSEO shape(topic/screen 克隆):generateStaticParams、per-locale metadata+langAlternates、单locale、locale-prefixed JSON-LD(0 bare-path泄漏)、noindex-thin guard、sitemap+54、Footer+TopNav入口。用 quoteBearingTickers(非16k /v1/symbols,避thin死链),无per-ticker名字fetch。**LIVE:全路由200、/en/stocks/a 含173个 /stock 内链、/zh/stocks 中文单locale、sitemap+54。** 完成 CLAUDE.md 记的 deferred 「A-Z /stocks 目录」项。(另一 deferred「MAX_STOCK_URLS 3000→6695」是 owner 为年轻域名故意设的cap,不擅自改。)
+
+## 🅿️ DEFERRED:dual-class 正确总市值(owner 2026-06-15 决定暂不做)
+> **现状**:BRK.A/BRK.B 的 `market_cap` 显示「数据不足」(stale-shares 守护正确零化了 2011 冻结的 dei 股本——诚实态,非错值)。GOOGL/GOOG **已正确**(companyfacts 有当前聚合股本 ×类价≈$4.37T)。
+> **未做原因(owner 决定 defer,Claude 已 investigate-first 调研)**:companyfacts(app 唯一 XBRL 源)**无维度数据、且 BRK 无任何当前股本**(仅 2011 冻结值;frames API 对 member 路径 404)。per-class 当前股本只存在于 **raw inline-XBRL 实例文档**(app 不抓)。正确修需**新建 raw-XBRL 抓取+解析管线**(FilingSummary→封面实例→按 `StatementClassOfStockAxis` 维度+scale+`TradingSymbol`/`NoTradingSymbolFlag` 解析、排除债券行)+ 非交易类(如 Alphabet Class B 836M 股无 ticker)的代理定价规则——bespoke、per-issuer、低通用性,只为少数高知名度票(主要 Berkshire)。数学验证可行(BRK $1.066T)。**ROI 对少数票低,「数据不足」已满足诚实质量线 → owner 决定暂不建,留此 backlog;将来若 Berkshire 这类需求变强可重启。** 详见 docs/owner-confirm #6 + CLAUDE.md。
