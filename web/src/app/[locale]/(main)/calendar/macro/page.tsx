@@ -2,6 +2,7 @@ import type {Metadata} from 'next';
 import {langAlternates} from '@/lib/config';
 import {isLocale} from '@/lib/locale';
 import {EventsTimeline} from '@/components/EventsTimeline';
+import {RateCutOdds} from '@/components/RateCutOdds';
 
 export async function generateMetadata({
   params,
@@ -20,8 +21,14 @@ export async function generateMetadata({
 
 /**
  * Public macro events + rate-cut odds (Macro tab of the unified calendar).
- * RateCutOdds is rendered inside EventsTimeline.
+ * Rate-cut odds (prediction markets) render below the events timeline — kept off
+ * the homepage per the owner; this macro page is their contextual home.
  */
 export default function MacroCalendarPage() {
-  return <EventsTimeline />;
+  return (
+    <>
+      <EventsTimeline />
+      <RateCutOdds />
+    </>
+  );
 }
