@@ -335,6 +335,29 @@ feature-flagged plugin, never on the critical path. Web only.
   ⑤ **Material events + Insider activity moved lower** on StockView (`bb3ae06`, `#material-events`/
   `#insider-activity` anchors preserved for research-citation deep-links). The frontend zh/en audit found
   NO other hardcoded-Chinese-in-EN bugs (i18n otherwise solid). All deployed + verified.
+- **Shipped + LIVE-verified 2026-06-15/16 (owner returned, GO on the dev plan):** ⓐ **"Possibly related"
+  Chinese-in-EN fix** (`6a83a44`): `movement.gatherEvidence` always used `n.HeadlineZH` regardless of
+  lang → now picks the original `Headline` for en (HeadlineZH is the zh translation). (Same
+  HeadlineZH-first pattern exists in `research/sentiment.go corpusContext`, but that's LLM *input*, not
+  user-visible — left for a later lang-through-Assemble pass.) ⓑ **AI Deep Research = ASYNC + MONTHLY
+  quota** (`fcd004f` backend + `3eddd3a` frontend): the deep report (`?depth=deep`) was synchronous
+  (blocked 10-60s). Now returns the data-only fact sheet INSTANTLY with `prose_status` ∈ ready /
+  generating / quota_exhausted / llm_disabled; a DETACHED background goroutine (`context.Background()` +
+  60s timeout, its own `cloneFactSheet` to fix an in-place-prose data race) composes the prose, caches
+  it, and increments the quota EXACTLY ONCE on success; atomic single-flight (one gen per
+  ticker/ET-month/lang) + global-cap refund on empty/panic. Quota changed day→**ET-month** (1 report/
+  user/month, `DEEP_RESEARCH_MONTHLY_LIMIT`); over-quota is a graceful data-only 200 (`quota_exhausted`),
+  not a hard 429. Frontend `DeepResearchView` polls ~4s (cap ~25/~100s) on `generating`, shows a loading
+  affordance / monthly-limit note, and is **backward-compatible** (absent prose_status or prose-present
+  → done, no poll → safe deploy window). Normal (non-deep) /research stays synchronous + unchanged.
+  **Model**: `LLM_DEEP_MODEL=deepseek/deepseek-r1` set in the VPS `.env` (owner-approved; deep path uses
+  R1, stronger; falls back to LLM_MODEL=V3-0324-paid if unset). **LIVE-verified**: async backend deployed
+  (DEPLOY_DONE 16:15, `deep_monthly_limit=1`); no sync-path regression (PLTR /research llm=true / ready /
+  6 sections; LLM healthy — morning briefing generated); anon-deep→401; frontend routes 200; per-IP rate
+  limiter actively throttling bots (`rate limit exceeded ip=…` in logs); healthz ok after the R1
+  recreate. Authed async/quota/R1 flow is owner-visual (login → report opens instantly, prose fills in).
+  **NOTE: `deepseek-chat-v3-0324` is PAID not free (owner clarified, $5 topped up) — intermittent
+  data-only is transient throttle/timeout/cap; the system degrades correctly (insufficient-not-wrong).**
 - **Shipped 2026-06-14 (owner batch + greenlit follow-ups, all live-verified):** R2 now has all **6
   sections** (估值/基本面/技术面/资金面/情绪面/概览) + a **two-sided 看多/看空 (bull/bear)** reading on the
   overview (one ComposeReport call gains `bull`/`bear` keys; a deterministic Go advice-guard strips any
