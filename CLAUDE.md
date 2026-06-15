@@ -358,6 +358,16 @@ feature-flagged plugin, never on the critical path. Web only.
   recreate. Authed async/quota/R1 flow is owner-visual (login → report opens instantly, prose fills in).
   **NOTE: `deepseek-chat-v3-0324` is PAID not free (owner clarified, $5 topped up) — intermittent
   data-only is transient throttle/timeout/cap; the system degrades correctly (insufficient-not-wrong).**
+- **Shipped + LIVE 2026-06-16 (plan item D — multi-tab stock page, `df00170`):** `StockView` split into
+  **Overview** (price/quote header always visible; then Why's-it-moving, fundamentals, AI summary,
+  K-line, indicators, pulse) + **Details** (earnings/short, material events, insider, congress, whales,
+  options, + the existing per-section tab bar: news/discussion/comments/research/notes/alerts/holdings).
+  Both panels stay mounted via `hidden` (not unmount) so every `scroll-mt-20` anchor is in the DOM and
+  research-citation deep-links resolve across tabs (an `ANCHOR_TAB` map + a mount/hashchange effect
+  auto-switches to the owning tab then scrolls). i18n `stock.tabOverview`/`tabDetails` (en+zh). Routes
+  /en|/zh/stock/AAPL 200. **Plan status (owner GO 2026-06-16): A✅ D✅ done+verified; C = app-layer
+  per-IP rate limiter ✅ live + CF-dashboard edge rules are the owner's action; B (Yahoo removal)
+  awaits the owner's HK-quotes decision (Claude rec: keep Yahoo+HK until near the deferred paywall).**
 - **Shipped 2026-06-14 (owner batch + greenlit follow-ups, all live-verified):** R2 now has all **6
   sections** (估值/基本面/技术面/资金面/情绪面/概览) + a **two-sided 看多/看空 (bull/bear)** reading on the
   overview (one ComposeReport call gains `bull`/`bear` keys; a deterministic Go advice-guard strips any

@@ -10,6 +10,7 @@
 - **#7 异步生成**:owner=**异步生成 + 轮询**(确认)。
 - **待 owner 点头的开发计划(顺序 A→D→C→B)**:**A** 深度研报升级(LLM_DEEP_MODEL=付费R1 + 配额日→月 + 异步生成+前端轮询);**D** 个股页分 Tab(概览/详情,owner"在考虑");**C** 反爬(app层限流已上线 c7eae11;荐 owner 开 CF 边缘 Rate-Limiting + Bot Fight);**B** Yahoo 移除(待 #1 港股取舍)。
 - **已修(owner 报的4问题,本批,LIVE 验证)**:新IPO价兜底、movement 中英、Material/Insider 下移、per-IP 限流。rate-cut 移出首页。
+- **✅进度 (2026-06-16,owner GO 后)**:**A 完成 LIVE 验证**(async 秒返+轮询、月度配额 1/user/month、R1 已设、无回归);**D 完成 LIVE**(个股页 Overview/Details 分 Tab,citation 跨 tab 可跳);**"Possibly related" 中英修 LIVE**;**C app 层限流✅上线验证**(throttle bot)。**仍待 owner**:**C** CF 面板边缘规则(WAF Rate-Limiting >300rpm/IP on /v1/* + Bot Fight Mode——你的 ~5min 动作);**B** Yahoo 移除的港股取舍(现移除港股下线 / 留到 paywall 前[荐])。paywall 推迟到用户起量。
 
 ---
 
