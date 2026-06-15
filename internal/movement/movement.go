@@ -157,9 +157,21 @@ func gatherEvidence(ticker, lang string, in Inputs) []Evidence {
 		if n.Published.IsZero() || asOf.Sub(n.Published) > newsLookback || n.Published.After(asOf.Add(time.Hour)) {
 			continue
 		}
-		title := strings.TrimSpace(n.HeadlineZH)
-		if title == "" {
+		// Pick the headline in the requested language: the original English for
+		// lang=en (HeadlineZH is the Chinese translation, for zh only), the
+		// translated Chinese for zh — each falling back to the other if absent.
+		// (Fixes the EN "Why's it moving?" evidence chips showing Chinese sources.)
+		var title string
+		if lang == "en" {
 			title = strings.TrimSpace(n.Headline)
+			if title == "" {
+				title = strings.TrimSpace(n.HeadlineZH)
+			}
+		} else {
+			title = strings.TrimSpace(n.HeadlineZH)
+			if title == "" {
+				title = strings.TrimSpace(n.Headline)
+			}
 		}
 		if title == "" {
 			continue
