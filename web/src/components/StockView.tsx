@@ -584,6 +584,24 @@ export function StockView({ticker}: {ticker: string}) {
       {/* AI digest: daily-cached bullets from news+social (hides when LLM off/empty) */}
       <AISummaryCard ticker={norm} />
 
+      {/* K-line candlestick chart + indicators — the price-and-indicators anchor,
+          with the options panel directly below it */}
+      <div className="mb-6">
+        <KLineChart ticker={norm} quote={quote} />
+      </div>
+
+      {/* Computed per-stock indicators (latest values, grouped by domain) — the
+          readout companion to the chart's client-side overlays + FundamentalsCard;
+          hides entirely when no indicators are computable */}
+      <div id="indicators" className="scroll-mt-20">
+        <IndicatorsPanel ticker={norm} />
+      </div>
+
+      {/* Material events + Insider activity are secondary, lower-priority detail —
+          they sit BELOW the core price/fundamentals/chart/indicators/summary block,
+          alongside the other smart-money/secondary cards (owner 2026-06-15). The
+          #material-events / #insider-activity anchors are preserved so research-report
+          citation deep-links still resolve. */}
       {/* 8-K material events (current reports) + optional AI summary. Go owns every
           fact (form/dates/item-code labels/source link); only the per-filing summary
           is AI-written (omitted when LLM off / source too thin). Hides on an unknown
@@ -598,19 +616,6 @@ export function StockView({ticker}: {ticker: string}) {
           unknown symbol; shows a subtle empty line when a known company has none. */}
       <div id="insider-activity" className="scroll-mt-20">
         <InsiderActivityCard ticker={norm} />
-      </div>
-
-      {/* K-line candlestick chart + indicators — the price-and-indicators anchor,
-          with the options panel directly below it */}
-      <div className="mb-6">
-        <KLineChart ticker={norm} quote={quote} />
-      </div>
-
-      {/* Computed per-stock indicators (latest values, grouped by domain) — the
-          readout companion to the chart's client-side overlays + FundamentalsCard;
-          hides entirely when no indicators are computable */}
-      <div id="indicators" className="scroll-mt-20">
-        <IndicatorsPanel ticker={norm} />
       </div>
 
       {/* Smart-money cards sit directly below the indicators — the "who else is
