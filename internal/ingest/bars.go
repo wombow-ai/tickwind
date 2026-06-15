@@ -216,6 +216,30 @@ func (b *BarCache) LatestQuote(ctx context.Context, ticker string) (store.Quote,
 			q = overlayConsolidated(q, p, pc, at, b.client.SessionAt(at))
 		}
 	}
+
+	// Last-resort fallback for brand-new / very thin listings (e.g. a just-IPO'd
+	// ticker): the live snapshot has no IEX trade and the consolidated tape has
+	// nothing either, so q.Price is still 0 — yet the daily-candle path
+	// (DailyOHLC) usually DOES have bars, which is why the K-line chart shows a
+	// price while the detail-card PriceTag / market-cap stay empty. Carry the
+	// latest REAL daily close so the cards populate, labeled as a closed
+	// (non-live) as-of-the-candle-date price so it's never mislabeled as a live
+	// trade. NEVER fabricates: only a real candle close is used, and if there are
+	// no candles either we stay empty (—), exactly as before.
+	if q.Price == 0 {
+		if c, ok := b.latestDailyClose(ctx, ticker); ok {
+			q = store.Quote{
+				Ticker:       ticker,
+				Price:        c.Close,
+				PrevClose:    c.Close, // day-change 0 — this IS the close, not a live move
+				RegularClose: c.Close,
+				Session:      "closed",
+				Source:       "daily",
+				At:           c.Time,
+			}
+		}
+	}
+
 	if q.Price == 0 {
 		return store.Quote{}, false, nil
 	}
@@ -224,4 +248,21 @@ func (b *BarCache) LatestQuote(ctx context.Context, ticker string) (store.Quote,
 	b.quotes[ticker] = quoteEntry{q: q, at: time.Now()}
 	b.mu.Unlock()
 	return q, true, nil
+}
+
+// latestDailyClose returns the most recent daily candle for ticker (newest of
+// the cached DailyCandles series), used as the last-resort quote price when no
+// live or consolidated trade is available. ok=false when there are no candles
+// or the newest close is non-positive (so the caller stays empty rather than
+// fabricating a price).
+func (b *BarCache) latestDailyClose(ctx context.Context, ticker string) (store.Candle, bool) {
+	cs, err := b.DailyCandles(ctx, ticker)
+	if err != nil || len(cs) == 0 {
+		return store.Candle{}, false
+	}
+	last := cs[len(cs)-1] // DailyCandles is oldest-first
+	if last.Close <= 0 {
+		return store.Candle{}, false
+	}
+	return last, true
 }

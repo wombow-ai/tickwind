@@ -105,14 +105,15 @@ type Inputs struct {
 
 // Assemble builds the data-only Explanation for a ticker with NO LLM. It computes
 // the Go-owned change % + direction from the quote, gathers a small attributed
-// evidence set, and fills Text with a canned Chinese line (the data-only
-// fallback). It is pure and never errors. When the move is below threshold (or
-// there is no usable quote) it returns Significant=false with no Text/Evidence —
-// the caller serves the number but the frontend hides the card.
+// evidence set, and fills Text with a canned line in the requested language
+// ("zh"|"en"; anything else falls back to zh) — the data-only fallback. It is
+// pure and never errors. When the move is below threshold (or there is no usable
+// quote) it returns Significant=false with no Text/Evidence — the caller serves
+// the number but the frontend hides the card.
 //
 // The returned Explanation always has LLM=false; a caller with an enabled LLM
 // calls Material + the enricher and overwrites Text (see Service.Explain).
-func Assemble(ticker string, in Inputs) Explanation {
+func Assemble(ticker, lang string, in Inputs) Explanation {
 	ticker = strings.ToUpper(strings.TrimSpace(ticker))
 	exp := Explanation{
 		Ticker:   ticker,
@@ -134,8 +135,8 @@ func Assemble(ticker string, in Inputs) Explanation {
 	exp.ChangePct = pct
 	exp.Direction = direction(pct)
 	exp.Significant = true
-	exp.Evidence = gatherEvidence(ticker, in)
-	exp.Text = cannedText(pct, exp.Evidence)
+	exp.Evidence = gatherEvidence(ticker, lang, in)
+	exp.Text = cannedText(pct, lang, exp.Evidence)
 	return exp
 }
 
@@ -143,8 +144,9 @@ func Assemble(ticker string, in Inputs) Explanation {
 // types, capped at maxEvidence. News inside newsLookback, filings inside
 // filingLookback, and insider buys inside insiderLookback (relative to the
 // quote's as-of, falling back to now) are eligible. Everything is set in Go from
-// the typed source — every item is attributed.
-func gatherEvidence(ticker string, in Inputs) []Evidence {
+// the typed source — every item is attributed. lang ("zh"|"en") localizes the
+// Go-built evidence titles (only the insider-buy line, which Go composes).
+func gatherEvidence(ticker, lang string, in Inputs) []Evidence {
 	asOf := in.Quote.At
 	if asOf.IsZero() {
 		asOf = time.Now().UTC()
@@ -184,7 +186,7 @@ func gatherEvidence(ticker string, in Inputs) []Evidence {
 		if b.FiledDate.IsZero() || asOf.Sub(b.FiledDate) > insiderLookback || b.FiledDate.After(asOf.Add(time.Hour)) {
 			continue
 		}
-		out = append(out, Evidence{Type: "insider", Title: insiderTitle(b), URL: b.FilingURL, Time: b.FiledDate})
+		out = append(out, Evidence{Type: "insider", Title: insiderTitle(b, lang), URL: b.FilingURL, Time: b.FiledDate})
 	}
 
 	// Newest-first across all types, then cap.
@@ -199,26 +201,42 @@ func gatherEvidence(ticker string, in Inputs) []Evidence {
 	return out
 }
 
-// insiderTitle renders an insider-buy evidence line in Chinese from the typed
-// fields — never the LLM's words.
-func insiderTitle(b store.InsiderBuy) string {
+// insiderTitle renders an insider-buy evidence line in the requested language
+// ("zh"|"en"; anything else → zh) from the typed fields — never the LLM's words.
+func insiderTitle(b store.InsiderBuy, lang string) string {
 	who := strings.TrimSpace(b.OwnerName)
+	if lang == "en" {
+		if who == "" {
+			who = "Insider"
+		}
+		return fmt.Sprintf("%s insider buy %s", who, formatUSD(b.Value))
+	}
 	if who == "" {
 		who = "内部人"
 	}
 	return fmt.Sprintf("%s 内部人买入 %s", who, formatUSD(b.Value))
 }
 
-// cannedText builds the data-only Chinese explanation (LLM off / over cap /
-// error). It states the Go-owned move and, when present, the top evidence
-// headline as attributed context — never a definitive cause. With no evidence it
-// admits there is no clear catalyst.
-func cannedText(pct float64, ev []Evidence) string {
+// cannedText builds the data-only explanation (LLM off / over cap / error) in the
+// requested language ("zh"|"en"; anything else → zh). It states the Go-owned move
+// and, when present, the top evidence headline as attributed context — never a
+// definitive cause. With no evidence it admits there is no clear catalyst.
+func cannedText(pct float64, lang string, ev []Evidence) string {
+	mag := formatPct(pct)
+	if lang == "en" {
+		dir := "up"
+		if pct < 0 {
+			dir = "down"
+		}
+		if len(ev) == 0 {
+			return fmt.Sprintf("%s %s today; no clear catalyst.", dir, mag)
+		}
+		return fmt.Sprintf("%s %s today; recent item: %s", dir, mag, ev[0].Title)
+	}
 	dir := "涨"
 	if pct < 0 {
 		dir = "跌"
 	}
-	mag := formatPct(pct)
 	if len(ev) == 0 {
 		return fmt.Sprintf("今日%s%s,暂无明确催化消息。", dir, mag)
 	}
@@ -247,20 +265,44 @@ func formatUSD(v float64) string {
 }
 
 // Material assembles the single pre-formatted material string the LLM sees, in
-// the research.buildMaterial style. It states the Go-owned move (the LLM must
-// NOT recompute or alter it) and lists each attributed evidence headline. The
-// LLM is instructed (in the system prompt) to reference ONLY these headlines and
-// to HEDGE. Only formatted values appear so the model cannot recompute a number.
-// Returns "" when the move is not significant (no LLM call is warranted).
-func Material(exp Explanation) string {
+// the research.buildMaterial style, in the requested language ("zh"|"en"; anything
+// else → zh). The material's own language is set to match the requested output
+// language: a Chinese material strongly biases the model toward a Chinese reply
+// even under an English system prompt, which was why en requests came back in
+// Chinese. It states the Go-owned move (the LLM must NOT recompute or alter it)
+// and lists each attributed evidence headline. The LLM is instructed (in the
+// system prompt) to reference ONLY these headlines and to HEDGE. Only formatted
+// values appear so the model cannot recompute a number. Returns "" when the move
+// is not significant (no LLM call is warranted).
+func Material(exp Explanation, lang string) string {
 	if !exp.Significant {
 		return ""
+	}
+	var sb strings.Builder
+	if lang == "en" {
+		dir := "up"
+		if exp.Direction == "down" {
+			dir = "down"
+		}
+		fmt.Fprintf(&sb, "Ticker: %s\n", exp.Ticker)
+		fmt.Fprintf(&sb, "Moved %s %s today (computed by the system; do not alter or recompute)\n", dir, formatPct(exp.ChangePct))
+		if exp.Session != "" {
+			fmt.Fprintf(&sb, "Session: %s\n", exp.Session)
+		}
+		if len(exp.Evidence) == 0 {
+			sb.WriteString("Recent evidence: none (no attributable news/filing/insider trade)\n")
+			return sb.String()
+		}
+		sb.WriteString("Recent evidence (you may reference ONLY these items, each with its source type; do not invent any other catalyst):\n")
+		for _, e := range exp.Evidence {
+			fmt.Fprintf(&sb, "- [%s] %s\n", evidenceSourceLabel(e.Type, lang), e.Title)
+		}
+		return sb.String()
 	}
 	dir := "上涨"
 	if exp.Direction == "down" {
 		dir = "下跌"
 	}
-	var sb strings.Builder
 	fmt.Fprintf(&sb, "股票: %s\n", exp.Ticker)
 	fmt.Fprintf(&sb, "今日%s %s(已由系统计算,不得改动或重新计算)\n", dir, formatPct(exp.ChangePct))
 	if exp.Session != "" {
@@ -272,14 +314,27 @@ func Material(exp Explanation) string {
 	}
 	sb.WriteString("近期证据材料(只能引用以下条目,逐条带来源类型,不得编造其它催化因素):\n")
 	for _, e := range exp.Evidence {
-		fmt.Fprintf(&sb, "- [%s] %s\n", evidenceSourceLabel(e.Type), e.Title)
+		fmt.Fprintf(&sb, "- [%s] %s\n", evidenceSourceLabel(e.Type, lang), e.Title)
 	}
 	return sb.String()
 }
 
-// evidenceSourceLabel maps an evidence type to its Chinese source-type label for
-// the material (so the model attributes "据新闻/据公告/据内部人交易").
-func evidenceSourceLabel(t string) string {
+// evidenceSourceLabel maps an evidence type to its source-type label in the
+// requested language ("zh"|"en"; anything else → zh), so the model attributes the
+// evidence ("per news / per filing / per insider trade").
+func evidenceSourceLabel(t, lang string) string {
+	if lang == "en" {
+		switch t {
+		case "news":
+			return "news"
+		case "filing":
+			return "filing/SEC"
+		case "insider":
+			return "insider trade"
+		default:
+			return "material"
+		}
+	}
 	switch t {
 	case "news":
 		return "新闻"

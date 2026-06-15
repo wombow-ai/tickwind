@@ -93,10 +93,11 @@ func (s *Service) inputs(ctx context.Context, ticker string) Inputs {
 }
 
 // Report assembles the data-only Explanation (no LLM, cheap, never errors): the
-// Go-owned move % + direction, the attributed evidence, and a canned Chinese
-// line. Significant=false (with no Text/Evidence) for a sub-threshold move.
-func (s *Service) Report(ctx context.Context, ticker string) Explanation {
-	return Assemble(ticker, s.inputs(ctx, ticker))
+// Go-owned move % + direction, the attributed evidence, and a canned line in the
+// requested language ("zh"|"en"). Significant=false (with no Text/Evidence) for a
+// sub-threshold move.
+func (s *Service) Report(ctx context.Context, ticker, lang string) Explanation {
+	return Assemble(ticker, lang, s.inputs(ctx, ticker))
 }
 
 // Explain returns the Explanation with the LLM's hedged sentence when the LLM is
@@ -104,14 +105,14 @@ func (s *Service) Report(ctx context.Context, ticker string) Explanation {
 // (canned line, LLM=false). It NEVER errors. The Go-owned number, direction,
 // significance, and evidence are untouched by the LLM — only Text may change.
 func (s *Service) Explain(ctx context.Context, ticker, lang string) Explanation {
-	exp := s.Report(ctx, ticker)
+	exp := s.Report(ctx, ticker, lang)
 	if !exp.Significant {
 		return exp // no explanation warranted for a sub-threshold move
 	}
 	if s.enr == nil || !s.enr.Enabled() {
-		return exp // data-only canned line
+		return exp // data-only canned line (already in the requested language)
 	}
-	material := Material(exp)
+	material := Material(exp, lang)
 	if strings.TrimSpace(material) == "" {
 		return exp
 	}

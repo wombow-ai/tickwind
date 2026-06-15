@@ -22,14 +22,18 @@ import (
 // Explanation; Explain overlays an LLM sentence when enabled; Enabled/Model are
 // fixed. It records how many times Explain ran so the cache/cap can be asserted.
 type fakeMovement struct {
-	exp      movement.Explanation
-	enabled  bool
-	model    string
-	sentence string
-	explains int
+	exp        movement.Explanation
+	enabled    bool
+	model      string
+	sentence   string
+	explains   int
+	reportLang string // records the lang the handler threaded into Report
 }
 
-func (f *fakeMovement) Report(context.Context, string) movement.Explanation { return f.exp }
+func (f *fakeMovement) Report(_ context.Context, _, lang string) movement.Explanation {
+	f.reportLang = lang
+	return f.exp
+}
 
 func (f *fakeMovement) Explain(_ context.Context, _, _ string) movement.Explanation {
 	f.explains++
@@ -189,6 +193,20 @@ func TestGetMovement_DataOnlyWithNoopEnricher(t *testing.T) {
 	}
 	if fake.explains != 0 {
 		t.Errorf("Explain ran %d times; want 0 when disabled (data-only Report path)", fake.explains)
+	}
+}
+
+// TestGetMovement_ThreadsLangIntoReport proves the handler passes ?lang=en into
+// Report so the data-only canned line / Go-built evidence come back in English
+// (the en-mode regression — the data-only path is the one that ships when the LLM
+// is off/over-cap/errors).
+func TestGetMovement_ThreadsLangIntoReport(t *testing.T) {
+	fake := &fakeMovement{exp: significantExp(), enabled: false}
+	srv := serverWithMovement(fake)
+	defer srv.Close()
+
+	if _, _ = getMovement(t, srv.URL+"/v1/stocks/AAPL/movement?lang=en"); fake.reportLang != "en" {
+		t.Errorf("Report saw lang=%q; want en (handler must thread the requested language)", fake.reportLang)
 	}
 }
 

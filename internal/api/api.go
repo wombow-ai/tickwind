@@ -306,7 +306,7 @@ type ResearchSource interface {
 // name ("" when disabled). nil-safe — a nil source makes
 // /v1/stocks/{ticker}/movement 404. Satisfied by *movement.Service.
 type MovementSource interface {
-	Report(ctx context.Context, ticker string) movement.Explanation
+	Report(ctx context.Context, ticker, lang string) movement.Explanation
 	Explain(ctx context.Context, ticker, lang string) movement.Explanation
 	Enabled() bool
 	Model() string
@@ -2819,7 +2819,9 @@ func (s *Server) getMovement(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Assemble the data-only explanation first (cheap, no LLM, never errors).
-	exp := s.movementCalc.Report(r.Context(), ticker)
+	// lang is threaded so the canned fallback line + Go-built evidence titles come
+	// back in the requested language (the LLM sentence below is also lang-keyed).
+	exp := s.movementCalc.Report(r.Context(), ticker, lang)
 	// "Nothing at all": no usable quote AND no evidence → unknown/invalid ticker
 	// (a sub-threshold move with a real quote DOES have a number, so it is served).
 	if exp.AsOf.IsZero() && exp.ChangePct == 0 && len(exp.Evidence) == 0 {

@@ -36,7 +36,7 @@ func TestAssemble_ChangePctMathAndDirection(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			exp := Assemble("aapl", Inputs{Quote: quoteAt(tc.price, tc.prev)})
+			exp := Assemble("aapl", "zh", Inputs{Quote: quoteAt(tc.price, tc.prev)})
 			if got := round1(exp.ChangePct); got != tc.wantPct {
 				t.Errorf("change_pct = %v; want %v", got, tc.wantPct)
 			}
@@ -58,7 +58,7 @@ func TestAssemble_SubThresholdHasNoExplanationOrEvidence(t *testing.T) {
 		Quote: quoteAt(102, 100), // +2%, below threshold
 		News:  []store.News{{Headline: "Apple unveils new chip", URL: "u", Published: asOf.Add(-time.Hour)}},
 	}
-	exp := Assemble("AAPL", in)
+	exp := Assemble("AAPL", "zh", in)
 	if exp.Significant {
 		t.Fatal("significant = true; want false for a +2% move")
 	}
@@ -71,7 +71,7 @@ func TestAssemble_SubThresholdHasNoExplanationOrEvidence(t *testing.T) {
 }
 
 func TestAssemble_NoQuoteIsNotSignificant(t *testing.T) {
-	exp := Assemble("AAPL", Inputs{}) // zero quote → no usable reference
+	exp := Assemble("AAPL", "zh", Inputs{}) // zero quote → no usable reference
 	if exp.Significant {
 		t.Fatal("significant = true; want false with no usable quote")
 	}
@@ -87,7 +87,7 @@ func TestAssemble_CannedFallbackWithEvidence(t *testing.T) {
 			{Headline: "Apple beats earnings estimates", URL: "https://n/1", Published: asOf.Add(-2 * time.Hour)},
 		},
 	}
-	exp := Assemble("AAPL", in)
+	exp := Assemble("AAPL", "zh", in)
 	if !exp.Significant {
 		t.Fatal("significant = false; want true for a +12% move")
 	}
@@ -105,7 +105,7 @@ func TestAssemble_CannedFallbackWithEvidence(t *testing.T) {
 }
 
 func TestAssemble_CannedFallbackNoEvidence(t *testing.T) {
-	exp := Assemble("AAPL", Inputs{Quote: quoteAt(85, 100)}) // -15%, no evidence
+	exp := Assemble("AAPL", "zh", Inputs{Quote: quoteAt(85, 100)}) // -15%, no evidence
 	if !exp.Significant {
 		t.Fatal("significant = false; want true for a -15% move")
 	}
@@ -134,7 +134,7 @@ func TestGatherEvidence_AttributionAndFreshness(t *testing.T) {
 			{Ticker: "MSFT", OwnerName: "Other Co", Value: 500_000, FilingURL: "https://i/2", FiledDate: asOf.Add(-5 * time.Hour)}, // wrong ticker
 		},
 	}
-	exp := Assemble("AAPL", in)
+	exp := Assemble("AAPL", "zh", in)
 
 	// Stale news, stale filing, and the wrong-ticker insider buy are all excluded.
 	wantTitles := map[string]string{
@@ -174,18 +174,18 @@ func TestGatherEvidence_CapsAtMax(t *testing.T) {
 			Published: asOf.Add(-time.Duration(i+1) * time.Minute),
 		})
 	}
-	exp := Assemble("AAPL", Inputs{Quote: quoteAt(110, 100), News: news})
+	exp := Assemble("AAPL", "zh", Inputs{Quote: quoteAt(110, 100), News: news})
 	if len(exp.Evidence) != maxEvidence {
 		t.Errorf("evidence count = %d; want it capped at %d", len(exp.Evidence), maxEvidence)
 	}
 }
 
 func TestMaterial_GoOwnsNumberAndAttributesEvidence(t *testing.T) {
-	exp := Assemble("AAPL", Inputs{
+	exp := Assemble("AAPL", "zh", Inputs{
 		Quote: quoteAt(110, 100),
 		News:  []store.News{{Headline: "Apple beats estimates", URL: "u", Published: asOf.Add(-time.Hour)}},
 	})
-	mat := Material(exp)
+	mat := Material(exp, "zh")
 	if !strings.Contains(mat, "今日上涨 10.0%") {
 		t.Errorf("material = %q; want the Go-owned +10.0%% move stated", mat)
 	}
@@ -198,9 +198,67 @@ func TestMaterial_GoOwnsNumberAndAttributesEvidence(t *testing.T) {
 }
 
 func TestMaterial_EmptyForInsignificant(t *testing.T) {
-	exp := Assemble("AAPL", Inputs{Quote: quoteAt(101, 100)}) // +1%, not significant
-	if got := Material(exp); got != "" {
+	exp := Assemble("AAPL", "zh", Inputs{Quote: quoteAt(101, 100)}) // +1%, not significant
+	if got := Material(exp, "zh"); got != "" {
 		t.Errorf("material = %q; want empty for a sub-threshold move (no LLM call warranted)", got)
+	}
+}
+
+// TestAssemble_EnglishLanguage is the regression test for the "movement explainer
+// shows ONLY Chinese in both zh AND en modes" bug. With lang=en, the canned
+// fallback line, the Go-built insider evidence title, and the Material the LLM
+// sees must ALL be in English — a Chinese material biased the model to reply in
+// Chinese even under the English system prompt.
+func TestAssemble_EnglishLanguage(t *testing.T) {
+	in := Inputs{
+		Quote: quoteAt(112, 100), // +12%
+		News: []store.News{
+			{Headline: "Apple beats earnings estimates", URL: "https://n/1", Published: asOf.Add(-2 * time.Hour)},
+		},
+		Insider: []store.InsiderBuy{
+			{Ticker: "AAPL", OwnerName: "Jane Doe", Value: 1_200_000, FilingURL: "https://i/1", FiledDate: asOf.Add(-5 * time.Hour)},
+		},
+	}
+	exp := Assemble("AAPL", "en", in)
+	if !exp.Significant {
+		t.Fatal("significant = false; want true for a +12% move")
+	}
+	// Canned line is English, states the Go-owned move, and quotes the top headline.
+	if !strings.Contains(exp.Text, "up 12.0% today") {
+		t.Errorf("explanation = %q; want the English canned line stating the +12.0%% move", exp.Text)
+	}
+	if strings.ContainsAny(exp.Text, "今涨跌") {
+		t.Errorf("explanation = %q; must be English-only for lang=en (no Chinese)", exp.Text)
+	}
+	// The Go-built insider evidence title is English.
+	var insiderTitleSeen string
+	for _, e := range exp.Evidence {
+		if e.Type == "insider" {
+			insiderTitleSeen = e.Title
+		}
+	}
+	if !strings.Contains(insiderTitleSeen, "Jane Doe insider buy $1.2M") {
+		t.Errorf("insider evidence title = %q; want the English form", insiderTitleSeen)
+	}
+
+	// The Material the LLM sees is English (so the model isn't biased to Chinese).
+	mat := Material(exp, "en")
+	if !strings.Contains(mat, "up 12.0% today") || !strings.Contains(mat, "do not alter or recompute") {
+		t.Errorf("material = %q; want the English move statement + do-not-recompute instruction", mat)
+	}
+	if !strings.Contains(mat, "[news] Apple beats earnings estimates") {
+		t.Errorf("material = %q; want the evidence attributed with its English source type", mat)
+	}
+	if strings.Contains(mat, "今日") || strings.Contains(mat, "证据") {
+		t.Errorf("material = %q; must be English-only for lang=en", mat)
+	}
+}
+
+// TestAssemble_EnglishNoCatalyst checks the no-evidence English canned line.
+func TestAssemble_EnglishNoCatalyst(t *testing.T) {
+	exp := Assemble("AAPL", "en", Inputs{Quote: quoteAt(85, 100)}) // -15%, no evidence
+	if exp.Text != "down 15.0% today; no clear catalyst." {
+		t.Errorf("explanation = %q; want the English no-catalyst canned line", exp.Text)
 	}
 }
 
@@ -277,6 +335,29 @@ func TestService_ExplainDataOnlyWhenDisabled(t *testing.T) {
 	}
 	if exp.Text != "今日跌15.0%,暂无明确催化消息。" {
 		t.Errorf("explanation = %q; want the canned no-catalyst line", exp.Text)
+	}
+}
+
+// TestService_ExplainEnglishMaterialAndCanned proves lang is threaded end-to-end:
+// the Material handed to the enricher is English, and when the LLM errors the
+// service degrades to the ENGLISH canned line (the en-mode regression).
+func TestService_ExplainEnglishMaterialAndCanned(t *testing.T) {
+	st := &fakeStore{
+		quote: quoteAt(110, 100),
+		news:  []store.News{{Headline: "Apple beats estimates", URL: "u", Published: asOf.Add(-time.Hour)}},
+	}
+	enr := &fakeEnricher{enabled: true, err: errors.New("llm down")}
+	svc := NewService(st, nil, enr, "deepseek-chat")
+
+	exp := svc.Explain(context.Background(), "AAPL", "en")
+	if !strings.Contains(enr.gotMat, "up 10.0% today") {
+		t.Errorf("enricher saw material %q; want English material for lang=en", enr.gotMat)
+	}
+	if exp.LLM {
+		t.Error("llm = true; want false when the LLM call errored")
+	}
+	if !strings.Contains(exp.Text, "up 10.0% today") || strings.ContainsAny(exp.Text, "今涨跌") {
+		t.Errorf("explanation = %q; want the English canned line on LLM error (no Chinese)", exp.Text)
 	}
 }
 
