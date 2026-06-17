@@ -47,9 +47,12 @@ type Quote struct {
 
 // IndexQuote is a major-market-index level (e.g. the S&P 500 itself, not an
 // ETF proxy) for the homepage indices strip. PrevClose is the prior session's
-// close, for the day-change %. Zero → unknown.
+// close, for the day-change %. Zero → unknown. (The backend index-level source
+// was removed; /v1/indices returns empty and the frontend strip falls back to
+// keyless Alpaca ETF proxies, so this type currently only shapes the empty
+// response envelope — kept for when a licensed index feed is added.)
 type IndexQuote struct {
-	Symbol    string    `json:"symbol"` // Yahoo-style, e.g. ^GSPC
+	Symbol    string    `json:"symbol"` // index symbol, e.g. ^GSPC
 	Name      string    `json:"name,omitempty"`
 	Price     float64   `json:"price"`
 	PrevClose float64   `json:"prev_close,omitempty"`

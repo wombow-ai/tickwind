@@ -64,7 +64,6 @@ import (
 	"github.com/wombow-ai/tickwind/internal/treasury"
 	"github.com/wombow-ai/tickwind/internal/twse"
 	"github.com/wombow-ai/tickwind/internal/universe"
-	"github.com/wombow-ai/tickwind/internal/yahoo"
 )
 
 // maxIngestTickers caps how many distinct tickers we ingest, to control cost as
@@ -101,8 +100,12 @@ func usSymbols(tickers []string) []string {
 var taiwanSeed = []string{"2330.TW", "2317.TW", "2454.TW", "2308.TW", "2412.TW", "2303.TW"}
 
 // hongKongSeed is the HK names the owner follows — Tencent, Zhipu / Z.ai (listed
-// as "Knowledge Atlas") and MiniMax — always ingested via the owner-authorized
-// (gray, delayed) Yahoo quote adapter. Values are Yahoo 4-digit .HK codes.
+// as "Knowledge Atlas") and MiniMax — kept so their stock pages have a Security
+// (name + market) and on-demand collection works. HK exchange quotes are
+// vendor-licence-gated and the previous (gray) Yahoo delayed-quote source was
+// removed, so these names currently have NO price feed and the quote endpoint
+// returns empty (the frontend shows "—"); the owner accepts this until a
+// licensed HK feed is added. Values are 4-digit .HK codes.
 var hongKongSeed = []string{
 	"0700.HK", "2513.HK", "0100.HK", // Tencent, Zhipu/Z.ai, MiniMax (owner's original set)
 	// Popular HK-listed China-tech / U.S.-dual-listed names Chinese investors follow.
@@ -119,6 +122,24 @@ var koreaSeed = []string{"005930.KS", "000660.KS"}
 // Brazil market is enabled (BRAPI_API_KEY set) so their pages have data
 // immediately. Tickwind canonical form carries the ".SA" venue suffix.
 var brazilSeed = []string{"PETR4.SA", "VALE3.SA", "ITUB4.SA", "BBDC4.SA", "ABEV3.SA", "B3SA3.SA"}
+
+// seedHongKongSecurities upserts the curated HK names (from the symbols seed) as
+// Securities so their stock pages render the company name + market even though
+// HK has no price feed (the gray Yahoo delayed-quote source was removed — quotes
+// return empty and the frontend shows "—"). It writes identity only, never a
+// price, so it's redistribution-safe and fabricates nothing. Best-effort: a
+// write failure is logged, not fatal; UpsertSecurity is idempotent.
+func seedHongKongSecurities(ctx context.Context, st store.Store, log *slog.Logger) {
+	for _, sym := range symbols.ForeignSeeds() {
+		if market.Of(sym.Ticker) != market.HK || sym.Name == "" {
+			continue
+		}
+		sec := store.Security{Ticker: sym.Ticker, Name: sym.Name, Market: string(market.HK)}
+		if err := st.UpsertSecurity(ctx, sec); err != nil {
+			log.Warn("hk security seed failed", "ticker", sym.Ticker, "err", err)
+		}
+	}
+}
 
 func main() {
 	log := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
@@ -195,9 +216,11 @@ func main() {
 		for _, t := range taiwanSeed { // always-on TW large-caps
 			add(t)
 		}
-		for _, t := range hongKongSeed { // always-on HK names (Yahoo delayed quotes)
-			add(t)
-		}
+		// HK names are intentionally NOT added to the per-cycle ingest set: they
+		// have no price/filings/news source (the gray Yahoo adapter was removed and
+		// HKEXnews isn't wired), so ingesting them would only hit the US EDGAR path
+		// and fail. Their Securities (name + market) are seeded once at startup
+		// below, so their pages still render with a "—" price.
 		for _, t := range koreaSeedActive { // KR large-caps when Korea is enabled
 			add(t)
 		}
@@ -235,7 +258,10 @@ func main() {
 	// below when Alpaca is enabled.
 	marketAdapters := map[market.Market]ingest.MarketAdapter{
 		market.TW: ingest.NewTWAdapter(twse.New(), tpex.New()),
-		market.HK: ingest.NewHKAdapter(yahoo.New()), // gray, owner-authorized Yahoo delayed quotes
+		// HK has NO price adapter: HK exchange quotes are vendor-licence-gated and
+		// the gray Yahoo delayed-quote source was removed. The HK names the owner
+		// follows are seeded as Securities below (name + market, so their pages
+		// render) and their quotes return empty (the frontend shows "—").
 	}
 	// Korea is opt-in via a free KRX key (DART key adds filings); when set, the
 	// KR adapter + seed activate and KOSPI/KOSDAQ go live with no further change.
@@ -256,7 +282,12 @@ func main() {
 	scheduler.SetAdapters(marketAdapters)
 	go scheduler.Run(ctx)
 	log.Info("taiwan market enabled (TWSE + TPEx EOD)", "seed", len(taiwanSeed))
-	log.Info("hong kong market enabled (Yahoo delayed quotes — gray source)", "seed", len(hongKongSeed))
+	// Seed the HK Securities (name + market) once so their stock pages render the
+	// company name. HK has no price feed anymore (the gray Yahoo source was
+	// removed), so quotes stay empty (the frontend shows "—"); this only persists
+	// the identity, never a price. Best-effort + idempotent (UpsertSecurity).
+	seedHongKongSecurities(ctx, st, log)
+	log.Info("hong kong names seeded (no price feed — quotes show \"—\")", "seed", len(hongKongSeed))
 
 	// Guru-watch rail: curated finance-KOL newsletters (public RSS) → the tickers
 	// they mention. Needs no API key, so it always runs (independent of prices).
@@ -331,11 +362,11 @@ func main() {
 	// filings (public domain, keyless). Same unconditional, off-request-path pattern.
 	go ingest.NewInstitutionalIngestor(sec.New(cfg.EDGARUserAgent), institutionalCache, cfg.InstitutionalSweepEvery, log).Run(ctx)
 
-	// Homepage indices strip: real index levels (^GSPC/^DJI/^IXIC) via Yahoo —
-	// Alpaca has no index symbols and Finnhub paywalls them. 60s keeps the strip
-	// near-real-time at 3 req/min, far under Yahoo's tolerance.
-	indicesCache := ingest.NewIndicesCache(yahoo.New(), time.Minute, log)
-	go indicesCache.Run(ctx)
+	// Homepage indices strip: the backend index-level source (^GSPC/^DJI/^IXIC via
+	// the gray Yahoo chart endpoint) was removed. /v1/indices now returns empty and
+	// the frontend IndicesStrip self-falls-back to keyless Alpaca ETF proxies
+	// (SPY/DIA/QQQ) — so the strip still shows S&P/Dow/Nasdaq, attributed as ETF
+	// proxies. No backend index source is wired (nil passed to api.New below).
 
 	// Squeeze radar: FINRA consolidated short interest (anonymous public API).
 	// Published twice a month with a ~10-day lag, so daily sweeps are plenty.
@@ -399,10 +430,11 @@ func main() {
 
 	// Fear & Greed sentiment index: a daily reading from a handful of optional
 	// market-mood inputs (sentiment.Compute re-weights whatever is present). Wired
-	// inputs: VIX (Yahoo ^VIX), the SPY put/call proxy (Cboe), the FINRA daily
-	// short-pressure average, market breadth (advancers/decliners over the universe
-	// price cache) and social heat (the trending hot-list). New-highs/new-lows is
-	// deferred — the universe cache has no 52-week range. Keyless. Backs /v1/sentiment.
+	// inputs: the SPY put/call proxy (Cboe), the FINRA daily short-pressure average,
+	// market breadth (advancers/decliners over the universe price cache) and social
+	// heat (the trending hot-list). VIX (no keyless feed since the gray Yahoo source
+	// was removed) and New-highs/new-lows (the universe cache has no 52-week range)
+	// are deferred. Keyless. Backs /v1/sentiment.
 	sentimentCache := sentiment.NewCache()
 	// Backfill the in-memory history from the durable Market store so the chart
 	// shows the accumulated series immediately after a redeploy (the cache itself
@@ -422,7 +454,10 @@ func main() {
 	// refresh races the universe cache warming (cold → breadth dropped for the whole
 	// day). Hourly keeps the reading fresh and lets breadth appear within ~1h of a
 	// deploy; same-day history points collapse so this adds no extra daily points.
-	sentimentIngestor := ingest.NewSentimentIngestor(yahoo.New(), cboe.New(), shortVolumeCache, sentimentCache, st, time.Hour, log)
+	// VIX (volatility component) has no keyless redistribution-safe feed since the
+	// gray Yahoo ^VIX source was removed, so a nil quoter is passed; sentiment.Compute
+	// re-weights the index around the missing component (put/call + short + breadth + heat).
+	sentimentIngestor := ingest.NewSentimentIngestor(nil, cboe.New(), shortVolumeCache, sentimentCache, st, time.Hour, log)
 	// Server-driven extra components, computed from caches the app already maintains
 	// (never fetched on the fly): breadth from the universe price cache, social heat
 	// from the trending hot-list store. Both are nil-safe — an unswept cache / empty
@@ -430,7 +465,7 @@ func main() {
 	sentimentIngestor.SetBreadthSource(ingest.NewUniverseBreadth(universeCache))
 	sentimentIngestor.SetHeatSource(ingest.NewHotListHeat(st))
 	go sentimentIngestor.Run(ctx)
-	log.Info("sentiment index ingestor enabled (VIX + put/call + short pressure + breadth + heat)")
+	log.Info("sentiment index ingestor enabled (put/call + short pressure + breadth + heat; VIX feed removed)")
 
 	// Options overview (squeeze/sentiment): Cboe ~15-min delayed chains, fetched
 	// on demand and cached 15 min per ticker. Keyless public CDN.
@@ -447,7 +482,10 @@ func main() {
 	// already in memory. Off (404) when no LLM key is configured.
 	var briefingSrc api.BriefingSource
 	if enricher.Enabled() {
-		briefingCache := ingest.NewBriefingCache(enricher, indicesCache, universeCache, st, congressCache, institutionalCache, log)
+		// Indices source removed (gray Yahoo); the briefing omits the indices line
+		// and requires another section to render (its "indices alone aren't a
+		// briefing" guard already handles a nil/empty indices source).
+		briefingCache := ingest.NewBriefingCache(enricher, nil, universeCache, st, congressCache, institutionalCache, log)
 		go briefingCache.Run(ctx)
 		briefingSrc = briefingCache
 		log.Info("morning briefing enabled (daily, ET >= 07:00)")
@@ -470,19 +508,14 @@ func main() {
 	var liveSub api.LiveSubscriber // real-time WS streamer (nil when disabled)
 	if cfg.AlpacaKeyID != "" && cfg.AlpacaSecret != "" {
 		priceClient := alpaca.New(cfg.AlpacaKeyID, cfg.AlpacaSecret, cfg.AlpacaDataURL, cfg.AlpacaFeed)
-		// Pre/post-aware freshness fallback for thin names: when the free IEX
-		// trade is stale (sparse after hours), overlay Yahoo's includePrePost
-		// minute series — which carries the real extended-hours print that
-		// Finnhub's free /quote (frozen at the 16:00 ET close) and sparse IEX
-		// both miss. Keyless; owner-authorized gray source, free display only,
-		// labeled + delayed (replace with a licensed feed before any paid tier).
-		// Shared by the on-demand BarCache and the breadth poller.
-		quoteFB := yahoo.Consolidated{Client: yahoo.New()}
+		// US prices come from Alpaca (snapshot/IEX) plus BarCache's daily-candle
+		// fallback (source="daily") for names with no live IEX print. The former
+		// Yahoo consolidated extended-hours overlay was removed; the extended-hours
+		// prev_close anchor still works off the Alpaca daily-bar regular close.
 		poller := ingest.NewPricePoller(st, priceClient, ingestTickers, cfg.PricePollEvery, hub.Publish, log)
-		poller.SetAdapters(marketAdapters)      // route .TW/.TWO to the TWSE/TPEx adapter
-		poller.SetConsolidatedFallback(quoteFB) // thin watchlisted names get real pre/post prices too
+		poller.SetAdapters(marketAdapters) // route .TW/.TWO to the TWSE/TPEx adapter
 		go poller.Run(ctx)
-		bars = ingest.NewBarCache(priceClient, 30, time.Hour, quoteFB)
+		bars = ingest.NewBarCache(priceClient, 30, time.Hour)
 		log.Info("price polling enabled", "every", cfg.PricePollEvery.String(), "feed", cfg.AlpacaFeed)
 
 		// Real-time WS stream (free IEX): sub-second live prices for the hot/
@@ -511,7 +544,7 @@ func main() {
 		log.Warn("ALPACA_API_KEY/SECRET not set — price polling + opportunity board disabled")
 	}
 
-	apiServer := api.New(st, hub, enricher, verifier, bars, topicCache, oppCache, universeCache, guruCache, scheduler, symbolCache, eventsCache, fundCache, st, congressCache, institutionalCache, liveSub, indicesCache, shortCache, briefingSrc, optionsCache, thirteenFCache, cfg.AdminUserIDs, log)
+	apiServer := api.New(st, hub, enricher, verifier, bars, topicCache, oppCache, universeCache, guruCache, scheduler, symbolCache, eventsCache, fundCache, st, congressCache, institutionalCache, liveSub, nil, shortCache, briefingSrc, optionsCache, thirteenFCache, cfg.AdminUserIDs, log)
 	// Inject the setter-based sources (keeps api.New's signature stable). nil-safe:
 	// each endpoint serves an empty-but-200 shape until its cache is first filled.
 	apiServer.SetShortVolume(shortVolumeCache)

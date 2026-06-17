@@ -24,8 +24,9 @@ import (
 // up only the sources it currently has and add more over time without changing
 // the weighting logic.
 type Inputs struct {
-	// VIX is the CBOE Volatility Index level (e.g. the Yahoo ^VIX quote). Lower
-	// volatility reads as greed.
+	// VIX is the CBOE Volatility Index level. Lower volatility reads as greed.
+	// (Currently always nil — no keyless redistribution-safe ^VIX feed is wired
+	// since the gray Yahoo source was removed — so Compute re-weights around it.)
 	VIX *float64
 	// PutCallRatio is the equity put/call ratio (e.g. from internal/cboe). A
 	// lower ratio (more calls than puts) reads as greed.

@@ -15,7 +15,9 @@ func ForeignSeeds() []Symbol {
 		{Ticker: "2308.TW", Name: "Delta Electronics", Exchange: "TWSE", Country: "TW"},
 		{Ticker: "2412.TW", Name: "Chunghwa Telecom", Exchange: "TWSE", Country: "TW"},
 		{Ticker: "2303.TW", Name: "United Microelectronics (UMC)", Exchange: "TWSE", Country: "TW"},
-		// Hong Kong (HKEX) — live via the Yahoo delayed-quote adapter.
+		// Hong Kong (HKEX) — searchable + named, but no live price feed (the gray
+		// Yahoo delayed-quote source was removed; quotes show "—" until a licensed
+		// HK feed is added).
 		{Ticker: "0700.HK", Name: "Tencent Holdings", Exchange: "HKEX", Country: "HK"},
 		{Ticker: "2513.HK", Name: "Zhipu AI (Knowledge Atlas / Z.ai)", Exchange: "HKEX", Country: "HK"},
 		{Ticker: "0100.HK", Name: "MiniMax", Exchange: "HKEX", Country: "HK"},

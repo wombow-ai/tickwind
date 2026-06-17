@@ -25,8 +25,8 @@
 //
 // This is public-domain U.S. government data, redistribution-safe. A bare Go
 // User-Agent gets an empty reply from the Treasury host, so the client sends a
-// browser-like User-Agent + Accept headers (mirroring internal/yahoo and the
-// nasdaq/substack clients).
+// browser-like User-Agent + Accept headers (mirroring the nasdaq/substack
+// clients).
 package treasury
 
 import (

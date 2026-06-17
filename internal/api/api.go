@@ -163,7 +163,10 @@ type LiveSubscriber interface {
 }
 
 // IndicesSource serves the latest major-market-index levels for the homepage
-// strip (nil-safe; nil = empty). Satisfied by *ingest.IndicesCache.
+// strip (nil-safe; nil = empty). Currently always nil — the backend index-level
+// source (gray Yahoo) was removed, so /v1/indices returns empty and the frontend
+// strip self-falls-back to keyless Alpaca ETF proxies. The seam is kept for a
+// future licensed index feed.
 type IndicesSource interface {
 	Indices() []store.IndexQuote
 }

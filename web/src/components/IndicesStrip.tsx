@@ -7,10 +7,11 @@ import {useDark} from '@/lib/theme';
 import {cx, tok} from '@/lib/ui';
 import {useQuotes} from '@/lib/useQuotes';
 
-// Real index levels from `GET /v1/indices` (backend refreshes them ~60s via
-// Yahoo). The pre-existing ETF proxies remain ONLY as a fallback for when the
-// endpoint has nothing (deploy lag, upstream outage): the strip then shows the
-// proxy's % change with the ETF attributed honestly, exactly as before.
+// Real index levels from `GET /v1/indices`. The backend index-level source was
+// removed, so the endpoint currently returns empty and the strip falls back to
+// the keyless ETF proxies below (Alpaca SPY/DIA/QQQ): it then shows the proxy's
+// % change with the ETF attributed honestly. The /v1/indices path is kept for
+// when a licensed index feed is wired (real index levels would take precedence).
 const FALLBACK = [
   {symbol: 'SPY', label: 'S&P 500'},
   {symbol: 'DIA', label: 'Dow Jones'},

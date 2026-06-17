@@ -12,16 +12,15 @@ import (
 	"github.com/wombow-ai/tickwind/internal/store"
 	"github.com/wombow-ai/tickwind/internal/store/memory"
 	"github.com/wombow-ai/tickwind/internal/universe"
-	"github.com/wombow-ai/tickwind/internal/yahoo"
 )
 
 type fakeVIX struct {
-	q   yahoo.Quote
+	q   VIXQuote
 	ok  bool
 	err error
 }
 
-func (f fakeVIX) Quote(_ context.Context, _ string) (yahoo.Quote, bool, error) {
+func (f fakeVIX) Quote(_ context.Context, _ string) (VIXQuote, bool, error) {
 	return f.q, f.ok, f.err
 }
 
@@ -59,7 +58,7 @@ func (f fakeHeat) Heat() (float64, bool) { return f.v, f.ok }
 
 func TestSentimentGatherAllComponents(t *testing.T) {
 	ing := NewSentimentIngestor(
-		fakeVIX{q: yahoo.Quote{Price: 18.0}, ok: true},
+		fakeVIX{q: VIXQuote{Price: 18.0}, ok: true},
 		fakeChainSource{ok: true, chain: cboe.Chain{Contracts: []cboe.Contract{
 			{Type: "P", Volume: 800},
 			{Type: "C", Volume: 1000},
@@ -105,7 +104,7 @@ func TestSentimentGatherAllComponents(t *testing.T) {
 func TestSentimentGatherSkipsAbsentBreadthHeat(t *testing.T) {
 	// No breadth/heat sources wired at all → both inputs nil.
 	ing := NewSentimentIngestor(
-		fakeVIX{q: yahoo.Quote{Price: 20.0}, ok: true}, nil, nil,
+		fakeVIX{q: VIXQuote{Price: 20.0}, ok: true}, nil, nil,
 		sentiment.NewCache(), nil, time.Hour, nil)
 	in := ing.gather(context.Background())
 	if in.Advancers != nil || in.Decliners != nil || in.Heat != nil {
@@ -151,7 +150,7 @@ func TestSentimentComputeStoresDailyPoint(t *testing.T) {
 	cache := sentiment.NewCache()
 	st := memory.New()
 	ing := NewSentimentIngestor(
-		fakeVIX{q: yahoo.Quote{Price: 15.0}, ok: true}, nil, nil,
+		fakeVIX{q: VIXQuote{Price: 15.0}, ok: true}, nil, nil,
 		cache, st, time.Hour, nil)
 	ing.now = func() time.Time { return time.Date(2026, 6, 12, 12, 0, 0, 0, time.UTC) }
 

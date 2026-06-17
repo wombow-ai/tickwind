@@ -38,7 +38,7 @@ func TestLatestQuote_DailyCandleFallback(t *testing.T) {
 	defer srv.Close()
 
 	client := alpaca.New("k", "s", srv.URL, "iex")
-	bc := NewBarCache(client, 30, time.Minute, nil /* no consolidated fallback */)
+	bc := NewBarCache(client, 30, time.Minute)
 
 	q, ok, err := bc.LatestQuote(context.Background(), "SPCX")
 	if err != nil {
@@ -82,7 +82,7 @@ func TestLatestQuote_NoCandlesStaysEmpty(t *testing.T) {
 	defer srv.Close()
 
 	client := alpaca.New("k", "s", srv.URL, "iex")
-	bc := NewBarCache(client, 30, time.Minute, nil)
+	bc := NewBarCache(client, 30, time.Minute)
 
 	if _, ok, err := bc.LatestQuote(context.Background(), "NADA"); err != nil || ok {
 		t.Fatalf("LatestQuote ok=%v err=%v; want ok=false, nil err (no real price → stay empty, never fabricate)", ok, err)

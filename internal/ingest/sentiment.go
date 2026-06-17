@@ -11,11 +11,13 @@ import (
 	"github.com/wombow-ai/tickwind/internal/sentiment"
 	"github.com/wombow-ai/tickwind/internal/store"
 	"github.com/wombow-ai/tickwind/internal/universe"
-	"github.com/wombow-ai/tickwind/internal/yahoo"
 )
 
-// vixSymbol is the CBOE Volatility Index quoted via Yahoo's chart endpoint (the
-// same owner-authorized gray source as the homepage indices strip).
+// vixSymbol is the symbol passed to a wired VIX quoter (the CBOE Volatility
+// Index). No keyless redistribution-safe VIX feed is currently wired, so the
+// VIXQuoter is nil and the Fear & Greed index re-weights around the missing
+// component (see NewSentimentIngestor); the constant is kept for when a licensed
+// feed is added.
 const vixSymbol = "^VIX"
 
 // putCallProxyTicker is the broad-market option chain used as the equity
@@ -29,10 +31,19 @@ const putCallProxyTicker = "SPY"
 // component, so thin-name noise doesn't skew the market-wide mean.
 const sentimentMinShortVolume = 1_000_000
 
-// VIXQuoter fetches a single Yahoo quote (used for ^VIX). Implemented by
-// *yahoo.Client.
+// VIXQuote is the minimal shape a VIX quoter returns — only the level is read
+// for the volatility component.
+type VIXQuote struct {
+	Price float64
+}
+
+// VIXQuoter fetches a single quote (used for ^VIX, the volatility component of
+// the Fear & Greed index). No keyless redistribution-safe source is currently
+// wired, so the ingestor is constructed with a nil quoter and the index
+// re-weights around the missing component; the seam is kept for a future
+// licensed feed.
 type VIXQuoter interface {
-	Quote(ctx context.Context, symbol string) (yahoo.Quote, bool, error)
+	Quote(ctx context.Context, symbol string) (VIXQuote, bool, error)
 }
 
 // OptionChainSource fetches a delayed option chain for a ticker (used for the
@@ -82,11 +93,12 @@ type HeatSource interface {
 // Components are best-effort and independent: a source that's nil or fails is
 // simply omitted, and sentiment.Compute re-weights the remaining components
 // (equal-weighted), so the index degrades gracefully as inputs come and go. The
-// wiring uses VIX (Yahoo ^VIX), the SPY put/call proxy (Cboe), the FINRA daily
-// short-pressure average, market breadth (advancers/decliners over the universe
-// price cache) and social heat (the trending hot-list). New-highs/new-lows is
-// still TODO — the universe cache holds only price + day-change, no 52-week range,
-// so that momentum component is deferred until a whole-market high/low feed exists.
+// wiring uses the SPY put/call proxy (Cboe), the FINRA daily short-pressure
+// average, market breadth (advancers/decliners over the universe price cache)
+// and social heat (the trending hot-list). VIX is wired as a nil quoter (no
+// keyless redistribution-safe feed) and New-highs/new-lows is still TODO — the
+// universe cache holds only price + day-change, no 52-week range — so both
+// components are deferred until a feed exists; the index re-weights around them.
 type SentimentIngestor struct {
 	vix      VIXQuoter
 	options  OptionChainSource
