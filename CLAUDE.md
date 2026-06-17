@@ -428,7 +428,7 @@ feature-flagged plugin, never on the critical path. Web only.
   user's link previews on X/Telegram/Slack/微信 + the "save image" card were fully Chinese; with no `lang` the
   chrome badge also defaulted to "中文美股数据台". **Fix (`<this commit>`):** per-locale `lang: loc` + zh/en
   branch on the 4 section pages (matching the established home/topic/fund/indicators/congress pattern; commit
-  `609a241`), and the root default flipped to **English** (it sits above `[locale]`, the langAlternates x-default — per
+  `d7d83e8`), and the root default flipped to **English** (it sits above `[locale]`, the langAlternates x-default — per
   the owner's "single-value defaults to English" principle). A grep of ALL 15 `ogImageMeta` call sites confirms
   the other 10 were already locale-correct — no misses, the audit was complete for this class. Web build green
   (1024 static pages, TS clean). The browser-tab `<title>` on these pages was already EN (LocalizedTitle) — only
