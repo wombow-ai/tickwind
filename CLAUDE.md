@@ -371,10 +371,10 @@ feature-flagged plugin, never on the critical path. Web only.
 - **Shipped 2026-06-17 (owner decided: remove Yahoo now; investigated a slowdown):** **B — Yahoo removed**
   (`782163d`, LIVE-verified: `/v1/indices` now empty → frontend uses the keyless Alpaca ETF proxies
   SPY/DIA/QQQ; US prices intact via Alpaca + the daily-candle fallback; HK 0700/2513/0100 + Hang Seng
-  drop; F&G re-weights around the removed VIX). A follow-up guard (`bcfb6f8`, **pushed; deploy pending —
-  SSH throttled this stretch**) makes `getQuote` drop a lingering `source="yahoo"` stored quote (HK was
-  still serving a stale Yahoo price post-removal) → HK falls to "—", US re-resolves to Alpaca; it'll
-  land on the next deploy. **Slowdown (owner: site was slow/stuck ~6-7h ago) — diagnosed, NOT a fix yet:**
+  drop; F&G re-weights around the removed VIX). A follow-up guard (`bcfb6f8`, **LIVE-verified 2026-06-17**)
+  makes `getQuote` drop a lingering `source="yahoo"` stored quote (HK was still serving a stale Yahoo
+  price post-removal) → HK falls to "—" (`0700.HK` now 404s "no quote yet"), US re-resolves to Alpaca
+  (AAPL source=alpaca $298.21). **Slowdown (owner: site was slow/stuck ~6-7h ago) — diagnosed, NOT a fix yet:**
   root cause = **LLM (DeepSeek V3 / OpenRouter) ~12s upstream latency** in that window → the AI page
   endpoints `/summary` + `/movement` (+ `/research`) each took ~11.9s while the data endpoints stayed
   <1s; the box was healthy (load ~0, no OOM, no restart, normal ~3000 req/hr volume = NOT a bot surge,
@@ -385,6 +385,37 @@ feature-flagged plugin, never on the critical path. Web only.
   throttled sshd (repeated 255 ack-drops); deploys still LAND despite the dropped ack (nohup sub-second),
   but back off + space attempts, and use a VPS-background-to-file + cat poll for heavy log scans (inline
   long scans drop the link).
+- **Shipped + LIVE-verified 2026-06-17 (cont. — owner's 3 UI/i18n requirements + the Yahoo-quote guard):**
+  **Req1 — flattened the stock-page tabs** (`331d5d4`, web): removed the "Details" wrapper sub-tab and
+  promoted/consolidated its children so the top-level tabs are now **Overview / Research / Filings & Money /
+  News & Discussion / My** (auth-gated) — same-category panels merged into one tab each. All panels stay
+  mounted via `hidden` (not unmount) so every `scroll-mt-20` anchor stays in the DOM; the `ANCHOR_TAB` map
+  (#short/#material-events/#insider-activity/#congress/#whales/#options→'Money', etc.) + a mount/hashchange
+  effect auto-switch to the owning tab then scroll, so research-citation deep-links still resolve across tabs.
+  New i18n keys stock.tabResearch/tabMoney/tabNews/tabMy. **Req2 — Deep Research "Export PDF"** (`331d5d4`,
+  web): a dependency-free `ExportPdfButton` toggles a `tw-print-research` body class + `window.print()`
+  (cleans up on `afterprint`); a scoped `@media print { body.tw-print-research … }` block in `globals.css`
+  prints just the report. Image export **skipped** (would need a heavy html-to-canvas dep, out of proportion
+  to the ask — owner said "简单的话可以做,不简单就算了"). **Req3 — Chinese-leaking-into-EN swept** (`b7727bf`,
+  Go): owner flagged "Short Trend = 上升 / rising" + "Market Fear & Greed = 56 (贪婪)" under an `en` report;
+  root cause = several Go-owned fact VALUES were hardcoded Chinese regardless of lang. Added a
+  `pickLang(lang,en,zh)` helper (`internal/research/format.go`) and made them language-aware: flows
+  `shortTrend` (上升/下降/横盘→rising/falling/flat), `tradeTypeLabel` (congress buy/sell), `changeTagLabel`
+  (13F new/add/trim/exit), sentiment F&G label (`pickLang(lang,res.Label,res.LabelZh)` → "42 (Fear)" not
+  "贪婪") + the social-mentions prior-value note, the loss-maker P/E "亏损"→"loss", the 3 source consts
+  (srcCongress/srcThirteenF/srcInsiderSEC de-Chinesed → "House/Senate PTR"/"SEC 13F"/"SEC Form 4"), and the
+  **disclaimers** in research + movement + materialevents (each `const Disclaimer`→`DisclaimerZH/EN` + a
+  `disclaimerFor(lang)`/`pickLang`). Anti-hallucination contract intact (Go still owns every number; only
+  label STRINGS became lang-aware); tests referencing the renamed const fixed; combined `go build/vet/gofmt/
+  test ./cmd/... ./internal/...` green + web `tsc` clean. **+ Yahoo-quote guard now LIVE** (`bcfb6f8`, rode
+  this Go deploy). **C (CF edge) configured by the owner:** Cloudflare rate-limit = **50 req / IP / 10s**
+  (= 300/min, the only granularity the dashboard offers — matches the app-layer 300-rpm limiter). **LIVE-
+  verified** (DEPLOY_DONE 16:10:03Z): `/v1/stocks/AAPL/research?lang=en` → 200, disclaimer "AI-generated ·
+  figures from public data · not investment advice", **zero CJK in any fact value**, F&G "42 (Fear)"; guard
+  → `0700.HK` 404 "no quote yet" (HK "—") while AAPL $298.21 source=alpaca; healthz ok; `/en/stock/AAPL` 200
+  (flattened tabs + Export-PDF — the visual layout is owner-visual). **Still queued (awaiting owner's explicit
+  "做"): make `/summary` + `/movement` async** (instant data-only + bg prose + poll, reusing the deep-research
+  pattern) — the proposed root-cause fix for the LLM-latency page slowdown the owner reported.
 - **Shipped 2026-06-14 (owner batch + greenlit follow-ups, all live-verified):** R2 now has all **6
   sections** (估值/基本面/技术面/资金面/情绪面/概览) + a **two-sided 看多/看空 (bull/bear)** reading on the
   overview (one ComposeReport call gains `bull`/`bear` keys; a deterministic Go advice-guard strips any
