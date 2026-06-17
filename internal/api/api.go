@@ -1514,6 +1514,12 @@ func (s *Server) getQuote(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, errBody(err.Error()))
 		return
 	}
+	// Yahoo was removed (commercial-use risk): never serve a lingering Yahoo-sourced
+	// quote from the store. Treat it as absent so the on-demand path below re-resolves
+	// a US ticker to a fresh Alpaca quote; an HK name (no Alpaca data) falls to "—".
+	if ok && q.Source == "yahoo" {
+		ok = false
+	}
 	// Refresh on demand when the store has nothing (a stock the user just
 	// navigated to) OR when the stored quote's last trade is stale — thin names
 	// can sit unrefreshed; BarCache also overlays a consolidated-tape fallback
