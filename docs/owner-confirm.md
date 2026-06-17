@@ -11,6 +11,7 @@
 - **待 owner 点头的开发计划(顺序 A→D→C→B)**:**A** 深度研报升级(LLM_DEEP_MODEL=付费R1 + 配额日→月 + 异步生成+前端轮询);**D** 个股页分 Tab(概览/详情,owner"在考虑");**C** 反爬(app层限流已上线 c7eae11;荐 owner 开 CF 边缘 Rate-Limiting + Bot Fight);**B** Yahoo 移除(待 #1 港股取舍)。
 - **已修(owner 报的4问题,本批,LIVE 验证)**:新IPO价兜底、movement 中英、Material/Insider 下移、per-IP 限流。rate-cut 移出首页。
 - **✅进度 (2026-06-16,owner GO 后)**:**A 完成 LIVE 验证**(async 秒返+轮询、月度配额 1/user/month、R1 已设、无回归);**D 完成 LIVE**(个股页 Overview/Details 分 Tab,citation 跨 tab 可跳);**"Possibly related" 中英修 LIVE**;**C app 层限流✅上线验证**(throttle bot)。**仍待 owner**:**C** CF 面板边缘规则(WAF Rate-Limiting >300rpm/IP on /v1/* + Bot Fight Mode——你的 ~5min 动作);**B** Yahoo 移除的港股取舍(现移除港股下线 / 留到 paywall 前[荐])。paywall 推迟到用户起量。
+- **✅进度 (2026-06-17,owner 回来后)**:**B 已做(owner 选"现移除")**——Yahoo 移除核心 LIVE(782163d:指数→Alpaca ETF 代理 SPY/DIA/QQQ、US 价正常、HK 0700/2513/0100+恒生下线、F&G 重加权);残留 quote-guard(bcfb6f8 已 push,部署待下次——这阵 SSH 被自己的频繁部署 throttle 了)使 HK 不再显示残留 Yahoo 旧价(→"—")。**慢/卡诊断完成**:根因=LLM(V3/OpenRouter)那时~12s 上游延迟→AI 接口(/summary、/movement、/research)各~12s 卡,服务器本身健康(非爬虫/非 OOM)。**荐修=把 /summary+/movement 异步化(同深度研报 A)**,等你「做」。**C**:你自己配 CF 面板边缘规则中。
 
 ---
 

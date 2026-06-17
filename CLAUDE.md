@@ -368,6 +368,23 @@ feature-flagged plugin, never on the critical path. Web only.
   /en|/zh/stock/AAPL 200. **Plan status (owner GO 2026-06-16): A✅ D✅ done+verified; C = app-layer
   per-IP rate limiter ✅ live + CF-dashboard edge rules are the owner's action; B (Yahoo removal)
   awaits the owner's HK-quotes decision (Claude rec: keep Yahoo+HK until near the deferred paywall).**
+- **Shipped 2026-06-17 (owner decided: remove Yahoo now; investigated a slowdown):** **B — Yahoo removed**
+  (`782163d`, LIVE-verified: `/v1/indices` now empty → frontend uses the keyless Alpaca ETF proxies
+  SPY/DIA/QQQ; US prices intact via Alpaca + the daily-candle fallback; HK 0700/2513/0100 + Hang Seng
+  drop; F&G re-weights around the removed VIX). A follow-up guard (`bcfb6f8`, **pushed; deploy pending —
+  SSH throttled this stretch**) makes `getQuote` drop a lingering `source="yahoo"` stored quote (HK was
+  still serving a stale Yahoo price post-removal) → HK falls to "—", US re-resolves to Alpaca; it'll
+  land on the next deploy. **Slowdown (owner: site was slow/stuck ~6-7h ago) — diagnosed, NOT a fix yet:**
+  root cause = **LLM (DeepSeek V3 / OpenRouter) ~12s upstream latency** in that window → the AI page
+  endpoints `/summary` + `/movement` (+ `/research`) each took ~11.9s while the data endpoints stayed
+  <1s; the box was healthy (load ~0, no OOM, no restart, normal ~3000 req/hr volume = NOT a bot surge,
+  zero rate-limit hits in-window; `/v1/stream` SSE durations are normal long-lived connections). Proposed
+  fix (awaiting owner GO): make `/summary` + `/movement` async like the deep research (instant data-only
+  + bg prose + poll) so the page never blocks on the LLM. **C — owner is configuring the CF edge rules
+  (WAF rate-limit /v1/* + Bot Fight Mode) themselves.** ⚠️SSH note: this stretch's rapid deploys/diagnostics
+  throttled sshd (repeated 255 ack-drops); deploys still LAND despite the dropped ack (nohup sub-second),
+  but back off + space attempts, and use a VPS-background-to-file + cat poll for heavy log scans (inline
+  long scans drop the link).
 - **Shipped 2026-06-14 (owner batch + greenlit follow-ups, all live-verified):** R2 now has all **6
   sections** (估值/基本面/技术面/资金面/情绪面/概览) + a **two-sided 看多/看空 (bull/bear)** reading on the
   overview (one ComposeReport call gains `bull`/`bear` keys; a deterministic Go advice-guard strips any
