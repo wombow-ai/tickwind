@@ -82,46 +82,41 @@ function guessMarket(ticker: string): string {
   return 'US';
 }
 
-const TABS_ANON = ['Research', 'News', 'Discussion', 'Comments', 'Filings'] as const;
-const TABS_AUTH = ['Research', 'News', 'Discussion', 'Comments', 'Notes', 'Alerts', 'Holdings', 'Saved links', 'Filings'] as const;
-// Tab keys stay English (they're the state values); only the display is translated.
-const TAB_LABELS: Record<string, string> = {
-  Research: 'research.tab',
-  News: 'mod.news',
-  Discussion: 'mod.discussion',
-  Comments: 'comments.tab',
-  Notes: 'nav.notes',
-  Alerts: 'alerts.title',
-  Holdings: 'holdings.title',
-  'Saved links': 'stock.savedLinks',
-  Filings: 'stock.filings',
-};
-
-// Top-level page tabs. 'Overview' = the essentials (price/core indicators/K-line/
-// digest/signals); 'Details' = the secondary/deep info (smart-money cards, options,
-// earnings/short, plus the per-section feed/community tabs).
-type TopTab = 'Overview' | 'Details';
-const TOP_TABS: readonly TopTab[] = ['Overview', 'Details'];
+// Top-level page tabs (flat — the former "Details" wrapper is gone; its contents
+// are promoted to siblings of Overview and consolidated by category):
+//  • Overview          — the essentials (move-explainer, fundamentals, AI digest,
+//                        K-line, indicators, pulse). UNCHANGED.
+//  • Research          — the AI deep-research report (lazy-mounted on first open).
+//  • Filings & Money   — the SEC-filing / smart-money / options cards (earnings &
+//                        short, material events, insider, congress, whales, options).
+//  • News & Discussion — news articles + social discussion + community comments,
+//                        stacked as light inner sub-sections.
+//  • My (auth only)    — the personal panels (notes, alerts, holdings, saved links),
+//                        stacked. Omitted entirely when signed out.
+type TopTab = 'Overview' | 'Research' | 'Money' | 'News' | 'My';
 const TOP_TAB_LABELS: Record<TopTab, string> = {
   Overview: 'stock.tabOverview',
-  Details: 'stock.tabDetails',
+  Research: 'stock.tabResearch',
+  Money: 'stock.tabMoney',
+  News: 'stock.tabNews',
+  My: 'stock.tabMy',
 };
 
 // Research-report citations deep-link to these `#…` anchors (scroll-mt-20 on the
-// cards). Each anchor that lives in the Details tab is mapped here so a deep-link
+// cards). Each anchor is mapped to the top-level tab that now owns it so a deep-link
 // can auto-switch tabs before scrolling; anchors NOT listed default to Overview.
 const ANCHOR_TAB: Record<string, TopTab> = {
   // Overview anchors
   signals: 'Overview',
   fundamentals: 'Overview',
   indicators: 'Overview',
-  // Details anchors
-  short: 'Details',
-  'material-events': 'Details',
-  'insider-activity': 'Details',
-  congress: 'Details',
-  whales: 'Details',
-  options: 'Details',
+  // Filings & Money anchors (the promoted former-Details cards)
+  short: 'Money',
+  'material-events': 'Money',
+  'insider-activity': 'Money',
+  congress: 'Money',
+  whales: 'Money',
+  options: 'Money',
 };
 
 /** Full per-stock view: live header, add-to-watchlist, and source feeds. */
@@ -155,9 +150,16 @@ export function StockView({ticker}: {ticker: string}) {
   });
   const [clips, setClips] = useState<Feed<Clip>>({status: 'ready', items: []});
 
-  const tabs = isAuthed ? TABS_AUTH : TABS_ANON;
-  const [tab, setTab] = useState<string>('News');
+  // Flat top-level tabs; 'My' only when signed in. Order: Overview · Research ·
+  // Filings & Money · News & Discussion · (My).
+  const topTabs: readonly TopTab[] = isAuthed
+    ? ['Overview', 'Research', 'Money', 'News', 'My']
+    : ['Overview', 'Research', 'Money', 'News'];
   const [topTab, setTopTab] = useState<TopTab>('Overview');
+  // Research stays lazy: mount (and fire its LLM-backed fetch) only once its tab is
+  // first opened, then keep it mounted via `hidden` so deep-links + state survive
+  // cross-tab switches. The hashchange effect sets this when arriving via a hash.
+  const [researchSeen, setResearchSeen] = useState(false);
   const [clipUrl, setClipUrl] = useState('');
   const [inList, setInList] = useState(false);
   const [collecting, setCollecting] = useState(false);
@@ -299,10 +301,15 @@ export function StockView({ticker}: {ticker: string}) {
     };
   }, [isAuthed, norm, getToken]);
 
-  // Reset to a valid tab if auth state hid the active one.
+  // Reset to a valid tab if auth state hid the active one (signing out hides 'My').
   useEffect(() => {
-    if (!tabs.includes(tab as never)) setTab('News');
-  }, [tabs, tab]);
+    if (!topTabs.includes(topTab)) setTopTab('Overview');
+  }, [topTabs, topTab]);
+
+  // Opening the Research tab mounts it (lazy) and keeps it mounted thereafter.
+  useEffect(() => {
+    if (topTab === 'Research') setResearchSeen(true);
+  }, [topTab]);
 
   // Research-citation deep-links resolve across the top-level tabs. A citation
   // links to `#fundamentals`, `#options`, … — if that anchor lives on the Details
@@ -600,21 +607,23 @@ export function StockView({ticker}: {ticker: string}) {
         </div>
       )}
 
-      {/* Top-level page tabs: Overview (the essentials) vs Details (secondary/deep
-          info). The stock header above stays visible on both. Same pill styling +
-          a11y pattern as the per-section tabs below. Anchored research-citation
-          deep-links auto-switch to the owning tab (see the hashchange useEffect). */}
+      {/* Flat top-level page tabs (no "Details" wrapper): Overview · Research ·
+          Filings & Money · News & Discussion · (My, signed-in only). The stock
+          header above stays visible on every tab. Panels are kept mounted via
+          `hidden` (not unmounted) so cross-tab scroll + on-load fetches survive and
+          anchored research-citation deep-links resolve (see the hashchange effect).
+          Scrolls horizontally on narrow screens. */}
       <div className="mb-6">
         <div
           role="tablist"
           aria-label="Stock view"
           className={cx(
-            'inline-flex items-center gap-1 rounded-xl border p-1',
+            'inline-flex items-center gap-1 overflow-x-auto rounded-xl border p-1',
             t.border,
             t.surf2,
           )}
         >
-          {TOP_TABS.map(tb => (
+          {topTabs.map(tb => (
             <button
               key={tb}
               role="tab"
@@ -677,13 +686,22 @@ export function StockView({ticker}: {ticker: string}) {
         </div>
       </div>
 
-      {/* ─────────────────────────── DETAILS TAB ──────────────────────────── */}
-      {/* Secondary / deep info: earnings & short pressure, material events, insider
-          activity, smart-money (congress/whales), options — plus the per-section
-          feed & community tabs (news/discussion/comments/research/notes/…). The
+      {/* ─────────────────────────── RESEARCH TAB ─────────────────────────── */}
+      {/* The AI deep-research report (the public R2 report). Lazy: the heavy
+          LLM-backed fetch fires only after the tab is first opened (`researchSeen`),
+          then stays mounted via `hidden` so its state survives tab switches. */}
+      <div hidden={topTab !== 'Research'}>
+        {researchSeen && <ResearchReport ticker={norm} />}
+      </div>
+
+      {/* ─────────────────────── FILINGS & MONEY TAB ──────────────────────── */}
+      {/* Consolidated SEC-filing / smart-money / options cards (the promoted former
+          "Details" cards), stacked: earnings & short pressure, material events,
+          insider activity, congress, whales, options. The
           #short/#material-events/#insider-activity/#congress/#whales/#options anchors
-          live here; a research-citation deep-link auto-switches to this tab. */}
-      <div hidden={topTab !== 'Details'}>
+          live here; a research-citation deep-link auto-switches to this tab. Every
+          card keeps its id + scroll-mt-20 so those deep-links still resolve. */}
+      <div hidden={topTab !== 'Money'}>
         {/* Next-earnings signals group: the upcoming-earnings chip + the FINRA
             short-pressure strips read as one coherent, aligned row (equal-height
             pills, shared gap). Each piece still self-hides when it has no data, so
@@ -731,11 +749,142 @@ export function StockView({ticker}: {ticker: string}) {
           <OptionsCard ticker={norm} />
         </div>
 
-      {/* login gate */}
+        {/* SEC company filings feed (10-K/10-Q/8-K/… newest-first) — formerly the
+            per-section "Filings" tab, now stacked beneath the money cards. */}
+        <div className="mt-2">
+          <SectionLabel label={tr('stock.filings')} dark={dark} t={t} />
+          <FeedList
+            feed={filings}
+            onRetry={loadFilings}
+            empty={{
+              label: tr('stock.noFilings'),
+              sub: tr('stock.noFilingsSub'),
+              icon: FileText,
+            }}
+            render={f => (
+              <TimelineItem key={f.accession_no} entry={{kind: 'filing', item: f}} />
+            )}
+          />
+        </div>
+      </div>
+
+      {/* ───────────────────── NEWS & DISCUSSION TAB ──────────────────────── */}
+      {/* Consolidated public feeds + community, stacked as light inner sub-sections:
+          news articles, social discussion, then the public comments board. */}
+      <div hidden={topTab !== 'News'}>
+        <div className="mb-6">
+          <SectionLabel label={tr('mod.news')} dark={dark} t={t} />
+          <FeedList
+            feed={news}
+            onRetry={loadNews}
+            empty={{
+              label: tr('mod.noNews'),
+              sub: tr('stock.noNewsSub'),
+              icon: Newspaper,
+            }}
+            render={n => <TimelineItem key={n.id} entry={{kind: 'news', item: n}} />}
+          />
+        </div>
+
+        <div className="mb-6">
+          <SectionLabel label={tr('mod.discussion')} dark={dark} t={t} />
+          <FeedList
+            feed={social}
+            onRetry={loadSocial}
+            empty={{
+              label: tr('mod.noChatter'),
+              sub: tr('stock.noChatterSub'),
+              icon: MessageSquare,
+            }}
+            render={p => <TimelineItem key={p.id} entry={{kind: 'disc', item: p}} />}
+          />
+        </div>
+
+        <div>
+          <SectionLabel label={tr('comments.tab')} dark={dark} t={t} />
+          <CommentsPanel ticker={norm} />
+        </div>
+      </div>
+
+      {/* ───────────────────────────── MY TAB ─────────────────────────────── */}
+      {/* Personal panels (auth-gated), stacked: notes, alerts, holdings, saved links.
+          The tab itself is omitted from the row when signed out; this panel stays
+          unmounted for anon (gated below by `isAuthed`). */}
+      {isAuthed && (
+        <div hidden={topTab !== 'My'}>
+          <div className="mb-6">
+            <SectionLabel label={tr('nav.notes')} dark={dark} t={t} />
+            <NotesPanel ticker={norm} />
+          </div>
+
+          <div className="mb-6">
+            <SectionLabel label={tr('alerts.title')} dark={dark} t={t} />
+            <AlertsPanel ticker={norm} />
+          </div>
+
+          <div className="mb-6">
+            <SectionLabel label={tr('holdings.title')} dark={dark} t={t} />
+            <HoldingsPanel ticker={norm} quote={quote} cur={cur} />
+          </div>
+
+          <div>
+            <SectionLabel label={tr('stock.savedLinks')} dark={dark} t={t} />
+            <div className="tw-fade">
+              <form
+                onSubmit={e => {
+                  e.preventDefault();
+                  saveClip();
+                }}
+                className={cx(
+                  'mb-4 flex items-center gap-2 rounded-2xl border p-2',
+                  t.card,
+                  t.border,
+                  t.soft,
+                )}
+              >
+                <Clipboard size={16} className={cx('ml-1.5', t.sub)} />
+                <input
+                  value={clipUrl}
+                  onChange={e => setClipUrl(e.target.value)}
+                  placeholder={tr('stock.clipPlaceholder')}
+                  className={cx(
+                    'flex-1 bg-transparent text-[13.5px] outline-none',
+                    dark
+                      ? 'text-slate-100 placeholder:text-slate-500'
+                      : 'text-slate-900 placeholder:text-slate-400',
+                  )}
+                />
+                <button
+                  type="submit"
+                  className={cx(
+                    'rounded-lg px-3 py-1.5 text-[12.5px] font-semibold',
+                    btnPrimary(dark),
+                  )}
+                >
+                  {tr('stock.save')}
+                </button>
+              </form>
+              <FeedList
+                feed={clips}
+                onRetry={loadClips}
+                empty={{
+                  label: tr('stock.noClips'),
+                  sub: tr('stock.noClipsSub'),
+                  icon: Link2,
+                }}
+                render={c => <TimelineItem key={c.id} entry={{kind: 'clip', item: c}} />}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* login gate — shown to anon below the tabs (the 'My' tab is hidden for them,
+          so this is the nudge to sign in for the personal panels). */}
       {!isAuthed && (
         <div
           className={cx(
-            'mb-6 flex items-center gap-3 rounded-2xl border p-4',
+            'mt-6 flex items-center gap-3 rounded-2xl border p-4',
             t.border,
             dark ? 'bg-teal-500/5' : 'bg-teal-50/70',
           )}
@@ -767,143 +916,16 @@ export function StockView({ticker}: {ticker: string}) {
           </Link>
         </div>
       )}
+    </div>
+  );
+}
 
-      {/* tabs */}
-      <div className="mb-4">
-        <div
-          role="group"
-          aria-label="Stock sections"
-          className={cx(
-            'inline-flex items-center gap-1 overflow-x-auto rounded-xl border p-1',
-            t.border,
-            t.surf2,
-          )}
-        >
-          {tabs.map(tb => (
-            <button
-              key={tb}
-              onClick={() => setTab(tb)}
-              aria-pressed={tab === tb}
-              className={cx(
-                'whitespace-nowrap rounded-lg px-3 py-1.5 text-[13px] font-medium transition',
-                tab === tb
-                  ? dark
-                    ? 'bg-slate-700 text-white'
-                    : 'bg-white text-slate-900 shadow-sm'
-                  : t.sub,
-              )}
-            >
-              {tr(TAB_LABELS[tb] ?? tb)}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <div className="min-h-[280px]">
-        {/* Research is lazy: it mounts (and fires its LLM-backed fetch) only when
-            the tab is opened, so the heavy call never runs on page load. */}
-        {tab === 'Research' && <ResearchReport ticker={norm} />}
-        {tab === 'News' && (
-          <FeedList
-            feed={news}
-            onRetry={loadNews}
-            empty={{
-              label: tr('mod.noNews'),
-              sub: tr('stock.noNewsSub'),
-              icon: Newspaper,
-            }}
-            render={n => (
-              <TimelineItem key={n.id} entry={{kind: 'news', item: n}} />
-            )}
-          />
-        )}
-        {tab === 'Discussion' && (
-          <FeedList
-            feed={social}
-            onRetry={loadSocial}
-            empty={{
-              label: tr('mod.noChatter'),
-              sub: tr('stock.noChatterSub'),
-              icon: MessageSquare,
-            }}
-            render={p => (
-              <TimelineItem key={p.id} entry={{kind: 'disc', item: p}} />
-            )}
-          />
-        )}
-        {tab === 'Filings' && (
-          <FeedList
-            feed={filings}
-            onRetry={loadFilings}
-            empty={{
-              label: tr('stock.noFilings'),
-              sub: tr('stock.noFilingsSub'),
-              icon: FileText,
-            }}
-            render={f => (
-              <TimelineItem
-                key={f.accession_no}
-                entry={{kind: 'filing', item: f}}
-              />
-            )}
-          />
-        )}
-        {tab === 'Comments' && <CommentsPanel ticker={norm} />}
-        {tab === 'Notes' && isAuthed && <NotesPanel ticker={norm} />}
-        {tab === 'Alerts' && isAuthed && <AlertsPanel ticker={norm} />}
-        {tab === 'Holdings' && isAuthed && <HoldingsPanel ticker={norm} quote={quote} cur={cur} />}
-        {tab === 'Saved links' && isAuthed && (
-          <div className="tw-fade">
-            <form
-              onSubmit={e => {
-                e.preventDefault();
-                saveClip();
-              }}
-              className={cx(
-                'mb-4 flex items-center gap-2 rounded-2xl border p-2',
-                t.card,
-                t.border,
-                t.soft,
-              )}
-            >
-              <Clipboard size={16} className={cx('ml-1.5', t.sub)} />
-              <input
-                value={clipUrl}
-                onChange={e => setClipUrl(e.target.value)}
-                placeholder={tr('stock.clipPlaceholder')}
-                className={cx(
-                  'flex-1 bg-transparent text-[13.5px] outline-none',
-                  dark
-                    ? 'text-slate-100 placeholder:text-slate-500'
-                    : 'text-slate-900 placeholder:text-slate-400',
-                )}
-              />
-              <button
-                type="submit"
-                className={cx(
-                  'rounded-lg px-3 py-1.5 text-[12.5px] font-semibold',
-                  btnPrimary(dark),
-                )}
-              >
-                {tr('stock.save')}
-              </button>
-            </form>
-            <FeedList
-              feed={clips}
-              onRetry={loadClips}
-              empty={{
-                label: tr('stock.noClips'),
-                sub: tr('stock.noClipsSub'),
-                icon: Link2,
-              }}
-              render={c => (
-                <TimelineItem key={c.id} entry={{kind: 'clip', item: c}} />
-              )}
-            />
-          </div>
-        )}
-      </div>
-      </div>{/* end Details tab */}
+/** A light section header inside a consolidated top-level tab (stacked sub-sections). */
+function SectionLabel({label, dark, t}: {label: string; dark: boolean; t: ReturnType<typeof tok>}) {
+  return (
+    <div className={cx('mb-3 flex items-center gap-2 text-[11.5px] font-semibold uppercase tracking-wide', t.faint)}>
+      <span>{label}</span>
+      <span className={cx('h-px flex-1', dark ? 'bg-slate-800' : 'bg-slate-200')} />
     </div>
   );
 }

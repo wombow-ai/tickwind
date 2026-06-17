@@ -261,3 +261,32 @@ html:lang(en) [data-i18n="zh"],
 html:lang(zh) [data-i18n="en"] {
   display: none !important;
 }
+
+/* --------------------- Deep Research → PDF (print) -------------------- */
+/* The Deep Research "Export PDF" button calls window.print() after adding
+   `tw-print-research` to <body>. Scope: these rules ONLY apply while that class
+   is set AND only at print time, so normal on-screen rendering is untouched and
+   other routes printed normally are unaffected. We hide the whole page by
+   visibility, then reveal just the research report subtree (`.tw-research-print`)
+   and pin it to the page top — the site chrome (TopNav/Footer), the export button
+   (`.tw-no-print`), and any off-tab content collapse out, and the browser's
+   "Save as PDF" captures the charts/tables natively. */
+@media print {
+  body.tw-print-research * {
+    visibility: hidden;
+  }
+  body.tw-print-research .tw-research-print,
+  body.tw-print-research .tw-research-print * {
+    visibility: visible;
+  }
+  body.tw-print-research .tw-research-print {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+  }
+  /* Belt-and-braces: anything explicitly marked no-print is removed from layout. */
+  body.tw-print-research .tw-no-print {
+    display: none !important;
+  }
+}

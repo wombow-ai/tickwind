@@ -6,6 +6,7 @@ import {
   ExternalLink,
   Loader2,
   Lock,
+  Printer,
   RefreshCw,
   Sparkles,
 } from 'lucide-react';
@@ -340,10 +341,16 @@ export function DeepResearchView({ticker}: {ticker: string}) {
   );
 }
 
-/** The page container (constant max width + the shared header above the body). */
+/**
+ * The page container (constant max width + the shared header above the body).
+ * `tw-research-print` is the print-scope hook: the @media print rules in
+ * globals.css reveal ONLY this subtree (hiding TopNav/Footer/etc.) while the body
+ * carries `tw-print-research`, so the browser's "Save as PDF" captures just the
+ * report. No effect on normal on-screen rendering.
+ */
 function Shell({header, children}: {header: React.ReactNode; children: React.ReactNode}) {
   return (
-    <div className="mx-auto max-w-3xl tw-fade">
+    <div className="tw-research-print mx-auto max-w-3xl tw-fade">
       {header}
       {children}
     </div>
@@ -403,6 +410,11 @@ function DeepHeader({
                 {tr('research.asOf').replace('{d}', report.as_of)}
               </span>
             )}
+            {/* Export to PDF — dependency-free: tag <body>, let the @media print
+                rules (globals.css) show only the report, and the browser's
+                "Save as PDF" produces the file (captures charts/tables natively).
+                `tw-no-print` keeps the button itself out of the export. */}
+            <ExportPdfButton dark={dark} t={t} tr={tr} />
             <ShareCardButton card={shareCard} />
           </div>
         </div>
@@ -414,6 +426,52 @@ function DeepHeader({
         )}
       </div>
     </div>
+  );
+}
+
+/**
+ * The "Export PDF" / "导出 PDF" button. SIMPLE + dependency-free: it tags <body>
+ * with `tw-print-research`, calls window.print(), and removes the tag on
+ * `afterprint`. The @media print rules in globals.css then reveal only the report
+ * subtree (`.tw-research-print`) and hide the chrome + this button (`tw-no-print`),
+ * so the browser's native "Save as PDF" captures the charts/tables cleanly. A true
+ * PNG/image export is deferred (would need html2canvas — heavier; owner: "skip if
+ * not simple").
+ */
+function ExportPdfButton({
+  dark,
+  t,
+  tr,
+}: {
+  dark: boolean;
+  t: Tokens;
+  tr: (key: string) => string;
+}) {
+  const onExport = useCallback(() => {
+    const body = document.body;
+    body.classList.add('tw-print-research');
+    const cleanup = () => {
+      body.classList.remove('tw-print-research');
+      window.removeEventListener('afterprint', cleanup);
+    };
+    window.addEventListener('afterprint', cleanup);
+    window.print();
+  }, []);
+
+  return (
+    <button
+      type="button"
+      onClick={onExport}
+      className={cx(
+        'tw-no-print inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-[12px] font-semibold transition',
+        t.border,
+        t.sub,
+        dark ? 'hover:bg-slate-800/60' : 'hover:bg-slate-50',
+      )}
+    >
+      <Printer size={13} />
+      {tr('deep.exportPdf')}
+    </button>
   );
 }
 

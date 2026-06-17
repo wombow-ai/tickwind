@@ -31,3 +31,4 @@ Thumbs.db
 # local tooling / design scratch (not source)
 /.claude/
 /.design-ref.tsx
+web/.claude/
