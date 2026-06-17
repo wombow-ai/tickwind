@@ -30,8 +30,10 @@ const (
 // size) come from store.Signal facets. Hot-list presence is a rank fact. The
 // news/social corpus is ATTRIBUTED context (Section.Context) for the LLM — it is
 // never turned into a numeric Fact and never fabricates a sentiment number. The
-// section is omitted by the caller when it has zero ok facts.
-func assembleSentiment(ctx context.Context, ticker string, src Sources) SectionFacts {
+// section is omitted by the caller when it has zero ok facts. lang ("en"/"zh")
+// selects the language of the Go-built labels embedded in a fact Value (the Fear
+// & Greed band, the buzz prior-window note) — each value carries ONE language.
+func assembleSentiment(ctx context.Context, ticker string, src Sources, lang string) SectionFacts {
 	sec := SectionFacts{Key: "sentiment", TitleZH: "情绪面", TitleEN: "Sentiment"}
 	var citations []Citation
 
@@ -39,9 +41,12 @@ func assembleSentiment(ctx context.Context, ticker string, src Sources) SectionF
 	if src.Market != nil {
 		if res, ok := src.Market.Latest(); ok && res.Available > 0 {
 			score := float64(res.Score)
-			label := res.LabelZh
+			// Select the classification band by the request lang (EN → English band
+			// only, zh → Chinese band only — never bilingual). Fall back to the other
+			// language only if the preferred one is empty.
+			label := pickLang(lang, res.Label, res.LabelZh)
 			if label == "" {
-				label = res.Label
+				label = pickLang(lang, res.LabelZh, res.Label)
 			}
 			val := fmt.Sprintf("%s (%s)", formatPlain(score), label)
 			sec.Facts = append(sec.Facts, Fact{
@@ -56,7 +61,7 @@ func assembleSentiment(ctx context.Context, ticker string, src Sources) SectionF
 
 	// --- Per-ticker buzz + news-sentiment signals + the UGC/news corpus ---
 	if src.Store != nil {
-		sigFacts, sigCites := signalFacts(ctx, ticker, src.Store)
+		sigFacts, sigCites := signalFacts(ctx, ticker, src.Store, lang)
 		sec.Facts = append(sec.Facts, sigFacts...)
 		citations = append(citations, sigCites...)
 
@@ -75,8 +80,9 @@ func assembleSentiment(ctx context.Context, ticker string, src Sources) SectionF
 // signalFacts reads the per-ticker store.Signal rows and emits the buzz facet
 // (mentions vs prior-window, rank) and the news-sentiment facet (score [-1,1] +
 // label + sample size) as ok facts. Each facet contributes independently; a source
-// that fills neither is ignored. Returns the facts and any citations.
-func signalFacts(ctx context.Context, ticker string, sr StoreReader) ([]Fact, []Citation) {
+// that fills neither is ignored. Returns the facts and any citations. lang selects
+// the language of the buzz prior-window note embedded in the mentions value.
+func signalFacts(ctx context.Context, ticker string, sr StoreReader, lang string) ([]Fact, []Citation) {
 	sigs, err := sr.ListSignals(ctx, ticker)
 	if err != nil || len(sigs) == 0 {
 		return nil, nil
@@ -90,7 +96,9 @@ func signalFacts(ctx context.Context, ticker string, sr StoreReader) ([]Fact, []
 				m := float64(s.Mentions)
 				val := formatPlain(m)
 				if s.MentionsPrev > 0 {
-					val = fmt.Sprintf("%s (前值 %d)", formatPlain(m), s.MentionsPrev)
+					// "前值" / "prior" — single-language per lang, never bilingual.
+					prior := pickLang(lang, "prior", "前值")
+					val = fmt.Sprintf("%s (%s %d)", formatPlain(m), prior, s.MentionsPrev)
 				}
 				facts = append(facts, Fact{
 					Key: "buzz_mentions", LabelZH: "社区提及量", LabelEN: "Social Mentions",

@@ -20,9 +20,13 @@ const (
 	StatusInsufficient = "insufficient"
 )
 
-// Disclaimer is the mandatory second-layer label shown on every report. It backs
-// the prompt guardrails: AI-generated prose, numbers from public data, not advice.
-const Disclaimer = "AI 生成 · 数字来自公开数据 · 非投资建议"
+// DisclaimerZH/EN is the mandatory second-layer label shown on every report. It
+// backs the prompt guardrails: AI-generated prose, numbers from public data, not
+// advice. Selected by request language (the frontend renders disclaimer verbatim).
+const (
+	DisclaimerZH = "AI 生成 · 数字来自公开数据 · 非投资建议"
+	DisclaimerEN = "AI-generated · figures from public data · not investment advice"
+)
 
 // Fact is one labeled, source-attributed datum. Value carries the already-
 // formatted string the report shows (e.g. "41.2x", "亏损", "$4.5T", "—"); Raw is

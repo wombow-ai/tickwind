@@ -27,15 +27,17 @@ const shortRisingThreshold = 0.15
 // from a structured source — congress amount ranges are shown VERBATIM, 13F
 // holder Period is always shown (intentionally stale), FINRA exposes only the
 // derived ShortPct/DaysToCover. List data (members, holders) is formatted into Go
-// strings; no number is ever synthesized.
-func assembleFlows(ctx context.Context, ticker string, src Sources) SectionFacts {
+// strings; no number is ever synthesized. lang ("en"/"zh") selects the language of
+// every Go-built label embedded in a fact Value (trade direction, 13F change tag,
+// short trend) — the value carries ONE language, never a bilingual "x / y" string.
+func assembleFlows(ctx context.Context, ticker string, src Sources, lang string) SectionFacts {
 	sec := SectionFacts{Key: "flows", TitleZH: "资金面", TitleEN: "Smart Money & Flows"}
 	var citations []Citation
 
 	// --- Congress (House/Senate PTR) ---
 	if src.Congress != nil {
 		if trades := src.Congress.ByTicker(ticker); len(trades) > 0 {
-			sec.Facts = append(sec.Facts, congressFacts(trades)...)
+			sec.Facts = append(sec.Facts, congressFacts(trades, lang)...)
 			citations = append(citations, Citation{
 				Label:  srcCongress,
 				Anchor: "#congress",
@@ -50,7 +52,7 @@ func assembleFlows(ctx context.Context, ticker string, src Sources) SectionFacts
 	// --- 13F whales (reverse "which whales own this") ---
 	if src.ThirteenF != nil {
 		if holders := src.ThirteenF.Holders(ticker); len(holders) > 0 {
-			sec.Facts = append(sec.Facts, thirteenFFacts(holders)...)
+			sec.Facts = append(sec.Facts, thirteenFFacts(holders, lang)...)
 			citations = append(citations, Citation{
 				Label:  srcThirteenF,
 				Anchor: "#whales",
@@ -79,7 +81,7 @@ func assembleFlows(ctx context.Context, ticker string, src Sources) SectionFacts
 	}
 
 	// --- Short (daily short-volume % + settlement short interest) ---
-	if sf, cited := shortFacts(ticker, src); len(sf) > 0 {
+	if sf, cited := shortFacts(ticker, src, lang); len(sf) > 0 {
 		sec.Facts = append(sec.Facts, sf...)
 		if cited {
 			citations = append(citations, Citation{Label: srcShortVol, Anchor: "#short"})
@@ -92,8 +94,9 @@ func assembleFlows(ctx context.Context, ticker string, src Sources) SectionFacts
 
 // congressFacts builds the congress facts: a distinct-member count plus a verbatim
 // summary of the latest member's trade. AmountRange is shown EXACTLY as disclosed
-// (never converted to a point dollar amount). TxDate is formatted as a date.
-func congressFacts(trades []congress.TickerTrade) []Fact {
+// (never converted to a point dollar amount). TxDate is formatted as a date. lang
+// selects the buy/sell direction label embedded in the latest-trade value.
+func congressFacts(trades []congress.TickerTrade, lang string) []Fact {
 	members := map[string]struct{}{}
 	for _, t := range trades {
 		members[t.Slug] = struct{}{}
@@ -108,7 +111,7 @@ func congressFacts(trades []congress.TickerTrade) []Fact {
 
 	// Latest member trade — AmountRange verbatim, never a synthesized $ amount.
 	latest := trades[0] // ByTicker is newest-first
-	dir := tradeTypeLabel(latest.Type)
+	dir := tradeTypeLabel(latest.Type, lang)
 	amount := latest.AmountRange
 	if amount == "" {
 		amount = dash
@@ -123,15 +126,17 @@ func congressFacts(trades []congress.TickerTrade) []Fact {
 	return facts
 }
 
-// tradeTypeLabel maps a PTR trade type to a bilingual buy/sell label.
-func tradeTypeLabel(t string) string {
+// tradeTypeLabel maps a PTR trade type to a buy/sell label in the request lang
+// (EN → English only, zh → Chinese only — never the bilingual "x / y" form). An
+// unrecognised non-empty type is passed through verbatim.
+func tradeTypeLabel(t, lang string) string {
 	switch strings.ToLower(strings.TrimSpace(t)) {
 	case "purchase", "buy":
-		return "买入 / buy"
+		return pickLang(lang, "buy", "买入")
 	case "sale", "sell", "sale (full)", "sale (partial)":
-		return "卖出 / sell"
+		return pickLang(lang, "sell", "卖出")
 	case "exchange":
-		return "兑换 / exchange"
+		return pickLang(lang, "exchange", "兑换")
 	default:
 		if t == "" {
 			return dash
@@ -143,8 +148,9 @@ func tradeTypeLabel(t string) string {
 // thirteenFFacts builds the 13F holder facts: a holder-count fact plus a per-holder
 // line for the top funds. Each line shows the manager/fund, the position weight (%
 // of the FUND's book) and the change tag; the holder's filing Period (intentionally
-// stale, ~45d) is carried as the AsOf and is ALWAYS shown.
-func thirteenFFacts(holders []thirteenf.Holder) []Fact {
+// stale, ~45d) is carried as the AsOf and is ALWAYS shown. lang selects the change-
+// tag label (new/add/trim/hold) embedded in each holder value.
+func thirteenFFacts(holders []thirteenf.Holder, lang string) []Fact {
 	count := float64(len(holders))
 	facts := []Fact{{
 		Key: "whales_count", LabelZH: "持仓机构数(13F)", LabelEN: "Tracked Funds Holding (13F)",
@@ -167,7 +173,7 @@ func thirteenFFacts(holders []thirteenf.Holder) []Fact {
 			who = h.Manager + " · " + h.FundName
 		}
 		weight := formatValue(&h.Weight, unitPercent)
-		change := changeTagLabel(h.Change)
+		change := changeTagLabel(h.Change, lang)
 		val := fmt.Sprintf("%s · %s of book · %s", who, weight, change)
 		facts = append(facts, Fact{
 			Key: fmt.Sprintf("whale_%d", i+1), LabelZH: "机构持仓", LabelEN: "Fund Holding",
@@ -196,17 +202,19 @@ func oldestPeriod(holders []thirteenf.Holder) string {
 	return oldest
 }
 
-// changeTagLabel maps a 13F quarter-over-quarter change tag to a bilingual label.
-func changeTagLabel(c string) string {
+// changeTagLabel maps a 13F quarter-over-quarter change tag to a label in the
+// request lang (EN → English only, zh → Chinese only — never bilingual). An
+// unrecognised non-empty tag is passed through verbatim.
+func changeTagLabel(c, lang string) string {
 	switch strings.ToLower(strings.TrimSpace(c)) {
 	case "new":
-		return "新建仓 / new"
+		return pickLang(lang, "new", "新建仓")
 	case "add":
-		return "加仓 / add"
+		return pickLang(lang, "add", "加仓")
 	case "trim":
-		return "减仓 / trim"
+		return pickLang(lang, "trim", "减仓")
 	case "hold":
-		return "维持 / hold"
+		return pickLang(lang, "hold", "维持")
 	default:
 		if c == "" {
 			return dash
@@ -339,8 +347,8 @@ func optionTypeLabel(t string) string {
 // history) and, when present, the bi-monthly settlement short-interest row
 // (days-to-cover + change). Only DERIVED values are exposed — never bulk raw
 // FINRA rows. The bool reports whether any short-volume fact (the cited source)
-// was emitted.
-func shortFacts(ticker string, src Sources) ([]Fact, bool) {
+// was emitted. lang selects the rising/falling/flat trend label language.
+func shortFacts(ticker string, src Sources, lang string) ([]Fact, bool) {
 	var facts []Fact
 	citedShortVol := false
 
@@ -357,7 +365,7 @@ func shortFacts(ticker string, src Sources) ([]Fact, bool) {
 
 			// Qualitative trend from the retained history (latest vs earliest);
 			// shown as a labeled string, NOT a synthesized delta number.
-			if trend := shortTrend(src.ShortVol.History(ticker)); trend != "" {
+			if trend := shortTrend(src.ShortVol.History(ticker), lang); trend != "" {
 				facts = append(facts, Fact{
 					Key: "short_trend", LabelZH: "做空趋势", LabelEN: "Short Trend",
 					Value:  trend,
@@ -391,8 +399,9 @@ func shortFacts(ticker string, src Sources) ([]Fact, bool) {
 // shortTrend reads a qualitative rising/falling/flat trend off the retained daily
 // short-volume history (oldest first), comparing the latest ShortPct against the
 // earliest. It returns "" when there is too little history to judge. The output is
-// a bilingual label — never a synthesized number.
-func shortTrend(hist []finrashvol.ShortVol) string {
+// a single-language label in the request lang (EN → English only, zh → Chinese
+// only — never a bilingual "x / y" string) — and never a synthesized number.
+func shortTrend(hist []finrashvol.ShortVol, lang string) string {
 	if len(hist) < 2 {
 		return ""
 	}
@@ -404,11 +413,11 @@ func shortTrend(hist []finrashvol.ShortVol) string {
 	rel := (last - first) / first
 	switch {
 	case rel > shortRisingThreshold:
-		return "上升 / rising"
+		return pickLang(lang, "rising", "上升")
 	case rel < -shortRisingThreshold:
-		return "下降 / falling"
+		return pickLang(lang, "falling", "下降")
 	default:
-		return "平稳 / flat"
+		return pickLang(lang, "flat", "平稳")
 	}
 }
 

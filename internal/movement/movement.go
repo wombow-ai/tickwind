@@ -27,9 +27,21 @@ import (
 // so the endpoint returns Significant=false and the frontend hides the card.
 const notableThreshold = 5.0
 
-// Disclaimer is the mandatory second-layer label shown when the LLM wrote the
-// prose. It backs the prompt guardrails: AI-generated, hedged, not advice.
-const Disclaimer = "AI 生成 · 仅供参考 · 非投资建议"
+// DisclaimerZH/EN is the mandatory second-layer label shown when the LLM wrote the
+// prose. It backs the prompt guardrails: AI-generated, hedged, not advice. Selected
+// by request language (the frontend renders disclaimer verbatim).
+const (
+	DisclaimerZH = "AI 生成 · 仅供参考 · 非投资建议"
+	DisclaimerEN = "AI-generated · for reference only · not investment advice"
+)
+
+// disclaimerFor returns the movement disclaimer in the requested language.
+func disclaimerFor(lang string) string {
+	if lang == "en" {
+		return DisclaimerEN
+	}
+	return DisclaimerZH
+}
 
 // Evidence is one attributed item that MIGHT relate to the move: a recent news
 // headline, a filing, or an insider buy. Title/URL/Time are set in Go from the

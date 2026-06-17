@@ -20,9 +20,28 @@ const (
 // for an absent field.
 const dash = "—"
 
-// loss is the placeholder for a loss-maker's P/E (a non-positive-EPS multiple is
-// intentionally "亏损/—", never 0).
-const loss = "亏损"
+// pickLang selects the request-language form of a Go-built label embedded in a
+// fact Value. lang=="en" yields the English form; any other value (the report's
+// Chinese-first default is "zh") yields the Chinese form. Use it for qualitative
+// labels the report constructs in Go (trade direction, 13F change tag, short
+// trend, Fear & Greed band) so a Value carries ONE language — never a bilingual
+// "x / y" string that would leak Chinese into the English render.
+func pickLang(lang, en, zh string) string {
+	if lang == "en" {
+		return en
+	}
+	return zh
+}
+
+// lossLabel is the placeholder for a loss-maker's P/E (a non-positive-EPS multiple
+// is intentionally a loss label, never 0) in the request lang. An ok-status P/E
+// loss renders this verbatim, so it must follow the request language.
+func lossLabel(lang string) string { return pickLang(lang, "Loss", "亏损") }
+
+// insufficientLabel is the Value placeholder for an insufficient (missing) datum in
+// the request lang. The frontend renders insufficient facts via its own localized
+// chip (not this Value), so this primarily keeps the JSON value coherent per lang.
+func insufficientLabel(lang string) string { return pickLang(lang, "N/A", "数据不足") }
 
 // formatValue renders a raw number for display by its unit, mirroring the
 // frontend formatters so the report and the cards agree:

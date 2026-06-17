@@ -123,7 +123,7 @@ func (s *Service) Explain(ctx context.Context, ticker, lang string) Explanation 
 	exp.Text = strings.TrimSpace(text)
 	exp.LLM = true
 	exp.Model = s.model
-	exp.Disclaimer = Disclaimer
+	exp.Disclaimer = disclaimerFor(lang)
 	return exp
 }
 

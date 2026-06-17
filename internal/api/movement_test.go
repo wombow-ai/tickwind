@@ -42,7 +42,7 @@ func (f *fakeMovement) Explain(_ context.Context, _, _ string) movement.Explanat
 		exp.Text = f.sentence
 		exp.LLM = true
 		exp.Model = f.model
-		exp.Disclaimer = movement.Disclaimer
+		exp.Disclaimer = movement.DisclaimerZH
 	}
 	return exp
 }
@@ -233,7 +233,7 @@ func TestGetMovement_EnabledLLMCachedOnce(t *testing.T) {
 	if body.Explanation != fake.sentence {
 		t.Errorf("explanation = %q; want the LLM sentence", body.Explanation)
 	}
-	if body.Disclaimer != movement.Disclaimer {
+	if body.Disclaimer != movement.DisclaimerZH {
 		t.Errorf("disclaimer = %q; want the mandatory label", body.Disclaimer)
 	}
 

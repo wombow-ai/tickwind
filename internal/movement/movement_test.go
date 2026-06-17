@@ -295,7 +295,7 @@ func TestService_ExplainLLMOverlay(t *testing.T) {
 	if exp.Model != "deepseek-chat" {
 		t.Errorf("model = %q; want deepseek-chat", exp.Model)
 	}
-	if exp.Disclaimer != Disclaimer {
+	if exp.Disclaimer != DisclaimerZH {
 		t.Errorf("disclaimer = %q; want the mandatory label", exp.Disclaimer)
 	}
 	// The Go-owned number is untouched by the LLM.

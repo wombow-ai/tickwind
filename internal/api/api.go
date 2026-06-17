@@ -288,7 +288,7 @@ type IndicatorComputeSource interface {
 // disabled). nil-safe — a nil source makes /v1/stocks/{ticker}/research 404.
 // Satisfied by *research.Service.
 type ResearchSource interface {
-	Report(ctx context.Context, ticker string) research.FactSheet
+	Report(ctx context.Context, ticker, lang string) research.FactSheet
 	Compose(ctx context.Context, fs research.FactSheet, lang string) research.FactSheet
 	// ComposeDeep fills RICHER per-section prose (the AI Deep Research report,
 	// depth=deep) via a possibly stronger model + a Fable-5 harness, over the SAME
@@ -2653,7 +2653,7 @@ func (s *Server) getResearchSync(w http.ResponseWriter, r *http.Request, ticker,
 	}
 
 	// Always assemble the data-only fact sheet first (cheap, no LLM, never errors).
-	fs := s.researchCalc.Report(r.Context(), ticker)
+	fs := s.researchCalc.Report(r.Context(), ticker, lang)
 	// "Nothing at all": no sections and no underlying date → unknown/invalid ticker.
 	if len(fs.Sections) == 0 && fs.AsOf == "" {
 		refundGlobalCap() // didn't generate prose — don't burn the global budget
@@ -2738,7 +2738,7 @@ func (s *Server) getResearchDeep(w http.ResponseWriter, r *http.Request, ticker,
 
 	// (2) Assemble the cheap data-only fact sheet (no LLM, never errors). This is the
 	// instant body we return in every non-cache-hit branch below.
-	fs := s.researchCalc.Report(r.Context(), ticker)
+	fs := s.researchCalc.Report(r.Context(), ticker, lang)
 	if len(fs.Sections) == 0 && fs.AsOf == "" { // unknown/invalid ticker
 		s.maybeCollect(ticker)
 		writeJSON(w, http.StatusNotFound, errBody("no research for "+ticker))

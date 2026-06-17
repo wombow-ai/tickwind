@@ -19,9 +19,20 @@ import (
 	"github.com/wombow-ai/tickwind/internal/edgar"
 )
 
-// Disclaimer is the mandatory label shown when the LLM wrote a summary: AI-
-// generated, factual, not advice. Mirrors movement.Disclaimer.
-const Disclaimer = "AI 生成 · 仅供参考 · 非投资建议"
+// DisclaimerZH/EN is the mandatory label shown when the LLM wrote a summary: AI-
+// generated, factual, not advice. Selected by request language.
+const (
+	DisclaimerZH = "AI 生成 · 仅供参考 · 非投资建议"
+	DisclaimerEN = "AI-generated · for reference only · not investment advice"
+)
+
+// disclaimerFor returns the material-events disclaimer in the requested language.
+func disclaimerFor(lang string) string {
+	if lang == "en" {
+		return DisclaimerEN
+	}
+	return DisclaimerZH
+}
 
 // Filing is one 8-K (or 8-K/A amendment) on the wire. Every field except Summary
 // is a Go-owned fact (parsed from the SEC feed); Summary is the OPTIONAL LLM
@@ -150,7 +161,7 @@ func (s *Service) Summarize(ctx context.Context, ticker, lang string) (Report, e
 	}
 	if rep.LLM {
 		rep.Model = s.model
-		rep.Disclaimer = Disclaimer
+		rep.Disclaimer = disclaimerFor(lang)
 	}
 	return rep, nil
 }

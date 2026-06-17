@@ -116,7 +116,7 @@ func TestAssembleFlowsFacts(t *testing.T) {
 		}},
 		ShortInt: fakeShortInt{ok: true, si: finra.ShortInterest{Symbol: "AAPL", DaysToCover: 2.4, ChangePct: 5.1, SettlementDate: "2026-05-30"}},
 	}
-	fs := Assemble(context.Background(), "AAPL", src)
+	fs := Assemble(context.Background(), "AAPL", "zh", src)
 
 	flows, ok := section(fs, "flows")
 	if !ok {
@@ -193,8 +193,10 @@ func TestAssembleFlowsFacts(t *testing.T) {
 	if !ok {
 		t.Fatal("short_trend fact missing")
 	}
-	if !contains(st.Value, "rising") {
-		t.Errorf("short_trend value = %q, want rising (30%%→38.5%%)", st.Value)
+	// This sheet was assembled in zh → the trend label is Chinese-only (no longer a
+	// bilingual "上升 / rising"); the dedicated lang test asserts the en/zh split.
+	if st.Value != "上升" {
+		t.Errorf("short_trend value = %q, want 上升 (zh, 30%%→38.5%%)", st.Value)
 	}
 
 	// Days-to-cover from settlement short interest.
@@ -215,7 +217,7 @@ func TestAssembleFlowsCongressEmptyNoFalseClaim(t *testing.T) {
 	src := Sources{
 		Congress: fakeCongress{trades: nil}, // nil = none OR PTR parsing disabled
 	}
-	fs := Assemble(context.Background(), "AAPL", src)
+	fs := Assemble(context.Background(), "AAPL", "zh", src)
 
 	if _, ok := findFact(fs, "congress_members"); ok {
 		t.Error("congress_members fact present for an empty congress result; must be omitted (no false 'no trades' claim)")
@@ -238,7 +240,7 @@ func TestAssembleFlowsOptionsNoListedOptionsOmitted(t *testing.T) {
 		// facts are specifically absent (not that the whole section vanished).
 		ShortVol: fakeShortVol{ok: true, latest: finrashvol.ShortVol{ShortPct: 10, Date: "2026-06-12"}},
 	}
-	fs := Assemble(context.Background(), "NOOPT", src)
+	fs := Assemble(context.Background(), "NOOPT", "zh", src)
 
 	if _, ok := findFact(fs, "options_pc_volume"); ok {
 		t.Error("options fact present for a no-options symbol; want omitted")
@@ -262,7 +264,7 @@ func TestAssembleFlowsWhalesCountOldestPeriod(t *testing.T) {
 			{FundSlug: "pershing-square", FundName: "Pershing", Manager: "Ackman", Value: 2e8, Weight: 5, Change: "new", Period: "2026-03-31"},
 		}},
 	}
-	fs := Assemble(context.Background(), "AAPL", src)
+	fs := Assemble(context.Background(), "AAPL", "zh", src)
 
 	wc, ok := findFact(fs, "whales_count")
 	if !ok {
@@ -328,7 +330,7 @@ func TestAssembleSentimentMarketGuard(t *testing.T) {
 					{Source: "apewisdom", Kind: "buzz", Mentions: 120, MentionsPrev: 80, Rank: 5, UpdatedAt: time.Now()},
 				}},
 			}
-			fs := Assemble(context.Background(), "AAPL", src)
+			fs := Assemble(context.Background(), "AAPL", "zh", src)
 			fg, got := findFact(fs, "market_fear_greed")
 			if got != tc.wantField {
 				t.Fatalf("market_fear_greed present = %v, want %v", got, tc.wantField)
@@ -359,7 +361,7 @@ func TestAssembleSentimentSignals(t *testing.T) {
 			},
 		},
 	}
-	fs := Assemble(context.Background(), "AAPL", src)
+	fs := Assemble(context.Background(), "AAPL", "zh", src)
 
 	bm, ok := findFact(fs, "buzz_mentions")
 	if !ok {
@@ -407,7 +409,7 @@ func TestAssembleSentimentNewsSocialNotNumericFacts(t *testing.T) {
 			},
 		},
 	}
-	fs := Assemble(context.Background(), "AAPL", src)
+	fs := Assemble(context.Background(), "AAPL", "zh", src)
 
 	sec, ok := section(fs, "sentiment")
 	if !ok {
@@ -470,7 +472,7 @@ func TestComposeNeverMutatesNumbersFlowsSentiment(t *testing.T) {
 			news:    []store.News{{Ticker: "X", Headline: "headline", Source: "Reuters", Published: time.Now()}},
 		},
 	}
-	data := Assemble(context.Background(), "X", src)
+	data := Assemble(context.Background(), "X", "zh", src)
 
 	enr := &fakeEnricher{enabled: true, prose: map[string]string{
 		"flows":             "信号方向不一,机构与做空对立。",
@@ -479,7 +481,7 @@ func TestComposeNeverMutatesNumbersFlowsSentiment(t *testing.T) {
 		"short_pct":         "0% (bogus)", // not a section key → ignored
 		"market_fear_greed": "100",        // not a section key → ignored
 	}}
-	composed := Compose(context.Background(), Assemble(context.Background(), "X", src), enr, "zh")
+	composed := Compose(context.Background(), Assemble(context.Background(), "X", "zh", src), enr, "zh")
 
 	// Prose filled for the new section keys.
 	if sec, ok := section(composed, "flows"); !ok || sec.Prose == "" {
@@ -509,7 +511,7 @@ func TestComposeMaterialMarksContextAttributed(t *testing.T) {
 		},
 	}
 	enr := &fakeEnricher{enabled: true, prose: map[string]string{"sentiment": "ok"}}
-	_ = Compose(context.Background(), Assemble(context.Background(), "X", src), enr, "zh")
+	_ = Compose(context.Background(), Assemble(context.Background(), "X", "zh", src), enr, "zh")
 
 	if !contains(enr.material, "据新闻") {
 		t.Errorf("material missing the attributed news context; got:\n%s", enr.material)
@@ -527,7 +529,7 @@ func TestComposeErrorDataOnlyWithFlowsSentiment(t *testing.T) {
 		Store:    fakeStore{signals: []store.Signal{{Source: "apewisdom", Kind: "buzz", Mentions: 5, Rank: 40, UpdatedAt: time.Now()}}},
 	}
 	enr := &fakeEnricher{enabled: true, err: errors.New("down")}
-	composed := Compose(context.Background(), Assemble(context.Background(), "X", src), enr, "zh")
+	composed := Compose(context.Background(), Assemble(context.Background(), "X", "zh", src), enr, "zh")
 	for _, sec := range composed.Sections {
 		if sec.Prose != "" {
 			t.Errorf("section %q prose = %q after error, want \"\"", sec.Key, sec.Prose)
@@ -537,3 +539,116 @@ func TestComposeErrorDataOnlyWithFlowsSentiment(t *testing.T) {
 
 // contains is a tiny substring helper for readable assertions.
 func contains(s, sub string) bool { return strings.Contains(s, sub) }
+
+// hasCJK reports whether s contains any CJK Unified Ideograph (the leak we guard
+// against in the English render).
+func hasCJK(s string) bool {
+	for _, r := range s {
+		if r >= 0x4E00 && r <= 0x9FFF {
+			return true
+		}
+	}
+	return false
+}
+
+// TestFactValuesRespectLang is the language-correctness guard for the Go-built
+// labels embedded in fact VALUES (distinct from per-fact LabelZH/LabelEN, which the
+// frontend selects). It pins the two owner-reported bugs — the "Short Trend" field
+// (FINRA short-volume trend) and the "Market Fear & Greed" field — plus the other
+// Go-built value labels (congress trade direction, 13F change tag, buzz prior-window
+// note), asserting each carries the English label in lang="en" (with NO CJK) and the
+// Chinese label in lang="zh". The numbers (38.5%, 56) are identical across langs.
+func TestFactValuesRespectLang(t *testing.T) {
+	src := Sources{
+		// Short trend: 30%→38.5% (a >15% relative rise) → "rising" / "上升".
+		ShortVol: fakeShortVol{ok: true, latest: finrashvol.ShortVol{ShortPct: 38.5, Date: "2026-06-12"}, history: []finrashvol.ShortVol{
+			{ShortPct: 30.0}, {ShortPct: 38.5},
+		}},
+		// Fear & Greed: score 56 → "Greed" / "贪婪" (the exact owner-reported case).
+		Market: fakeMarket{ok: true, res: sentiment.Result{Score: 56, Label: "Greed", LabelZh: "贪婪", Available: 4}},
+		// Congress latest trade direction: a purchase → "buy" / "买入".
+		Congress: fakeCongress{trades: []congress.TickerTrade{
+			{MemberName: "Nancy Pelosi", Slug: "nancy-pelosi", Type: "purchase", AmountRange: "$250,001 - $500,000", TxDate: time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)},
+		}},
+		// 13F change tag: "add" → "add" / "加仓".
+		ThirteenF: fakeWhales{holders: []thirteenf.Holder{
+			{FundSlug: "berkshire", FundName: "Berkshire", Manager: "Warren Buffett", Value: 1e11, Weight: 42.3, Change: "add", Period: "2026-03-31"},
+		}},
+		// Buzz mentions with a prior window → "prior" / "前值" note.
+		Store: fakeStore{signals: []store.Signal{
+			{Source: "apewisdom", Kind: "buzz", Mentions: 340, MentionsPrev: 210, Rank: 3, UpdatedAt: time.Now()},
+		}},
+	}
+
+	// --- English: every Go-built value label is English, NO CJK anywhere. ---
+	en := Assemble(context.Background(), "AAPL", "en", src)
+
+	stEN, ok := findFact(en, "short_trend")
+	if !ok {
+		t.Fatal("en: short_trend fact missing")
+	}
+	if stEN.Value != "rising" {
+		t.Errorf("en short_trend value = %q, want exactly \"rising\" (no bilingual, no CJK)", stEN.Value)
+	}
+	fgEN, ok := findFact(en, "market_fear_greed")
+	if !ok {
+		t.Fatal("en: market_fear_greed fact missing")
+	}
+	if fgEN.Value != "56 (Greed)" {
+		t.Errorf("en market_fear_greed value = %q, want \"56 (Greed)\"", fgEN.Value)
+	}
+	clEN, _ := findFact(en, "congress_latest")
+	if !contains(clEN.Value, "buy") {
+		t.Errorf("en congress_latest value = %q, want the English \"buy\" direction", clEN.Value)
+	}
+	w1EN, _ := findFact(en, "whale_1")
+	if !contains(w1EN.Value, "add") {
+		t.Errorf("en whale_1 value = %q, want the English \"add\" change tag", w1EN.Value)
+	}
+	bmEN, _ := findFact(en, "buzz_mentions")
+	if !contains(bmEN.Value, "prior") {
+		t.Errorf("en buzz_mentions value = %q, want the English \"prior\" note", bmEN.Value)
+	}
+	// The blanket guard: NO fact VALUE in the English sheet contains a CJK character.
+	for _, sec := range en.Sections {
+		for _, f := range sec.Facts {
+			if hasCJK(f.Value) {
+				t.Errorf("en: CJK leaked into fact %q value: %q", sec.Key+"/"+f.Key, f.Value)
+			}
+		}
+	}
+
+	// --- Chinese: the same labels are Chinese; numbers identical. ---
+	zh := Assemble(context.Background(), "AAPL", "zh", src)
+
+	stZH, _ := findFact(zh, "short_trend")
+	if stZH.Value != "上升" {
+		t.Errorf("zh short_trend value = %q, want exactly \"上升\"", stZH.Value)
+	}
+	fgZH, _ := findFact(zh, "market_fear_greed")
+	if fgZH.Value != "56 (贪婪)" {
+		t.Errorf("zh market_fear_greed value = %q, want \"56 (贪婪)\"", fgZH.Value)
+	}
+	clZH, _ := findFact(zh, "congress_latest")
+	if !contains(clZH.Value, "买入") {
+		t.Errorf("zh congress_latest value = %q, want the Chinese \"买入\" direction", clZH.Value)
+	}
+	w1ZH, _ := findFact(zh, "whale_1")
+	if !contains(w1ZH.Value, "加仓") {
+		t.Errorf("zh whale_1 value = %q, want the Chinese \"加仓\" change tag", w1ZH.Value)
+	}
+	bmZH, _ := findFact(zh, "buzz_mentions")
+	if !contains(bmZH.Value, "前值") {
+		t.Errorf("zh buzz_mentions value = %q, want the Chinese \"前值\" note", bmZH.Value)
+	}
+
+	// Numbers are identical across langs (only the label LANGUAGE differs).
+	if fgEN.Raw == nil || fgZH.Raw == nil || *fgEN.Raw != 56 || *fgZH.Raw != 56 {
+		t.Errorf("F&G raw differs across langs or != 56: en=%v zh=%v", fgEN.Raw, fgZH.Raw)
+	}
+	spEN, _ := findFact(en, "short_pct")
+	spZH, _ := findFact(zh, "short_pct")
+	if spEN.Value != spZH.Value || spEN.Value != "38.5%" {
+		t.Errorf("short_pct value differs across langs or != 38.5%%: en=%q zh=%q", spEN.Value, spZH.Value)
+	}
+}

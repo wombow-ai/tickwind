@@ -159,9 +159,9 @@ const (
 	srcIndicators   = "computed from daily bars"
 
 	// 资金面 / flows source labels.
-	srcCongress    = "House/Senate PTR (公开披露)"
-	srcThirteenF   = "SEC 13F (季度披露)"
-	srcInsiderSEC  = "SEC Form 4 (内部人买入)"
+	srcCongress    = "House/Senate PTR"
+	srcThirteenF   = "SEC 13F"
+	srcInsiderSEC  = "SEC Form 4"
 	srcOptions     = "Cboe · delayed ~15min"
 	srcShortVol    = "FINRA daily short volume (display-only)"
 	srcShortInt    = "FINRA settlement short interest (display-only)"
@@ -261,9 +261,16 @@ var technicalSpecs = map[string]indicatorFactSpec{
 // the crypto/unsupported ids are skipped entirely. Numbers come from a single
 // source per metric (PE/PB/DY/margins/growth/ROE/FCF/debt from the indicator set,
 // MarketCap from price × Shares, Revenue/NetIncome/EPS from edgar).
-func Assemble(ctx context.Context, ticker string, src Sources) FactSheet {
+//
+// lang ("en"/"zh", Chinese-first default) selects the language of every label the
+// assembler builds in Go and embeds in a fact Value (the loss placeholder, the
+// insufficient placeholder, the flows trade/13F/short-trend labels, the sentiment
+// Fear & Greed band). Per-fact LabelZH/LabelEN + section TitleZH/TitleEN carry both
+// languages and are selected by the frontend, so they are unaffected; only Value
+// strings — which the frontend renders verbatim — need the language threaded in.
+func Assemble(ctx context.Context, ticker, lang string, src Sources) FactSheet {
 	ticker = strings.ToUpper(strings.TrimSpace(ticker))
-	fs := FactSheet{Ticker: ticker, Disclaimer: Disclaimer}
+	fs := FactSheet{Ticker: ticker, Disclaimer: pickLang(lang, DisclaimerEN, DisclaimerZH)}
 
 	// One indicator computation for the whole report.
 	var indResult indicators.StockIndicatorsResult
@@ -331,7 +338,7 @@ func Assemble(ctx context.Context, ticker string, src Sources) FactSheet {
 			Status: StatusOK, Source: srcDelayedQuote,
 		})
 	}
-	valuation.Facts = append(valuation.Facts, factsFromSpecs(valuationIDOrder, valuationSpecs, byID, fundAsOf, secURL)...)
+	valuation.Facts = append(valuation.Facts, factsFromSpecs(valuationIDOrder, valuationSpecs, byID, fundAsOf, secURL, lang)...)
 	addSection(&fs, valuation)
 
 	// --- §1.2 基本面 / Fundamentals ---
@@ -356,7 +363,7 @@ func Assemble(ctx context.Context, ticker string, src Sources) FactSheet {
 			Status: StatusOK, Source: srcSECXBRL, SourceURL: secURL, AsOf: fundAsOf,
 		})
 	}
-	fundamentals.Facts = append(fundamentals.Facts, factsFromSpecs(fundamentalIDOrder, fundamentalSpecs, byID, fundAsOf, secURL)...)
+	fundamentals.Facts = append(fundamentals.Facts, factsFromSpecs(fundamentalIDOrder, fundamentalSpecs, byID, fundAsOf, secURL, lang)...)
 	addSection(&fs, fundamentals)
 
 	// --- §1.3 技术面 / Technical ---
@@ -373,7 +380,7 @@ func Assemble(ctx context.Context, ticker string, src Sources) FactSheet {
 		if !present {
 			continue
 		}
-		f, emit := factFromIndicator(spec, si, "", "")
+		f, emit := factFromIndicator(spec, si, "", "", lang)
 		if !emit {
 			continue
 		}
@@ -383,10 +390,10 @@ func Assemble(ctx context.Context, ticker string, src Sources) FactSheet {
 	addSection(&fs, technical)
 
 	// --- §1.4 资金面 / Smart Money & Flows ---
-	addSection(&fs, assembleFlows(ctx, ticker, src))
+	addSection(&fs, assembleFlows(ctx, ticker, src, lang))
 
 	// --- §1.5 情绪面 / Sentiment ---
-	addSection(&fs, assembleSentiment(ctx, ticker, src))
+	addSection(&fs, assembleSentiment(ctx, ticker, src, lang))
 
 	return fs
 }
@@ -409,8 +416,9 @@ var fundamentalIDOrder = []string{
 
 // factsFromSpecs builds the facts for a spec map in the given display order,
 // status-gating each indicator. Unsupported (crypto) ids never reach here (they
-// are not in the spec maps), so the only states are ok and insufficient.
-func factsFromSpecs(order []string, specs map[string]indicatorFactSpec, byID map[string]indicators.StockIndicator, fundAsOf, secURL string) []Fact {
+// are not in the spec maps), so the only states are ok and insufficient. lang
+// selects the language of any Go-built placeholder (the P/E loss label).
+func factsFromSpecs(order []string, specs map[string]indicatorFactSpec, byID map[string]indicators.StockIndicator, fundAsOf, secURL, lang string) []Fact {
 	out := make([]Fact, 0, len(order))
 	for _, id := range order {
 		spec := specs[id]
@@ -418,7 +426,7 @@ func factsFromSpecs(order []string, specs map[string]indicatorFactSpec, byID map
 		if !present {
 			continue
 		}
-		if f, emit := factFromIndicator(spec, si, fundAsOf, secURL); emit {
+		if f, emit := factFromIndicator(spec, si, fundAsOf, secURL, lang); emit {
 			out = append(out, f)
 		}
 	}
@@ -429,8 +437,10 @@ func factsFromSpecs(order []string, specs map[string]indicatorFactSpec, byID map
 // applying the strict status gate. Returns (Fact, true) for an ok or insufficient
 // indicator and (zero, false) for any other status (e.g. an unsupported crypto id
 // that somehow appeared) so the caller skips it. A unit override on the spec wins
-// (e.g. FCF's dollars); otherwise the indicator's reported unit is used.
-func factFromIndicator(spec indicatorFactSpec, si indicators.StockIndicator, fundAsOf, secURL string) (Fact, bool) {
+// (e.g. FCF's dollars); otherwise the indicator's reported unit is used. lang
+// selects the language of the loss-maker P/E placeholder (rendered verbatim for an
+// ok-status loss, so it must follow the request language).
+func factFromIndicator(spec indicatorFactSpec, si indicators.StockIndicator, fundAsOf, secURL, lang string) (Fact, bool) {
 	f := Fact{
 		Key:     spec.key,
 		LabelZH: spec.labelZH,
@@ -456,7 +466,7 @@ func factFromIndicator(spec indicatorFactSpec, si indicators.StockIndicator, fun
 		// A P/E whose multiple comes back non-positive (defensive: the indicator
 		// reports insufficient for a loss, but guard the loss case explicitly).
 		if spec.key == "pe" && si.Value != nil && *si.Value <= 0 {
-			f.Value = loss
+			f.Value = lossLabel(lang)
 		}
 		return f, true
 	case indicators.StatusInsufficient:
@@ -469,9 +479,9 @@ func factFromIndicator(spec indicatorFactSpec, si indicators.StockIndicator, fun
 		// "loss-making" claim. Gate on the indicator's reason, which names the
 		// non-positive-EPS/loss cause explicitly; otherwise show the placeholder.
 		if spec.key == "pe" && (strings.Contains(si.Reason, "EPS") || strings.Contains(si.Reason, "loss")) {
-			f.Value = loss
+			f.Value = lossLabel(lang)
 		} else {
-			f.Value = "数据不足"
+			f.Value = insufficientLabel(lang)
 		}
 		f.Raw = nil // NEVER a number for an absent field.
 		return f, true

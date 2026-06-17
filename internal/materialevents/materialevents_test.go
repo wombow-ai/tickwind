@@ -138,8 +138,8 @@ func TestSummarizeLLMOn(t *testing.T) {
 	if rep.Model != "test-model" {
 		t.Errorf("model = %q, want test-model", rep.Model)
 	}
-	if rep.Disclaimer != Disclaimer {
-		t.Errorf("disclaimer = %q, want %q", rep.Disclaimer, Disclaimer)
+	if rep.Disclaimer != DisclaimerZH {
+		t.Errorf("disclaimer = %q, want %q", rep.Disclaimer, DisclaimerZH)
 	}
 	if rep.Filings[0].Summary != "苹果任命了新任首席财务官。" {
 		t.Errorf("summary = %q", rep.Filings[0].Summary)

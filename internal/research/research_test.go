@@ -156,7 +156,7 @@ func TestAssembleStatusGating(t *testing.T) {
 		Fundamentals: fakeFund{f: edgar.Fundamentals{Ticker: "AAPL", Revenue: 1e11, NetIncome: 9e10, EPSDiluted: 6.1, Shares: 15e9, Period: "FY2024", AsOf: "2024-09-28"}},
 		Quote:        fakeQuote{q: store.Quote{Ticker: "AAPL", Price: 190.12, Source: "alpaca", Session: "regular"}, ok: true},
 	}
-	fs := Assemble(context.Background(), "aapl", src)
+	fs := Assemble(context.Background(), "aapl", "zh", src)
 
 	if ind.calls != 1 {
 		t.Fatalf("StockIndicators called %d times, want exactly 1", ind.calls)
@@ -211,7 +211,7 @@ func TestAssembleFCFFormatsAsDollars(t *testing.T) {
 				Indicators:   ind,
 				Fundamentals: fakeFund{f: edgar.Fundamentals{Revenue: 1, Period: "FY2024"}},
 			}
-			fs := Assemble(context.Background(), "X", src)
+			fs := Assemble(context.Background(), "X", "zh", src)
 			fcf, ok := findFact(fs, "fcf")
 			if !ok {
 				t.Fatal("fcf fact missing")
@@ -249,13 +249,13 @@ func TestAssemblePELossMaker(t *testing.T) {
 				Fundamentals: fakeFund{f: edgar.Fundamentals{Shares: 1e9, Revenue: 1, Period: "FY2024"}},
 				Quote:        fakeQuote{q: store.Quote{Price: 10, Source: "alpaca", Session: "regular"}, ok: true},
 			}
-			fs := Assemble(context.Background(), "X", src)
+			fs := Assemble(context.Background(), "X", "zh", src)
 			pe, ok := findFact(fs, "pe")
 			if !ok {
 				t.Fatal("pe fact missing")
 			}
-			if pe.Value != loss {
-				t.Errorf("pe value = %q, want %q (never 0)", pe.Value, loss)
+			if pe.Value != lossLabel("zh") {
+				t.Errorf("pe value = %q, want %q (never 0)", pe.Value, lossLabel("zh"))
 			}
 			if pe.Value == "0" || pe.Value == "0.0x" || pe.Value == "0x" {
 				t.Errorf("pe value rendered as zero: %q", pe.Value)
@@ -281,15 +281,15 @@ func TestAssemblePEMissingFundamentalsNotLoss(t *testing.T) {
 		Indicators: ind,
 		Quote:      fakeQuote{q: store.Quote{Price: 25, Source: "alpaca", Session: "regular"}, ok: true},
 	}
-	fs := Assemble(context.Background(), "SPY", src)
+	fs := Assemble(context.Background(), "SPY", "zh", src)
 	pe, ok := findFact(fs, "pe")
 	if !ok {
 		t.Fatal("pe fact missing")
 	}
-	if pe.Value == loss {
+	if pe.Value == lossLabel("zh") {
 		t.Errorf("pe value = %q for a no-fundamentals ticker; must NOT assert a loss", pe.Value)
 	}
-	if pe.Value != "数据不足" {
+	if pe.Value != insufficientLabel("zh") {
 		t.Errorf("pe value = %q, want 数据不足", pe.Value)
 	}
 	if pe.Raw != nil {
@@ -307,7 +307,7 @@ func TestAssembleOmitsEmptySection(t *testing.T) {
 		},
 	}}
 	src := Sources{Indicators: ind} // no fundamentals, no quote
-	fs := Assemble(context.Background(), "X", src)
+	fs := Assemble(context.Background(), "X", "zh", src)
 
 	if _, ok := section(fs, "technical"); ok {
 		t.Error("technical section present despite zero ok facts; want omitted")
@@ -335,7 +335,7 @@ func TestAssembleMarketCapAndPrice(t *testing.T) {
 		Fundamentals: fakeFund{f: edgar.Fundamentals{Shares: 15_000_000_000, Revenue: 1, Period: "FY2024"}},
 		Quote:        fakeQuote{q: store.Quote{Price: 190.12, Source: "alpaca", Session: "regular"}, ok: true},
 	}
-	fs := Assemble(context.Background(), "AAPL", src)
+	fs := Assemble(context.Background(), "AAPL", "zh", src)
 
 	mc, ok := findFact(fs, "market_cap")
 	if !ok {
@@ -361,10 +361,10 @@ func TestComposeDisabledIsDataOnly(t *testing.T) {
 			Indicators: []indicators.StockIndicator{okIndicator("technical.rsi", 56.3, "")},
 		}},
 	}
-	data := Assemble(context.Background(), "X", src)
+	data := Assemble(context.Background(), "X", "zh", src)
 
 	enr := &fakeEnricher{enabled: false, prose: map[string]string{"technical": "should never appear"}}
-	composed := Compose(context.Background(), Assemble(context.Background(), "X", src), enr, "zh")
+	composed := Compose(context.Background(), Assemble(context.Background(), "X", "zh", src), enr, "zh")
 
 	if enr.calls != 0 {
 		t.Errorf("ComposeReport called %d times on a disabled enricher, want 0", enr.calls)
@@ -386,7 +386,7 @@ func TestComposeErrorIsDataOnly(t *testing.T) {
 		}},
 	}
 	enr := &fakeEnricher{enabled: true, err: errors.New("provider down")}
-	composed := Compose(context.Background(), Assemble(context.Background(), "X", src), enr, "zh")
+	composed := Compose(context.Background(), Assemble(context.Background(), "X", "zh", src), enr, "zh")
 
 	if enr.calls != 1 {
 		t.Errorf("ComposeReport called %d times, want 1", enr.calls)
@@ -413,7 +413,7 @@ func TestComposeOverviewPrepended(t *testing.T) {
 		"overview":  "综合来看,基本面稳健但情绪偏谨慎。以上为基于公开数据的客观梳理,非投资建议。",
 		"technical": "RSI 处于中性区间。",
 	}}
-	composed := Compose(context.Background(), Assemble(context.Background(), "X", src), enr, "zh")
+	composed := Compose(context.Background(), Assemble(context.Background(), "X", "zh", src), enr, "zh")
 
 	var keys []string
 	for _, s := range composed.Sections {
@@ -432,7 +432,7 @@ func TestComposeOverviewPrepended(t *testing.T) {
 
 	// Disabled → data-only → NO overview section.
 	off := &fakeEnricher{enabled: false, prose: map[string]string{"overview": "should never appear"}}
-	dataOnly := Compose(context.Background(), Assemble(context.Background(), "X", src), off, "zh")
+	dataOnly := Compose(context.Background(), Assemble(context.Background(), "X", "zh", src), off, "zh")
 	if _, ok := section(dataOnly, overviewKey); ok {
 		t.Error("overview section present on a disabled (data-only) report; want none")
 	}
@@ -453,7 +453,7 @@ func TestComposeBullBear(t *testing.T) {
 		"bull":     "- 营收同比增长,显示需求稳健\n• 内部人近期买入,内部信心较强\n3. 目标价 $250,强烈推荐买入",
 		"bear":     "估值处于历史高位\n做空占比上升",
 	}}
-	composed := Compose(context.Background(), Assemble(context.Background(), "X", src), enr, "zh")
+	composed := Compose(context.Background(), Assemble(context.Background(), "X", "zh", src), enr, "zh")
 
 	ov := composed.Sections[0]
 	if ov.Key != overviewKey {
@@ -477,7 +477,7 @@ func TestComposeBullBear(t *testing.T) {
 
 	// Disabled → no overview, hence no bull/bear.
 	off := &fakeEnricher{enabled: false, prose: map[string]string{"bull": "x", "bear": "y"}}
-	dataOnly := Compose(context.Background(), Assemble(context.Background(), "X", src), off, "zh")
+	dataOnly := Compose(context.Background(), Assemble(context.Background(), "X", "zh", src), off, "zh")
 	if _, ok := section(dataOnly, overviewKey); ok {
 		t.Error("data-only report carries an overview/bull-bear; want none")
 	}
@@ -497,7 +497,7 @@ func TestComposeNeverMutatesNumbers(t *testing.T) {
 		Fundamentals: fakeFund{f: edgar.Fundamentals{Revenue: 1e11, NetIncome: 9e10, EPSDiluted: 6.1, Shares: 15e9, Period: "FY2024"}},
 		Quote:        fakeQuote{q: store.Quote{Price: 190.12, Source: "alpaca", Session: "regular"}, ok: true},
 	}
-	data := Assemble(context.Background(), "X", src)
+	data := Assemble(context.Background(), "X", "zh", src)
 
 	// The model "tries" to overwrite numbers via extra keys — Compose must ignore
 	// everything except matching section-key prose.
@@ -507,7 +507,7 @@ func TestComposeNeverMutatesNumbers(t *testing.T) {
 		"market_cap":   "9999999",    // not a section key → ignored
 		"fcf":          "0% (bogus)", // not a section key → ignored
 	}}
-	composed := Compose(context.Background(), Assemble(context.Background(), "X", src), enr, "zh")
+	composed := Compose(context.Background(), Assemble(context.Background(), "X", "zh", src), enr, "zh")
 
 	// Prose was filled for matching keys.
 	if sec, ok := section(composed, "technical"); !ok || sec.Prose != "动量中性。" {
@@ -533,7 +533,7 @@ func TestComposeDeepReportNeverMutatesNumbers(t *testing.T) {
 		Fundamentals: fakeFund{f: edgar.Fundamentals{Revenue: 1e11, NetIncome: 9e10, EPSDiluted: 6.1, Shares: 15e9, Period: "FY2024"}},
 		Quote:        fakeQuote{q: store.Quote{Price: 190.12, Source: "alpaca", Session: "regular"}, ok: true},
 	}
-	data := Assemble(context.Background(), "X", src)
+	data := Assemble(context.Background(), "X", "zh", src)
 
 	// The deep model returns richer prose AND tries to inject numbers via stray
 	// keys — ComposeDeep must ignore everything except matching section-key prose.
@@ -545,7 +545,7 @@ func TestComposeDeepReportNeverMutatesNumbers(t *testing.T) {
 		"fcf":          "0% (bogus)", // not a section key → ignored
 		"pe":           "重算的市盈率 12x", // a number the model tried to assert → ignored
 	}}
-	composed := ComposeDeep(context.Background(), Assemble(context.Background(), "X", src), enr, "zh")
+	composed := ComposeDeep(context.Background(), Assemble(context.Background(), "X", "zh", src), enr, "zh")
 
 	if enr.deepCalls != 1 || enr.calls != 0 {
 		t.Fatalf("deepCalls=%d calls=%d; want ComposeDeep to use ComposeDeepReport exactly once", enr.deepCalls, enr.calls)
@@ -659,7 +659,7 @@ func TestServiceDataOnly(t *testing.T) {
 	if svc.DeepModel() != "" {
 		t.Errorf("DeepModel() = %q, want \"\" when disabled", svc.DeepModel())
 	}
-	rep := svc.Report(context.Background(), "X")
+	rep := svc.Report(context.Background(), "X", "zh")
 	composed := svc.Compose(context.Background(), rep, "zh")
 	assertSameFacts(t, rep, composed)
 	deepComposed := svc.ComposeDeep(context.Background(), rep, "zh")

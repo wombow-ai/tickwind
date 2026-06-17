@@ -41,7 +41,7 @@ type fakeResearch struct {
 	failDeep     atomic.Bool
 }
 
-func (f *fakeResearch) Report(context.Context, string) research.FactSheet { return f.fs }
+func (f *fakeResearch) Report(context.Context, string, string) research.FactSheet { return f.fs }
 
 func (f *fakeResearch) Compose(_ context.Context, fs research.FactSheet, _ string) research.FactSheet {
 	atomic.AddInt32(&f.composes, 1)
@@ -208,7 +208,7 @@ func sampleSheet() research.FactSheet {
 		Name:       "Apple Inc.",
 		AsOf:       "2026-06-12",
 		PriceLabel: "$190.12 · alpaca · regular",
-		Disclaimer: research.Disclaimer,
+		Disclaimer: research.DisclaimerZH,
 		Sections: []research.SectionFacts{{
 			Key: "valuation", TitleZH: "估值", TitleEN: "Valuation",
 			Facts: []research.Fact{{
@@ -271,7 +271,7 @@ func TestGetResearch_EnabledHappyPath(t *testing.T) {
 	if len(sec.Facts) != 1 || sec.Facts[0].Value != "31.2x" {
 		t.Errorf("facts = %+v; want one ok fact 31.2x", sec.Facts)
 	}
-	if body.Disclaimer != research.Disclaimer {
+	if body.Disclaimer != research.DisclaimerZH {
 		t.Errorf("disclaimer = %q; want the mandatory label", body.Disclaimer)
 	}
 

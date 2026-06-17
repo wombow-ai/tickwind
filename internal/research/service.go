@@ -25,9 +25,13 @@ func NewService(src Sources, enr ResearchEnricher, model, deepModel string) *Ser
 	return &Service{src: src, enr: enr, model: model, deepModel: deepModel}
 }
 
-// Report assembles the data-only fact sheet (no LLM, cheap, never errors).
-func (s *Service) Report(ctx context.Context, ticker string) FactSheet {
-	return Assemble(ctx, ticker, s.src)
+// Report assembles the data-only fact sheet (no LLM, cheap, never errors). lang
+// ("en"/"zh") selects the language of every Go-built label embedded in a fact
+// Value (flows trade/13F/short-trend labels, the Fear & Greed band, the loss
+// placeholder) so the data-only sheet is correct for the request language even
+// before any LLM prose.
+func (s *Service) Report(ctx context.Context, ticker, lang string) FactSheet {
+	return Assemble(ctx, ticker, lang, s.src)
 }
 
 // Compose fills per-section prose on an already-assembled fact sheet via the held
