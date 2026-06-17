@@ -26,9 +26,13 @@ export async function generateMetadata({
     openGraph: {
       images: [
         ogImageMeta({
-          eyebrow: '期权异动',
-          title: '全市场期权成交龙虎榜',
-          subtitle: '今日最活跃的看涨/看跌合约 · 量比 · Cboe 延迟15分钟',
+          lang: loc,
+          eyebrow: loc === 'zh' ? '期权异动' : 'Options Flow',
+          title: loc === 'zh' ? '全市场期权成交龙虎榜' : 'Unusual Options Activity',
+          subtitle:
+            loc === 'zh'
+              ? '今日最活跃的看涨/看跌合约 · 量比 · Cboe 延迟15分钟'
+              : "Today's most-active calls/puts · Vol/OI · Cboe 15-min delayed",
         }),
       ],
     },

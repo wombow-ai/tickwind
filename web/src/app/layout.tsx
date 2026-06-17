@@ -27,9 +27,10 @@ export const metadata: Metadata = {
     description: DESCRIPTION,
     images: [
       ogImageMeta({
-        eyebrow: '中文美股数据台',
-        title: '美股实时行情 · 国会交易 · 13F · 期权异动',
-        subtitle: '数据优先,免费看清美股 — 行情/SEC内部人/国会山股神/财报',
+        lang: 'en',
+        eyebrow: 'US-stock data desk',
+        title: 'US stocks · congress trades · 13F · options flow',
+        subtitle: 'Data-first US-stock tracker — free',
       }),
     ],
   },
@@ -37,7 +38,7 @@ export const metadata: Metadata = {
     card: 'summary_large_image',
     title: `${APP_NAME} — ${APP_TAGLINE}`,
     description: DESCRIPTION,
-    images: [ogImageMeta({eyebrow: '中文美股数据台', title: '美股实时行情 · 国会交易 · 13F · 期权异动'}).url],
+    images: [ogImageMeta({lang: 'en', eyebrow: 'US-stock data desk', title: 'US stocks · congress trades · 13F · options flow'}).url],
   },
 };
 

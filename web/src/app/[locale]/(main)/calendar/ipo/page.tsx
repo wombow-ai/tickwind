@@ -35,9 +35,16 @@ export async function generateMetadata({
     openGraph: {
       images: [
         ogImageMeta({
-          eyebrow: '美股 IPO 日历',
-          title: '新股上市 · 即将上市 · 近期定价',
-          subtitle: '来自 Nasdaq 的美股 IPO 日历',
+          lang: loc,
+          eyebrow: loc === 'zh' ? '美股 IPO 日历' : 'US IPO Calendar',
+          title:
+            loc === 'zh'
+              ? '新股上市 · 即将上市 · 近期定价'
+              : 'Upcoming · Pricing · Recently Priced IPOs',
+          subtitle:
+            loc === 'zh'
+              ? '来自 Nasdaq 的美股 IPO 日历'
+              : 'US IPO calendar from the Nasdaq feed',
         }),
       ],
     },

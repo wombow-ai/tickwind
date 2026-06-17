@@ -416,6 +416,24 @@ feature-flagged plugin, never on the critical path. Web only.
   (flattened tabs + Export-PDF — the visual layout is owner-visual). **Still queued (awaiting owner's explicit
   "做"): make `/summary` + `/movement` async** (instant data-only + bg prose + poll, reusing the deep-research
   pattern) — the proposed root-cause fix for the LLM-latency page slowdown the owner reported.
+- **Shipped 2026-06-17 (cont.² — systematic Chinese-in-EN audit, the owner's "复查" request):** the owner's
+  hunch ("感觉发生好几次") was right. An adversarial Workflow audit (5 finders by subsystem → an independent
+  skeptic refutes each candidate) swept every CJK literal across backend + frontend and found a whole class
+  the Stage-2 home-card fix had missed: **the Open Graph / Twitter SHARE-CARD images rendered Chinese under
+  `/en`** (9 candidates → **5 confirmed**, 4 refuted). `ogImageMeta(...)` was called with hardcoded Chinese
+  eyebrow/title/subtitle + no `lang` on (a) the **root `layout.tsx` default** (openGraph + twitter — inherited
+  by EVERY page without its own OG: ~6,000 `/en/stock/[ticker]` + /en/hot|news|discussion|congress|earnings|…)
+  and (b) **4 static section pages** (smart-money / unusual / opportunities / calendar-ipo). The `/api/og`
+  route renders title/eyebrow/subtitle VERBATIM (and deliberately fetches a Noto Sans SC subset), so an EN
+  user's link previews on X/Telegram/Slack/微信 + the "save image" card were fully Chinese; with no `lang` the
+  chrome badge also defaulted to "中文美股数据台". **Fix (`<this commit>`):** per-locale `lang: loc` + zh/en
+  branch on the 4 section pages (matching the established home/topic/fund/indicators/congress pattern; commit
+  `609a241`), and the root default flipped to **English** (it sits above `[locale]`, the langAlternates x-default — per
+  the owner's "single-value defaults to English" principle). A grep of ALL 15 `ogImageMeta` call sites confirms
+  the other 10 were already locale-correct — no misses, the audit was complete for this class. Web build green
+  (1024 static pages, TS clean). The browser-tab `<title>` on these pages was already EN (LocalizedTitle) — only
+  the OG image surface had been overlooked. **→ This closes the Chinese-in-EN class for the session (3 rounds:
+  "Possibly related"/movement caller → research/movement/material labels+disclaimers → OG share cards).**
 - **Shipped 2026-06-14 (owner batch + greenlit follow-ups, all live-verified):** R2 now has all **6
   sections** (估值/基本面/技术面/资金面/情绪面/概览) + a **two-sided 看多/看空 (bull/bear)** reading on the
   overview (one ComposeReport call gains `bull`/`bear` keys; a deterministic Go advice-guard strips any

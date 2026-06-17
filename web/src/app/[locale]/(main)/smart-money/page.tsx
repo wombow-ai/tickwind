@@ -26,9 +26,16 @@ export async function generateMetadata({
     openGraph: {
       images: [
         ogImageMeta({
-          eyebrow: '聪明钱',
-          title: '国会山股神 · 13F 大佬持仓 · 机构举牌',
-          subtitle: '跟踪美国国会议员交易与机构持仓变动',
+          lang: loc,
+          eyebrow: loc === 'zh' ? '聪明钱' : 'Smart Money',
+          title:
+            loc === 'zh'
+              ? '国会山股神 · 13F 大佬持仓 · 机构举牌'
+              : 'Congress Trades · 13F Whales · Activist Filings',
+          subtitle:
+            loc === 'zh'
+              ? '跟踪美国国会议员交易与机构持仓变动'
+              : 'Tracking U.S. congressional trades and institutional holdings',
         }),
       ],
     },

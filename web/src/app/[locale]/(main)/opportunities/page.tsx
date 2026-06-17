@@ -28,9 +28,16 @@ export async function generateMetadata({
     openGraph: {
       images: [
         ogImageMeta({
-          eyebrow: '机会榜',
-          title: '美股内部人买入 · 高管增持',
-          subtitle: '从 SEC Form 4 挖出高管/董事公开市场增持的小盘股',
+          lang: loc,
+          eyebrow: loc === 'zh' ? '机会榜' : 'Opportunity Board',
+          title:
+            loc === 'zh'
+              ? '美股内部人买入 · 高管增持'
+              : 'US Insider Open-Market Buys · Executive Purchases',
+          subtitle:
+            loc === 'zh'
+              ? '从 SEC Form 4 挖出高管/董事公开市场增持的小盘股'
+              : 'Small-caps where execs & directors bought on the open market, from SEC Form 4',
         }),
       ],
     },
