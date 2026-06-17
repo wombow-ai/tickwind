@@ -431,8 +431,11 @@ feature-flagged plugin, never on the critical path. Web only.
   `d7d83e8`), and the root default flipped to **English** (it sits above `[locale]`, the langAlternates x-default — per
   the owner's "single-value defaults to English" principle). A grep of ALL 15 `ogImageMeta` call sites confirms
   the other 10 were already locale-correct — no misses, the audit was complete for this class. Web build green
-  (1024 static pages, TS clean). The browser-tab `<title>` on these pages was already EN (LocalizedTitle) — only
-  the OG image surface had been overlooked. **→ This closes the Chinese-in-EN class for the session (3 rounds:
+  (1024 static pages, TS clean). **LIVE-verified** (Vercel `d7d83e8`): the og:image on /en/{smart-money,
+  opportunities,unusual,calendar-ipo,stock/AAPL,hot} now carries `lang=en` + an English title with zero CJK
+  (stock/AAPL + hot confirm the root-default inheritance is English across the ~6,000 inheriting pages), while
+  /zh/smart-money correctly keeps its Chinese card (国会山股神…) — no over-correction. The browser-tab `<title>`
+  on these pages was already EN (LocalizedTitle) — only the OG image surface had been overlooked. **→ This closes the Chinese-in-EN class for the session (3 rounds:
   "Possibly related"/movement caller → research/movement/material labels+disclaimers → OG share cards).**
 - **Shipped 2026-06-14 (owner batch + greenlit follow-ups, all live-verified):** R2 now has all **6
   sections** (估值/基本面/技术面/资金面/情绪面/概览) + a **two-sided 看多/看空 (bull/bear)** reading on the
