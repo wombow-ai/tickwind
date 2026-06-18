@@ -465,6 +465,26 @@ feature-flagged plugin, never on the critical path. Web only.
   card hides). **~1–1.6s vs the old ~12s block — the slowdown is root-cause fixed.** healthz ok; `/en/stock/AAPL`
   200. The movement significant-move `generating→canned→LLM-upgrade` path wasn't exercised live (no >5% mover at
   the time) but is unit-tested and uses the identical mechanism the summary path proved end-to-end.
+- **Shipped + preview-verified 2026-06-18 (cont.⁴ — owner's 5 UI refinements, commit `bc8aecb`, web-only):**
+  **(1) Stock list "list" view** — a Futu-style Cards⇄List toggle on the home Markets strip (`HomeHub`) AND
+  the watchlist (`Board`), via a new `StockRow` (one full-width row per stock: ticker · market · name · sparkline
+  · live price · day-change, mirroring `StockCard`'s exact regular/extended-hours price logic) + a shared
+  `useStockListView` hook + `StockListToggle` (choice persisted in `localStorage` key `tw-board-view`, consistent
+  across the app, SSR-safe). New dict keys `board.viewCards`/`board.viewList`. **(2) Research back-arrow** — the
+  `deep.back` i18n string had a literal "←" stacked on the `ArrowLeft` icon (double arrow); dropped the literal
+  (both langs). **(4) Filings & Money reorder** — now leads with the smart-money signals (insider → congress →
+  whales → options); Material events moved to the bottom. Every `#id`+`scroll-mt-20` anchor preserved so
+  research-citation deep-links still resolve. **(5) News & Discussion + My tabs → 2-col on desktop** (`lg:grid-cols-2`,
+  stacked on mobile): News+Discussion side-by-side (Comments full-width below); the My panels in a 2-col grid.
+  **(3) "Deep Research" button vs the "Research" tab — left AS-IS by design** (surfaced, not changed): the tab is
+  the free *normal* report (`ResearchReport`), the page is the *deep* (login + monthly-quota) **exportable** report
+  (`DeepResearchView`); the PDF export's `@media print` CSS is page-coupled, so moving it into a tab is exactly the
+  "would break export" case the owner said to leave alone. **Verified live in a local preview** (list rows render
+  with real quotes; Money anchor order = short/insider/congress/whales/options/material-events; desktop News grid =
+  two 436px columns; research back link = "Back to AAPL" with 1 icon + 0 literal arrows; zero console errors) +
+  web build green (1060 static pages). **NOTE for future: two near-identical stock strips exist — `HomeHub`
+  (home `/`) and `Board` (`/me?tab=watchlist` only); both now share `StockRow`'s toggle/hook. Don't assume an
+  edit to one covers the other** (this batch's #1 initially missed HomeHub — the preview caught it).
 - **Shipped 2026-06-14 (owner batch + greenlit follow-ups, all live-verified):** R2 now has all **6
   sections** (估值/基本面/技术面/资金面/情绪面/概览) + a **two-sided 看多/看空 (bull/bear)** reading on the
   overview (one ComposeReport call gains `bull`/`bear` keys; a deterministic Go advice-guard strips any
