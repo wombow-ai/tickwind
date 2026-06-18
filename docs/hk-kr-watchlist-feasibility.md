@@ -45,3 +45,26 @@ wave):
 - Build cost for HK filings-only: a small `internal/hkex` client (HKEXnews
   list + Securities List) + an `HK` market in `market.Of` (`.HK` suffix) + an
   `HKAdapter` (filings only, `Quote` returns empty) wired like `TWAdapter`.
+
+## 2026-06-18 — probe: HK filings is now BUILDABLE (the `prefix.do` "empty" was a param bug, NOT IP-gating)
+Two read-only VPS probes (owner long-absent → bounded autonomous investigation, no build):
+- **Residential proxy works** (egress IP: direct `104.168.38.21` → proxied `115.76.50.232`) — but it was NOT the unblock.
+- **The real blocker was a stale query param.** `prefix.do?...&lang=en` (lowercase) returns 200 + an empty
+  `callback(...)` (~2 bytes); **`lang=EN` (uppercase) returns the full JSONP** — e.g. `name=0700` →
+  `callback({"more":"1","stockInfo":[{"stockId":7609,"code":"00700","name":"TENCENT"}]});` (`name=tencent` also
+  matches). So **code→stockId resolution WORKS** — the long-standing "prefix.do empty from here / datacenter-IP-
+  gated" note was a stale-param artifact, not IP-gating. (Two vars changed across the probes [lang + proxy], so
+  whether it ALSO needs the proxy is unisolated — try direct first at build time, fall back to `config.ProxyClient`.)
+- `titlesearch.xhtml` reachable (200, ~12 KB HTML). The static **HKEX `ListOfSecurities.xlsx` downloads** (200,
+  1.4 MB, real xlsx) — a code→name reference / static stockId-map fallback.
+- Not yet probed (recon at build time): `titleSearchServlet.do?...&stockId=<id>&...&lang=EN` = the filings list
+  for a stockId (the page + prefix.do working strongly implies it works).
+
+**Verdict: HK filings-only is feasible + buildable** for the owner's 3 names — Tencent `0700` (stockId **7609**),
+智谱 `02513`, MiniMax `00100` — restoring value lost when Yahoo (their only quote source) was removed 2026-06-17.
+**Build plan** (mirrors `TWAdapter`): a small `internal/hkex` client (`prefix.do`/static-list for code→stockId +
+`titleSearchServlet.do` for filings) → an `HKAdapter` (filings only; `Quote` empty) wired into the ingest
+scheduler + `market.Of` (`.HK`) → reuse the existing filings/material-events card on the frontend. Free +
+redistribution-clean (HKEXnews announcements are public). **Owner decision — greenlight the build?** Surfaced
+rather than auto-built: it's a deferred roadmap item + a genuine product/priority call. One word ("做 HK 财报")
+starts it.

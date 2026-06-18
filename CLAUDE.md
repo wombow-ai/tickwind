@@ -123,10 +123,12 @@ feature-flagged plugin, never on the critical path. Web only.
   **HK prices live** via Yahoo delayed quotes — an **owner-authorized "gray" source**
   (HK exchange quotes are licence-gated; `internal/yahoo`, isolated + documented) for
   the 3 names the owner follows (Tencent `0700.HK`, Zhipu/"Knowledge Atlas" `2513.HK`,
-  MiniMax `0100.HK`); **HK filings via HKEXnews DEFERRED** — its titleSearchServlet
-  filters only by an internal `stockId` (not the code) and `prefix.do` (code→stockId)
-  is empty from here (datacenter-IP-gated); revisit from the VPS or a static stockId
-  map. **KR DEFERRED** (KRX prices +
+  MiniMax `0100.HK`); **HK filings via HKEXnews — now FEASIBLE (2026-06-18 probe), owner-gated build:** the old
+  "`prefix.do` (code→stockId) empty / datacenter-IP-gated" blocker was a STALE-PARAM artifact — with `lang=EN`
+  (uppercase, not `lang=en`) it returns the full JSONP (Tencent `0700`→stockId 7609); `titleSearchServlet` takes
+  that stockId, and the static HKEX `ListOfSecurities.xlsx` downloads as a fallback. Buildable filings-only
+  (mirrors `TWAdapter`) — recorded + recommended in `docs/hk-kr-watchlist-feasibility.md`, awaiting the owner's
+  greenlight (deferred roadmap item + a product call → surfaced, not auto-built). **KR DEFERRED** (KRX prices +
   OpenDART filings code-ready + inert; owner's KRX-site access is blocked — they'll
   supply the free KRX key later).
 - **Never touch a funded brokerage account from code** — market-data only; if a broker
