@@ -30,6 +30,7 @@ import {
   type SortKey,
 } from '@/components/SortControl';
 import {StockCard} from '@/components/StockCard';
+import {StockListToggle, StockRow, useStockListView} from '@/components/StockRow';
 import {TimelineItem} from '@/components/TimelineItem';
 import {EmptyState, ErrorState, FeedSkeleton} from '@/components/ui/states';
 import {useToast} from '@/components/ui/Toast';
@@ -80,6 +81,8 @@ export function Board({variant = 'markets'}: {variant?: 'markets' | 'watchlist'}
   const [feedsOpen, setFeedsOpen] = useState(true);
   const [focusTicker, setFocusTicker] = useState<string | null>(null);
   const [sortKey, setSortKey] = useState<SortKey>('default');
+  // Stock-strip view mode (cards | list), shared + persisted across the app.
+  const [view, setViewMode] = useStockListView();
 
   const [news, setNews] = useState<Feed<NewsItem>>({status: 'loading', items: []});
   const [social, setSocial] = useState<Feed<Post>>({status: 'loading', items: []});
@@ -360,27 +363,32 @@ export function Board({variant = 'markets'}: {variant?: 'markets' | 'watchlist'}
       ) : (
         <div className="mb-8">
           {cards.length >= 2 && !(listLoading && tickers.length === 0) && (
-            <div className="mb-2.5 flex items-center justify-end gap-1.5">
-              <ArrowUpDown size={13} className={t.faint} />
-              <SortPills
-                value={sortKey}
-                onChange={setSortKey}
-                defaultLabel={
-                  watchlistMode ? tr('board.sortAdded') : tr('board.sortDefault')
-                }
-                changeLabel={tr('board.sortChange')}
-                alphaLabel={tr('board.sortAlpha')}
-              />
+            <div className="mb-2.5 flex items-center justify-end gap-3">
+              <StockListToggle view={view} onChange={setViewMode} />
+              <div className="flex items-center gap-1.5">
+                <ArrowUpDown size={13} className={t.faint} />
+                <SortPills
+                  value={sortKey}
+                  onChange={setSortKey}
+                  defaultLabel={
+                    watchlistMode ? tr('board.sortAdded') : tr('board.sortDefault')
+                  }
+                  changeLabel={tr('board.sortChange')}
+                  alphaLabel={tr('board.sortAlpha')}
+                />
+              </div>
             </div>
           )}
-          <div className="flex gap-4 overflow-x-auto pb-2">
-            {(listLoading && tickers.length === 0
-              ? [...Array(4)].map((_, i) => ({ticker: `skeleton-${i}`}))
-              : sortedCards
-            ).map((sec, i) =>
-              'name' in sec ? (
-                <div key={sec.ticker} className="w-[270px] shrink-0">
-                  <StockCard
+          {view === 'list' ? (
+            // Futu-style list: one full-width row per stock (same ordering as cards).
+            <div className="flex flex-col gap-2">
+              {(listLoading && tickers.length === 0
+                ? [...Array(6)].map((_, i) => ({ticker: `skeleton-${i}`}))
+                : sortedCards
+              ).map((sec, i) =>
+                'name' in sec ? (
+                  <StockRow
+                    key={sec.ticker}
                     security={sec as Security}
                     quote={quotes.get(sec.ticker)}
                     closes={barsMap[sec.ticker]}
@@ -388,20 +396,45 @@ export function Board({variant = 'markets'}: {variant?: 'markets' | 'watchlist'}
                       watchlistMode && isAuthed ? () => remove(sec.ticker) : undefined
                     }
                   />
-                </div>
-              ) : (
-                <div
-                  key={i}
-                  className={cx(
-                    'h-[150px] w-[270px] shrink-0 rounded-2xl border',
-                    t.card,
-                    t.border,
-                    t.skel,
-                  )}
-                />
-              ),
-            )}
-          </div>
+                ) : (
+                  <div
+                    key={i}
+                    className={cx('h-[56px] rounded-xl border', t.card, t.border, t.skel)}
+                  />
+                ),
+              )}
+            </div>
+          ) : (
+            <div className="flex gap-4 overflow-x-auto pb-2">
+              {(listLoading && tickers.length === 0
+                ? [...Array(4)].map((_, i) => ({ticker: `skeleton-${i}`}))
+                : sortedCards
+              ).map((sec, i) =>
+                'name' in sec ? (
+                  <div key={sec.ticker} className="w-[270px] shrink-0">
+                    <StockCard
+                      security={sec as Security}
+                      quote={quotes.get(sec.ticker)}
+                      closes={barsMap[sec.ticker]}
+                      onRemove={
+                        watchlistMode && isAuthed ? () => remove(sec.ticker) : undefined
+                      }
+                    />
+                  </div>
+                ) : (
+                  <div
+                    key={i}
+                    className={cx(
+                      'h-[150px] w-[270px] shrink-0 rounded-2xl border',
+                      t.card,
+                      t.border,
+                      t.skel,
+                    )}
+                  />
+                ),
+              )}
+            </div>
+          )}
         </div>
         ))}
 

@@ -44,6 +44,7 @@ import {
   type SortKey,
 } from '@/components/SortControl';
 import {StockCard} from '@/components/StockCard';
+import {StockListToggle, StockRow, useStockListView} from '@/components/StockRow';
 import {TopicsStrip} from '@/components/TopicsStrip';
 
 type Tokens = ReturnType<typeof tok>;
@@ -90,6 +91,8 @@ export function HomeHub() {
   const [loading, setLoading] = useState({hot: true, opps: true, gurus: true, news: true, posts: true});
   const quotes = useQuotes(tickers);
   const [sortKey, setSortKey] = useState<SortKey>('default');
+  // Markets-strip view mode (cards | list), shared + persisted across the app.
+  const [view, setViewMode] = useStockListView();
   // Guru-watch collapses to a couple of items so its card matches the height of
   // the Hot/Opportunity leaderboards beside it; "Show more" reveals the rest.
   const [guruExpanded, setGuruExpanded] = useState(false);
@@ -164,28 +167,45 @@ export function HomeHub() {
           >
             {tr('mkt.allStocks')} →
           </Link>
-          <div className="flex items-center gap-1.5">
-            <ArrowUpDown size={13} className={t.faint} />
-            <SortPills
-              value={sortKey}
-              onChange={setSortKey}
-              defaultLabel={tr('board.sortDefault')}
-              changeLabel={tr('board.sortChange')}
-              alphaLabel={tr('board.sortAlpha')}
-            />
+          <div className="flex items-center gap-3">
+            <StockListToggle view={view} onChange={setViewMode} />
+            <div className="flex items-center gap-1.5">
+              <ArrowUpDown size={13} className={t.faint} />
+              <SortPills
+                value={sortKey}
+                onChange={setSortKey}
+                defaultLabel={tr('board.sortDefault')}
+                changeLabel={tr('board.sortChange')}
+                alphaLabel={tr('board.sortAlpha')}
+              />
+            </div>
           </div>
         </div>
-        <div className="flex gap-4 overflow-x-auto pb-2">
-          {sortedCards.map(sec => (
-            <div key={sec.ticker} className="w-[270px] shrink-0">
-              <StockCard
+        {view === 'list' ? (
+          // Futu-style list: one full-width row per stock (same order as the cards).
+          <div className="flex flex-col gap-2">
+            {sortedCards.map(sec => (
+              <StockRow
+                key={sec.ticker}
                 security={sec}
                 quote={quotes.get(sec.ticker)}
                 closes={bars[sec.ticker]}
               />
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        ) : (
+          <div className="flex gap-4 overflow-x-auto pb-2">
+            {sortedCards.map(sec => (
+              <div key={sec.ticker} className="w-[270px] shrink-0">
+                <StockCard
+                  security={sec}
+                  quote={quotes.get(sec.ticker)}
+                  closes={bars[sec.ticker]}
+                />
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Daily AI briefing (folded in from the former /briefing page; self-hides

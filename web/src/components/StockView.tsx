@@ -715,14 +715,8 @@ export function StockView({ticker}: {ticker: string}) {
           </div>
         </div>
 
-        {/* 8-K material events (current reports) + optional AI summary. Go owns every
-            fact (form/dates/item-code labels/source link); only the per-filing summary
-            is AI-written (omitted when LLM off / source too thin). Hides on an unknown
-            symbol; shows a subtle empty line when a known company has no recent 8-Ks. */}
-        <div id="material-events" className="scroll-mt-20">
-          <FilingsCard ticker={norm} />
-        </div>
-
+        {/* Smart-money cards — the "who's positioned here" read, ordered most-actionable
+            first (owner reorder: money-flow signals lead; 8-K disclosures move below). */}
         {/* Insider activity (Form 4): recent open-market buys AND sells, newest first,
             with shares/price/value/date, the insider + role, and a 10b5-1 planned-sale
             tag. Pure structured data (no LLM) — Go owns every number. Hides on an
@@ -731,7 +725,6 @@ export function StockView({ticker}: {ticker: string}) {
           <InsiderActivityCard ticker={norm} />
         </div>
 
-        {/* Smart-money cards: the "who else is positioned here" read. */}
         {/* Congress trades in this ticker (House Clerk PTRs; hides when none) —
             each member links to their /congress/member/{slug} detail page */}
         <div id="congress" className="scroll-mt-20">
@@ -747,6 +740,15 @@ export function StockView({ticker}: {ticker: string}) {
         {/* Options overview: delayed Cboe P/C, max pain, OI leaders (hides for non-US/no options) */}
         <div id="options" className="scroll-mt-20">
           <OptionsCard ticker={norm} />
+        </div>
+
+        {/* 8-K material events (current reports) + optional AI summary — moved BELOW the
+            money signals (disclosures, less time-critical). Go owns every fact (form/dates/
+            item-code labels/source link); only the per-filing summary is AI-written (omitted
+            when LLM off / source too thin). Hides on an unknown symbol; shows a subtle empty
+            line when a known company has no recent 8-Ks. */}
+        <div id="material-events" className="scroll-mt-20">
+          <FilingsCard ticker={norm} />
         </div>
 
         {/* SEC company filings feed (10-K/10-Q/8-K/… newest-first) — formerly the
@@ -772,32 +774,36 @@ export function StockView({ticker}: {ticker: string}) {
       {/* Consolidated public feeds + community, stacked as light inner sub-sections:
           news articles, social discussion, then the public comments board. */}
       <div hidden={topTab !== 'News'}>
-        <div className="mb-6">
-          <SectionLabel label={tr('mod.news')} dark={dark} t={t} />
-          <FeedList
-            feed={news}
-            onRetry={loadNews}
-            empty={{
-              label: tr('mod.noNews'),
-              sub: tr('stock.noNewsSub'),
-              icon: Newspaper,
-            }}
-            render={n => <TimelineItem key={n.id} entry={{kind: 'news', item: n}} />}
-          />
-        </div>
+        {/* News + Discussion side-by-side on desktop (owner: left/right split), stacked
+            on mobile; the Comments board stays full-width below. */}
+        <div className="mb-6 grid items-start gap-6 lg:grid-cols-2">
+          <div>
+            <SectionLabel label={tr('mod.news')} dark={dark} t={t} />
+            <FeedList
+              feed={news}
+              onRetry={loadNews}
+              empty={{
+                label: tr('mod.noNews'),
+                sub: tr('stock.noNewsSub'),
+                icon: Newspaper,
+              }}
+              render={n => <TimelineItem key={n.id} entry={{kind: 'news', item: n}} />}
+            />
+          </div>
 
-        <div className="mb-6">
-          <SectionLabel label={tr('mod.discussion')} dark={dark} t={t} />
-          <FeedList
-            feed={social}
-            onRetry={loadSocial}
-            empty={{
-              label: tr('mod.noChatter'),
-              sub: tr('stock.noChatterSub'),
-              icon: MessageSquare,
-            }}
-            render={p => <TimelineItem key={p.id} entry={{kind: 'disc', item: p}} />}
-          />
+          <div>
+            <SectionLabel label={tr('mod.discussion')} dark={dark} t={t} />
+            <FeedList
+              feed={social}
+              onRetry={loadSocial}
+              empty={{
+                label: tr('mod.noChatter'),
+                sub: tr('stock.noChatterSub'),
+                icon: MessageSquare,
+              }}
+              render={p => <TimelineItem key={p.id} entry={{kind: 'disc', item: p}} />}
+            />
+          </div>
         </div>
 
         <div>
@@ -812,17 +818,19 @@ export function StockView({ticker}: {ticker: string}) {
           unmounted for anon (gated below by `isAuthed`). */}
       {isAuthed && (
         <div hidden={topTab !== 'My'}>
-          <div className="mb-6">
+          {/* Personal panels: 2-col grid on desktop (owner), stacked on mobile. */}
+          <div className="grid items-start gap-6 lg:grid-cols-2">
+          <div>
             <SectionLabel label={tr('nav.notes')} dark={dark} t={t} />
             <NotesPanel ticker={norm} />
           </div>
 
-          <div className="mb-6">
+          <div>
             <SectionLabel label={tr('alerts.title')} dark={dark} t={t} />
             <AlertsPanel ticker={norm} />
           </div>
 
-          <div className="mb-6">
+          <div>
             <SectionLabel label={tr('holdings.title')} dark={dark} t={t} />
             <HoldingsPanel ticker={norm} quote={quote} cur={cur} />
           </div>
@@ -875,6 +883,7 @@ export function StockView({ticker}: {ticker: string}) {
                 render={c => <TimelineItem key={c.id} entry={{kind: 'clip', item: c}} />}
               />
             </div>
+          </div>
           </div>
         </div>
       )}
