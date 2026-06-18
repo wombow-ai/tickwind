@@ -527,6 +527,20 @@ func main() {
 				priceClient, priceClient.SessionAt, hub.Publish, st, log)
 			liveSub = streamer // viewed-ticker live subscription (#2b)
 			go streamer.Run(ctx)
+			// Refresh the pinned base set periodically so the real-time stream tracks
+			// the live watchlist∪popular set instead of freezing to the boot snapshot.
+			go func() {
+				tk := time.NewTicker(5 * time.Minute)
+				defer tk.Stop()
+				for {
+					select {
+					case <-ctx.Done():
+						return
+					case <-tk.C:
+						streamer.RefreshBase(usSymbols(ingestTickers(ctx)))
+					}
+				}
+			}()
 			log.Info("alpaca WS real-time enabled", "base_symbols", min(len(wsSyms), alpacaws.MaxSymbols-10))
 		}
 

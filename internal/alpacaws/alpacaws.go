@@ -67,16 +67,48 @@ type Streamer struct {
 // New builds a Streamer; the pinned base set is capped at MaxSymbols-viewedSlots,
 // leaving room for actively-viewed tickers added via Subscribe.
 func New(wsURL, keyID, secret string, base []string, seeder QuoteSeeder, classify func(time.Time) string, publish func(store.Quote), st store.Store, log *slog.Logger) *Streamer {
-	if baseCap := MaxSymbols - viewedSlots; len(base) > baseCap {
-		base = base[:baseCap]
-	}
 	return &Streamer{
-		url: wsURL, keyID: keyID, secret: secret, base: base,
+		url: wsURL, keyID: keyID, secret: secret, base: capBase(base),
 		seeder: seeder, classify: classify, publish: publish, store: st, log: log,
 		seed:        make(map[string]store.Quote),
 		lastPublish: make(map[string]time.Time),
 		lastUpsert:  make(map[string]time.Time),
 		resyncCh:    make(chan struct{}, 1),
+	}
+}
+
+// capBase trims the pinned base set to MaxSymbols-viewedSlots, leaving room for
+// actively-viewed tickers. Order is preserved (callers front-load the most
+// important symbols, e.g. POPULAR_TICKERS).
+func capBase(base []string) []string {
+	if lim := MaxSymbols - viewedSlots; len(base) > lim {
+		return base[:lim]
+	}
+	return base
+}
+
+// RefreshBase replaces the pinned base set (e.g. as watchlists change after boot)
+// so the real-time stream isn't frozen to the startup snapshot. Capped like New;
+// updates s.base under submu and nudges a resync (so the writer re-diffs the wire
+// subscriptions) only when the set actually changed. Safe for concurrent use.
+func (s *Streamer) RefreshBase(base []string) {
+	nb := capBase(base)
+	s.submu.Lock()
+	same := len(nb) == len(s.base)
+	for i := 0; same && i < len(nb); i++ {
+		if nb[i] != s.base[i] {
+			same = false
+		}
+	}
+	if !same {
+		s.base = nb
+	}
+	s.submu.Unlock()
+	if !same {
+		select {
+		case s.resyncCh <- struct{}{}:
+		default:
+		}
 	}
 }
 
@@ -152,7 +184,7 @@ func isForeignSuffix(t string) bool {
 // Run connects, subscribes, and streams until ctx is cancelled, reconnecting with
 // capped exponential backoff.
 func (s *Streamer) Run(ctx context.Context) {
-	if len(s.base) == 0 {
+	if len(s.desired()) == 0 { // submu-guarded read (base is refreshed concurrently)
 		s.log.Info("alpacaws: no base symbols — not starting")
 		return
 	}

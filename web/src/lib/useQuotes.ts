@@ -80,6 +80,16 @@ export function useQuotes(
       });
     }
 
+    // Nudge the backend to add these tickers to the real-time WS stream (within the
+    // free-tier cap, LRU-evicted), so the visible set updates sub-second — not only
+    // on the slower REST poller. Best-effort: a failure just falls back to the poller.
+    fetch(`${API_BASE}/v1/live/subscribe`, {
+      method: 'POST',
+      headers: {'content-type': 'application/json'},
+      body: JSON.stringify({tickers: symbols}),
+      signal: controller.signal,
+    }).catch(() => {});
+
     const source = new EventSource(`${API_BASE}/v1/stream`);
     source.addEventListener('quote', event => {
       let quote: Quote;

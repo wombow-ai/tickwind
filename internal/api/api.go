@@ -520,6 +520,7 @@ func New(st store.Store, hub QuoteStream, enricher enrich.Enricher, verifier *au
 	mux.HandleFunc("GET /v1/stocks/{ticker}/filings", s.getFilings)
 	mux.HandleFunc("GET /v1/stocks/{ticker}/quote", s.getQuote)
 	mux.HandleFunc("POST /v1/stocks/{ticker}/subscribe", s.subscribeLive)
+	mux.HandleFunc("POST /v1/live/subscribe", s.subscribeLiveBatch)
 	mux.HandleFunc("GET /v1/stocks/{ticker}/bars", s.getBars)
 	mux.HandleFunc("GET /v1/stocks/{ticker}/candles", s.getCandles)
 	mux.HandleFunc("GET /v1/stocks/{ticker}/fundamentals", s.getFundamentals)
@@ -1544,6 +1545,30 @@ func (s *Server) getQuote(w http.ResponseWriter, r *http.Request) {
 func (s *Server) subscribeLive(w http.ResponseWriter, r *http.Request) {
 	if s.live != nil {
 		s.live.Subscribe(strings.ToUpper(strings.TrimSpace(r.PathValue("ticker"))))
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+// subscribeLiveBatch nudges the WS streamer to subscribe a BATCH of tickers a list
+// view is showing (home Markets / watchlist / overview), so the visible set updates
+// live (within the free-tier cap, LRU-evicted) instead of only on the REST poller.
+// Body: {"tickers":[...]}. Fire-and-forget; always 200; capped to bound churn;
+// no-op when streaming is disabled. Public — it only influences the live-stream
+// subscription set, never any data.
+func (s *Server) subscribeLiveBatch(w http.ResponseWriter, r *http.Request) {
+	if s.live != nil {
+		var body struct {
+			Tickers []string `json:"tickers"`
+		}
+		if err := json.NewDecoder(io.LimitReader(r.Body, 8<<10)).Decode(&body); err == nil {
+			const maxBatch = 30
+			for i, t := range body.Tickers {
+				if i >= maxBatch {
+					break
+				}
+				s.live.Subscribe(strings.ToUpper(strings.TrimSpace(t)))
+			}
+		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }

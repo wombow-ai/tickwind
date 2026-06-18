@@ -485,8 +485,8 @@ feature-flagged plugin, never on the critical path. Web only.
   web build green (1060 static pages). **NOTE for future: two near-identical stock strips exist — `HomeHub`
   (home `/`) and `Board` (`/me?tab=watchlist` only); both now share `StockRow`'s toggle/hook. Don't assume an
   edit to one covers the other** (this batch's #1 initially missed HomeHub — the preview caught it).
-- **In progress 2026-06-18 (owner: "深度优化实时价格 — 及时性+准确性,盘前/盘中/盘后"). Diagnosis +
-  increment 1:** the real-time price architecture is: **Alpaca WS** (free IEX, `internal/alpacaws`) for
+- **Shipped 2026-06-18 (owner: "深度优化实时价格 — 及时性+准确性,盘前/盘中/盘后"). Diagnosis + increments
+  1 (LIVE-verified) & 2 (C/D, deploying):** the real-time price architecture is: **Alpaca WS** (free IEX, `internal/alpacaws`) for
   sub-second on a small set (base ≤20 = a STARTUP snapshot of `ingestTickers`, capped `MaxSymbols-viewedSlots`,
   + ≤10 on-demand "viewed" tickers added via `live.Subscribe` from the stock-detail handler) → `hub.Publish` →
   SSE `/v1/stream`; the **REST poller** (`PricePoller`, `PRICE_POLL_EVERY`=10s) covers breadth (≤200 tickers);
@@ -503,13 +503,20 @@ feature-flagged plugin, never on the critical path. Web only.
   to bulk all US tickers in a few ≤100-symbol requests (cycle ~20-60s → ~1-2s; intl stays per-adapter); omits
   price≤0 so an empty print never clobbers a good quote. **(A)** `OverviewTab` now overlays `useQuotes` + the
   canonical `changePct` so each digest row's change % ticks live (falls back to the digest value until a quote
-  arrives). Go gate (gofmt/build/vet/test) + web build green. **Next increments (planned):** **(C)** list views
-  `Subscribe` their visible US tickers to the WS for sub-second (within the 30-cap, LRU) + a batch subscribe
-  endpoint; **(D)** periodically refresh the WS base set from current `ingestTickers` (not a startup snapshot);
-  optionally lower `PRICE_POLL_EVERY` (bulk makes it cheap: ≤200/100=2 req/cycle, 12 req/min at 10s << 200/min).
-  **Owner DECISION surfaced:** pre/post freshness for THIN names is capped by free Alpaca IEX (sparse prints) —
-  the Yahoo overlay that filled this was removed 2026-06-17; re-adding a gray/paid pre-post source is a
-  cost/ToS call left to the owner.
+  arrives). **Increment 1 LIVE-verified** (DEPLOY_DONE 19:07Z): AAPL/NVDA/TSLA/MSFT served session=regular,
+  source=alpaca, correct prev_close, **at_age ~0.2-0.3m** (was 20-60s+) — bulk poller refreshing on cadence, no
+  regression. **Increment 2 shipped (C+D):** **(C)** `useQuotes` now POSTs its tickers to a new batch endpoint
+  `POST /v1/live/subscribe` (→ `live.Subscribe` per ticker, ≤30, public/fire-and-forget) so ANY list view
+  (home / watchlist / overview) joins the WS real-time set for its visible tickers (within the 30-cap, LRU);
+  the active view's tickers get sub-second, the rest stay on the now-fast poller. **(D)** `alpacaws.Streamer.
+  RefreshBase` (submu-guarded, nudges a resync) + a 5-min goroutine in main re-feeds the base from current
+  `usSymbols(ingestTickers(ctx))`, so the pinned real-time set tracks the live watchlist∪popular instead of the
+  boot snapshot. Go gate `-race` (alpacaws concurrency) + web build green. **Owner DECISION (2026-06-18): accept
+  FREE Alpaca IEX for pre/post — do NOT add a gray/paid quote source.** Rationale (owner): a gray quote source
+  (Alpaca/Yahoo redistribution is RED) would jeopardize the **planned paid AI deep-analysis feature** (to build
+  once existing features are polished). Thin-name pre/post can lag (IEX-sparse) — accepted. **STANDING CONSTRAINT:
+  free / redistribution-safe price sources ONLY, ahead of monetization.** (Optional, not done: lower
+  `PRICE_POLL_EVERY` 10s→5s — bulk makes it cheap; defer unless snappier breadth is wanted.)
 - **Shipped 2026-06-14 (owner batch + greenlit follow-ups, all live-verified):** R2 now has all **6
   sections** (估值/基本面/技术面/资金面/情绪面/概览) + a **two-sided 看多/看空 (bull/bear)** reading on the
   overview (one ComposeReport call gains `bull`/`bear` keys; a deterministic Go advice-guard strips any
