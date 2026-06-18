@@ -485,8 +485,9 @@ feature-flagged plugin, never on the critical path. Web only.
   web build green (1060 static pages). **NOTE for future: two near-identical stock strips exist — `HomeHub`
   (home `/`) and `Board` (`/me?tab=watchlist` only); both now share `StockRow`'s toggle/hook. Don't assume an
   edit to one covers the other** (this batch's #1 initially missed HomeHub — the preview caught it).
-- **Shipped 2026-06-18 (owner: "深度优化实时价格 — 及时性+准确性,盘前/盘中/盘后"). Diagnosis + increments
-  1 (LIVE-verified) & 2 (C/D, deploying):** the real-time price architecture is: **Alpaca WS** (free IEX, `internal/alpacaws`) for
+- **Shipped + LIVE-verified 2026-06-18 (owner: "深度优化实时价格 — 及时性+准确性,盘前/盘中/盘后"). Diagnosis +
+  increments 1 & 2 (C/D) — all LIVE** (incr 2: `POST /v1/live/subscribe`→`{"ok":true}` proves the deploy; quotes
+  no-regression session=regular/source=alpaca; DEPLOY_DONE 19:23Z)**:** the real-time price architecture is: **Alpaca WS** (free IEX, `internal/alpacaws`) for
   sub-second on a small set (base ≤20 = a STARTUP snapshot of `ingestTickers`, capped `MaxSymbols-viewedSlots`,
   + ≤10 on-demand "viewed" tickers added via `live.Subscribe` from the stock-detail handler) → `hub.Publish` →
   SSE `/v1/stream`; the **REST poller** (`PricePoller`, `PRICE_POLL_EVERY`=10s) covers breadth (≤200 tickers);
