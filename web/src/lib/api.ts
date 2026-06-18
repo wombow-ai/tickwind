@@ -1123,19 +1123,37 @@ export async function getFund(
   }
 }
 
-/** The AI digest for a stock from `GET /v1/stocks/{t}/summary` (cached daily). */
+/**
+ * The AI digest for a stock from `GET /v1/stocks/{t}/summary` (cached daily).
+ *
+ * ASYNC contract: the endpoint returns INSTANTLY — when a background generation
+ * is in flight `summary` is "" and `prose_status` is `"generating"`, and the
+ * client polls until the prose fills in (see {@link AISummaryCard}). Any other
+ * `prose_status` (or an absent field, from the older synchronous backend) is
+ * terminal and the rendered `summary` is final.
+ */
 export interface AISummary {
   ticker: string;
-  /** Bullet points ("- " lines) in the requested language; empty when there's
-   *  no material yet. */
+  /** Bullet points ("- " lines) in the requested language; "" while
+   *  `prose_status === 'generating'` or when there's no material yet. */
   summary: string;
   generated_at?: string;
+  /**
+   * The prose-generation lifecycle. Only `"generating"` means a background job
+   * is filling `summary` in → keep polling. `"ready"` is final (may be "" → no
+   * material → hide); `"quota_exhausted"`/`"llm_disabled"` are terminal → hide.
+   * ABSENT on the older synchronous backend (treat exactly as today: non-empty
+   * `summary` → show, empty → hide, no polling).
+   */
+  prose_status?: 'ready' | 'generating' | 'llm_disabled' | 'quota_exhausted';
 }
 
 /**
  * Fetches the stock's AI digest in the given UI language ("zh"|"en"; cached
  * per language, server-side). Rejects with 503 when no LLM is configured (hide
- * the card) and 429 when the daily generation budget is exhausted.
+ * the card) and 429 when the daily generation budget is exhausted. Returns
+ * instantly with `prose_status` when the prose is generated asynchronously (the
+ * caller polls while `"generating"`); see {@link AISummary}.
  */
 export function getSummary(
   ticker: string,
@@ -1325,6 +1343,12 @@ export interface MovementEvidence {
  * card hides. When `significant`, `explanation` is the LLM's ONE hedged Chinese
  * sentence (`llm:true`, with `disclaimer`) or a canned Go-built line (`llm:false`,
  * the data-only fallback when the LLM is off / over the daily cap / errored).
+ *
+ * ASYNC contract: the endpoint returns INSTANTLY. When `prose_status` is
+ * `"generating"` the `explanation` is the CANNED Go line NOW (`llm:false`) and a
+ * background LLM generation is in flight — render the canned line immediately
+ * and poll to UPGRADE it (a later `"ready"` poll swaps in the better
+ * `explanation` and, when `llm:true`, the AI badge). `"ready"` is terminal.
  */
 export interface MovementResponse {
   ticker: string;
@@ -1345,6 +1369,14 @@ export interface MovementResponse {
   as_of: string;
   /** "AI 生成 · 仅供参考 · 非投资建议" — present only when `llm`. */
   disclaimer?: string;
+  /**
+   * The prose-generation lifecycle. Only `"generating"` means the LLM upgrade is
+   * still in flight (the canned `explanation` shows now → keep polling). Every
+   * other value — `"ready"` (final), `"llm_disabled"`, `"quota_exhausted"` — is
+   * terminal. ABSENT on the older synchronous backend (treat as today: render
+   * the explanation as final, no polling).
+   */
+  prose_status?: 'ready' | 'generating' | 'llm_disabled' | 'quota_exhausted';
 }
 
 /**

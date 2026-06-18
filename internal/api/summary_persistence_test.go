@@ -80,6 +80,51 @@ func getSummaryBody(t *testing.T, url string) (int, string) {
 	return resp.StatusCode, body.Summary
 }
 
+// pollSummary requests the digest endpoint until its prose_status is no longer
+// "generating" (the async bg gen completed and cached a terminal result), or fails
+// after a cap. Used to await the detached background digest in tests. NOTE: a FAILED
+// bg gen caches nothing (the next request re-spawns) — use this only for the success
+// path; await the cap counter for the failure/timeout path.
+func pollSummary(t *testing.T, url string) (int, string) {
+	t.Helper()
+	for i := 0; i < 80; i++ {
+		resp, err := http.Get(url)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var body struct {
+			Summary     string `json:"summary"`
+			ProseStatus string `json:"prose_status"`
+		}
+		_ = json.NewDecoder(resp.Body).Decode(&body)
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusOK || body.ProseStatus != proseStatusGenerating {
+			return resp.StatusCode, body.Summary
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+	t.Fatal("summary stayed prose_status=generating; the bg gen never completed")
+	return 0, ""
+}
+
+// waitSumCapZero polls the server's summary daily-cap counter until it returns to 0
+// (the detached bg gen finished and a failed gen refunded its reserved slot), or fails
+// after a cap. Acquiring sumMu establishes happens-before with the bg goroutine, so the
+// fake enricher's atomics are safe to read after this returns.
+func waitSumCapZero(t *testing.T, s *Server) {
+	t.Helper()
+	for i := 0; i < 80; i++ {
+		s.sumMu.Lock()
+		c := s.sumDayCount
+		s.sumMu.Unlock()
+		if c == 0 {
+			return
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+	t.Fatal("sumDayCount never returned to 0 (a failed bg gen must refund the cap)")
+}
+
 // slowSummaryEnricher is an enabled Enricher whose Summarize HONORS its context: it
 // blocks until the context is canceled, then returns the cancellation error. The
 // per-call timeout the handler imposes is what cancels it.
@@ -131,21 +176,23 @@ func TestSummaryComposeTimeoutDegradesTo200(t *testing.T) {
 	srv, ts := newSummaryServer(st, enr)
 	defer ts.Close()
 
+	// ASYNC: the digest endpoint returns an empty summary INSTANTLY with
+	// prose_status=generating; the LLM digest is attempted in a detached bg goroutine
+	// and times out.
 	status, got := getSummaryBody(t, ts.URL+"/v1/stocks/AAPL/summary")
 	if status != http.StatusOK {
-		t.Fatalf("status = %d; want 200 (compose timeout must degrade to data-only, not 5xx)", status)
+		t.Fatalf("status = %d; want 200 (async: returns instantly, never a 5xx)", status)
 	}
 	if got != "" {
-		t.Errorf("summary = %q; want empty after a compose timeout", got)
+		t.Errorf("summary = %q; want empty while generating", got)
 	}
+	// Await the detached bg gen: it blocks until the (shortened) compose deadline fires,
+	// then refunds the cap — a timed-out generation produced no digest, so it must not
+	// burn budget. Waiting on the cap counter establishes happens-before with the bg
+	// goroutine, so the enricher's atomics are safe to read after.
+	waitSumCapZero(t, srv)
 	if !enr.gotDone.Load() {
 		t.Error("Summarize did not observe context cancellation; the deadline must reach the enrich call")
-	}
-	srv.sumMu.Lock()
-	count := srv.sumDayCount
-	srv.sumMu.Unlock()
-	if count != 0 {
-		t.Errorf("sumDayCount = %d; want 0 (a timed-out generation must refund the cap)", count)
 	}
 }
 
@@ -205,10 +252,12 @@ func TestSummaryColdStoreGeneratesAndPersists(t *testing.T) {
 	srv, ts := newSummaryServer(st, enr)
 	defer ts.Close()
 
-	// First (cold) request: generates once, consumes the cap, persists.
-	status, got := getSummaryBody(t, ts.URL+"/v1/stocks/MSFT/summary")
+	// First (cold) request: ASYNC — returns generating instantly, composes in a detached
+	// bg goroutine, then a poll lands the digest. Generates exactly once (single-flight),
+	// consumes the cap, persists.
+	status, got := pollSummary(t, ts.URL+"/v1/stocks/MSFT/summary")
 	if status != http.StatusOK || got != enr.summary {
-		t.Fatalf("cold request: status=%d summary=%q; want 200 + %q", status, got, enr.summary)
+		t.Fatalf("cold request (after polling): status=%d summary=%q; want 200 + %q", status, got, enr.summary)
 	}
 	if n := enr.calls.Load(); n != 1 {
 		t.Fatalf("Summarize calls = %d after cold request; want 1", n)

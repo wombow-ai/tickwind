@@ -10,7 +10,6 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"hash/fnv"
 	"io"
@@ -2953,14 +2952,31 @@ type movementEntry struct {
 // The change % and direction are computed IN GO from the quote (never the LLM's);
 // the explainer is meaningful only on a NOTABLE move (|change| >= 5%). On a
 // sub-threshold or quote-less move the response is a 200 with "significant":false
-// and no explanation (the frontend hides the card). On a notable move it returns
-// the number + attributed evidence + an explanation: the LLM's ONE hedged Chinese
-// sentence when the LLM is on and under cap, else a canned Go-built line. The LLM
-// is OFF THE CRITICAL PATH — the endpoint always serves the number + evidence,
-// never 500/503. The (optional) LLM sentence is generated at most once per
-// (ticker, ET day, lang) and served from memory; the cheap data-only explanation
-// is reassembled on every cache miss. 404 only for an unknown/invalid ticker (no
-// quote at all and no evidence).
+// and no explanation (the frontend hides the card).
+//
+// ASYNC (owner: async + polling — the LLM must never block the page). The endpoint
+// returns the cheap data-only explanation (the Go number + attributed evidence + a
+// canned Go-built line) INSTANTLY with a prose_status, and — on a notable move when
+// an LLM sentence is warranted — composes that ONE hedged sentence in a DETACHED
+// background goroutine, caching the upgrade. The client polls the same URL while
+// prose_status=="generating" (showing the canned line meanwhile) until it flips to a
+// terminal status. prose_status:
+//   - "ready"            terminal: the explanation shown is final (the LLM sentence
+//     when llm:true, else the canned line, or a sub-threshold blank).
+//   - "generating"       the canned line NOW; a bg LLM gen is in flight → POLL.
+//   - "quota_exhausted"  over the daily LLM-sentence cap → canned line, terminal.
+//
+// The LLM is OFF THE CRITICAL PATH — the endpoint always serves the number + evidence
+// instantly, never 500/503/blocking. The LLM sentence is generated at most once per
+// (ticker, ET day, lang), single-flighted + served from memory. 404 only for an
+// unknown/invalid ticker (no quote at all and no evidence).
+//
+// INVARIANTS (mirror getResearchDeep): exactly ONE bg gen per (ticker, ET-day, lang)
+// via moveInflight; concurrent polls return "generating" without a duplicate gen or
+// double cap charge; the cap is charged when the gen is reserved and REFUNDED on a
+// failed/empty gen; the bg goroutine uses a DETACHED context so the instant response
+// returning (which cancels r.Context()) can't kill it; the inflight gate is always
+// cleared (no goroutine / map leak).
 func (s *Server) getMovement(w http.ResponseWriter, r *http.Request) {
 	if s.movementCalc == nil {
 		writeJSON(w, http.StatusNotFound, errBody("movement unavailable"))
@@ -2978,102 +2994,130 @@ func (s *Server) getMovement(w http.ResponseWriter, r *http.Request) {
 	day := summaryDay() // ET trading day, shared with the AI digest cache
 	key := ticker + "|" + day + "|" + lang
 
-	for {
-		s.moveMu.Lock()
-		if e, ok := s.moveCache[key]; ok {
-			s.moveMu.Unlock()
-			s.writeMovement(w, e)
-			return
-		}
-		ch, busy := s.moveInflight[key]
-		if !busy {
-			break // we'll generate
-		}
+	// (1) Cache hit → terminal "ready" (the cached explanation — LLM sentence or a
+	// final canned/sub-threshold line — is the finished answer for the day).
+	s.moveMu.Lock()
+	if e, ok := s.moveCache[key]; ok {
 		s.moveMu.Unlock()
-		select { // someone else is generating: wait, then re-check the cache
-		case <-ch:
-		case <-r.Context().Done():
-			return
-		}
+		s.writeMovement(w, e, proseStatusReady)
+		return
 	}
-	// We hold moveMu and are the generator for this key.
-	if s.moveDayDate != day {
-		s.moveDayDate, s.moveDayCount = day, 0
-		for k := range s.moveCache { // yesterday's explanations are dead weight
-			if !strings.Contains(k, "|"+day+"|") { // key = ticker|day|lang
-				delete(s.moveCache, k)
-			}
-		}
-	}
-	// Reserve an LLM-sentence slot only if the LLM is enabled and under cap; the
-	// data-only explanation is always assembled regardless (off the critical path).
-	wantLLM := s.movementCalc.Enabled() && s.moveDayCount < movementDailyCap
-	if wantLLM {
-		s.moveDayCount++
-	}
-	ch := make(chan struct{})
-	s.moveInflight[key] = ch
 	s.moveMu.Unlock()
 
-	finish := func(e *movementEntry) {
-		s.moveMu.Lock()
-		if e != nil {
-			s.moveCache[key] = *e
-		}
-		delete(s.moveInflight, key)
-		close(ch)
-		s.moveMu.Unlock()
-	}
-
-	// Assemble the data-only explanation first (cheap, no LLM, never errors).
-	// lang is threaded so the canned fallback line + Go-built evidence titles come
-	// back in the requested language (the LLM sentence below is also lang-keyed).
+	// (2) Assemble the cheap data-only explanation (Go number + evidence + canned
+	// line; no LLM, never errors). lang is threaded so the canned line + Go-built
+	// evidence titles come back in the requested language. This is the instant body
+	// returned in every non-cache-hit branch below.
 	exp := s.movementCalc.Report(r.Context(), ticker, lang)
 	// "Nothing at all": no usable quote AND no evidence → unknown/invalid ticker
 	// (a sub-threshold move with a real quote DOES have a number, so it is served).
 	if exp.AsOf.IsZero() && exp.ChangePct == 0 && len(exp.Evidence) == 0 {
-		if wantLLM {
-			s.moveMu.Lock()
-			s.moveDayCount-- // didn't call the LLM — don't burn budget
-			s.moveMu.Unlock()
-		}
-		finish(nil) // don't cache an empty miss; let a later visit reassemble
 		s.maybeCollect(ticker)
 		writeJSON(w, http.StatusNotFound, errBody("no movement data for "+ticker))
 		return
 	}
+	dataOnly := movementEntry{exp: exp, at: time.Now().UTC()}
 
-	// Only call the LLM for a significant move (a sub-threshold move has no prose).
-	if wantLLM && exp.Significant {
-		// Bound the LLM sentence so a slow/rate-limited model degrades FAST to the
-		// canned Go line instead of hanging. The deadline cancels the real outbound
-		// HTTP call (enrich uses NewRequestWithContext); on timeout Explain returns
-		// the data-only explanation (LLM=false), which refunds the cap below.
-		ctx, cancel := context.WithTimeout(r.Context(), llmComposeTimeout)
-		exp = s.movementCalc.Explain(ctx, ticker, lang)
-		cancel()
-		if !exp.LLM {
-			s.moveMu.Lock()
-			s.moveDayCount-- // LLM disabled mid-flight / errored → refund budget
-			s.moveMu.Unlock()
-		}
-	} else if wantLLM {
-		s.moveMu.Lock()
-		s.moveDayCount-- // sub-threshold: no LLM call → refund budget
+	// Decide under the lock so the single-flight gate + the cap reservation are atomic
+	// with the inflight check (no two requests can both become the generator).
+	s.moveMu.Lock()
+	if e, ok := s.moveCache[key]; ok { // a racing request finished a gen
 		s.moveMu.Unlock()
+		s.writeMovement(w, e, proseStatusReady)
+		return
 	}
+	if s.moveDayDate != day { // day roll: reset the cap + evict yesterday's entries
+		s.moveDayDate, s.moveDayCount = day, 0
+		for k := range s.moveCache { // key = ticker|day|lang
+			if !strings.Contains(k, "|"+day+"|") {
+				delete(s.moveCache, k)
+			}
+		}
+	}
+	if !exp.Significant { // sub-threshold → no LLM ever; cache the blank as terminal.
+		s.moveCache[key] = dataOnly
+		s.moveMu.Unlock()
+		s.writeMovement(w, dataOnly, proseStatusReady)
+		return
+	}
+	if _, busy := s.moveInflight[key]; busy { // a bg gen is in flight → poll-friendly
+		s.moveMu.Unlock()
+		s.writeMovement(w, dataOnly, proseStatusGenerating)
+		return
+	}
+	if !s.movementCalc.Enabled() { // LLM off → the canned line is final; cache it.
+		s.moveCache[key] = dataOnly
+		s.moveMu.Unlock()
+		s.writeMovement(w, dataOnly, proseStatusReady)
+		return
+	}
+	if s.moveDayCount >= movementDailyCap { // daily LLM-sentence cap full → canned line.
+		s.moveMu.Unlock()
+		s.writeMovement(w, dataOnly, proseStatusQuotaExhausted) // don't cache → retry when cap frees
+		return
+	}
+	// We are the SOLE generator for this key: reserve the cap slot + the inflight gate,
+	// spawn the detached bg goroutine (which calls the LLM), and return the canned line
+	// "generating" NOW.
+	s.moveDayCount++
+	ch := make(chan struct{})
+	s.moveInflight[key] = ch
+	s.moveMu.Unlock()
 
-	e := movementEntry{exp: exp, at: time.Now().UTC()}
-	finish(&e)
-	s.writeMovement(w, e)
+	go s.explainMovementBackground(ticker, lang, day, key, ch)
+
+	s.writeMovement(w, dataOnly, proseStatusGenerating)
 }
 
-// writeMovement marshals a cached movement entry into the wire shape. Always 200.
-// A sub-threshold move carries significant:false and no explanation/evidence (the
-// frontend hides the card); a notable move carries the Go-owned number, the
-// attributed evidence, the explanation (LLM or canned), and the llm/model/as_of
-// chrome.
-func (s *Server) writeMovement(w http.ResponseWriter, e movementEntry) {
+// explainMovementBackground composes ONE move-explainer LLM sentence off the request
+// path, using a DETACHED context (so the already-returned instant response cancelling
+// r.Context() can't kill it). On success (the LLM wrote a sentence) it caches the LLM'd
+// explanation as a terminal "ready" entry — every later view is then a free upgrade —
+// and keeps the reserved cap charged; on a failed/empty/disabled gen it caches NOTHING
+// (so a later visit retries) and REFUNDS the cap (the caller already has the canned
+// line, so a failure just leaves the card showing it). The inflight gate is always
+// released, so there is no goroutine or map leak.
+func (s *Server) explainMovementBackground(ticker, lang, day, key string, ch chan struct{}) {
+	defer func() {
+		if rec := recover(); rec != nil {
+			s.log.Error("movement bg explain panicked", "ticker", ticker, "rec", rec)
+			s.moveMu.Lock()
+			delete(s.moveInflight, key)
+			close(ch)
+			if s.moveDayDate == day && s.moveDayCount > 0 {
+				s.moveDayCount--
+			}
+			s.moveMu.Unlock()
+		}
+	}()
+
+	ctx, cancel := context.WithTimeout(context.Background(), llmComposeTimeout)
+	exp := s.movementCalc.Explain(ctx, ticker, lang)
+	cancel()
+
+	s.moveMu.Lock()
+	if exp.LLM { // the LLM wrote a sentence → cache the upgrade; the cap stays charged.
+		s.moveCache[key] = movementEntry{exp: exp, at: time.Now().UTC()}
+	} else {
+		// Disabled mid-flight / errored / timed out / no longer significant → cache
+		// nothing (a later visit retries) and refund the reserved cap slot.
+		if s.moveDayDate == day && s.moveDayCount > 0 {
+			s.moveDayCount--
+		}
+	}
+	delete(s.moveInflight, key)
+	close(ch)
+	s.moveMu.Unlock()
+}
+
+// writeMovement marshals a movement entry into the wire shape plus the explicit
+// prose_status the client polls on (the legacy "llm" boolean is kept too). Always
+// 200. A sub-threshold move carries significant:false and no explanation/evidence
+// (the frontend hides the card); a notable move carries the Go-owned number, the
+// attributed evidence, the explanation (LLM sentence or canned line), and the
+// llm/model/as_of chrome. status is "generating" while a bg LLM gen is in flight
+// (the canned line is shown meanwhile), else a terminal status.
+func (s *Server) writeMovement(w http.ResponseWriter, e movementEntry, status string) {
 	exp := e.exp
 	ev := exp.Evidence
 	if ev == nil {
@@ -3089,6 +3133,7 @@ func (s *Server) writeMovement(w http.ResponseWriter, e movementEntry) {
 		"model":        exp.Model,
 		"as_of":        exp.AsOf,
 		"generated_at": e.at,
+		"prose_status": status,
 	}
 	if exp.Significant {
 		out["explanation"] = exp.Text
@@ -3715,10 +3760,27 @@ func researchMonth() string {
 	return time.Now().In(loc).Format("2006-01")
 }
 
-// getSummary returns the ticker's AI digest, generated at most once per ET day
-// (first visitor pays the LLM call, everyone else hits the cache; concurrent
-// first requests are deduped). 503 when no LLM is configured, 429 past the
-// daily generation cap.
+// getSummary returns the ticker's AI digest in the requested language. The digest is
+// generated at most once per (ticker, ET day, lang) and served from memory + a durable
+// store (restart-survival); concurrent first requests are deduped.
+//
+// ASYNC (owner: async + polling — the LLM must never block the page). On a cache/store
+// MISS the endpoint returns INSTANTLY with an empty summary + prose_status "generating"
+// and composes the digest in a DETACHED background goroutine; the client polls the same
+// URL until prose_status flips to a terminal status. 503 only when the LLM is disabled
+// (the card hides). prose_status:
+//   - "ready"            the summary is final (a cache/store hit, or an empty digest
+//     when there's no material — then the card hides).
+//   - "generating"       summary "" NOW; a bg gen is in flight → POLL.
+//   - "quota_exhausted"  over the daily generation cap → empty, terminal (replaces the
+//     old hard 429; the digest is best-effort).
+//
+// INVARIANTS (mirror getResearchDeep): exactly ONE bg gen per (ticker, ET-day, lang)
+// via sumInflight; concurrent polls return "generating" without a duplicate gen or a
+// double cap charge; the cap is charged when the gen is reserved and REFUNDED on a
+// failed gen; the bg goroutine uses a DETACHED context so the instant response
+// returning can't kill it; on success it caches AND persists the digest; the inflight
+// gate is always cleared (no goroutine / map leak).
 func (s *Server) getSummary(w http.ResponseWriter, r *http.Request) {
 	if !s.enrich.Enabled() {
 		writeJSON(w, http.StatusServiceUnavailable, errBody("llm enrichment is not enabled"))
@@ -3732,72 +3794,18 @@ func (s *Server) getSummary(w http.ResponseWriter, r *http.Request) {
 	day := summaryDay()
 	key := ticker + "|" + day + "|" + lang
 
-	for {
-		s.sumMu.Lock()
-		if e, ok := s.sumCache[key]; ok {
-			s.sumMu.Unlock()
-			writeJSON(w, http.StatusOK, map[string]any{
-				"ticker": ticker, "summary": e.Summary, "generated_at": e.At,
-			})
-			return
-		}
-		ch, busy := s.sumInflight[key]
-		if !busy {
-			break // we'll generate
-		}
+	// (1) Memory cache hit → ready, free for everyone.
+	s.sumMu.Lock()
+	if e, ok := s.sumCache[key]; ok {
 		s.sumMu.Unlock()
-		select { // someone else is generating: wait, then re-check the cache
-		case <-ch:
-		case <-r.Context().Done():
-			return
-		}
-	}
-	// We hold sumMu and are the generator for this key.
-	if s.sumDayDate != day {
-		s.sumDayDate, s.sumDayCount = day, 0
-		for k := range s.sumCache { // yesterday's digests are dead weight
-			if !strings.Contains(k, "|"+day+"|") { // key = ticker|day|lang
-				delete(s.sumCache, k)
-			}
-		}
-	}
-	// Claim the slot (inflight + a provisional cap charge) and release the lock so
-	// the store read / LLM call below never holds sumMu. The cap is refunded on a
-	// store hit (nothing generated) or a failed generation.
-	ch := make(chan struct{})
-	s.sumInflight[key] = ch
-	chargedCap := false
-	if s.sumDayCount < summaryDailyCap {
-		s.sumDayCount++
-		chargedCap = true
+		s.writeSummary(w, ticker, e, proseStatusReady)
+		return
 	}
 	s.sumMu.Unlock()
 
-	refundCap := func() {
-		if chargedCap {
-			s.sumMu.Lock()
-			if s.sumDayDate == day && s.sumDayCount > 0 {
-				s.sumDayCount--
-			}
-			s.sumMu.Unlock()
-			chargedCap = false
-		}
-	}
-
-	finish := func(e *summaryEntry) {
-		s.sumMu.Lock()
-		if e != nil {
-			s.sumCache[key] = *e
-		}
-		delete(s.sumInflight, key)
-		close(ch)
-		s.sumMu.Unlock()
-	}
-
-	// Cold/restart-survival layer: before generating, see if a previous process
-	// already persisted today's digest for this (ticker, day, lang). A store hit
-	// is a free cache hit — load it into memory, refund the cap, serve, NO LLM.
-	// Best-effort: a store error is treated exactly like a miss (log + generate).
+	// (2) Cold/restart-survival: a previous process may have persisted today's digest
+	// for this (ticker, day, lang). A store hit is a free cache hit — load it into
+	// memory + serve "ready", NO LLM. Best-effort: a store error is treated as a miss.
 	if raw, ok, err := s.store.GetAISummary(r.Context(), ticker, day, lang); err != nil {
 		s.log.Debug("ai_summary store read failed", "ticker", ticker, "day", day, "lang", lang, "err", err)
 	} else if ok {
@@ -3805,63 +3813,138 @@ func (s *Server) getSummary(w http.ResponseWriter, r *http.Request) {
 		if jerr := json.Unmarshal(raw, &e); jerr != nil {
 			s.log.Debug("ai_summary store payload decode failed", "ticker", ticker, "day", day, "lang", lang, "err", jerr)
 		} else {
-			refundCap()
-			finish(&e)
-			writeJSON(w, http.StatusOK, map[string]any{"ticker": ticker, "summary": e.Summary, "generated_at": e.At})
+			s.sumMu.Lock()
+			s.sumCache[key] = e
+			s.sumMu.Unlock()
+			s.writeSummary(w, ticker, e, proseStatusReady)
 			return
 		}
 	}
 
-	// Both the memory cache and the store missed → this is a genuinely-new
-	// generation, which must respect the daily cap.
-	if !chargedCap {
-		finish(nil)
-		writeJSON(w, http.StatusTooManyRequests, errBody("daily AI digest budget reached — try again tomorrow"))
-		return
-	}
+	// (3) The digest material is cheap to read; only the LLM call (~12s) must move off
+	// the request path. Read news+social now to short-circuit empty-material tickers to
+	// a terminal "ready" and to hand the built input to the bg goroutine.
+	news, _ := s.store.ListNews(r.Context(), ticker, 10)
+	posts, _ := s.store.ListSocial(r.Context(), ticker, 10)
 
-	persist := func(e summaryEntry) {
-		if raw, err := json.Marshal(e); err == nil {
-			if err := s.store.SaveAISummary(r.Context(), ticker, day, lang, raw); err != nil {
-				s.log.Debug("ai_summary store write failed", "ticker", ticker, "day", day, "lang", lang, "err", err)
+	// Decide under the lock so the single-flight gate + the cap reservation are atomic
+	// with the inflight check (no two requests can both become the generator).
+	s.sumMu.Lock()
+	if s.sumDayDate != day { // day roll: reset the cap + evict yesterday's digests
+		s.sumDayDate, s.sumDayCount = day, 0
+		for k := range s.sumCache { // key = ticker|day|lang
+			if !strings.Contains(k, "|"+day+"|") {
+				delete(s.sumCache, k)
 			}
 		}
 	}
-
-	news, _ := s.store.ListNews(r.Context(), ticker, 10)
-	posts, _ := s.store.ListSocial(r.Context(), ticker, 10)
-	input := summaryInput(ticker, news, posts)
-	if len(news) == 0 && len(posts) == 0 {
-		e := summaryEntry{Summary: "", At: time.Now().UTC()} // cache the emptiness too
-		persist(e)                                           // survive restarts (skip the LLM next time)
-		finish(&e)
-		writeJSON(w, http.StatusOK, map[string]any{"ticker": ticker, "summary": "", "generated_at": e.At})
+	if e, ok := s.sumCache[key]; ok { // a racing request finished a gen
+		s.sumMu.Unlock()
+		s.writeSummary(w, ticker, e, proseStatusReady)
 		return
 	}
-	// Bound the LLM digest so a slow/rate-limited model degrades FAST instead of
-	// blocking on the enricher's ~90s HTTP ceiling. The deadline cancels the real
-	// outbound HTTP call (enrich uses NewRequestWithContext).
-	ctx, cancel := context.WithTimeout(r.Context(), llmComposeTimeout)
+	if _, busy := s.sumInflight[key]; busy { // a bg gen is in flight → poll-friendly
+		s.sumMu.Unlock()
+		s.writeSummary(w, ticker, summaryEntry{At: time.Now().UTC()}, proseStatusGenerating)
+		return
+	}
+	if len(news) == 0 && len(posts) == 0 {
+		// No material → terminal empty "ready"; cache + persist the emptiness so we
+		// skip the LLM next time (and survive restarts). No cap charge.
+		e := summaryEntry{Summary: "", At: time.Now().UTC()}
+		s.sumCache[key] = e
+		s.sumMu.Unlock()
+		s.persistSummary(ticker, day, lang, e)
+		s.writeSummary(w, ticker, e, proseStatusReady)
+		return
+	}
+	if s.sumDayCount >= summaryDailyCap {
+		// Over the daily cap with nothing cached → graceful empty "quota_exhausted"
+		// (200, replaces the old hard 429); don't cache so a later day / refund retries.
+		s.sumMu.Unlock()
+		s.writeSummary(w, ticker, summaryEntry{At: time.Now().UTC()}, proseStatusQuotaExhausted)
+		return
+	}
+	// We are the SOLE generator: reserve the cap slot + the inflight gate, spawn the
+	// detached bg goroutine, and return "generating" NOW (off the critical path).
+	s.sumDayCount++
+	ch := make(chan struct{})
+	s.sumInflight[key] = ch
+	s.sumMu.Unlock()
+
+	input := summaryInput(ticker, news, posts)
+	go s.composeSummaryBackground(ticker, lang, day, key, input, ch)
+
+	s.writeSummary(w, ticker, summaryEntry{At: time.Now().UTC()}, proseStatusGenerating)
+}
+
+// composeSummaryBackground composes ONE AI digest off the request path, using a
+// DETACHED context (so the already-returned instant response can't cancel it). On a
+// successful generation it caches + persists the digest (every later view is a free
+// "ready", and it survives restarts) and keeps the reserved cap charged; on a failed
+// generation (a real LLM error or timeout) it caches nothing — a later poll/visit
+// retries — and REFUNDS the cap. The inflight gate is always released (no goroutine /
+// map leak). An empty-but-successful digest is cached as-is (the card then hides).
+func (s *Server) composeSummaryBackground(ticker, lang, day, key, input string, ch chan struct{}) {
+	defer func() {
+		if rec := recover(); rec != nil {
+			s.log.Error("ai-summary bg compose panicked", "ticker", ticker, "rec", rec)
+			s.sumMu.Lock()
+			delete(s.sumInflight, key)
+			close(ch)
+			if s.sumDayDate == day && s.sumDayCount > 0 {
+				s.sumDayCount--
+			}
+			s.sumMu.Unlock()
+		}
+	}()
+
+	ctx, cancel := context.WithTimeout(context.Background(), llmComposeTimeout)
 	summary, err := s.enrich.Summarize(ctx, input, lang)
 	cancel()
+
+	var e summaryEntry
+	ok := err == nil
+	if ok {
+		e = summaryEntry{Summary: strings.TrimSpace(summary), At: time.Now().UTC()}
+		s.persistSummary(ticker, day, lang, e)
+	}
+	s.sumMu.Lock()
+	if ok {
+		s.sumCache[key] = e
+	} else if s.sumDayDate == day && s.sumDayCount > 0 {
+		s.sumDayCount-- // failed gen → refund the reserved cap slot
+	}
+	delete(s.sumInflight, key)
+	close(ch)
+	s.sumMu.Unlock()
+}
+
+// writeSummary marshals an AI-digest response plus the explicit prose_status the client
+// polls on. Always 200. Back-compat: older clients ignore prose_status and read
+// summary/generated_at exactly as before (an empty summary = hide the card).
+func (s *Server) writeSummary(w http.ResponseWriter, ticker string, e summaryEntry, status string) {
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ticker":       ticker,
+		"summary":      e.Summary,
+		"generated_at": e.At,
+		"prose_status": status,
+	})
+}
+
+// persistSummary best-effort writes a completed digest to the durable store (keyed by
+// ticker, ET day, lang) so it survives a restart — a later process serves it as a free
+// cache hit. Uses a bounded detached context; errors are logged, never fatal.
+func (s *Server) persistSummary(ticker, day, lang string, e summaryEntry) {
+	raw, err := json.Marshal(e)
 	if err != nil {
-		refundCap() // failed generation shouldn't burn budget
-		finish(nil) // no cache entry → a later visit retries (don't persist the miss)
-		// A compose timeout degrades to an empty digest (200), NOT a 5xx: the AI
-		// digest is best-effort and the client treats an empty summary as "no digest
-		// yet". Only a genuine upstream LLM error (bad gateway / auth) still 502s.
-		// The parent context being canceled (client hung up) is not a degrade case.
-		if errors.Is(err, context.DeadlineExceeded) && r.Context().Err() == nil {
-			writeJSON(w, http.StatusOK, map[string]any{"ticker": ticker, "summary": "", "generated_at": time.Now().UTC()})
-			return
-		}
-		writeJSON(w, http.StatusBadGateway, errBody(err.Error()))
 		return
 	}
-	e := summaryEntry{Summary: summary, At: time.Now().UTC()}
-	persist(e) // write to BOTH the in-memory cache (via finish) and the store
-	finish(&e)
-	writeJSON(w, http.StatusOK, map[string]any{"ticker": ticker, "summary": e.Summary, "generated_at": e.At})
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := s.store.SaveAISummary(ctx, ticker, day, lang, raw); err != nil {
+		s.log.Debug("ai_summary store write failed", "ticker", ticker, "day", day, "lang", lang, "err", err)
+	}
 }
 
 func summaryInput(ticker string, news []store.News, posts []store.Post) string {

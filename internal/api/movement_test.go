@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -26,8 +27,8 @@ type fakeMovement struct {
 	enabled    bool
 	model      string
 	sentence   string
-	explains   int
-	reportLang string // records the lang the handler threaded into Report
+	explains   atomic.Int32 // bumped by Explain, which now runs in a bg goroutine
+	reportLang string       // records the lang the handler threaded into Report
 }
 
 func (f *fakeMovement) Report(_ context.Context, _, lang string) movement.Explanation {
@@ -36,7 +37,7 @@ func (f *fakeMovement) Report(_ context.Context, _, lang string) movement.Explan
 }
 
 func (f *fakeMovement) Explain(_ context.Context, _, _ string) movement.Explanation {
-	f.explains++
+	f.explains.Add(1)
 	exp := f.exp
 	if f.enabled && exp.Significant {
 		exp.Text = f.sentence
@@ -83,6 +84,7 @@ type movementResp struct {
 	LLM         bool                `json:"llm"`
 	Model       string              `json:"model"`
 	Disclaimer  string              `json:"disclaimer"`
+	ProseStatus string              `json:"prose_status"`
 }
 
 func getMovement(t *testing.T, url string) (*http.Response, movementResp) {
@@ -99,6 +101,42 @@ func getMovement(t *testing.T, url string) (*http.Response, movementResp) {
 	}
 	resp.Body.Close()
 	return resp, body
+}
+
+// pollMovementReady requests the movement endpoint until its prose_status is no longer
+// "generating" (i.e. the async bg LLM gen completed and cached a terminal result), or
+// fails after a cap. Used to await the detached background sentence in tests. NOTE: a
+// FAILED bg gen caches nothing (so the next request re-spawns) — only use this for the
+// success path; for the failure/timeout path await the cap counter instead.
+func pollMovementReady(t *testing.T, url string) (*http.Response, movementResp) {
+	t.Helper()
+	for i := 0; i < 80; i++ {
+		resp, body := getMovement(t, url)
+		if resp.StatusCode != http.StatusOK || body.ProseStatus != proseStatusGenerating {
+			return resp, body
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+	t.Fatal("movement stayed prose_status=generating; the bg gen never completed")
+	return nil, movementResp{}
+}
+
+// waitMoveCapZero polls the server's movement daily-cap counter until it returns to 0
+// (the detached bg gen finished and a failed/empty gen refunded its reserved slot), or
+// fails after a cap. Acquiring moveMu establishes happens-before with the bg goroutine,
+// so reads of the fake enricher's atomics after this returns are safe.
+func waitMoveCapZero(t *testing.T, s *Server) {
+	t.Helper()
+	for i := 0; i < 80; i++ {
+		s.moveMu.Lock()
+		c := s.moveDayCount
+		s.moveMu.Unlock()
+		if c == 0 {
+			return
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+	t.Fatal("moveDayCount never returned to 0 (a failed bg gen must refund the cap)")
 }
 
 // significantExp is a data-only significant Explanation (the shape Report returns
@@ -191,8 +229,8 @@ func TestGetMovement_DataOnlyWithNoopEnricher(t *testing.T) {
 	if len(body.Evidence) != 1 || body.Evidence[0].Type != "news" {
 		t.Errorf("evidence = %+v; want one attributed news item", body.Evidence)
 	}
-	if fake.explains != 0 {
-		t.Errorf("Explain ran %d times; want 0 when disabled (data-only Report path)", fake.explains)
+	if fake.explains.Load() != 0 {
+		t.Errorf("Explain ran %d times; want 0 when disabled (data-only Report path)", fake.explains.Load())
 	}
 }
 
@@ -220,9 +258,27 @@ func TestGetMovement_EnabledLLMCachedOnce(t *testing.T) {
 	srv := serverWithMovement(fake)
 	defer srv.Close()
 
+	// ASYNC: the first request returns the canned line INSTANTLY with
+	// prose_status="generating" (llm:false) and composes the LLM sentence in a detached
+	// bg goroutine; the client polls the same URL until it flips to "ready".
 	resp, body := getMovement(t, srv.URL+"/v1/stocks/AAPL/movement")
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status = %d; want 200", resp.StatusCode)
+	}
+	if body.ProseStatus != proseStatusGenerating {
+		t.Errorf("first prose_status = %q; want generating (the LLM sentence composes in the background)", body.ProseStatus)
+	}
+	if body.LLM {
+		t.Error("first response llm = true; want the canned line (false) while generating")
+	}
+	if !body.Significant || body.Explanation == "" {
+		t.Error("first response should carry the canned data-only line for a significant move")
+	}
+
+	// Poll until the bg gen lands the upgrade → "ready" with the LLM sentence.
+	resp, body = pollMovementReady(t, srv.URL+"/v1/stocks/AAPL/movement")
+	if resp.StatusCode != http.StatusOK || body.ProseStatus != proseStatusReady {
+		t.Fatalf("after polling: status=%d prose_status=%q; want 200 ready", resp.StatusCode, body.ProseStatus)
 	}
 	if !body.LLM {
 		t.Error("llm = false; want true when the LLM produced a sentence")
@@ -237,10 +293,9 @@ func TestGetMovement_EnabledLLMCachedOnce(t *testing.T) {
 		t.Errorf("disclaimer = %q; want the mandatory label", body.Disclaimer)
 	}
 
-	// A second request for the same (ticker, day, lang) must hit the cache — Explain
-	// runs exactly once.
-	if _, _ = getMovement(t, srv.URL+"/v1/stocks/AAPL/movement"); fake.explains != 1 {
-		t.Errorf("Explain ran %d times; want 1 (second request served from cache)", fake.explains)
+	// Further requests hit the cache — Explain ran exactly once (the single bg gen).
+	if _, _ = getMovement(t, srv.URL+"/v1/stocks/AAPL/movement"); fake.explains.Load() != 1 {
+		t.Errorf("Explain ran %d times; want 1 (one bg gen, then served from cache)", fake.explains.Load())
 	}
 }
 
@@ -250,15 +305,15 @@ func TestGetMovement_EnabledLLMCachedOnce(t *testing.T) {
 // reaches the (would-be HTTP) enrich call, not just the goroutine. It records that
 // it ran so the cache/cap refund can be asserted.
 type slowExplainEnricher struct {
-	calls   int
-	gotDone bool
+	calls   atomic.Int32 // bumped by ExplainMove, which now runs in a bg goroutine
+	gotDone atomic.Bool
 }
 
 func (s *slowExplainEnricher) Enabled() bool { return true }
 func (s *slowExplainEnricher) ExplainMove(ctx context.Context, _, _ string) (string, error) {
-	s.calls++
+	s.calls.Add(1)
 	<-ctx.Done() // block until the handler's per-call timeout (or parent cancel) fires
-	s.gotDone = true
+	s.gotDone.Store(true)
 	return "", ctx.Err() // the enrich layer surfaces context.DeadlineExceeded
 }
 
@@ -295,35 +350,38 @@ func TestGetMovement_ComposeTimeoutDegradesToDataOnly(t *testing.T) {
 	srv := httptest.NewServer(h)
 	defer srv.Close()
 
+	// ASYNC: the canned data-only line returns INSTANTLY (prose_status=generating); the
+	// LLM sentence is attempted in a detached bg goroutine and will time out.
 	resp, body := getMovement(t, srv.URL+"/v1/stocks/AAPL/movement")
 	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("status = %d; want 200 (compose timeout must degrade to data-only, not 5xx)", resp.StatusCode)
+		t.Fatalf("status = %d; want 200 (async: the canned data-only line returns instantly)", resp.StatusCode)
 	}
-	if slow.calls == 0 { // ExplainMove must have been attempted
-		t.Fatal("ExplainMove was not called")
-	}
-	if !slow.gotDone {
-		t.Error("ExplainMove did not observe context cancellation; the deadline must reach the enrich call")
+	if body.ProseStatus != proseStatusGenerating {
+		t.Errorf("prose_status = %q; want generating (the LLM sentence is composing)", body.ProseStatus)
 	}
 	if body.LLM {
-		t.Error("llm = true; want false after a compose timeout (data-only)")
+		t.Error("llm = true; want false (the canned data-only line, never the LLM on a timeout)")
 	}
 	if !body.Significant || body.ChangePct != 10 || body.Direction != "up" {
 		t.Errorf("got significant=%v %v %q; want the Go-owned significant +10 up", body.Significant, body.ChangePct, body.Direction)
 	}
 	if body.Explanation == "" {
-		t.Error("explanation empty; want the canned data-only line after a timeout")
+		t.Error("explanation empty; want the canned data-only line")
 	}
 	if len(body.Evidence) != 1 || body.Evidence[0].Type != "news" {
 		t.Errorf("evidence = %+v; want one attributed news item", body.Evidence)
 	}
-	// The daily cap must be refunded exactly like any other failed/empty generation:
-	// a timed-out compose produced no LLM sentence, so it must not burn budget.
-	h.moveMu.Lock()
-	count := h.moveDayCount
-	h.moveMu.Unlock()
-	if count != 0 {
-		t.Errorf("moveDayCount = %d; want 0 (a timed-out compose must refund the cap)", count)
+
+	// Await the detached bg gen: it blocks until the (shortened) compose deadline fires,
+	// then refunds the cap — a timed-out compose produced no LLM sentence, so it must not
+	// burn budget. Waiting on the cap counter establishes happens-before with the bg
+	// goroutine, so the slow enricher's atomics are safe to read after.
+	waitMoveCapZero(t, h)
+	if slow.calls.Load() == 0 { // ExplainMove must have been attempted (in the bg)
+		t.Fatal("ExplainMove was not called")
+	}
+	if !slow.gotDone.Load() {
+		t.Error("ExplainMove did not observe context cancellation; the deadline must reach the enrich call")
 	}
 }
 
