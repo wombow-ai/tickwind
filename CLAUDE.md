@@ -437,6 +437,32 @@ feature-flagged plugin, never on the critical path. Web only.
   /zh/smart-money correctly keeps its Chinese card (国会山股神…) — no over-correction. The browser-tab `<title>`
   on these pages was already EN (LocalizedTitle) — only the OG image surface had been overlooked. **→ This closes the Chinese-in-EN class for the session (3 rounds:
   "Possibly related"/movement caller → research/movement/material labels+disclaimers → OG share cards).**
+- **Shipped + LIVE-verified 2026-06-17 (cont.³ — ASYNC `/summary` + `/movement`, the slowdown root-cause fix;
+  owner "继续开发" → started the queued #1):** the owner-reported "site slow/stuck" was diagnosed earlier as
+  LLM (~12s) latency BLOCKING the AI page endpoints. Both are now ASYNC, mirroring the proven deep-research
+  pattern (`getResearchDeep`): the handler returns INSTANTLY with a `prose_status`, and the LLM call moves to a
+  DETACHED background goroutine. **`getSummary`** (commit `96c149b`, `internal/api/api.go`): cache/store hit →
+  `ready`; miss → empty + `generating` + a `composeSummaryBackground` goroutine (single-flight via `sumInflight`,
+  cap reserved-then-refunded-on-failure, `context.Background()`+timeout, caches AND persists on success); over-cap
+  → 200 `quota_exhausted` (was a hard 429); 503 only when the LLM is disabled (unchanged). **`getMovement`**:
+  returns the cheap canned data-only line INSTANTLY with `generating` and composes the ONE hedged LLM sentence in
+  an `explainMovementBackground` goroutine, caching the upgrade; sub-threshold / LLM-off → terminal `ready`;
+  over-cap → canned + `quota_exhausted`. Both add `prose_status` (ready|generating|llm_disabled|quota_exhausted)
+  to the wire shape (`writeMovement`/`writeSummary`); the Go-owned numbers/evidence are unchanged + served
+  instantly. INVARIANTS mirror `getResearchDeep` (one bg gen per (ticker,ET-day,lang), no double-charge, detached
+  ctx, inflight gate always cleared). **Frontend** (`web/`, opus agent + my adversarial review): `AISummaryCard`
+  + `MovementCard` poll every 4s (cap 25) while `generating` (mirroring `DeepResearchView`); MovementCard shows
+  the canned line immediately and silently upgrades to the LLM sentence; **backward-compatible** (absent
+  `prose_status` → the old synchronous behavior, no poll). Tests (`movement_test`, `summary_persistence_test`)
+  made async/poll-aware (first response = generating; await the bg gen via a poll / the cap counter; fake counters
+  atomic). Full `go build/vet/gofmt/test ./cmd/... ./internal/... -race` green + web build (1056 pages) clean.
+  **LIVE-verified** (DEPLOY_LAUNCHED, `prose_status` present = new code serving): `/summary` AAPL **1.6s** (store
+  hit, ready, 1265-char digest) · NVDA/SOFI **1.2–1.5s** (cold → instant empty `generating`) → a follow-up poll
+  showed NVDA/SOFI flipped to **`ready` with real 1233/1412-char digests** (the bg goroutine completed + cached —
+  the full async loop closes); `/movement` AAPL/TSLA/NVDA **0.97–1.4s** (all sub-threshold today → `ready`,
+  card hides). **~1–1.6s vs the old ~12s block — the slowdown is root-cause fixed.** healthz ok; `/en/stock/AAPL`
+  200. The movement significant-move `generating→canned→LLM-upgrade` path wasn't exercised live (no >5% mover at
+  the time) but is unit-tested and uses the identical mechanism the summary path proved end-to-end.
 - **Shipped 2026-06-14 (owner batch + greenlit follow-ups, all live-verified):** R2 now has all **6
   sections** (估值/基本面/技术面/资金面/情绪面/概览) + a **two-sided 看多/看空 (bull/bear)** reading on the
   overview (one ComposeReport call gains `bull`/`bear` keys; a deterministic Go advice-guard strips any
