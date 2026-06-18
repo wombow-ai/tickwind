@@ -11,10 +11,12 @@ import {Markdown} from '@/components/Markdown';
 import {NotesCalendar} from '@/components/NotesCalendar';
 import {NotesPanel} from '@/components/NotesPanel';
 import {PortfolioView} from '@/components/PortfolioView';
-import {getMyDigest, type DigestStock, type MyDigest} from '@/lib/api';
+import {changePct} from '@/components/SortControl';
+import {getMyDigest, type DigestStock, type MyDigest, type Quote} from '@/lib/api';
 import {useAuth} from '@/lib/auth';
 import {useLang, useT} from '@/lib/i18n';
 import {useDark} from '@/lib/theme';
+import {useQuotes} from '@/lib/useQuotes';
 import {btnPrimary, cx, tok} from '@/lib/ui';
 
 type Tab = 'overview' | 'watchlist' | 'holdings' | 'notes' | 'alerts';
@@ -37,11 +39,25 @@ function isTab(v: string | null): v is Tab {
 }
 
 /** One watchlist row in the overnight digest: change % + freshest headline + next event. */
-function DigestRow({st, dark, last}: {st: DigestStock; dark: boolean; last: boolean}) {
+function DigestRow({
+  st,
+  quote,
+  dark,
+  last,
+}: {
+  st: DigestStock;
+  quote?: Quote;
+  dark: boolean;
+  last: boolean;
+}) {
   const t = tok(dark);
-  const pos = st.change_pct != null && st.change_pct >= 0;
+  // Live day-change % from the SSE quote when present (so the row ticks in real
+  // time), falling back to the digest's once-fetched overnight change.
+  const live = changePct(quote, undefined);
+  const chgPct = live ?? st.change_pct;
+  const pos = chgPct != null && chgPct >= 0;
   const chgColor =
-    st.change_pct == null
+    chgPct == null
       ? t.faint
       : pos
         ? dark
@@ -61,9 +77,9 @@ function DigestRow({st, dark, last}: {st: DigestStock; dark: boolean; last: bool
         </Link>
         {st.name && <span className={cx('truncate text-[12.5px]', t.sub)}>{st.name}</span>}
         <span className={cx('ml-auto shrink-0 font-semibold tabular-nums', chgColor)}>
-          {st.change_pct == null
+          {chgPct == null
             ? '—'
-            : `${pos ? '+' : ''}${st.change_pct.toFixed(2)}%`}
+            : `${pos ? '+' : ''}${chgPct.toFixed(2)}%`}
         </span>
       </div>
       {(st.headline || st.next_event) && (
@@ -132,6 +148,11 @@ function OverviewTab() {
     return () => c.abort();
   }, [getToken, lang]);
 
+  // Live prices: overlay the SSE quote stream on the digest rows so each stock's
+  // change % refreshes in real time (the digest itself is a once-fetched snapshot).
+  const liveTickers = digest?.stocks?.map(s => s.ticker) ?? [];
+  const quotes = useQuotes(liveTickers);
+
   if (status === 'loading') {
     return (
       <div className="space-y-3">
@@ -192,7 +213,13 @@ function OverviewTab() {
           {tr('digest.stocksTitle')}
         </div>
         {stocks.map((st, i) => (
-          <DigestRow key={st.ticker} st={st} dark={dark} last={i === stocks.length - 1} />
+          <DigestRow
+            key={st.ticker}
+            st={st}
+            quote={quotes.get(st.ticker)}
+            dark={dark}
+            last={i === stocks.length - 1}
+          />
         ))}
       </section>
     </div>

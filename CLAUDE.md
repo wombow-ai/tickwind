@@ -485,6 +485,31 @@ feature-flagged plugin, never on the critical path. Web only.
   web build green (1060 static pages). **NOTE for future: two near-identical stock strips exist — `HomeHub`
   (home `/`) and `Board` (`/me?tab=watchlist` only); both now share `StockRow`'s toggle/hook. Don't assume an
   edit to one covers the other** (this batch's #1 initially missed HomeHub — the preview caught it).
+- **In progress 2026-06-18 (owner: "深度优化实时价格 — 及时性+准确性,盘前/盘中/盘后"). Diagnosis +
+  increment 1:** the real-time price architecture is: **Alpaca WS** (free IEX, `internal/alpacaws`) for
+  sub-second on a small set (base ≤20 = a STARTUP snapshot of `ingestTickers`, capped `MaxSymbols-viewedSlots`,
+  + ≤10 on-demand "viewed" tickers added via `live.Subscribe` from the stock-detail handler) → `hub.Publish` →
+  SSE `/v1/stream`; the **REST poller** (`PricePoller`, `PRICE_POLL_EVERY`=10s) covers breadth (≤200 tickers);
+  frontend `useQuotes` opens one EventSource + applies freshness-guarded quotes. **Root causes found:**
+  **(bug)** the `/me` **Overview tab** (`OverviewTab`) rendered a once-fetched `getMyDigest` snapshot's static
+  `change_pct` with **no `useQuotes`** → never live-refreshed (the owner's report). **(timeliness)** the poller
+  did **serial per-ticker `LatestQuote`** over ≤200 tickers → ~20-60s/cycle (cycles overran the 10s tick, so
+  breadth lagged badly). **(timeliness)** the WS base set is a stale startup snapshot + list views never
+  `Subscribe` their tickers → most list tickers got only the (slow) poller cadence, not sub-second. **(accuracy)**
+  the post-Yahoo extended-hours overlay is gone; the Alpaca snapshot's `latestTrade` DOES carry pre/post (so
+  polled+WS names get pre/post prices), but **thin names with no IEX pre/post print can freeze** (free-IEX
+  ceiling). **Increment 1 shipped:** **(B)** added `alpaca.SnapshotQuotesLive` (BULK snapshot, priced off
+  `LatestTrade` = session-aware/live, NOT SnapshotQuotes' daily-close-first cap price) + rewrote `PricePoller.poll`
+  to bulk all US tickers in a few ≤100-symbol requests (cycle ~20-60s → ~1-2s; intl stays per-adapter); omits
+  price≤0 so an empty print never clobbers a good quote. **(A)** `OverviewTab` now overlays `useQuotes` + the
+  canonical `changePct` so each digest row's change % ticks live (falls back to the digest value until a quote
+  arrives). Go gate (gofmt/build/vet/test) + web build green. **Next increments (planned):** **(C)** list views
+  `Subscribe` their visible US tickers to the WS for sub-second (within the 30-cap, LRU) + a batch subscribe
+  endpoint; **(D)** periodically refresh the WS base set from current `ingestTickers` (not a startup snapshot);
+  optionally lower `PRICE_POLL_EVERY` (bulk makes it cheap: ≤200/100=2 req/cycle, 12 req/min at 10s << 200/min).
+  **Owner DECISION surfaced:** pre/post freshness for THIN names is capped by free Alpaca IEX (sparse prints) —
+  the Yahoo overlay that filled this was removed 2026-06-17; re-adding a gray/paid pre-post source is a
+  cost/ToS call left to the owner.
 - **Shipped 2026-06-14 (owner batch + greenlit follow-ups, all live-verified):** R2 now has all **6
   sections** (估值/基本面/技术面/资金面/情绪面/概览) + a **two-sided 看多/看空 (bull/bear)** reading on the
   overview (one ComposeReport call gains `bull`/`bear` keys; a deterministic Go advice-guard strips any

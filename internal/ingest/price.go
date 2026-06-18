@@ -48,6 +48,11 @@ func (p *PricePoller) Run(ctx context.Context) {
 }
 
 func (p *PricePoller) poll(ctx context.Context) {
+	// Split the tracked set: non-US markets dispatch to their per-market adapter
+	// (e.g. .TW EOD); US tickers are priced together in a few BULK snapshot requests
+	// rather than one serial REST call each — so a ~200-ticker cycle takes ~1-2s
+	// instead of tens of seconds and live prices refresh at the configured cadence.
+	var usSyms []string
 	for _, ticker := range p.tickers(ctx) {
 		if a := p.adapters[market.Of(ticker)]; a != nil { // non-US (e.g. .TW EOD)
 			q, ok, err := a.Quote(ctx, ticker)
@@ -60,14 +65,20 @@ func (p *PricePoller) poll(ctx context.Context) {
 			}
 			continue
 		}
-		q, err := p.client.LatestQuote(ctx, ticker)
-		if err != nil {
-			p.log.Warn("price poll failed", "ticker", ticker, "err", err)
-			continue
-		}
-		p.save(ctx, q)
-		p.log.Debug("price", "ticker", ticker, "price", q.Price, "session", q.Session)
+		usSyms = append(usSyms, ticker)
 	}
+	if len(usSyms) == 0 {
+		return
+	}
+	quotes, err := p.client.SnapshotQuotesLive(ctx, usSyms)
+	if err != nil && len(quotes) == 0 {
+		p.log.Warn("price poll (bulk) failed", "tickers", len(usSyms), "err", err)
+		return
+	}
+	for _, q := range quotes {
+		p.save(ctx, q)
+	}
+	p.log.Debug("price poll", "us", len(usSyms), "priced", len(quotes))
 }
 
 // save upserts a quote and broadcasts it to live subscribers.

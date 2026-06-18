@@ -412,6 +412,38 @@ func (c *Client) SnapshotQuotes(ctx context.Context, symbols []string) (map[stri
 	return out, nil
 }
 
+// SnapshotQuotesLive is the LIVE-pricing bulk counterpart to SnapshotQuotes: it
+// builds each quote from the LATEST TRADE (session-aware, includes pre-/after-hours
+// prints), exactly like the singular LatestQuote — NOT SnapshotQuotes' daily-close-
+// first price (which is for market-cap stability, wrong for live display, esp. in
+// extended hours). The price poller uses this to refresh the whole tracked set in a
+// few bulk requests per cycle (≤100 symbols each) instead of one serial REST call
+// per ticker — a ~200-ticker cycle drops from tens of seconds to ~1-2s. Symbols with
+// no usable latest trade (price ≤ 0) are omitted so an empty print never clobbers a
+// good last quote. Resilient to a poisoned batch via fetchSnapshots' bisection.
+func (c *Client) SnapshotQuotesLive(ctx context.Context, symbols []string) (map[string]store.Quote, error) {
+	out := make(map[string]store.Quote, len(symbols))
+	norm := normalizeSymbols(symbols)
+	err := c.fetchSnapshots(ctx, norm, func(sym string, snap snapshotResp) {
+		if snap.LatestTrade.Price <= 0 {
+			return
+		}
+		out[sym] = store.Quote{
+			Ticker:       sym,
+			Price:        snap.LatestTrade.Price,
+			PrevClose:    snap.PrevDailyBar.Close,
+			RegularClose: regularClose(snap.DailyBar.Close, snap.PrevDailyBar.Close),
+			Session:      c.sessionAt(snap.LatestTrade.Timestamp),
+			Source:       "alpaca",
+			At:           snap.LatestTrade.Timestamp,
+		}
+	})
+	if len(out) == 0 && err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // normalizeSymbols maps each symbol to Alpaca's expected form (deduping after
 // normalization, since e.g. a directory rarely holds both forms). The response
 // is keyed by the SENT (normalized) symbol — which is Tickwind's own canonical
