@@ -121,6 +121,19 @@ type Config struct {
 	// DEEP_RESEARCH_DAILY_LIMIT name (e.g. raise it for a paid tier later).
 	DeepResearchMonthlyLimit int
 
+	// Stripe billing (Pro entitlement). ALL OPTIONAL — every field defaults empty,
+	// and the billing surface stays INERT (webhook + checkout/portal endpoints are
+	// not registered, no rows ever written) until StripeSecretKey is set, exactly
+	// like the LLM enricher's empty-key→Noop. So a keyless deployment behaves as
+	// today. StripeSecretKey authenticates the API client; StripeWebhookSecret
+	// verifies inbound webhook signatures (the webhook is registered ONLY when this
+	// is set); StripePriceMonthly/Annual are the Stripe Price ids for the Pro plan.
+	// All secrets live in the VPS .env only, never git.
+	StripeSecretKey     string
+	StripeWebhookSecret string
+	StripePriceMonthly  string
+	StripePriceAnnual   string
+
 	// Supabase auth. SupabaseURL (e.g. https://<ref>.supabase.co) enables ES256
 	// verification via the project's JWKS — required because Supabase now signs
 	// user tokens with asymmetric keys. SupabaseJWTSecret keeps legacy HS256
@@ -213,6 +226,10 @@ func Load() Config {
 		// New env name first; fall back to the legacy DEEP_RESEARCH_DAILY_LIMIT (whose
 		// own default is 1) so an existing deployment keeps working unchanged.
 		DeepResearchMonthlyLimit: envInt("DEEP_RESEARCH_MONTHLY_LIMIT", envInt("DEEP_RESEARCH_DAILY_LIMIT", 1)),
+		StripeSecretKey:          env("STRIPE_SECRET_KEY", ""),
+		StripeWebhookSecret:      env("STRIPE_WEBHOOK_SECRET", ""),
+		StripePriceMonthly:       env("STRIPE_PRICE_MONTHLY", ""),
+		StripePriceAnnual:        env("STRIPE_PRICE_ANNUAL", ""),
 		SupabaseURL:              strings.TrimRight(env("SUPABASE_URL", ""), "/"),
 		SupabaseJWTSecret:        env("SUPABASE_JWT_SECRET", ""),
 		AdminUserIDs:             splitCSVRaw(env("ADMIN_USER_IDS", "")),

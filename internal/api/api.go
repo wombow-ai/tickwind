@@ -601,6 +601,45 @@ func (s *Server) requireUser(w http.ResponseWriter, r *http.Request) (auth.User,
 	return u, true
 }
 
+// The two entitlement tiers the gates branch on.
+const (
+	tierPro  = "pro"
+	tierFree = "free"
+)
+
+// tierOf returns the user's entitlement tier ("pro" | "free"), derived live from the
+// Stripe-synced subscription row (active/trialing → pro; past_due keeps Pro through a
+// short renewal grace). It SWALLOWS a store error and an unknown user to "free" — so a
+// DB hiccup or an unconfigured-Stripe deployment never wrongly grants Pro and never
+// hard-locks anyone: the viewing/quota gates then show the free experience (fail-open)
+// while a Pro-only feature denies (fail-closed), both correct from this single
+// "free on error" default. With Stripe unconfigured no subscription rows exist, so
+// every user resolves to "free" — exactly the pre-paywall status quo.
+func (s *Server) tierOf(ctx context.Context, userID string) string {
+	if userID == "" {
+		return tierFree
+	}
+	sub, ok, err := s.store.GetSubscription(ctx, userID)
+	if err != nil {
+		s.log.Debug("tierOf: subscription read failed (defaulting free)", "user", userID, "err", err)
+		return tierFree
+	}
+	if !ok {
+		return tierFree
+	}
+	switch sub.Status {
+	case "active", "trialing":
+		return tierPro
+	case "past_due": // renewal grace: still Pro until shortly past the period end
+		if time.Now().Before(sub.CurrentPeriodEnd.Add(72 * time.Hour)) {
+			return tierPro
+		}
+		return tierFree
+	default:
+		return tierFree
+	}
+}
+
 // health is a readiness probe: it pings the store and reports subsystem status,
 // returning 503 when a dependency (the DB) is unreachable so uptime monitors
 // actually catch outages instead of seeing a flat "ok".
