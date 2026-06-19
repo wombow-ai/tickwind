@@ -26,7 +26,7 @@ func tripleSignalResult() indicators.StockIndicatorsResult {
 		AsOf:   "2026-06-19",
 		Indicators: []indicators.StockIndicator{
 			{Indicator: indicators.Indicator{ID: "technical.rsi"}, Status: indicators.StatusOK, Value: fptr(25)},
-			{Indicator: indicators.Indicator{ID: "technical.stochastic-kdj"}, Status: indicators.StatusOK, Value: fptr(60), Extra: map[string]float64{"k": 90}},
+			{Indicator: indicators.Indicator{ID: "technical.stochastic-kdj"}, Status: indicators.StatusOK, Value: fptr(90), Extra: map[string]float64{"k": 90}},
 			{Indicator: indicators.Indicator{ID: "technical.macd"}, Status: indicators.StatusOK, Value: fptr(2), Extra: map[string]float64{"signal": 1, "hist": 1}},
 		},
 	}

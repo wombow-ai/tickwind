@@ -52,7 +52,10 @@ func Signals(res StockIndicatorsResult) []Signal {
 				out = append(out, Signal{si.ID, "RSI overbought", DirBearish, fmt.Sprintf("RSI %.1f > 70", v)})
 			}
 		case "technical.stochastic-kdj":
-			k := si.Extra["k"]
+			// %K is the headline value (compute sets Value = v.K). Read it from the
+			// already-validated *si.Value (= v) rather than the Extra map, so a missing
+			// "k" key can never fabricate a 0 that fires a bogus oversold signal.
+			k := v
 			switch {
 			case k > 80:
 				out = append(out, Signal{si.ID, "Stochastic overbought", DirBearish, fmt.Sprintf("KDJ %%K %.1f > 80", k)})
@@ -123,11 +126,16 @@ func Signals(res StockIndicatorsResult) []Signal {
 // least newsworthy). Lower sorts first.
 func salienceOf(s Signal) int {
 	switch {
-	case strings.Contains(s.Label, "cross"): // MACD bullish/bearish cross, Golden/Death cross
+	// Events: the golden/death cross (its own id) and the MACD cross. The MACD-cross
+	// check is SCOPED to the MACD id (not a global label match) so a future label like
+	// "Price crossed above SMA" on another indicator can't be misclassified as an event.
+	case s.ID == maCrossID:
+		return 0
+	case s.ID == "technical.macd" && strings.Contains(s.Label, "cross"):
 		return 0
 	case s.ID == "technical.rsi" || s.ID == "technical.stochastic-kdj" || s.ID == "technical.boll":
-		return 1
-	default: // price-vs-SMA/EMA, MACD above/below signal
+		return 1 // extremes: overbought/oversold, band breach
+	default: // price-vs-SMA/EMA, MACD above/below signal — always-on trend posture
 		return 2
 	}
 }

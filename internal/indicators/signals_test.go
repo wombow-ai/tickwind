@@ -37,9 +37,12 @@ func TestSignals(t *testing.T) {
 		{"rsi oversold", ind("technical.rsi", StatusOK, f(27.4), nil), "technical.rsi", DirBullish, "RSI 27.4 < 30"},
 		{"rsi overbought", ind("technical.rsi", StatusOK, f(72.1), nil), "technical.rsi", DirBearish, "RSI 72.1 > 70"},
 		{"rsi neutral -> none", ind("technical.rsi", StatusOK, f(50), nil), "", "", ""},
-		{"kdj overbought", ind("technical.stochastic-kdj", StatusOK, f(60), map[string]float64{"k": 85}), "technical.stochastic-kdj", DirBearish, "KDJ %K 85.0 > 80"},
-		{"kdj oversold", ind("technical.stochastic-kdj", StatusOK, f(60), map[string]float64{"k": 12}), "technical.stochastic-kdj", DirBullish, "KDJ %K 12.0 < 20"},
-		{"kdj neutral -> none", ind("technical.stochastic-kdj", StatusOK, f(60), map[string]float64{"k": 50}), "", "", ""},
+		// KDJ reads %K from the validated headline Value (= v.K), not Extra — so Value carries %K here.
+		{"kdj overbought", ind("technical.stochastic-kdj", StatusOK, f(85), map[string]float64{"k": 85}), "technical.stochastic-kdj", DirBearish, "KDJ %K 85.0 > 80"},
+		{"kdj oversold", ind("technical.stochastic-kdj", StatusOK, f(12), map[string]float64{"k": 12}), "technical.stochastic-kdj", DirBullish, "KDJ %K 12.0 < 20"},
+		{"kdj neutral -> none", ind("technical.stochastic-kdj", StatusOK, f(50), map[string]float64{"k": 50}), "", "", ""},
+		// Regression (M1): %K comes from Value even when Extra has no "k" key — never fabricates a 0.
+		{"kdj from value, no extra", ind("technical.stochastic-kdj", StatusOK, f(15), nil), "technical.stochastic-kdj", DirBullish, "KDJ %K 15.0 < 20"},
 		{"macd above signal", ind("technical.macd", StatusOK, f(1.250), map[string]float64{"signal": 0.800, "hist": 0.450}), "technical.macd", DirBullish, "DIF 1.250 > DEA 0.800"},
 		{"macd below signal", ind("technical.macd", StatusOK, f(-0.500), map[string]float64{"signal": -0.200, "hist": -0.300}), "technical.macd", DirBearish, "DIF -0.500 < DEA -0.200"},
 		{"macd mixed -> none", ind("technical.macd", StatusOK, f(1.0), map[string]float64{"signal": 0.5, "hist": -0.1}), "", "", ""},
@@ -265,7 +268,7 @@ func TestCrossSignals(t *testing.T) {
 func TestSignalsMultiple(t *testing.T) {
 	res := StockIndicatorsResult{Indicators: []StockIndicator{
 		ind("technical.rsi", StatusOK, f(25), nil),
-		ind("technical.stochastic-kdj", StatusOK, f(60), map[string]float64{"k": 90}),
+		ind("technical.stochastic-kdj", StatusOK, f(90), map[string]float64{"k": 90}),
 		ind("technical.macd", StatusOK, f(2.0), map[string]float64{"signal": 1.0, "hist": 1.0}),
 		ind("technical.atr", StatusOK, f(3.2), nil), // no rule -> ignored
 	}}
