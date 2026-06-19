@@ -98,10 +98,15 @@ Deep Research (one subscription unlocks both) is the simplest, highest-conversio
   ticker→signals every N min) that the endpoint reads instantly, vs recomputing 200× per request (and
   risking a cold-ticker network fetch). **C4.1 ✅ DONE (commit, ahead 20):** `internal/indicators/screen.go`
   — pure `ScreenSignals(map[ticker][]Signal, SignalScreen{Direction,SignalID}) []SignalMatch` (the
-  deterministic core + shared query/result types), unit-tested. **NEXT C4.2:** the background signals
-  cache (`Run` over the universe via the Computer) + `GET /v1/screen/signals` reading it, Pro-gated
-  (`tierOf` + `INDICATORS_PAYWALL_ENABLED`; screener is Pro-only per §3 → hard-lock for free when flag on,
-  not a teaser). Then C4.3 a screener UI page. Free/redistribution-safe (reuses computed indicators).
+  deterministic core + shared query/result types), unit-tested. **C4.2 ✅ DONE (commit, ahead 22):**
+  `internal/ingest/signalscan.go` `SignalScanCache` (mirrors OptionsCache: `Run` recomputes
+  ticker→signals over the universe every 15 min OFF the request path, atomic swap, keeps previous on
+  empty) + `GET /v1/screen/signals?direction=&signal=&limit=` reading it, Pro-gated (`tierOf` +
+  `INDICATORS_PAYWALL_ENABLED`; screener is Pro-only per §3 → flag-on + non-Pro = empty + paywall_locked
+  HARD lock, not a teaser; flag off = all). Wired in main.go. Tests: cache scan/screen/keep-previous +
+  handler nil-404/flag-off/flag-on-hard-lock. **NEXT C4.3:** a screener UI page (`/screen` or a signals
+  filter UI) — api.ts `getScreenSignals` + a page listing matches with their basis + Pro CTA on lock.
+  Free/redistribution-safe (reuses computed indicators).
 - **C5 — Indicator/signal alerts** (reuse the existing alerts feature).
 - **C6 — Backtesting** (heaviest; defer).
 
