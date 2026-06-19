@@ -494,13 +494,23 @@ feature-flagged plugin, never on the critical path. Web only.
   home page; also resolves the "AI Digest loads ~15s then disappears" report). Commits `3f31144`, `ff32167`.
   **Diagnosis**: AI was fully down = OpenRouter $5 credits exhausted ($5.14, owner topped up); deep prose empty =
   `deepseek-r1` (reasoning model) output breaks `enrich.parseSectionProse`; the "Claude Fable 5 harness" was never
-  wired (only code comments). **NEXT — Increment B (see the plan doc)**: cost-optimal API routing — routine LLM
-  (briefing/translation/movement/material-events/normal research) → **DeepSeek direct** (new ¥10 key, staged on
-  the VPS `.env` as `DEEPSEEK_API_KEY`); **Deep Research → Claude Fable 5 via OpenRouter** ($5 = the current
-  `LLM_API_KEY=sk-or-…`, to become `LLM_DEEP_API_KEY`). Two-client enrich (`LLM_DEEP_BASE_URL`/`LLM_DEEP_API_KEY`)
-  + drop `response_format` for Claude + harden the parser (strip `<think>`, last balanced JSON) + a Claude
-  harness + **verify the model id via the `claude-api` skill** + live-verify. Both keys are on the VPS `.env`
-  ONLY (never git). See [[tickwind-paid-ai-free-sources]] (free quote sources only ahead of monetization).
+  wired (only code comments). **Increment B — SHIPPED + LIVE-VERIFIED 2026-06-19** (commit `9f0ee1c`, DEPLOY_DONE
+  11:49Z): **cost-split LLM routing is LIVE.** Routine LLM (briefing/translation/movement/material-events/normal
+  `/research`) → **DeepSeek direct** (`LLM_BASE_URL=https://api.deepseek.com`, `LLM_MODEL=deepseek-chat`,
+  `LLM_API_KEY`=the ¥10 DeepSeek key). **Deep Research → `anthropic/claude-opus-4.8` via OpenRouter**
+  (`LLM_DEEP_BASE_URL`/`LLM_DEEP_API_KEY`=the $5 OpenRouter key, `LLM_DEEP_MODEL=anthropic/claude-opus-4.8`).
+  **Model finding (step-1, live):** `anthropic/claude-fable-5` is **404 / Mythos-gated** on OpenRouter for this
+  account — live-probed alternatives → chose **Opus 4.8** (strongest available Claude, $5/M in + $25/M out =
+  CHEAPER than Fable's $10/$50; ~$0.12-0.17/report; ~$5 ≈ ~30-40 reports at the 1/user/month quota). Cheaper
+  swap = `anthropic/claude-sonnet-4.6` (one `.env` line). Code (env-driven, model never hardcoded): two-client
+  `enrich` (`internal/enrich`+`config`), `ComposeDeepReport` DROPS `response_format` (Anthropic/reasoning-safe) +
+  asks for a fenced ```json block; deep prompt gained `<output_contract>` + the previously-MISSING **bull/bear**
+  keys; hardened `parseSectionProse` (strips `<think>…</think>`, tolerates string-or-[]string values, balanced-
+  brace scan → last top-level object wins). **Live verify (true E2E, minted HS256 JWT for a synthetic user →
+  login-gated deep endpoint):** NVDA deep report `prose_status=ready`, **`model=anthropic/claude-opus-4.8`**, 6
+  sections of rich Opus prose + bull=4/bear=4; Opus correctly FLAGGED inconsistent NVDA fundamentals as data
+  artifacts (anti-hallucination held). Routine verified: MSFT `/research` `model=deepseek-chat`, 6 sections.
+  Both keys are on the VPS `.env` ONLY (never git). See [[tickwind-paid-ai-free-sources]] + [[tickwind-ai-llm]].
 - **Shipped + LIVE-verified 2026-06-18 (owner: "深度优化实时价格 — 及时性+准确性,盘前/盘中/盘后"). Diagnosis +
   increments 1 & 2 (C/D) — all LIVE** (incr 2: `POST /v1/live/subscribe`→`{"ok":true}` proves the deploy; quotes
   no-regression session=regular/source=alpaca; DEPLOY_DONE 19:23Z)**:** the real-time price architecture is: **Alpaca WS** (free IEX, `internal/alpacaws`) for
