@@ -141,6 +141,13 @@ type Config struct {
 	// + verified in test mode with this OFF in prod.
 	PaywallEnabled bool
 
+	// IndicatorsPaywallEnabled turns ON the Pro paywall for the deterministic SIGNALS
+	// layer (GET /v1/stocks/{ticker}/indicator-signals truncates to a teaser for free viewers).
+	// Default FALSE — every viewer gets the full signal list, exactly as today — until
+	// the owner flips it at go-live. Independent of the deep-report PaywallEnabled so
+	// the two paid points can go live separately.
+	IndicatorsPaywallEnabled bool
+
 	// Supabase auth. SupabaseURL (e.g. https://<ref>.supabase.co) enables ES256
 	// verification via the project's JWKS — required because Supabase now signs
 	// user tokens with asymmetric keys. SupabaseJWTSecret keeps legacy HS256
@@ -238,6 +245,7 @@ func Load() Config {
 		StripePriceMonthly:       env("STRIPE_PRICE_MONTHLY", ""),
 		StripePriceAnnual:        env("STRIPE_PRICE_ANNUAL", ""),
 		PaywallEnabled:           envBool("PAYWALL_ENABLED", false),
+		IndicatorsPaywallEnabled: envBool("INDICATORS_PAYWALL_ENABLED", false),
 		SupabaseURL:              strings.TrimRight(env("SUPABASE_URL", ""), "/"),
 		SupabaseJWTSecret:        env("SUPABASE_JWT_SECRET", ""),
 		AdminUserIDs:             splitCSVRaw(env("ADMIN_USER_IDS", "")),

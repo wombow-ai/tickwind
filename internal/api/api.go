@@ -423,6 +423,10 @@ type Server struct {
 	// truncation). Default false (no paywall; full report for everyone) until the owner
 	// flips it at go-live; injected post-New via SetPaywallEnabled.
 	paywallEnabled bool
+	// indicatorsPaywallEnabled turns ON the Pro paywall for the deterministic signals
+	// layer (GET /v1/stocks/{ticker}/indicator-signals → teaser for free viewers). Default false
+	// (full signal list for everyone) until go-live; injected via SetIndicatorsPaywallEnabled.
+	indicatorsPaywallEnabled bool
 	// Move-explainer cache: the data-only explanation (Go number + evidence + canned
 	// line) is cheap, but the LLM's hedged sentence is one small generation per
 	// (ticker, ET day, lang), then served from memory — mirrors the AI digest cache.
@@ -578,6 +582,7 @@ func New(st store.Store, hub QuoteStream, enricher enrich.Enricher, verifier *au
 	mux.HandleFunc("GET /v1/13f/{slug}", s.getThirteenFFund)
 	mux.HandleFunc("GET /v1/stocks/{ticker}/whales", s.getWhales)
 	mux.HandleFunc("GET /v1/stocks/{ticker}/indicators", s.getStockIndicators)
+	mux.HandleFunc("GET /v1/stocks/{ticker}/indicator-signals", s.getStockSignals)
 	mux.HandleFunc("GET /v1/stocks/{ticker}/research", s.getResearch)
 	mux.HandleFunc("GET /v1/stocks/{ticker}/movement", s.getMovement)
 	mux.HandleFunc("GET /v1/stocks/{ticker}/material-events", s.getMaterialEvents)
