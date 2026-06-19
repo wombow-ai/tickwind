@@ -64,10 +64,16 @@ Deep Research (one subscription unlocks both) is the simplest, highest-conversio
 
 ## 4. Build order (phased, lowest-risk-first, each behind a flag in test mode)
 
-- **C1 — Posture signals (backend):** `internal/indicators/signals.go` — pure functions over a
-  `StockIndicatorsResult` → `[]Signal`. `GET /v1/stocks/{ticker}/signals`, gated by `tierOf` +
-  an `INDICATORS_PAYWALL_ENABLED` flag (default OFF → full list for everyone, current-behavior-safe;
-  when on, free sees the teaser). Unit-test the rules. Zero new data, zero LLM, zero user impact (flag off).
+- **C1 — Posture signals (backend + API): ✅ DONE (local, flag-off, not deployed; commits 79ab370 + 7ce2ee7).**
+  `internal/indicators/signals.go` — pure `Signals(StockIndicatorsResult) []Signal` (RSI <30/>70,
+  KDJ %K >80/<20, MACD DIF vs DEA + hist sign; each `Signal{id,label,direction,basis}` cites the
+  Go value + threshold). `GET /v1/stocks/{ticker}/indicator-signals` (NOTE: `/signals` was already
+  taken by the news/social **buzz-sentiment** signals — a different concept — so this uses the
+  `indicator-signals` path), gated by `tierOf` + `INDICATORS_PAYWALL_ENABLED` (default OFF → full
+  list for everyone, current-behavior-safe; ON → non-Pro gets the first `freeSignalTeaserLimit`=2 +
+  `paywall_locked` + `total_signals`). Unit-tested (signals rules + handler + teaser cap). Zero new
+  data, zero LLM, zero user impact (flag off). Result carries no current price yet → price-vs-MA /
+  BOLL-band / cross signals deferred to **C3** (extend the Computer with price + last-2 values).
 - **C2 — Signals UI:** surface signals on the stock page (a "Signals" card / in IndicatorsPanel) with
   the free-teaser + upgrade CTA reusing the Phase-2 paywall pattern.
 - **C3 — Event signals:** extend the Computer for SMA50/SMA200 + last-2 values; add cross/event signals.
