@@ -1,18 +1,33 @@
 'use client';
 
-import {LogOut, Moon, Sun} from 'lucide-react';
+import {ArrowRight, Crown, Loader2, LogOut, Moon, Sun} from 'lucide-react';
+import {useState} from 'react';
 import Link from '@/components/LocalLink';
+import {createPortal} from '@/lib/api';
 import {useAuth} from '@/lib/auth';
+import {useEntitlement} from '@/lib/entitlement';
 import {useT} from '@/lib/i18n';
 import {useTheme} from '@/lib/theme';
 import {btnPrimary, cx, tok} from '@/lib/ui';
 
 /** Account + appearance settings (requires sign-in). */
 export default function SettingsPage() {
-  const {user, loading, signOut} = useAuth();
+  const {user, loading, signOut, getToken} = useAuth();
   const {dark, toggle} = useTheme();
   const t = tok(dark);
   const tr = useT();
+  const {isPro, loading: entLoading} = useEntitlement();
+  const [portalBusy, setPortalBusy] = useState(false);
+
+  const onManage = async () => {
+    setPortalBusy(true);
+    try {
+      const token = await getToken();
+      window.location.assign(await createPortal(token));
+    } catch {
+      setPortalBusy(false);
+    }
+  };
 
   if (loading) {
     return <div className={cx('h-40 rounded-3xl border', t.card, t.border, t.skel)} />;
@@ -66,6 +81,48 @@ export default function SettingsPage() {
             </p>
             <p className={cx('text-[12px]', t.faint)}>{tr('settings.signedIn')}</p>
           </div>
+        </div>
+      </section>
+
+      <section className={cx('mt-5 rounded-3xl border p-6', t.card, t.border, t.soft)}>
+        <h2 className={cx('text-[13px] font-semibold uppercase tracking-wide', t.faint)}>
+          {tr('settings.subscription')}
+        </h2>
+        <div className="mt-3 flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <p className={cx('flex items-center gap-1.5 text-[14px] font-semibold', t.text)}>
+              {isPro && <Crown size={15} className={dark ? 'text-amber-300' : 'text-amber-500'} />}
+              {entLoading ? '…' : isPro ? tr('settings.planPro') : tr('settings.planFree')}
+            </p>
+            <p className={cx('text-[12.5px]', t.sub)}>
+              {isPro ? tr('settings.planProSub') : tr('settings.planFreeSub')}
+            </p>
+          </div>
+          {isPro ? (
+            <button
+              onClick={onManage}
+              disabled={portalBusy}
+              className={cx(
+                'inline-flex shrink-0 items-center gap-1.5 rounded-full border px-3.5 py-2 text-[13px] font-medium disabled:opacity-60',
+                t.border,
+                t.ghost,
+              )}
+            >
+              {portalBusy && <Loader2 size={14} className="animate-spin" />}
+              {tr('settings.manage')}
+            </button>
+          ) : (
+            <Link
+              href="/pro"
+              className={cx(
+                'inline-flex shrink-0 items-center gap-1 rounded-full px-3.5 py-2 text-[13px] font-semibold',
+                btnPrimary(dark),
+              )}
+            >
+              {tr('settings.upgrade')}
+              <ArrowRight size={14} />
+            </Link>
+          )}
         </div>
       </section>
 
