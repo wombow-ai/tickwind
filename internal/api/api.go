@@ -427,6 +427,9 @@ type Server struct {
 	// layer (GET /v1/stocks/{ticker}/indicator-signals → teaser for free viewers). Default false
 	// (full signal list for everyone) until go-live; injected via SetIndicatorsPaywallEnabled.
 	indicatorsPaywallEnabled bool
+	// signalScan is the whole-universe signals SCREENER source (a background cache),
+	// injected post-New via SetSignalScan. nil → /v1/screen/signals 404s.
+	signalScan SignalScanSource
 	// Move-explainer cache: the data-only explanation (Go number + evidence + canned
 	// line) is cheap, but the LLM's hedged sentence is one small generation per
 	// (ticker, ET day, lang), then served from memory — mirrors the AI digest cache.
@@ -557,6 +560,7 @@ func New(st store.Store, hub QuoteStream, enricher enrich.Enricher, verifier *au
 	mux.HandleFunc("GET /v1/universe", s.getUniverse)
 	mux.HandleFunc("GET /v1/universe/symbols", s.getUniverseSymbols)
 	mux.HandleFunc("GET /v1/screen", s.getScreen)
+	mux.HandleFunc("GET /v1/screen/signals", s.getScreenSignals)
 	mux.HandleFunc("GET /v1/gurus", s.getGurus)
 	mux.HandleFunc("GET /v1/search", s.getSearch)
 	mux.HandleFunc("GET /v1/symbols", s.getSymbols)

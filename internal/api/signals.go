@@ -3,6 +3,7 @@ package api
 import (
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/wombow-ai/tickwind/internal/auth"
 	"github.com/wombow-ai/tickwind/internal/indicators"
@@ -75,6 +76,64 @@ func (s *Server) getStockSignals(w http.ResponseWriter, r *http.Request) {
 	}
 	if out.Signals == nil {
 		out.Signals = []indicators.Signal{}
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+// SignalScanSource is the whole-universe signals SCREENER (a background cache that
+// precomputes ticker→signals so the endpoint never recomputes on the request path).
+type SignalScanSource interface {
+	Screen(q indicators.SignalScreen) ([]indicators.SignalMatch, time.Time)
+}
+
+// SetSignalScan injects the signals-screener source after New. nil-safe: the endpoint
+// 404s until set.
+func (s *Server) SetSignalScan(src SignalScanSource) { s.signalScan = src }
+
+// screenSignalsResp is the wire shape of GET /v1/screen/signals.
+type screenSignalsResp struct {
+	Count         int                      `json:"count"`
+	Results       []indicators.SignalMatch `json:"results"`
+	AsOf          string                   `json:"as_of,omitempty"` // when the scan was built
+	PaywallLocked bool                     `json:"paywall_locked,omitempty"`
+}
+
+// getScreenSignals screens the whole universe for stocks whose deterministic signals
+// match the query (`?direction=bullish|bearish|neutral` & `?signal=<indicator id>` &
+// `?limit=`). It reads the background scan cache — no per-request compute. The screener
+// is a Pro feature: when INDICATORS_PAYWALL_ENABLED and the viewer is not Pro it returns
+// an empty, paywall_locked result (a HARD lock, not a teaser — screening is Pro-only per
+// the plan). Flag off → available to everyone (current-behavior-safe).
+func (s *Server) getScreenSignals(w http.ResponseWriter, r *http.Request) {
+	if s.signalScan == nil {
+		writeJSON(w, http.StatusNotFound, errBody("screener unavailable"))
+		return
+	}
+	if s.indicatorsPaywallEnabled {
+		u, _ := auth.UserFrom(r.Context())
+		if s.tierOf(r.Context(), u.ID) != tierPro {
+			writeJSON(w, http.StatusOK, screenSignalsResp{Results: []indicators.SignalMatch{}, PaywallLocked: true})
+			return
+		}
+	}
+	q := r.URL.Query()
+	matches, at := s.signalScan.Screen(indicators.SignalScreen{
+		Direction: strings.ToLower(strings.TrimSpace(q.Get("direction"))),
+		SignalID:  strings.TrimSpace(q.Get("signal")),
+	})
+	lim := queryLimit(r, 100)
+	if lim > 200 {
+		lim = 200
+	}
+	if lim > 0 && len(matches) > lim {
+		matches = matches[:lim]
+	}
+	if matches == nil {
+		matches = []indicators.SignalMatch{}
+	}
+	out := screenSignalsResp{Count: len(matches), Results: matches}
+	if !at.IsZero() {
+		out.AsOf = at.UTC().Format(time.RFC3339)
 	}
 	writeJSON(w, http.StatusOK, out)
 }

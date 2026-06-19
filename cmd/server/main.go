@@ -611,6 +611,12 @@ func main() {
 		apiServer.SetIndicatorCompute(computer)
 		log.Info("per-stock indicator compute enabled")
 
+		// Whole-universe signals SCREENER: a background cache recomputes ticker→signals
+		// every 15 min (off the request path) so GET /v1/screen/signals filters instantly.
+		signalScan := ingest.NewSignalScanCache(computer, universeCache, log)
+		go signalScan.Run(ctx)
+		apiServer.SetSignalScan(signalScan)
+
 		// Deep-research report (R2): a Go-assembled, source-attributed fact sheet
 		// plus optional per-section LLM prose. The data-only report serves regardless
 		// of the LLM — gate NOTHING on enricher.Enabled() (off the critical path).
