@@ -497,19 +497,25 @@ feature-flagged plugin, never on the critical path. Web only.
   wired (only code comments). **Increment B — SHIPPED + LIVE-VERIFIED 2026-06-19** (commit `9f0ee1c`, DEPLOY_DONE
   11:49Z): **cost-split LLM routing is LIVE.** Routine LLM (briefing/translation/movement/material-events/normal
   `/research`) → **DeepSeek direct** (`LLM_BASE_URL=https://api.deepseek.com`, `LLM_MODEL=deepseek-chat`,
-  `LLM_API_KEY`=the ¥10 DeepSeek key). **Deep Research → `anthropic/claude-opus-4.8` via OpenRouter**
-  (`LLM_DEEP_BASE_URL`/`LLM_DEEP_API_KEY`=the $5 OpenRouter key, `LLM_DEEP_MODEL=anthropic/claude-opus-4.8`).
-  **Model finding (step-1, live):** `anthropic/claude-fable-5` is **404 / Mythos-gated** on OpenRouter for this
-  account — live-probed alternatives → chose **Opus 4.8** (strongest available Claude, $5/M in + $25/M out =
-  CHEAPER than Fable's $10/$50; ~$0.12-0.17/report; ~$5 ≈ ~30-40 reports at the 1/user/month quota). Cheaper
-  swap = `anthropic/claude-sonnet-4.6` (one `.env` line). Code (env-driven, model never hardcoded): two-client
+  `LLM_API_KEY`=the ¥10 DeepSeek key). **Deep Research → Claude via OpenRouter** (`LLM_DEEP_BASE_URL`/
+  `LLM_DEEP_API_KEY`=the $5 OpenRouter key). **Deep model = `anthropic/claude-sonnet-4.6`** (owner's choice
+  2026-06-19, ~$0.05/report; was Opus 4.8 ~$0.16). NOTE owner clarified "Fable 5" meant **learn the prompt-
+  ENGINEERING craft from the leaked Fable 5 system prompt**, NOT use the Fable 5 model (which is 404/Mythos-gated
+  on OpenRouter anyway). Model is fully env-driven (`LLM_DEEP_MODEL`), swap = one `.env` line; live-probed working
+  alternatives: opus-4.8 / sonnet-4.6 / sonnet-4.5 (3.5-sonnet 404). **⚠️ deep-compose TIMEOUT fix (commit
+  `ec32407`, deployed 12:25Z):** Sonnet 4.6 takes ~65-71s for a deep report (Opus ~40s); the old 60s
+  `llmDeepComposeTimeout` cancelled it → "generating" forever. Raised: `llmDeepComposeTimeout` 60→**120s**, enrich
+  HTTP client 90→**150s**, web `DeepResearchView.MAX_POLLS` 25→**35** (140s). Code (env-driven, model never hardcoded): two-client
   `enrich` (`internal/enrich`+`config`), `ComposeDeepReport` DROPS `response_format` (Anthropic/reasoning-safe) +
   asks for a fenced ```json block; deep prompt gained `<output_contract>` + the previously-MISSING **bull/bear**
   keys; hardened `parseSectionProse` (strips `<think>…</think>`, tolerates string-or-[]string values, balanced-
   brace scan → last top-level object wins). **Live verify (true E2E, minted HS256 JWT for a synthetic user →
-  login-gated deep endpoint):** NVDA deep report `prose_status=ready`, **`model=anthropic/claude-opus-4.8`**, 6
-  sections of rich Opus prose + bull=4/bear=4; Opus correctly FLAGGED inconsistent NVDA fundamentals as data
-  artifacts (anti-hallucination held). Routine verified: MSFT `/research` `model=deepseek-chat`, 6 sections.
+  login-gated deep endpoint):** NVDA + AAPL deep reports `prose_status=ready`, rich Claude prose + bull=4/bear=4,
+  ending disclaimer, citations per source; Claude correctly FLAGGED inconsistent NVDA fundamentals as data
+  artifacts (anti-hallucination held). Verified with Opus 4.8 (~40s) AND, post-timeout-fix, **Sonnet 4.6
+  (`model=anthropic/claude-sonnet-4.6`, ready in 71s)**. Routine verified: MSFT `/research` `model=deepseek-chat`.
+  Separately spawned (task_015d6ed1): NVDA fundamentals XBRL period-mismatch (revenue FY2022 vs income recent →
+  net income > revenue) — a DATA bug, not AI.
   Both keys are on the VPS `.env` ONLY (never git). See [[tickwind-paid-ai-free-sources]] + [[tickwind-ai-llm]].
 - **Shipped + LIVE-verified 2026-06-18 (owner: "深度优化实时价格 — 及时性+准确性,盘前/盘中/盘后"). Diagnosis +
   increments 1 & 2 (C/D) — all LIVE** (incr 2: `POST /v1/live/subscribe`→`{"ok":true}` proves the deploy; quotes
