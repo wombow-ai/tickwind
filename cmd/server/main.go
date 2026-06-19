@@ -581,7 +581,8 @@ func main() {
 		PublicSiteURL: cfg.PublicSiteURL,
 	})
 	apiServer.SetBilling(billingSvc)
-	log.Info("billing", "enabled", billingSvc.Enabled(), "webhook_enabled", billingSvc.WebhookEnabled())
+	apiServer.SetPaywallEnabled(cfg.PaywallEnabled) // user-facing Pro paywall; OFF until go-live
+	log.Info("billing", "enabled", billingSvc.Enabled(), "webhook_enabled", billingSvc.WebhookEnabled(), "paywall", cfg.PaywallEnabled)
 
 	// Stock-applicable indicator catalog: a static, embedded metadata library
 	// (Phase 0 of the indicator engine — browse/filter only). Loaded once at

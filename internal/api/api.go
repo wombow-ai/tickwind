@@ -419,6 +419,10 @@ type Server struct {
 	// LLM compose that produced prose) consumes a user's quota; viewing a globally
 	// cached deep report, or a still-generating poll, is free.
 	deepResearchLimit int
+	// paywallEnabled turns ON the user-facing Pro paywall (free-tier deep-report
+	// truncation). Default false (no paywall; full report for everyone) until the owner
+	// flips it at go-live; injected post-New via SetPaywallEnabled.
+	paywallEnabled bool
 	// Move-explainer cache: the data-only explanation (Go number + evidence + canned
 	// line) is cheap, but the LLM's hedged sentence is one small generation per
 	// (ticker, ET day, lang), then served from memory — mirrors the AI digest cache.
@@ -2571,6 +2575,59 @@ func (s *Server) SetDeepResearchLimit(n int) {
 	}
 }
 
+// SetPaywallEnabled turns the user-facing Pro paywall on/off (free-tier deep-report
+// truncation). Off by default → full report for everyone (current behavior).
+func (s *Server) SetPaywallEnabled(on bool) { s.paywallEnabled = on }
+
+// serveDeepReady writes a READY deep report, applying the free-tier paywall truncation
+// when PAYWALL_ENABLED and the requester is not Pro. The shared cache entry is never
+// mutated — truncation works on a serve-time copy, so Pro viewers (and a paywall-off
+// deployment) always get the full report.
+func (s *Server) serveDeepReady(w http.ResponseWriter, r *http.Request, e researchEntry) {
+	if s.paywallEnabled && e.llm {
+		u, _ := auth.UserFrom(r.Context())
+		if s.tierOf(r.Context(), u.ID) != tierPro {
+			e = truncateDeepForFree(e)
+		}
+	}
+	s.writeResearchStatus(w, e, proseStatusReady)
+}
+
+// truncateDeepForFree returns a COPY of a ready deep entry holding the free teaser:
+// the overview section's prose is kept (its bull/bear verdict is stripped — Pro-only)
+// and the FIRST body section with prose is kept in full; every other section is locked
+// (prose/facts/citations/bull/bear cleared, Locked=true). paywallLocked is set so the
+// response carries paywall_locked=true. The cache entry is untouched (the Sections
+// slice is rebuilt fresh; kept sections are shared read-only, locked ones are new).
+func truncateDeepForFree(e researchEntry) researchEntry {
+	src := e.fs.Sections
+	out := make([]research.SectionFacts, len(src))
+	keptBody := false
+	for i, sec := range src {
+		switch {
+		case sec.Key == "overview":
+			sec.Bull = nil // the two-sided verdict is a Pro unlock
+			sec.Bear = nil
+			out[i] = sec
+		case !keptBody && strings.TrimSpace(sec.Prose) != "":
+			out[i] = sec // first body section with prose — the teaser
+			keptBody = true
+		default:
+			out[i] = research.SectionFacts{
+				Key:       sec.Key,
+				TitleZH:   sec.TitleZH,
+				TitleEN:   sec.TitleEN,
+				Facts:     []research.Fact{},
+				Citations: []research.Citation{},
+				Locked:    true,
+			}
+		}
+	}
+	e.fs.Sections = out
+	e.paywallLocked = true
+	return e
+}
+
 // llmComposeTimeout bounds a single LLM compose/enrich call so an uncached AI
 // endpoint degrades FAST to its data-only fallback instead of blocking up to the
 // enricher's generous ~90s HTTP ceiling when the free-tier model is rate-limited
@@ -2637,6 +2694,9 @@ type researchEntry struct {
 	llm   bool
 	model string
 	at    time.Time
+	// paywallLocked is set ONLY on a serve-time COPY (never a cache entry) when the
+	// free-tier deep-report truncation applied, so the response carries paywall_locked.
+	paywallLocked bool
 }
 
 // getResearch serves the per-ticker deep-research report: a Go-assembled, source-
@@ -2806,11 +2866,12 @@ func (s *Server) getResearchDeep(w http.ResponseWriter, r *http.Request, ticker,
 
 	deepModel := s.researchCalc.DeepModel()
 
-	// (1) Cache hit with prose → ready, free for everyone (no quota, no LLM, no gen).
+	// (1) Cache hit with prose → ready (no quota, no LLM, no gen). serveDeepReady applies
+	// the free-tier paywall truncation at serve time; the cached entry stays full.
 	s.researchMu.Lock()
 	if e, ok := s.researchCache[key]; ok && e.llm {
 		s.researchMu.Unlock()
-		s.writeResearchStatus(w, e, proseStatusReady)
+		s.serveDeepReady(w, r, e)
 		return
 	}
 	s.researchMu.Unlock()
@@ -2831,7 +2892,7 @@ func (s *Server) getResearchDeep(w http.ResponseWriter, r *http.Request, ticker,
 	// A racing request may have finished a gen between our cache check and here.
 	if e, ok := s.researchCache[key]; ok && e.llm {
 		s.researchMu.Unlock()
-		s.writeResearchStatus(w, e, proseStatusReady)
+		s.serveDeepReady(w, r, e)
 		return
 	}
 	if _, busy := s.researchInflight[key]; busy {
@@ -2997,7 +3058,7 @@ func (s *Server) writeResearchStatus(w http.ResponseWriter, e researchEntry, sta
 	if sections == nil {
 		sections = []research.SectionFacts{}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
+	resp := map[string]any{
 		"ticker":       e.fs.Ticker,
 		"name":         e.fs.Name,
 		"as_of":        e.fs.AsOf,
@@ -3008,7 +3069,11 @@ func (s *Server) writeResearchStatus(w http.ResponseWriter, e researchEntry, sta
 		"prose_status": status,
 		"disclaimer":   e.fs.Disclaimer,
 		"sections":     sections,
-	})
+	}
+	if e.paywallLocked { // free-tier teaser: the rest is Pro-gated
+		resp["paywall_locked"] = true
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 // SetMovement injects the move-explainer source after New (keeps api.New's

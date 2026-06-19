@@ -134,6 +134,13 @@ type Config struct {
 	StripePriceMonthly  string
 	StripePriceAnnual   string
 
+	// PaywallEnabled turns ON the user-facing Pro paywall (server-side truncation of
+	// the deep report for free viewers). Default FALSE — the paywall stays invisible
+	// (every viewer gets the full report, exactly as today) until the owner flips it
+	// at go-live. Decoupled from Stripe being configured, so the paywall can be built
+	// + verified in test mode with this OFF in prod.
+	PaywallEnabled bool
+
 	// Supabase auth. SupabaseURL (e.g. https://<ref>.supabase.co) enables ES256
 	// verification via the project's JWKS — required because Supabase now signs
 	// user tokens with asymmetric keys. SupabaseJWTSecret keeps legacy HS256
@@ -230,6 +237,7 @@ func Load() Config {
 		StripeWebhookSecret:      env("STRIPE_WEBHOOK_SECRET", ""),
 		StripePriceMonthly:       env("STRIPE_PRICE_MONTHLY", ""),
 		StripePriceAnnual:        env("STRIPE_PRICE_ANNUAL", ""),
+		PaywallEnabled:           envBool("PAYWALL_ENABLED", false),
 		SupabaseURL:              strings.TrimRight(env("SUPABASE_URL", ""), "/"),
 		SupabaseJWTSecret:        env("SUPABASE_JWT_SECRET", ""),
 		AdminUserIDs:             splitCSVRaw(env("ADMIN_USER_IDS", "")),

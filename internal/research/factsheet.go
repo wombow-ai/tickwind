@@ -71,6 +71,11 @@ type SectionFacts struct {
 	// (a deterministic advice-guard strips any point that slips into advice/targets).
 	Bull []string `json:"bull,omitempty"`
 	Bear []string `json:"bear,omitempty"`
+	// Locked marks a section the viewer's tier may not see (the Pro paywall): set ONLY
+	// at serve time for a free viewer when the paywall is enabled, with Prose/Facts/
+	// Bull/Bear stripped, so the frontend renders an "upgrade to unlock" card. The
+	// shared cached report is never mutated — truncation happens on a serve-time copy.
+	Locked bool `json:"locked,omitempty"`
 }
 
 // Citation maps a section's claim space to a source. The frontend turns Anchor
