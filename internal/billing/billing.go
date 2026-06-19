@@ -41,6 +41,7 @@ type Config struct {
 	WebhookSecret string // whsec_… — empty disables ONLY the webhook (signatures unverifiable)
 	PriceMonthly  string // price_… for the monthly Pro plan
 	PriceAnnual   string // price_… for the annual Pro plan
+	PublicSiteURL string // site origin (e.g. https://tickwind.com) for checkout/portal redirects
 }
 
 // Service talks to Stripe over its form API (stdlib net/http).
@@ -225,6 +226,27 @@ func (s *Service) CreatePortalSession(ctx context.Context, customerID, returnURL
 		return "", err
 	}
 	return out.URL, nil
+}
+
+// Checkout is the high-level entry the API layer calls: it maps the plan interval to
+// the configured price, builds the success/cancel redirects from PublicSiteURL, and
+// returns the hosted-checkout URL. Returns an error for an unknown interval.
+func (s *Service) Checkout(ctx context.Context, userID, customerID, interval string) (string, error) {
+	priceID := s.PriceID(interval)
+	if priceID == "" {
+		return "", fmt.Errorf("billing: unknown plan interval %q", interval)
+	}
+	base := strings.TrimRight(s.cfg.PublicSiteURL, "/")
+	success := base + "/pro/success?session_id={CHECKOUT_SESSION_ID}"
+	cancel := base + "/pro"
+	return s.CreateCheckoutSession(ctx, userID, customerID, priceID, success, cancel)
+}
+
+// Portal is the high-level entry: it builds the return URL from PublicSiteURL and
+// opens the Stripe Billing Portal for managing/cancelling the subscription.
+func (s *Service) Portal(ctx context.Context, customerID string) (string, error) {
+	base := strings.TrimRight(s.cfg.PublicSiteURL, "/")
+	return s.CreatePortalSession(ctx, customerID, base+"/me")
 }
 
 // post sends a form-encoded POST to the Stripe API with the secret-key bearer and

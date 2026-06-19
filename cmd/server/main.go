@@ -18,6 +18,7 @@ import (
 	"github.com/wombow-ai/tickwind/internal/apewisdom"
 	"github.com/wombow-ai/tickwind/internal/api"
 	"github.com/wombow-ai/tickwind/internal/auth"
+	"github.com/wombow-ai/tickwind/internal/billing"
 	"github.com/wombow-ai/tickwind/internal/bluesky"
 	"github.com/wombow-ai/tickwind/internal/brapi"
 	"github.com/wombow-ai/tickwind/internal/cboe"
@@ -568,6 +569,19 @@ func main() {
 	apiServer.SetCrypto(cryptoFGCache)     // crypto Fear & Greed + best-effort BTC/ETH
 	apiServer.SetCongressTx(congressCache) // ticker-level / member PTR detail
 	apiServer.SetIPO(ipoIngestor)          // US IPO calendar (Nasdaq via residential proxy)
+
+	// Stripe billing (Pro entitlement). INERT until STRIPE_SECRET_KEY is set — the
+	// billing/webhook endpoints serve 404 with no key, so a keyless deployment (the
+	// current state) is unaffected. Mirrors the enrich enabled-by-key pattern.
+	billingSvc := billing.New(billing.Config{
+		SecretKey:     cfg.StripeSecretKey,
+		WebhookSecret: cfg.StripeWebhookSecret,
+		PriceMonthly:  cfg.StripePriceMonthly,
+		PriceAnnual:   cfg.StripePriceAnnual,
+		PublicSiteURL: cfg.PublicSiteURL,
+	})
+	apiServer.SetBilling(billingSvc)
+	log.Info("billing", "enabled", billingSvc.Enabled(), "webhook_enabled", billingSvc.WebhookEnabled())
 
 	// Stock-applicable indicator catalog: a static, embedded metadata library
 	// (Phase 0 of the indicator engine — browse/filter only). Loaded once at

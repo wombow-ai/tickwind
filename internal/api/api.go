@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/wombow-ai/tickwind/internal/auth"
+	"github.com/wombow-ai/tickwind/internal/billing"
 	"github.com/wombow-ai/tickwind/internal/cashtag"
 	"github.com/wombow-ai/tickwind/internal/clip"
 	"github.com/wombow-ai/tickwind/internal/congress"
@@ -381,6 +382,7 @@ type Server struct {
 	researchCalc  ResearchSource         // injected post-New via SetResearch (deep-research report)
 	movementCalc  MovementSource         // injected post-New via SetMovement (move-explainer)
 	materialCalc  MaterialEventsSource   // injected post-New via SetMaterialEvents (8-K material events + AI summary)
+	billing       *billing.Service       // injected post-New via SetBilling (Stripe; nil/disabled until keys are set)
 	insiderCalc   InsiderActivitySource  // injected post-New via SetInsiderActivity (Form 4 buy/sell timeline; no LLM)
 	admins        map[string]bool        // user UUIDs and/or emails (lowercased) allowed to delete any comment
 	commentRL     *rateLimiter           // per-user comment-post throttle
@@ -514,6 +516,15 @@ func New(st store.Store, hub QuoteStream, enricher enrich.Enricher, verifier *au
 	mux.HandleFunc("DELETE /v1/comments/{id}", s.deleteComment)
 	mux.HandleFunc("POST /v1/comments/{id}/report", s.reportComment)
 	mux.HandleFunc("POST /v1/comments/{id}/like", s.likeComment)
+
+	// Stripe billing (Pro entitlement). Registered unconditionally; each handler is
+	// a no-op 404 until SetBilling injects a configured (key-bearing) service, so a
+	// keyless deployment exposes nothing. The webhook is intentionally outside the
+	// auth gate (server-to-server, signature-verified) and not rate-limited.
+	mux.HandleFunc("POST /v1/stripe/webhook", s.stripeWebhook)
+	mux.HandleFunc("POST /v1/billing/checkout", s.billingCheckout)
+	mux.HandleFunc("POST /v1/billing/portal", s.billingPortal)
+	mux.HandleFunc("GET /v1/billing/me", s.billingMe)
 
 	// Public (market data — open for SEO / shareable stock pages)
 	mux.HandleFunc("GET /v1/stocks/{ticker}", s.getStock)
