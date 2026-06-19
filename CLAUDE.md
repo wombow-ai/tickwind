@@ -517,6 +517,15 @@ feature-flagged plugin, never on the critical path. Web only.
   Separately spawned (task_015d6ed1): NVDA fundamentals XBRL period-mismatch (revenue FY2022 vs income recent →
   net income > revenue) — a DATA bug, not AI.
   Both keys are on the VPS `.env` ONLY (never git). See [[tickwind-paid-ai-free-sources]] + [[tickwind-ai-llm]].
+  **PROMPT REFINEMENT (commit `acbe794`):** owner clarified "Fable 5" = learn the prompt-ENGINEERING craft from the
+  LEAKED Fable 5 system prompt (GitHub CL4R1T4S / asgeirtj/system_prompts_leaks), NOT use the model. Rewrote
+  `composeDeepPrompt`/`composeDeepPromptEN` via a multi-candidate Workflow (3 diverse drafts → judge/synthesize →
+  adversarial review through number-fabrication / advice-leak / output-contract lenses; all flagged issues fixed).
+  New harness (SAME contract): front-loaded three-rule preamble (numbers belong to material; no advice OR forward
+  price-direction framing; news/community = attributed context only), a given-facts-vs-inference firewall,
+  prose-first w/ verbatim-only comparison figures, ~15-char one-per-source citations, a self-check demanding
+  VERBATIM figure presence, and a sharper output contract (bare-lowercase-token section keys, non-empty values,
+  real-newline bull/bear). Fable-5 craft applied: prose-first/minimal formatting + tight quote discipline.
 - **Shipped + LIVE-verified 2026-06-18 (owner: "深度优化实时价格 — 及时性+准确性,盘前/盘中/盘后"). Diagnosis +
   increments 1 & 2 (C/D) — all LIVE** (incr 2: `POST /v1/live/subscribe`→`{"ok":true}` proves the deploy; quotes
   no-regression session=regular/source=alpaca; DEPLOY_DONE 19:23Z)**:** the real-time price architecture is: **Alpaca WS** (free IEX, `internal/alpacaws`) for
