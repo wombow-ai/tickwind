@@ -89,7 +89,19 @@ Deep Research (one subscription unlocks both) is the simplest, highest-conversio
   · MACD above/below signal + bullish/bearish cross · price above/below SMA · price above/below EMA ·
   price above/below Bollinger band (neutral) · golden/death cross. All deterministic Go rules, each with a
   traceable `basis`, no advice/targets/ratings. Remaining (owner-scope): price-reclaim event, then C4–C6.
-- **C4 — Screener** by indicator/signal conditions (Pro).
+- **C4 — Screener by signal conditions (Pro): IN PROGRESS.** Screen the universe for stocks whose
+  signals match (e.g. "golden crosses", "RSI oversold"). **Research:** the existing `GET /v1/screen`
+  filters the in-memory universe quote snapshot (price/change/session) — fast, no compute. The universe
+  is **~200 ingested tickers** and ALL data is cached (BarCache candles, fundCache fundamentals,
+  store/bars price), so computing signals universe-wide is in-memory math — but the right architecture
+  is a **background signals cache** (like `sentimentCache`/`oppCache`: a scheduled job computes
+  ticker→signals every N min) that the endpoint reads instantly, vs recomputing 200× per request (and
+  risking a cold-ticker network fetch). **C4.1 ✅ DONE (commit, ahead 20):** `internal/indicators/screen.go`
+  — pure `ScreenSignals(map[ticker][]Signal, SignalScreen{Direction,SignalID}) []SignalMatch` (the
+  deterministic core + shared query/result types), unit-tested. **NEXT C4.2:** the background signals
+  cache (`Run` over the universe via the Computer) + `GET /v1/screen/signals` reading it, Pro-gated
+  (`tierOf` + `INDICATORS_PAYWALL_ENABLED`; screener is Pro-only per §3 → hard-lock for free when flag on,
+  not a teaser). Then C4.3 a screener UI page. Free/redistribution-safe (reuses computed indicators).
 - **C5 — Indicator/signal alerts** (reuse the existing alerts feature).
 - **C6 — Backtesting** (heaviest; defer).
 
