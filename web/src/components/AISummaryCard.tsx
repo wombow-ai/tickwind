@@ -1,6 +1,6 @@
 'use client';
 
-import {ArrowRight, Sparkles} from 'lucide-react';
+import {ArrowRight, ShieldCheck, Sparkles} from 'lucide-react';
 import Link from '@/components/LocalLink';
 import {useT} from '@/lib/i18n';
 import {useDark} from '@/lib/theme';
@@ -49,6 +49,15 @@ export function AISummaryCard({ticker}: {ticker: string}) {
       </div>
       <p className={cx('mt-2 text-[12.5px]', t.sub)}>
         {tr('deep.subtitle').replace('{t}', ticker)}
+      </p>
+      {/* Anti-hallucination trust line — the differentiator vs generic AI tools and
+          the core conversion asset (the plan): every number is Go-owned/sourced. */}
+      <p className={cx('mt-2 flex items-start gap-1.5 text-[11px]', t.faint)}>
+        <ShieldCheck
+          size={13}
+          className={cx('mt-0.5 shrink-0', dark ? 'text-emerald-400' : 'text-emerald-500')}
+        />
+        {tr('deep.trust')}
       </p>
     </section>
   );
