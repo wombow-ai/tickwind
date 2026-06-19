@@ -436,10 +436,15 @@ func (c *Computer) computedIDs() []Indicator {
 // FearGreed are nil/empty when unavailable. Indicators are sorted ok →
 // insufficient → unsupported.
 type StockIndicatorsResult struct {
-	Ticker     string
-	AsOf       string
-	VIX        *float64
-	FearGreed  *FearGreed
+	Ticker    string
+	AsOf      string
+	VIX       *float64
+	FearGreed *FearGreed
+	// Price is the reference price for the posture-signals layer (price-vs-MA /
+	// Bollinger-band rules): the latest daily CLOSE — the same series the moving
+	// averages / bands are computed from, so the comparison is apples-to-apples —
+	// or the live price when no candles are available. nil when neither exists.
+	Price      *float64
 	Indicators []StockIndicator
 }
 
@@ -470,6 +475,15 @@ func (c *Computer) StockIndicators(ctx context.Context, ticker string) StockIndi
 	sortByStatus(out)
 
 	res := StockIndicatorsResult{Ticker: ticker, AsOf: asOf, Indicators: out}
+	// Reference price for the posture-signals layer: the latest close (consistent
+	// with the close-based MAs/bands), falling back to the live price.
+	if n := len(in.closes); n > 0 {
+		p := in.closes[n-1]
+		res.Price = &p
+	} else if in.price > 0 {
+		p := in.price
+		res.Price = &p
+	}
 	if c.market != nil {
 		if v, ok := c.market.VIX(); ok {
 			vv := v

@@ -27,6 +27,13 @@ const (
 // bar / extra moving averages are a later increment. Only `ok` indicators contribute.
 func Signals(res StockIndicatorsResult) []Signal {
 	var out []Signal
+	// Reference price for price-vs-MA / Bollinger rules (the latest close). When it
+	// is absent those rules are simply skipped — never guessed.
+	var price float64
+	hasPrice := res.Price != nil && *res.Price > 0
+	if hasPrice {
+		price = *res.Price
+	}
 	for _, si := range res.Indicators {
 		if si.Status != StatusOK || si.Value == nil {
 			continue
@@ -55,6 +62,38 @@ func Signals(res StockIndicatorsResult) []Signal {
 				out = append(out, Signal{si.ID, "MACD above signal", DirBullish, fmt.Sprintf("DIF %.3f > DEA %.3f", v, dea)})
 			case v < dea && hist < 0:
 				out = append(out, Signal{si.ID, "MACD below signal", DirBearish, fmt.Sprintf("DIF %.3f < DEA %.3f", v, dea)})
+			}
+		case "technical.sma-ma":
+			if hasPrice && v > 0 {
+				switch {
+				case price > v:
+					out = append(out, Signal{si.ID, "Price above SMA", DirBullish, fmt.Sprintf("Price %.2f > SMA %.2f", price, v)})
+				case price < v:
+					out = append(out, Signal{si.ID, "Price below SMA", DirBearish, fmt.Sprintf("Price %.2f < SMA %.2f", price, v)})
+				}
+			}
+		case "technical.ema":
+			if hasPrice && v > 0 {
+				switch {
+				case price > v:
+					out = append(out, Signal{si.ID, "Price above EMA", DirBullish, fmt.Sprintf("Price %.2f > EMA %.2f", price, v)})
+				case price < v:
+					out = append(out, Signal{si.ID, "Price below EMA", DirBearish, fmt.Sprintf("Price %.2f < EMA %.2f", price, v)})
+				}
+			}
+		case "technical.boll":
+			// Band breaches only — the middle band is SMA(20), already covered by the
+			// price-vs-SMA rule. Direction is NEUTRAL: a breach is an ambiguous, disclosed
+			// "stretched" condition (overbought/oversold vs breakout), not a directional
+			// call — we surface the fact, not an interpretation.
+			if hasPrice {
+				upper, lower := si.Extra["upper"], si.Extra["lower"]
+				switch {
+				case upper > 0 && price > upper:
+					out = append(out, Signal{si.ID, "Price above upper Bollinger band", DirNeutral, fmt.Sprintf("Price %.2f > upper band %.2f", price, upper)})
+				case lower > 0 && price < lower:
+					out = append(out, Signal{si.ID, "Price below lower Bollinger band", DirNeutral, fmt.Sprintf("Price %.2f < lower band %.2f", price, lower)})
+				}
 			}
 		}
 	}

@@ -69,6 +69,48 @@ func TestSignals(t *testing.T) {
 	}
 }
 
+func TestSignalsPriceBased(t *testing.T) {
+	boll := map[string]float64{"upper": 205, "mid": 190, "lower": 175}
+	cases := []struct {
+		name      string
+		resPrice  *float64
+		in        StockIndicator
+		wantID    string // "" => expect NO signal
+		wantDir   string
+		wantBasis string
+	}{
+		{"price above SMA", f(190), ind("technical.sma-ma", StatusOK, f(182), nil), "technical.sma-ma", DirBullish, "Price 190.00 > SMA 182.00"},
+		{"price below SMA", f(170), ind("technical.sma-ma", StatusOK, f(182), nil), "technical.sma-ma", DirBearish, "Price 170.00 < SMA 182.00"},
+		{"price above EMA", f(190), ind("technical.ema", StatusOK, f(185), nil), "technical.ema", DirBullish, "Price 190.00 > EMA 185.00"},
+		{"price below EMA", f(180), ind("technical.ema", StatusOK, f(185), nil), "technical.ema", DirBearish, "Price 180.00 < EMA 185.00"},
+		{"above upper band", f(210), ind("technical.boll", StatusOK, f(190), boll), "technical.boll", DirNeutral, "Price 210.00 > upper band 205.00"},
+		{"below lower band", f(170), ind("technical.boll", StatusOK, f(190), boll), "technical.boll", DirNeutral, "Price 170.00 < lower band 175.00"},
+		{"within bands -> none", f(190), ind("technical.boll", StatusOK, f(190), boll), "", "", ""},
+		{"no price -> SMA skipped", nil, ind("technical.sma-ma", StatusOK, f(182), nil), "", "", ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := Signals(StockIndicatorsResult{Price: tc.resPrice, Indicators: []StockIndicator{tc.in}})
+			if tc.wantID == "" {
+				if len(got) != 0 {
+					t.Fatalf("expected no signal, got %+v", got)
+				}
+				return
+			}
+			s, ok := findSignal(got, tc.wantID)
+			if !ok {
+				t.Fatalf("expected a %s signal, got %+v", tc.wantID, got)
+			}
+			if s.Direction != tc.wantDir {
+				t.Errorf("direction = %q, want %q", s.Direction, tc.wantDir)
+			}
+			if s.Basis != tc.wantBasis {
+				t.Errorf("basis = %q, want %q", s.Basis, tc.wantBasis)
+			}
+		})
+	}
+}
+
 // TestSignalsMultiple verifies a full result emits one signal per triggering indicator.
 func TestSignalsMultiple(t *testing.T) {
 	res := StockIndicatorsResult{Indicators: []StockIndicator{
