@@ -322,3 +322,33 @@ CREATE TABLE IF NOT EXISTS comment_mentions (
     PRIMARY KEY (comment_id, ticker)
 );
 CREATE INDEX IF NOT EXISTS comment_mentions_ticker_idx ON comment_mentions (ticker);
+
+-- Stripe-synced per-user Pro entitlement — the SINGLE SOURCE OF TRUTH for a user's
+-- tier, written by the Stripe webhook and read O(1) on the gate hot path (never a
+-- Stripe API call per request). DURABLE (Market store): billing is NOT cheap to
+-- rebuild like watchlist/quota. One row per Supabase user (the JWT sub). `tier` is
+-- the derived entitlement ("pro" when status is active/trialing, else "free");
+-- current_period_end powers a small renewal grace window. Inert until Stripe is
+-- configured (no rows are written without a webhook).
+CREATE TABLE IF NOT EXISTS subscriptions (
+    user_id                uuid PRIMARY KEY,
+    stripe_customer_id     text NOT NULL DEFAULT '',
+    stripe_subscription_id text NOT NULL DEFAULT '',
+    status                 text NOT NULL DEFAULT '',
+    tier                   text NOT NULL DEFAULT 'free',
+    price_id               text NOT NULL DEFAULT '',
+    plan_interval          text NOT NULL DEFAULT '',
+    current_period_end     timestamptz NOT NULL DEFAULT now(),
+    cancel_at_period_end   boolean NOT NULL DEFAULT false,
+    updated_at             timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS subscriptions_customer_idx ON subscriptions (stripe_customer_id);
+
+-- Stripe webhook idempotency ledger. Stripe delivers events at-least-once and out
+-- of order; MarkStripeEventSeen INSERTs the id and a conflict means "already
+-- processed -> skip". Durable (Market store) so a redeploy never reprocesses one.
+CREATE TABLE IF NOT EXISTS stripe_events (
+    event_id text PRIMARY KEY,
+    type     text NOT NULL DEFAULT '',
+    seen_at  timestamptz NOT NULL DEFAULT now()
+);

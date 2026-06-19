@@ -229,6 +229,22 @@ func (s Split) IncrDeepQuotaUsed(ctx context.Context, userID, period string) err
 	return s.User.IncrDeepQuotaUsed(ctx, userID, period)
 }
 
+// Subscriptions / Stripe billing → the DURABLE Market store (billing is not cheap
+// to rebuild, unlike the per-user quota above).
+
+func (s Split) GetSubscription(ctx context.Context, userID string) (Subscription, bool, error) {
+	return s.Market.GetSubscription(ctx, userID)
+}
+func (s Split) GetSubscriptionByCustomer(ctx context.Context, customerID string) (Subscription, bool, error) {
+	return s.Market.GetSubscriptionByCustomer(ctx, customerID)
+}
+func (s Split) UpsertSubscription(ctx context.Context, sub Subscription) error {
+	return s.Market.UpsertSubscription(ctx, sub)
+}
+func (s Split) MarkStripeEventSeen(ctx context.Context, eventID, eventType string) (bool, error) {
+	return s.Market.MarkStripeEventSeen(ctx, eventID, eventType)
+}
+
 // Comments are public, valuable community content → the durable Market store.
 
 func (s Split) SaveComment(ctx context.Context, c Comment) error {

@@ -433,4 +433,36 @@ type Store interface {
 	// new liked state for this user and the total like count; ok=false when the
 	// comment doesn't exist or is deleted.
 	LikeComment(ctx context.Context, id, userID string) (liked bool, likes int, ok bool, err error)
+
+	// Subscriptions hold the Stripe-synced per-user Pro entitlement — the single
+	// source of truth for a user's tier, written by the Stripe webhook and read
+	// O(1) on the gate hot path. DURABLE (Market store): billing is not cheap to
+	// rebuild. The whole surface is INERT until Stripe is configured (no writes
+	// without a webhook), so a keyless deployment behaves exactly as today.
+	// GetSubscription / GetSubscriptionByCustomer return found=false when the user/
+	// customer has no row; UpsertSubscription writes the full row keyed by user_id.
+	GetSubscription(ctx context.Context, userID string) (Subscription, bool, error)
+	GetSubscriptionByCustomer(ctx context.Context, customerID string) (Subscription, bool, error)
+	UpsertSubscription(ctx context.Context, sub Subscription) error
+	// MarkStripeEventSeen records a webhook event id for idempotency; it returns
+	// fresh=true the FIRST time an id is seen (the caller then processes it) and
+	// false if it was already recorded (skip — Stripe delivers at-least-once).
+	MarkStripeEventSeen(ctx context.Context, eventID, eventType string) (fresh bool, err error)
+}
+
+// Subscription is a user's billing/entitlement state, synced from Stripe webhooks.
+// Tier is the DERIVED entitlement the gates read ("pro" | "free"); Status is the
+// raw Stripe subscription status. CurrentPeriodEnd powers a small renewal grace
+// window. A user with no row is implicitly free.
+type Subscription struct {
+	UserID               string
+	StripeCustomerID     string
+	StripeSubscriptionID string
+	Status               string // raw Stripe status: active/trialing/past_due/canceled/…
+	Tier                 string // derived: "pro" | "free"
+	PriceID              string
+	Interval             string // "month" | "year"
+	CurrentPeriodEnd     time.Time
+	CancelAtPeriodEnd    bool
+	UpdatedAt            time.Time
 }

@@ -36,6 +36,8 @@ type Store struct {
 	deepQuota map[string]int                      // "userID|PERIOD" (ET month, e.g. 2026-06) -> deep-research generations used
 	comments  map[string]store.Comment            // commentID -> Comment (public)
 	cmtLikes  map[string]map[string]bool          // commentID -> set of userIDs who liked
+	subs      map[string]store.Subscription       // userID -> Stripe-synced entitlement
+	stripeEv  map[string]bool                     // Stripe webhook event id -> seen (idempotency)
 }
 
 func New() *Store {
@@ -61,6 +63,8 @@ func New() *Store {
 		deepQuota: make(map[string]int),
 		comments:  make(map[string]store.Comment),
 		cmtLikes:  make(map[string]map[string]bool),
+		subs:      make(map[string]store.Subscription),
+		stripeEv:  make(map[string]bool),
 	}
 }
 
@@ -678,6 +682,49 @@ func (s *Store) IncrDeepQuotaUsed(_ context.Context, userID, period string) erro
 	defer s.mu.Unlock()
 	s.deepQuota[deepQuotaKey(userID, period)]++
 	return nil
+}
+
+// GetSubscription returns the user's Stripe-synced entitlement (found=false when none).
+func (s *Store) GetSubscription(_ context.Context, userID string) (store.Subscription, bool, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	sub, ok := s.subs[userID]
+	return sub, ok, nil
+}
+
+// GetSubscriptionByCustomer scans for the entitlement matching a Stripe customer id.
+func (s *Store) GetSubscriptionByCustomer(_ context.Context, customerID string) (store.Subscription, bool, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, sub := range s.subs {
+		if sub.StripeCustomerID == customerID && customerID != "" {
+			return sub, true, nil
+		}
+	}
+	return store.Subscription{}, false, nil
+}
+
+// UpsertSubscription writes the full entitlement row, keyed by user_id.
+func (s *Store) UpsertSubscription(_ context.Context, sub store.Subscription) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	sub.UpdatedAt = time.Now()
+	if sub.CurrentPeriodEnd.IsZero() {
+		sub.CurrentPeriodEnd = time.Now()
+	}
+	s.subs[sub.UserID] = sub
+	return nil
+}
+
+// MarkStripeEventSeen records a webhook event id; fresh=true the first time, false if seen.
+func (s *Store) MarkStripeEventSeen(_ context.Context, eventID, _ string) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.stripeEv[eventID] {
+		return false, nil
+	}
+	s.stripeEv[eventID] = true
+	return true, nil
 }
 
 func (s *Store) ListActiveAlerts(_ context.Context) ([]store.Alert, error) {

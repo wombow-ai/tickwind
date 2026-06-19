@@ -1046,6 +1046,73 @@ ON CONFLICT (user_id, day) DO UPDATE SET used = deep_research_quota.used + 1, up
 	return nil
 }
 
+// GetSubscription returns the user's Stripe-synced entitlement (found=false when
+// the user has no row → the caller treats them as free).
+func (s *Store) GetSubscription(ctx context.Context, userID string) (store.Subscription, bool, error) {
+	return s.scanSubscription(ctx, `WHERE user_id = $1`, userID)
+}
+
+// GetSubscriptionByCustomer maps a Stripe customer id back to its entitlement row
+// (the webhook resolves customer → user). found=false when unknown.
+func (s *Store) GetSubscriptionByCustomer(ctx context.Context, customerID string) (store.Subscription, bool, error) {
+	return s.scanSubscription(ctx, `WHERE stripe_customer_id = $1`, customerID)
+}
+
+func (s *Store) scanSubscription(ctx context.Context, where, arg string) (store.Subscription, bool, error) {
+	const cols = `SELECT user_id, stripe_customer_id, stripe_subscription_id, status, tier, price_id, plan_interval, current_period_end, cancel_at_period_end, updated_at FROM subscriptions `
+	var sub store.Subscription
+	err := s.pool.QueryRow(ctx, cols+where, arg).Scan(
+		&sub.UserID, &sub.StripeCustomerID, &sub.StripeSubscriptionID, &sub.Status,
+		&sub.Tier, &sub.PriceID, &sub.Interval, &sub.CurrentPeriodEnd,
+		&sub.CancelAtPeriodEnd, &sub.UpdatedAt,
+	)
+	switch {
+	case errors.Is(err, pgx.ErrNoRows):
+		return store.Subscription{}, false, nil
+	case err != nil:
+		return store.Subscription{}, false, fmt.Errorf("postgres: get subscription: %w", err)
+	}
+	return sub, true, nil
+}
+
+// UpsertSubscription writes the full entitlement row, keyed by user_id (the Stripe
+// webhook re-derives the whole row from the self-describing Subscription object, so
+// this is order-independent).
+func (s *Store) UpsertSubscription(ctx context.Context, sub store.Subscription) error {
+	const query = `
+INSERT INTO subscriptions (user_id, stripe_customer_id, stripe_subscription_id, status, tier, price_id, plan_interval, current_period_end, cancel_at_period_end, updated_at)
+VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9, now())
+ON CONFLICT (user_id) DO UPDATE SET
+  stripe_customer_id = EXCLUDED.stripe_customer_id,
+  stripe_subscription_id = EXCLUDED.stripe_subscription_id,
+  status = EXCLUDED.status,
+  tier = EXCLUDED.tier,
+  price_id = EXCLUDED.price_id,
+  plan_interval = EXCLUDED.plan_interval,
+  current_period_end = EXCLUDED.current_period_end,
+  cancel_at_period_end = EXCLUDED.cancel_at_period_end,
+  updated_at = now()`
+	cpe := sub.CurrentPeriodEnd
+	if cpe.IsZero() {
+		cpe = time.Now()
+	}
+	if _, err := s.pool.Exec(ctx, query, sub.UserID, sub.StripeCustomerID, sub.StripeSubscriptionID,
+		sub.Status, sub.Tier, sub.PriceID, sub.Interval, cpe, sub.CancelAtPeriodEnd); err != nil {
+		return fmt.Errorf("postgres: upsert subscription: %w", err)
+	}
+	return nil
+}
+
+// MarkStripeEventSeen records a webhook event id; fresh=true the first time (process
+// it), false if already recorded (Stripe re-delivers at-least-once — skip).
+func (s *Store) MarkStripeEventSeen(ctx context.Context, eventID, eventType string) (bool, error) {
+	tag, err := s.pool.Exec(ctx, `INSERT INTO stripe_events (event_id, type) VALUES ($1,$2) ON CONFLICT (event_id) DO NOTHING`, eventID, eventType)
+	if err != nil {
+		return false, fmt.Errorf("postgres: mark stripe event: %w", err)
+	}
+	return tag.RowsAffected() == 1, nil
+}
+
 // SaveComment inserts a public comment (empty ticker → NULL = global board)
 // together with its cashtag mention rows ($TICKER fan-out).
 func (s *Store) SaveComment(ctx context.Context, c store.Comment) error {
