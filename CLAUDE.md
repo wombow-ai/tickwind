@@ -97,10 +97,18 @@ feature-flagged plugin, never on the critical path. Web only.
   + relevant `go test`; frontend `npm run build`. Then deploy + live-verify.
 - **Quality bar**: "**精不在多**" — precision/correctness over quantity (e.g. ship few, correct
   indicators). Engineering-first; LLM optional/off the critical path.
-- **Commercial intent**: $0 now. **MONETIZATION DEFERRED (owner, 2026-06): do NOT build any
-  paid/monetization work yet** — no pricing/tiers, payment infra (Stripe/LemonSqueezy), quote-
-  redistribution licensing, paywalls, or subscription gating. **Everything else on the roadmap is
-  greenlit** to build autonomously (Financials, Alerts, gov-data "follow-the-money" suite, AI
+- **Commercial intent**: $0 now. **MONETIZATION NOW ACTIVE (owner greenlit 2026-06-20)** — supersedes
+  the earlier "deferred" directive. Plan + locked decisions: [[tickwind-monetization-plan]] /
+  `docs/monetization-plan.md` (anon crawlable teaser · Pro **$12.99/mo·$99/yr** · NO reverse trial ·
+  Stripe). **Built + LIVE-inert (Phase 0+1, 2026-06-20):** Phase 0 polish (monthly-quota copy fix,
+  anti-hallucination trust line); **Phase 1 Stripe plumbing — DARK/INERT** (subscriptions+stripe_events
+  tables, stdlib Stripe client [NO SDK — chose stdlib over stripe-go to match enrich's no-SDK ethos +
+  avoid the dep/CVE], HMAC webhook verify + idempotency, `tierOf`, /v1/stripe/webhook + /v1/billing/*;
+  all 404 until STRIPE_* keys set → keyless prod unaffected, verified). **Phase 2 (user-facing paywall:
+  server-side deep-report truncation for free + /pro UI + LIVE keys) needs an explicit owner go** — the
+  one boundary the autonomous loop stops at (user-facing + real money). Activation runbook:
+  `docs/stripe-setup.md`. **Everything else on the roadmap is also**
+  greenlit to build autonomously (Financials, Alerts, gov-data "follow-the-money" suite, AI
   filing summaries, SEO, observability/backups, polish, HK/markets). Keep features free + quotes
   delayed. Still mind commercialization risk PROACTIVELY for *future* paid plans — esp.
   **market-quote redistribution** (Alpaca + Yahoo are RED; see `docs/feature-research-2026-06.md`)
