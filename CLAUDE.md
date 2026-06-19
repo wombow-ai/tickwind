@@ -111,9 +111,14 @@ feature-flagged plugin, never on the critical path. Web only.
   webhooks flip tier free→pro→free, replay idempotent, bad-sig 400. (Runtime = test SECRET key; for LIVE
   use a restricted key scoped Checkout+Portal write.) **Owner Stripe IDENTITY verify pending (mainland-ID
   on HK acct → likely fails, 1-2d); if fails → pivot to DodoPayments [[tickwind-monetization-plan]].**
-  **Phase 2 (user-facing paywall: server-side deep-report truncation for free + /pro UI + LIVE keys) needs
-  an explicit owner go AND live keys** — the one boundary the autonomous loop stops at (user-facing + real
-  money). Activation runbook: `docs/stripe-setup.md`. **Everything else on the roadmap is also**
+  **Phase 2 BUILD COMPLETE (2026-06-20, local commits, NOT deployed):** ①Go serve-time deep-report
+  truncation (PAYWALL_ENABLED flag default OFF + SectionFacts.Locked + tierOf gate, cache untouched,
+  unit-tested) ②DeepResearchView locked cards + PaywallBanner ③/pro page ($8.25/mo annual·$12.99 monthly,
+  honest, preview-verified) + billing client ④useEntitlement ⑤Settings subscription. **Kept LOCAL** (billing
+  is enabled in prod with test keys → deploying would expose a test-mode checkout to real users). **GO-LIVE
+  (owner-gated boundary, see [[tickwind-monetization-plan]]):** owner reviews → restricted LIVE key + live
+  Stripe objects on VPS .env → set PAYWALL_ENABLED=true → push+deploy → verify. The loop does NOT cross this.
+  Activation runbook: `docs/stripe-setup.md`. **Everything else on the roadmap is also**
   greenlit to build autonomously (Financials, Alerts, gov-data "follow-the-money" suite, AI
   filing summaries, SEO, observability/backups, polish, HK/markets). Keep features free + quotes
   delayed. Still mind commercialization risk PROACTIVELY for *future* paid plans — esp.
