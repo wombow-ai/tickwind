@@ -273,9 +273,11 @@ export function FactCell({
           </div>
         )}
       </div>
-      <div className="shrink-0 text-right">
+      <div className="min-w-0 max-w-[62%] text-right">
         {ok ? (
-          <span className={cx('text-[14px] font-bold tabular-nums', t.text)}>{fact.value}</span>
+          <span className={cx('text-[14px] font-bold tabular-nums [overflow-wrap:anywhere]', t.text)}>
+            {fact.value}
+          </span>
         ) : (
           <span
             className={cx(

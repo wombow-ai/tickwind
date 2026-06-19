@@ -289,4 +289,14 @@ html:lang(zh) [data-i18n="en"] {
   body.tw-print-research .tw-no-print {
     display: none !important;
   }
+  /* Print-only branding footer: hidden on screen, revealed in the exported PDF. */
+  body.tw-print-research .tw-print-only {
+    display: block !important;
+    visibility: visible !important;
+  }
+}
+
+/* Print-only elements are hidden during normal on-screen rendering. */
+.tw-print-only {
+  display: none;
 }

@@ -359,6 +359,11 @@ function Shell({header, children}: {header: React.ReactNode; children: React.Rea
     <div className="tw-research-print mx-auto max-w-3xl tw-fade">
       {header}
       {children}
+      {/* Branding footer — shown ONLY in the exported PDF (tw-print-only), so the
+          shared artifact carries the site identity (free promotion). */}
+      <div className="tw-print-only mt-6 border-t border-slate-200 pt-3 text-center text-[11px] text-slate-500">
+        Tickwind · tickwind.com — AI Deep Research over public data, not investment advice.
+      </div>
     </div>
   );
 }
@@ -391,7 +396,10 @@ function DeepHeader({
     <div className="mb-5">
       <Link
         href={`/stock/${encodeURIComponent(ticker)}`}
-        className={cx('mb-3 inline-flex items-center gap-1 text-[12.5px] font-medium hover:underline', t.sub)}
+        className={cx(
+          'tw-no-print mb-3 inline-flex items-center gap-1 text-[12.5px] font-medium hover:underline',
+          t.sub,
+        )}
       >
         <ArrowLeft size={14} />
         {tr('deep.back').replace('{t}', ticker)}
