@@ -2,6 +2,7 @@
 
 import {
   ArrowLeft,
+  ArrowRight,
   CalendarClock,
   ExternalLink,
   Loader2,
@@ -317,6 +318,10 @@ export function DeepResearchView({ticker}: {ticker: string}) {
         </section>
       )}
 
+      {/* Pro-paywall upsell: free viewers see the overview + one section, the rest
+          locked. Honest, value-forward — not a dark pattern. */}
+      {data.paywall_locked && <PaywallBanner dark={dark} t={t} tr={tr} />}
+
       {/* the report sections (估值/基本面/技术/资金面/情绪面) */}
       <div className="space-y-4">
         {body.length === 0 ? (
@@ -365,6 +370,37 @@ function Shell({header, children}: {header: React.ReactNode; children: React.Rea
         Tickwind · tickwind.com — AI Deep Research over public data, not investment advice.
       </div>
     </div>
+  );
+}
+
+/**
+ * The Pro upsell banner shown on a free-tier (paywall_locked) deep report — honest
+ * and value-forward (no dark patterns): names exactly what Pro unlocks, links to /pro.
+ */
+function PaywallBanner({dark, t, tr}: {dark: boolean; t: Tokens; tr: (key: string) => string}) {
+  return (
+    <section
+      className={cx(
+        'mb-4 rounded-2xl border p-5',
+        dark ? 'border-violet-500/30 bg-violet-500/[0.06]' : 'border-violet-200 bg-violet-50/60',
+      )}
+    >
+      <h2 className={cx('flex items-center gap-1.5 text-[15px] font-bold', t.text)}>
+        <Sparkles size={16} className={dark ? 'text-violet-300' : 'text-violet-500'} />
+        {tr('deep.paywall.title')}
+      </h2>
+      <p className={cx('mt-1.5 text-[12.5px]', t.sub)}>{tr('deep.paywall.body')}</p>
+      <Link
+        href="/pro"
+        className={cx(
+          'mt-3 inline-flex items-center gap-1 rounded-full px-4 py-1.5 text-[12.5px] font-semibold',
+          btnPrimary(dark),
+        )}
+      >
+        {tr('deep.paywall.cta')}
+        <ArrowRight size={13} />
+      </Link>
+    </section>
   );
 }
 
@@ -684,6 +720,24 @@ function DeepSection({
   lang: string;
 }) {
   const title = lang === 'zh' ? sec.title_zh || sec.title_en : sec.title_en || sec.title_zh;
+
+  // Pro-paywall: a locked section shows only its title + an unlock hint (the Go
+  // backend already stripped its prose/facts for the free tier).
+  if (sec.locked) {
+    return (
+      <section
+        id={sec.key}
+        className={cx('scroll-mt-20 rounded-2xl border border-dashed p-5', t.card, t.border, t.soft)}
+      >
+        <h2 className={cx('flex items-center gap-1.5 text-[15px] font-bold', t.sub)}>
+          <Lock size={14} className={dark ? 'text-violet-300' : 'text-violet-500'} />
+          {title}
+        </h2>
+        <p className={cx('mt-1.5 text-[12.5px]', t.faint)}>{tr('deep.locked.section')}</p>
+      </section>
+    );
+  }
+
   const facts = sec.facts ?? [];
   // The price K-line clarifies the technical section; show it ONCE there (the
   // technical section is always emitted). Was `technical || valuation`, which

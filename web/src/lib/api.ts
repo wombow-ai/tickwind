@@ -1224,6 +1224,12 @@ export interface ResearchSection {
    */
   bull?: string[];
   bear?: string[];
+  /**
+   * Pro-paywall lock: true when this section's content was withheld from a free
+   * viewer (the Go backend strips prose/facts and sets this at serve time). The UI
+   * renders a locked "upgrade to unlock" card instead of the section body.
+   */
+  locked?: boolean;
 }
 
 /** Envelope returned by `GET /v1/stocks/{ticker}/research`. */
@@ -1252,6 +1258,13 @@ export interface ResearchReportResponse {
   prose_status?: 'ready' | 'generating' | 'quota_exhausted' | 'llm_disabled';
   disclaimer: string;
   sections: ResearchSection[];
+  /**
+   * Pro-paywall: true when this is the FREE-tier teaser of a ready report — the
+   * overview + first section are shown, the rest are `locked`. The UI shows an
+   * "unlock the full report with Pro" CTA. Absent/false = full report (Pro viewer,
+   * or the paywall is off).
+   */
+  paywall_locked?: boolean;
 }
 
 /**
