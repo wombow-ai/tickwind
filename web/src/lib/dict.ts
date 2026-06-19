@@ -83,6 +83,18 @@ export const dict: Record<Lang, Record<string, string>> = {
     'ind2.picker.moveUp': 'Move up',
     'ind2.picker.moveDown': 'Move down',
     'ind2.picker.close': 'Close',
+    // signals (deterministic posture signals derived from the computed indicators)
+    'signals.title': 'Signals',
+    'signals.asOf': 'as of {d}',
+    'signals.empty': 'No active signals right now.',
+    'signals.dir.bullish': 'Bullish',
+    'signals.dir.bearish': 'Bearish',
+    'signals.dir.neutral': 'Neutral',
+    'signals.trust': 'Each signal is a deterministic rule over a computed indicator — never advice or a price target.',
+    'signals.locked.title': 'More signals with Pro',
+    'signals.locked.body':
+      'Pro opens the full signal set — every one a transparent rule over a computed number, never advice.',
+    'signals.locked.cta': 'Unlock {n} more',
     // earnings
     'quote.lastTrade': 'Last trade {t} ago · {src}',
     'quote.lastTradeNow': 'Last trade just now · {src}',
@@ -875,6 +887,17 @@ export const dict: Record<Lang, Record<string, string>> = {
     'ind2.picker.moveUp': '上移',
     'ind2.picker.moveDown': '下移',
     'ind2.picker.close': '关闭',
+    // signals (deterministic posture signals derived from the computed indicators)
+    'signals.title': '信号',
+    'signals.asOf': '截至 {d}',
+    'signals.empty': '当前暂无活跃信号。',
+    'signals.dir.bullish': '看多',
+    'signals.dir.bearish': '看空',
+    'signals.dir.neutral': '中性',
+    'signals.trust': '每个信号都是对已算出指标的确定性规则 —— 绝非投资建议或目标价。',
+    'signals.locked.title': '更多信号需 Pro',
+    'signals.locked.body': 'Pro 解锁完整信号集 —— 每条都是对已算出数字的透明规则,绝不编造、绝非建议。',
+    'signals.locked.cta': '再解锁 {n} 条',
     // earnings
     'quote.lastTrade': '最后成交 {t}前 · {src}',
     'quote.lastTradeNow': '最后成交 刚刚 · {src}',

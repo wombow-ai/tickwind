@@ -2281,6 +2281,58 @@ export async function getStockIndicators(
   }
 }
 
+/**
+ * One deterministic posture signal derived from a Go-computed indicator. It is NOT
+ * advice / a price target / a rating — it states a disclosed technical condition, and
+ * `basis` cites the source indicator + value + threshold so it is fully traceable to a
+ * number Go computed (never LLM-invented).
+ */
+export interface IndicatorSignal {
+  /** Source indicator id, e.g. `"technical.rsi"`. */
+  id: string;
+  /** Human label, e.g. `"RSI oversold"`. */
+  label: string;
+  /** Posture direction. */
+  direction: 'bullish' | 'bearish' | 'neutral';
+  /** Traceability, e.g. `"RSI 27.4 < 30"`. */
+  basis: string;
+}
+
+/** Envelope returned by `GET /v1/stocks/{ticker}/indicator-signals`. */
+export interface IndicatorSignalsResponse {
+  ticker: string;
+  /** Newest underlying data date (may be empty). */
+  as_of: string;
+  /** The deterministic signals (a teaser when `paywall_locked`). */
+  signals: IndicatorSignal[];
+  /** Full signal count — drives the "unlock N more with Pro" CTA when truncated. */
+  total_signals: number;
+  /** True when the free-tier paywall truncated the list to a teaser. */
+  paywall_locked?: boolean;
+}
+
+/**
+ * Fetches the deterministic posture-signals for a ticker. Resolves to `null` when the
+ * symbol is unknown / has no data (404), so callers can hide the card. Pass the user's
+ * access token so a Pro viewer gets the full list once the signals paywall is live.
+ */
+export async function getIndicatorSignals(
+  ticker: string,
+  token?: string | null,
+  signal?: AbortSignal,
+): Promise<IndicatorSignalsResponse | null> {
+  try {
+    return await getJson<IndicatorSignalsResponse>(
+      `/v1/stocks/${encodeURIComponent(normalizeTicker(ticker))}/indicator-signals`,
+      signal,
+      token,
+    );
+  } catch (e) {
+    if (e instanceof ApiError && e.status === 404) return null;
+    throw e;
+  }
+}
+
 // ── Per-user prefs (generic JSON UI-state blob) ──────────────────────────
 //
 // A small, generic per-user JSON-prefs surface. The blob is namespaced by

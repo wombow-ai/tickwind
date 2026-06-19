@@ -56,6 +56,7 @@ import {HoldingsPanel} from '@/components/HoldingsPanel';
 import {KLineChart} from '@/components/KLineChart';
 import {FundamentalsCard} from '@/components/FundamentalsCard';
 import {IndicatorsPanel} from '@/components/IndicatorsPanel';
+import {SignalsCard} from '@/components/SignalsCard';
 import {AISummaryCard, DeepEntry} from '@/components/AISummaryCard';
 import {MovementCard} from '@/components/MovementCard';
 import {FilingsCard} from '@/components/FilingsCard';
@@ -678,6 +679,7 @@ export function StockView({ticker}: {ticker: string}) {
             hides entirely when no indicators are computable */}
         <div id="indicators" className="scroll-mt-20">
           <IndicatorsPanel ticker={norm} />
+          <SignalsCard ticker={norm} />
         </div>
 
         {/* pulse: Reddit buzz + news sentiment (renders nothing when empty) */}
