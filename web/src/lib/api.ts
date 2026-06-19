@@ -1334,6 +1334,47 @@ export async function getDeepResearch(
   }
 }
 
+/** The logged-in user's Pro entitlement (GET /v1/billing/me). */
+export interface Entitlement {
+  tier: 'free' | 'pro';
+  current_period_end?: string;
+  cancel_at_period_end?: boolean;
+}
+
+/**
+ * Fetches the user's Pro entitlement. Returns {tier:'free'} when billing is not
+ * configured (the endpoint 404s) so callers can treat "no billing" as free.
+ */
+export async function getEntitlement(token: string | null, signal?: AbortSignal): Promise<Entitlement> {
+  try {
+    return await getJson<Entitlement>('/v1/billing/me', signal, token);
+  } catch (e) {
+    if (e instanceof ApiError && e.status === 404) return {tier: 'free'};
+    throw e;
+  }
+}
+
+/** Starts a Stripe Checkout session for the chosen plan and returns the hosted URL. */
+export async function createCheckout(
+  interval: 'month' | 'year',
+  token: string | null,
+  signal?: AbortSignal,
+): Promise<string> {
+  const {url} = await postJson<{url: string}>(
+    `/v1/billing/checkout?interval=${interval}`,
+    {},
+    signal,
+    token,
+  );
+  return url;
+}
+
+/** Opens the Stripe Billing Portal (manage/cancel) and returns its URL. */
+export async function createPortal(token: string | null, signal?: AbortSignal): Promise<string> {
+  const {url} = await postJson<{url: string}>('/v1/billing/portal', {}, signal, token);
+  return url;
+}
+
 /**
  * One attributed evidence item behind a notable price move: a recent news
  * headline, a filing, or an insider buy. `title`/`url` are set in Go from the
