@@ -507,6 +507,32 @@ feature-flagged plugin, never on the critical path. Web only.
   web build green (1060 static pages). **NOTE for future: two near-identical stock strips exist — `HomeHub`
   (home `/`) and `Board` (`/me?tab=watchlist` only); both now share `StockRow`'s toggle/hook. Don't assume an
   edit to one covers the other** (this batch's #1 initially missed HomeHub — the preview caught it).
+- **2026-06-20 — INDICATORS monetization: deterministic SIGNALS layer BUILT + self-reviewed (the
+  NEXT paid hook after the Deep-Research paywall; owner directive [[tickwind-next-indicators-monetization]];
+  full design `docs/indicators-monetization-plan.md`). LOCAL, NOT DEPLOYED, flag OFF — ahead ~18.**
+  The indicators are Go-computed → emit **deterministic SIGNALS** (the LuxAlgo/looknode hook, NO LLM,
+  anti-hallucination-safe: each signal is a rule with a `basis` citing the Go value + threshold; no
+  advice/targets/ratings). **Built (C1–C3.3):** `internal/indicators/signals.go` `Signals(StockIndicatorsResult)
+  []Signal` — RSI/KDJ overbought-oversold · MACD posture + bullish/bearish cross (via `Extra.prev_hist`
+  = macd over `closes[:n-1]`) · price-vs-SMA/EMA · Bollinger band breach (neutral) · golden/death cross
+  (SMA50×SMA200 via `result.Closes`, id `technical.ma-cross`, ≥201 closes) · **salience ordering**
+  (`salienceOf`: events > extremes > always-on trend, so the teaser leads with the meaningful ones).
+  `compute.go` gained `StockIndicatorsResult.Price`/`Closes` (Closes is `json:"-"`, in-process only) +
+  `Extra.prev_hist`. API: `GET /v1/stocks/{ticker}/indicator-signals` (NB `/signals` was already taken by
+  the news/social buzz-sentiment endpoint) gated by `tierOf` + `INDICATORS_PAYWALL_ENABLED` (config envBool
+  **default false** → full list for everyone, current-behavior-safe; on → non-Pro gets first
+  `freeSignalTeaserLimit`=2 + `paywall_locked` + `total_signals`). Web: `web/src/components/SignalsCard.tsx`
+  (mounted in StockView under the indicators block) — direction-coloured rows + basis + trust line + a
+  `paywall_locked` "unlock N more with Pro"→/pro CTA; `api.ts getIndicatorSignals` + `dict.ts signals.*` EN+zh.
+  **Adversarial self-review (opus subagent + read) found+fixed 2 real issues:** KDJ read %K from an unguarded
+  `Extra["k"]` (could fabricate "KDJ %K 0.0" if a future closure omitted the key) → now reads the validated
+  `*si.Value`; `salienceOf` keyed events on a GLOBAL `Contains(label,"cross")` → scoped to the MACD id +
+  `maCrossID`. Paywall/teaser math confirmed correct. **All unit-tested; Go gate (gofmt/build/vet/test -race)
+  + web gate (tsc + next build) green.** **OWNER-GATED before any user sees it:** even flag-OFF, deploying
+  surfaces a NEW "Signals" card to all users (a product change) — the loop does NOT deploy it; flipping
+  `INDICATORS_PAYWALL_ENABLED` on needs owner go too. **Open owner decisions (recorded, non-blocking):**
+  teaser depth (default 2) · fold indicators into the SAME Pro tier as Deep Research vs a separate price ·
+  scope of the next phases (C4 screener / C5 indicator-signal alerts [reuse existing alerts] / C6 backtest).
 - **2026-06-19 — AI Deep Research polish (flagship PAID feature; IN PROGRESS — full plan in
   `docs/ai-deep-research-plan.md`):** owner: this is the **most important** feature — develop carefully with
   subagents + `/loop`, no rush. **Shipped this session** (deploying): #1a dup 5-yr K-line fixed
