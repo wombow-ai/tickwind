@@ -453,7 +453,13 @@ type StockIndicatorsResult struct {
 	// Bollinger-band rules): the latest daily CLOSE — the same series the moving
 	// averages / bands are computed from, so the comparison is apples-to-apples —
 	// or the live price when no candles are available. nil when neither exists.
-	Price      *float64
+	Price *float64
+	// Closes is the oldest→newest daily close series, carried for the signals layer
+	// to compute series-based EVENT signals (golden/death cross, price reclaiming a
+	// moving average) and their previous-bar values. In-process only — `json:"-"` so
+	// the raw series is never marshalled to the wire (the api handler builds its own
+	// response shape).
+	Closes     []float64 `json:"-"`
 	Indicators []StockIndicator
 }
 
@@ -483,7 +489,7 @@ func (c *Computer) StockIndicators(ctx context.Context, ticker string) StockIndi
 	}
 	sortByStatus(out)
 
-	res := StockIndicatorsResult{Ticker: ticker, AsOf: asOf, Indicators: out}
+	res := StockIndicatorsResult{Ticker: ticker, AsOf: asOf, Closes: in.closes, Indicators: out}
 	// Reference price for the posture-signals layer: the latest close (consistent
 	// with the close-based MAs/bands), falling back to the live price.
 	if n := len(in.closes); n > 0 {

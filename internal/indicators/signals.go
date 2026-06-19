@@ -104,5 +104,37 @@ func Signals(res StockIndicatorsResult) []Signal {
 			}
 		}
 	}
+	out = append(out, crossSignals(res)...)
 	return out
+}
+
+// maCrossID is the synthetic signal id for the moving-average cross event (it has no
+// catalog indicator of its own — it is derived from the close series in this layer).
+const maCrossID = "technical.ma-cross"
+
+// crossSignals derives series-based EVENT signals from the close series: the
+// golden / death cross (SMA50 × SMA200). Deterministic — it recomputes both moving
+// averages for the current and the previous bar (the series minus its last close) and
+// emits only on an actual crossover. Needs ≥201 closes (200 for SMA200 + 1 for the
+// prior bar); returns nil otherwise (never fabricated).
+func crossSignals(res StockIndicatorsResult) []Signal {
+	c := res.Closes
+	if len(c) < 201 {
+		return nil
+	}
+	prev := c[:len(c)-1]
+	cur50, ok1 := sma(c, 50)
+	cur200, ok2 := sma(c, 200)
+	prev50, ok3 := sma(prev, 50)
+	prev200, ok4 := sma(prev, 200)
+	if !ok1 || !ok2 || !ok3 || !ok4 {
+		return nil
+	}
+	switch {
+	case prev50 <= prev200 && cur50 > cur200:
+		return []Signal{{maCrossID, "Golden cross (SMA50 × SMA200)", DirBullish, fmt.Sprintf("SMA50 %.2f crossed above SMA200 %.2f", cur50, cur200)}}
+	case prev50 >= prev200 && cur50 < cur200:
+		return []Signal{{maCrossID, "Death cross (SMA50 × SMA200)", DirBearish, fmt.Sprintf("SMA50 %.2f crossed below SMA200 %.2f", cur50, cur200)}}
+	}
+	return nil
 }

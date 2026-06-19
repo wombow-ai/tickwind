@@ -165,6 +165,59 @@ func TestSignalsMacdCross(t *testing.T) {
 	}
 }
 
+func TestCrossSignals(t *testing.T) {
+	flat := func(n int, v float64) []float64 {
+		s := make([]float64, n)
+		for i := range s {
+			s[i] = v
+		}
+		return s
+	}
+	// 200 flat closes (so prev SMA50 == prev SMA200 == 100), then a final bar that
+	// pushes the recent (SMA50) mean above/below the long (SMA200) mean → a clean cross.
+	golden := append(flat(200, 100), 200) // jump up: cur SMA50 102.00 > SMA200 100.50
+	death := append(flat(200, 100), 0)    // drop:    cur SMA50  98.00 < SMA200  99.50
+
+	t.Run("golden cross", func(t *testing.T) {
+		got := crossSignals(StockIndicatorsResult{Closes: golden})
+		if len(got) != 1 {
+			t.Fatalf("want 1 signal, got %+v", got)
+		}
+		if got[0].ID != maCrossID || got[0].Direction != DirBullish {
+			t.Errorf("got %+v, want bullish %s", got[0], maCrossID)
+		}
+		if got[0].Basis != "SMA50 102.00 crossed above SMA200 100.50" {
+			t.Errorf("basis = %q", got[0].Basis)
+		}
+	})
+	t.Run("death cross", func(t *testing.T) {
+		got := crossSignals(StockIndicatorsResult{Closes: death})
+		if len(got) != 1 || got[0].Direction != DirBearish {
+			t.Fatalf("want 1 bearish, got %+v", got)
+		}
+		if got[0].Basis != "SMA50 98.00 crossed below SMA200 99.50" {
+			t.Errorf("basis = %q", got[0].Basis)
+		}
+	})
+	t.Run("no flip → none", func(t *testing.T) {
+		if got := crossSignals(StockIndicatorsResult{Closes: flat(201, 100)}); len(got) != 0 {
+			t.Errorf("flat series should not cross, got %+v", got)
+		}
+	})
+	t.Run("too short → none", func(t *testing.T) {
+		if got := crossSignals(StockIndicatorsResult{Closes: flat(200, 100)}); len(got) != 0 {
+			t.Errorf("<201 closes should yield no cross, got %+v", got)
+		}
+	})
+	// End-to-end: Signals() appends the cross to the per-indicator signals.
+	t.Run("Signals appends the cross", func(t *testing.T) {
+		got := Signals(StockIndicatorsResult{Closes: golden})
+		if _, ok := findSignal(got, maCrossID); !ok {
+			t.Fatalf("Signals did not surface the golden cross: %+v", got)
+		}
+	})
+}
+
 // TestSignalsMultiple verifies a full result emits one signal per triggering indicator.
 func TestSignalsMultiple(t *testing.T) {
 	res := StockIndicatorsResult{Indicators: []StockIndicator{
