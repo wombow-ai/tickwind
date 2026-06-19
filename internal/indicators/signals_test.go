@@ -111,6 +111,60 @@ func TestSignalsPriceBased(t *testing.T) {
 	}
 }
 
+func TestSignalsMacdCross(t *testing.T) {
+	macdInd := func(line, signal, hist float64, extra map[string]float64) StockIndicator {
+		m := map[string]float64{"signal": signal, "hist": hist}
+		for k, v := range extra {
+			m[k] = v
+		}
+		return ind("technical.macd", StatusOK, f(line), m)
+	}
+	cases := []struct {
+		name      string
+		in        StockIndicator
+		wantLabel string
+		wantDir   string
+		wantBasis string
+	}{
+		{
+			// hist flips - to + → bullish cross, and it WINS over the posture even though
+			// DIF > DEA would also fire "MACD above signal".
+			"bullish cross beats posture",
+			macdInd(1.0, 0.5, 0.030, map[string]float64{"prev_hist": -0.010}),
+			"MACD bullish cross", DirBullish, "MACD histogram -0.010 → 0.030 (crossed up)",
+		},
+		{
+			"bearish cross",
+			macdInd(-0.4, -0.2, -0.020, map[string]float64{"prev_hist": 0.040}),
+			"MACD bearish cross", DirBearish, "MACD histogram 0.040 → -0.020 (crossed down)",
+		},
+		{
+			// prev_hist present but no sign flip → falls through to the posture signal.
+			"no flip → posture",
+			macdInd(1.25, 0.80, 0.450, map[string]float64{"prev_hist": 0.200}),
+			"MACD above signal", DirBullish, "DIF 1.250 > DEA 0.800",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := Signals(StockIndicatorsResult{Indicators: []StockIndicator{tc.in}})
+			s, ok := findSignal(got, "technical.macd")
+			if !ok {
+				t.Fatalf("expected a macd signal, got %+v", got)
+			}
+			if s.Label != tc.wantLabel {
+				t.Errorf("label = %q, want %q", s.Label, tc.wantLabel)
+			}
+			if s.Direction != tc.wantDir {
+				t.Errorf("direction = %q, want %q", s.Direction, tc.wantDir)
+			}
+			if s.Basis != tc.wantBasis {
+				t.Errorf("basis = %q, want %q", s.Basis, tc.wantBasis)
+			}
+		})
+	}
+}
+
 // TestSignalsMultiple verifies a full result emits one signal per triggering indicator.
 func TestSignalsMultiple(t *testing.T) {
 	res := StockIndicatorsResult{Indicators: []StockIndicator{

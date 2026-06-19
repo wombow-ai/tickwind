@@ -57,7 +57,14 @@ func Signals(res StockIndicatorsResult) []Signal {
 			}
 		case "technical.macd":
 			dea, hist := si.Extra["signal"], si.Extra["hist"]
+			prevHist, hasPrev := si.Extra["prev_hist"]
 			switch {
+			// Event signals (a histogram sign flip = a MACD cross) take precedence over
+			// the standing posture — a cross is the more actionable, less-redundant read.
+			case hasPrev && prevHist <= 0 && hist > 0:
+				out = append(out, Signal{si.ID, "MACD bullish cross", DirBullish, fmt.Sprintf("MACD histogram %.3f → %.3f (crossed up)", prevHist, hist)})
+			case hasPrev && prevHist >= 0 && hist < 0:
+				out = append(out, Signal{si.ID, "MACD bearish cross", DirBearish, fmt.Sprintf("MACD histogram %.3f → %.3f (crossed down)", prevHist, hist)})
 			case v > dea && hist > 0:
 				out = append(out, Signal{si.ID, "MACD above signal", DirBullish, fmt.Sprintf("DIF %.3f > DEA %.3f", v, dea)})
 			case v < dea && hist < 0:

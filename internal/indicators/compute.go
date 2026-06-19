@@ -160,6 +160,15 @@ func technicalRegistry() map[string]computeFn {
 			if v, ok := macd(in.closes, fast, slow, signal); ok {
 				setOK(si, v.Line, unitNone)
 				si.Extra = map[string]float64{"signal": v.Signal, "hist": v.Histogram}
+				// Previous-bar histogram (recompute over closes minus the last bar) so
+				// the signals layer can detect a deterministic MACD cross (hist sign
+				// flip). Best-effort: omitted when the shorter series can't compute, in
+				// which case only the posture signal fires (never fabricated).
+				if n := len(in.closes); n >= 2 {
+					if prev, okp := macd(in.closes[:n-1], fast, slow, signal); okp {
+						si.Extra["prev_hist"] = prev.Histogram
+					}
+				}
 			} else {
 				setInsufficient(si, "need more daily closes for MACD")
 			}
