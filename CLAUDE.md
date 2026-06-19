@@ -90,6 +90,9 @@ feature-flagged plugin, never on the critical path. Web only.
 - **Communicates in Chinese**; wants concise, scannable progress. **"你拍板" = trust my
   judgment** on design/style/architecture — surface only genuine product decisions, decide the
   rest. Don't over-ask.
+- **The PRODUCT is English-FIRST** (owner, 2026-06-19): canonical locale = `/en`, zh secondary —
+  develop & VERIFY the en path first. (Distinct from owner↔me chat, which stays Chinese.) Corrects
+  the earlier "Chinese-first" framing. See [[tickwind-english-first]].
 - **Verify before commit** (hard gate): `go build ./... && go vet ./... && gofmt -l .` (empty)
   + relevant `go test`; frontend `npm run build`. Then deploy + live-verify.
 - **Quality bar**: "**精不在多**" — precision/correctness over quantity (e.g. ship few, correct
