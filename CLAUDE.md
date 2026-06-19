@@ -485,6 +485,22 @@ feature-flagged plugin, never on the critical path. Web only.
   web build green (1060 static pages). **NOTE for future: two near-identical stock strips exist — `HomeHub`
   (home `/`) and `Board` (`/me?tab=watchlist` only); both now share `StockRow`'s toggle/hook. Don't assume an
   edit to one covers the other** (this batch's #1 initially missed HomeHub — the preview caught it).
+- **2026-06-19 — AI Deep Research polish (flagship PAID feature; IN PROGRESS — full plan in
+  `docs/ai-deep-research-plan.md`):** owner: this is the **most important** feature — develop carefully with
+  subagents + `/loop`, no rush. **Shipped this session** (deploying): #1a dup 5-yr K-line fixed
+  (`DeepResearchView.tsx:676` `technical||valuation`→`technical`); #3 Research-tab Deep Research entry
+  (`DeepEntry` now exported from AISummaryCard); **per-stock AI Digest → a no-LLM Deep Research FUNNEL**
+  (`AISummaryCard` repurposed — owner: a per-view LLM call is too costly; the market AI summary stays only on the
+  home page; also resolves the "AI Digest loads ~15s then disappears" report). Commits `3f31144`, `ff32167`.
+  **Diagnosis**: AI was fully down = OpenRouter $5 credits exhausted ($5.14, owner topped up); deep prose empty =
+  `deepseek-r1` (reasoning model) output breaks `enrich.parseSectionProse`; the "Claude Fable 5 harness" was never
+  wired (only code comments). **NEXT — Increment B (see the plan doc)**: cost-optimal API routing — routine LLM
+  (briefing/translation/movement/material-events/normal research) → **DeepSeek direct** (new ¥10 key, staged on
+  the VPS `.env` as `DEEPSEEK_API_KEY`); **Deep Research → Claude Fable 5 via OpenRouter** ($5 = the current
+  `LLM_API_KEY=sk-or-…`, to become `LLM_DEEP_API_KEY`). Two-client enrich (`LLM_DEEP_BASE_URL`/`LLM_DEEP_API_KEY`)
+  + drop `response_format` for Claude + harden the parser (strip `<think>`, last balanced JSON) + a Claude
+  harness + **verify the model id via the `claude-api` skill** + live-verify. Both keys are on the VPS `.env`
+  ONLY (never git). See [[tickwind-paid-ai-free-sources]] (free quote sources only ahead of monetization).
 - **Shipped + LIVE-verified 2026-06-18 (owner: "深度优化实时价格 — 及时性+准确性,盘前/盘中/盘后"). Diagnosis +
   increments 1 & 2 (C/D) — all LIVE** (incr 2: `POST /v1/live/subscribe`→`{"ok":true}` proves the deploy; quotes
   no-regression session=regular/source=alpaca; DEPLOY_DONE 19:23Z)**:** the real-time price architecture is: **Alpaca WS** (free IEX, `internal/alpacaws`) for
