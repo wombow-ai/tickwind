@@ -2535,12 +2535,17 @@ func (s *Server) SetDeepResearchLimit(n int) {
 //     movement explainer, per-filing material-event summaries, normal research).
 //   - llmDeepComposeTimeout is the longer bound for the deep-research compose
 //     (depth=deep, composeDeepMaxTokens=6000), which legitimately needs more room.
+//     Measured: a premium Claude model (Sonnet 4.6) takes ~65s for a typical report
+//     and up to ~110s at the full 6000-token ceiling, so the bound is 120s — the
+//     deep path is ASYNC (background goroutine; the client polls), so a generous
+//     budget costs no request latency. It MUST stay below the enricher's HTTP client
+//     ceiling (see enrich.New) so the context deadline (not the socket) is the bound.
 //
 // These are vars (not consts) only so a test can shorten them to fire the deadline
 // in milliseconds; production never reassigns them.
 var (
 	llmComposeTimeout     = 25 * time.Second
-	llmDeepComposeTimeout = 60 * time.Second
+	llmDeepComposeTimeout = 120 * time.Second
 )
 
 // researchDailyCap bounds research-prose LLM generations per day across ALL

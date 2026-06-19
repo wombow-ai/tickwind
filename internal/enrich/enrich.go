@@ -119,9 +119,13 @@ func New(cfg Config) Enricher {
 		deepKey = cfg.APIKey
 	}
 	return &llm{
-		// Generous ceiling: batch translation streams many tokens and some
-		// OpenRouter providers are slow; per-call context keeps tighter bounds.
-		http:        &http.Client{Timeout: 90 * time.Second},
+		// Generous ceiling so it never caps a legitimate call: the deep-research
+		// compose (a premium Claude model, up to 6000 tokens) measured ~65s typical
+		// and can approach ~110s at the ceiling. This MUST exceed the deep call's
+		// context budget (api.llmDeepComposeTimeout=120s) so the per-call context
+		// deadline — not this socket timeout — is the real bound. Routine calls stay
+		// bounded tight by their own ~25s contexts, so the loose ceiling is harmless.
+		http:        &http.Client{Timeout: 150 * time.Second},
 		apiKey:      cfg.APIKey,
 		baseURL:     strings.TrimRight(base, "/"),
 		model:       model,

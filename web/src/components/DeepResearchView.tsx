@@ -60,8 +60,14 @@ type ProseStatus = 'done' | 'generating' | 'slow' | 'quota';
 
 /** Re-fetch cadence while a background prose generation is in flight (~4s). */
 const POLL_INTERVAL_MS = 4000;
-/** Safety cap on automatic polls (~25 × 4s ≈ 100s) before offering a manual retry. */
-const MAX_POLLS = 25;
+/**
+ * Safety cap on automatic polls before offering a manual retry. Must comfortably
+ * outlast the BACKEND deep-compose budget (api.llmDeepComposeTimeout=120s) so the
+ * UI keeps polling until the report is ready instead of giving up early: a premium
+ * Claude model takes ~65s typical and up to ~110s at the token ceiling. 35 × 4s =
+ * 140s leaves margin over the 120s backend bound.
+ */
+const MAX_POLLS = 35;
 
 /**
  * The dedicated **AI Deep Research** report view (the gated, login-required deep
