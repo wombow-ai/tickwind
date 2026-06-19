@@ -1,6 +1,9 @@
 package indicators
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func f(v float64) *float64 { return &v }
 
@@ -162,6 +165,46 @@ func TestSignalsMacdCross(t *testing.T) {
 				t.Errorf("basis = %q, want %q", s.Basis, tc.wantBasis)
 			}
 		})
+	}
+}
+
+func TestSignalSalienceOrder(t *testing.T) {
+	// A result that yields all three tiers: a trend posture (price > SMA), an extreme
+	// (RSI oversold) and an event (golden cross from the close series). They are emitted
+	// posture→extreme→event, so a correct salience sort must REVERSE them.
+	golden := func() []float64 {
+		s := make([]float64, 200)
+		for i := range s {
+			s[i] = 100
+		}
+		return append(s, 200) // 200×100 then a jump → golden cross
+	}()
+	res := StockIndicatorsResult{
+		Price:  f(110),
+		Closes: golden,
+		Indicators: []StockIndicator{
+			ind("technical.sma-ma", StatusOK, f(100), nil), // posture: Price above SMA (tier 2)
+			ind("technical.rsi", StatusOK, f(25), nil),     // extreme: RSI oversold (tier 1)
+		},
+	}
+	got := Signals(res)
+	if len(got) != 3 {
+		t.Fatalf("want 3 signals, got %d: %+v", len(got), got)
+	}
+	if !strings.Contains(got[0].Label, "cross") {
+		t.Errorf("lead signal should be the event/cross, got %q", got[0].Label)
+	}
+	if got[1].ID != "technical.rsi" {
+		t.Errorf("second should be the RSI extreme, got %q (%s)", got[1].Label, got[1].ID)
+	}
+	if got[2].ID != "technical.sma-ma" {
+		t.Errorf("last should be the trend posture, got %q (%s)", got[2].Label, got[2].ID)
+	}
+	// The teaser (first 2) must therefore surface the event + the extreme, not posture.
+	for _, s := range got[:2] {
+		if s.ID == "technical.sma-ma" {
+			t.Error("teaser surfaced the always-on trend posture over a more salient signal")
+		}
 	}
 }
 

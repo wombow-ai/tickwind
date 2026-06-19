@@ -1,6 +1,10 @@
 package indicators
 
-import "fmt"
+import (
+	"fmt"
+	"sort"
+	"strings"
+)
 
 // Signal is a deterministic, rule-based reading over a Go-computed indicator — the
 // paid "signals" layer (the LuxAlgo/looknode hook, done WITHOUT an LLM). It is NOT
@@ -105,7 +109,27 @@ func Signals(res StockIndicatorsResult) []Signal {
 		}
 	}
 	out = append(out, crossSignals(res)...)
+	// Order by salience so the most meaningful signals lead — and, crucially, so the
+	// free teaser (first N) surfaces events/extremes rather than the always-on trend
+	// posture. Stable, so within a tier the emission order (catalog order) is kept.
+	sort.SliceStable(out, func(i, j int) bool { return salienceOf(out[i]) < salienceOf(out[j]) })
 	return out
+}
+
+// salienceOf ranks a signal so the most actionable lead: 0 = an EVENT (a cross / a
+// transition that just happened), 1 = an EXTREME (overbought/oversold, a band breach
+// — notable, fires only at the edges), 2 = an always-on TREND posture (price vs a
+// moving average, MACD standing above/below its signal — true most of the time, so
+// least newsworthy). Lower sorts first.
+func salienceOf(s Signal) int {
+	switch {
+	case strings.Contains(s.Label, "cross"): // MACD bullish/bearish cross, Golden/Death cross
+		return 0
+	case s.ID == "technical.rsi" || s.ID == "technical.stochastic-kdj" || s.ID == "technical.boll":
+		return 1
+	default: // price-vs-SMA/EMA, MACD above/below signal
+		return 2
+	}
 }
 
 // maCrossID is the synthetic signal id for the moving-average cross event (it has no
