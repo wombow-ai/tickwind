@@ -104,10 +104,16 @@ feature-flagged plugin, never on the critical path. Web only.
   anti-hallucination trust line); **Phase 1 Stripe plumbing — DARK/INERT** (subscriptions+stripe_events
   tables, stdlib Stripe client [NO SDK — chose stdlib over stripe-go to match enrich's no-SDK ethos +
   avoid the dep/CVE], HMAC webhook verify + idempotency, `tierOf`, /v1/stripe/webhook + /v1/billing/*;
-  all 404 until STRIPE_* keys set → keyless prod unaffected, verified). **Phase 2 (user-facing paywall:
-  server-side deep-report truncation for free + /pro UI + LIVE keys) needs an explicit owner go** — the
-  one boundary the autonomous loop stops at (user-facing + real money). Activation runbook:
-  `docs/stripe-setup.md`. **Everything else on the roadmap is also**
+  all 404 until STRIPE_* keys set → keyless prod unaffected). **Phase 1 now TEST-MODE ACTIVATED +
+  E2E-VALIDATED (2026-06-20):** owner gave test keys; created Pro product + 2 prices ($12.99/mo·$99/yr)
+  + webhook endpoint via the Stripe API, set 4 STRIPE_* on the VPS .env → `billing enabled=true`. Live
+  test PASS: /billing/me 200, /billing/checkout → real `checkout.stripe.com/cs_test_…`, self-signed
+  webhooks flip tier free→pro→free, replay idempotent, bad-sig 400. (Runtime = test SECRET key; for LIVE
+  use a restricted key scoped Checkout+Portal write.) **Owner Stripe IDENTITY verify pending (mainland-ID
+  on HK acct → likely fails, 1-2d); if fails → pivot to DodoPayments [[tickwind-monetization-plan]].**
+  **Phase 2 (user-facing paywall: server-side deep-report truncation for free + /pro UI + LIVE keys) needs
+  an explicit owner go AND live keys** — the one boundary the autonomous loop stops at (user-facing + real
+  money). Activation runbook: `docs/stripe-setup.md`. **Everything else on the roadmap is also**
   greenlit to build autonomously (Financials, Alerts, gov-data "follow-the-money" suite, AI
   filing summaries, SEO, observability/backups, polish, HK/markets). Keep features free + quotes
   delayed. Still mind commercialization risk PROACTIVELY for *future* paid plans — esp.
