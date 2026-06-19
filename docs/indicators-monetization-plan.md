@@ -80,7 +80,15 @@ Deep Research (one subscription unlocks both) is the simplest, highest-conversio
   honest "unlock N more with Pro" CTA → /pro (reuses the Phase-2 banner look). `api.ts`
   `getIndicatorSignals(ticker, token)` + `IndicatorSignal` type; `dict.ts` `signals.*` (EN+zh). tsc +
   next build green; preview renders + card hides gracefully on 404. Populated render pending backend deploy.
-- **C3 — Event signals:** extend the Computer for SMA50/SMA200 + last-2 values; add cross/event signals.
+- **C3 — Price & event signals: ✅ DONE (local, not deployed; flag off).** C3.1 price-vs-SMA/EMA
+  (bullish/bearish) + Bollinger band breach (neutral) via `StockIndicatorsResult.Price`. C3.2a MACD
+  cross (hist sign flip, via `Extra.prev_hist` = macd over `closes[:n-1]`). C3.2b golden/death cross
+  (SMA50×SMA200, via `StockIndicatorsResult.Closes`, id `technical.ma-cross`, ≥201 closes). C3.3 salience
+  ordering (`salienceOf`: events > extremes > always-on trend) so the full list + the free teaser lead
+  with the meaningful signals. **Final signal catalog:** RSI overbought/oversold · KDJ overbought/oversold
+  · MACD above/below signal + bullish/bearish cross · price above/below SMA · price above/below EMA ·
+  price above/below Bollinger band (neutral) · golden/death cross. All deterministic Go rules, each with a
+  traceable `basis`, no advice/targets/ratings. Remaining (owner-scope): price-reclaim event, then C4–C6.
 - **C4 — Screener** by indicator/signal conditions (Pro).
 - **C5 — Indicator/signal alerts** (reuse the existing alerts feature).
 - **C6 — Backtesting** (heaviest; defer).
