@@ -2,6 +2,10 @@
 
 # Tickwind Product + Monetization Plan
 
+> **OWNER DECISIONS LOCKED (2026-06-20):** anonymous = **crawlable overview teaser** (gate depth, not existence) · price **$12.99/mo · $99/yr** · **NO reverse trial** (simple Free/Pro two tiers; free = teaser + a few generations/month) · **Phase 0 GO** (pre-paywall polish; Phases 1-3 await a further go-ahead). Free-gen allowance + Product-B default model (Haiku) follow the §8 recommendations unless changed.
+>
+> **Phase 0 progress:** the stale "1 report/day" copy (dict.ts deep.gate/quota, en+zh) is corrected to monthly — done. Remaining Phase-0 polish: an anti-hallucination trust line on the report; leave one mega-cap report fully open as an SEO/demo asset; make the overview teaser prominent.
+
 *Synthesis of four research memos (market/pricing, conversational design, Stripe/entitlements, paywall UX). Standing constraints kept central throughout: the **anti-hallucination contract** (Go owns every number; the LLM writes prose only over pre-formatted facts; no advice/targets/ratings) and **$0-baseline cost discipline**. Note: CLAUDE.md records monetization as owner-deferred — this is the build-ready design for when the owner opens that gate, per the owner's monetization brief.*
 
 ---
