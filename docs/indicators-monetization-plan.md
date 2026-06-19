@@ -74,8 +74,12 @@ Deep Research (one subscription unlocks both) is the simplest, highest-conversio
   `paywall_locked` + `total_signals`). Unit-tested (signals rules + handler + teaser cap). Zero new
   data, zero LLM, zero user impact (flag off). Result carries no current price yet → price-vs-MA /
   BOLL-band / cross signals deferred to **C3** (extend the Computer with price + last-2 values).
-- **C2 — Signals UI:** surface signals on the stock page (a "Signals" card / in IndicatorsPanel) with
-  the free-teaser + upgrade CTA reusing the Phase-2 paywall pattern.
+- **C2 — Signals UI: ✅ DONE (local, not deployed; commit 840b623).** `web/src/components/SignalsCard.tsx`
+  (mounted in StockView under the indicators block): per-direction rows (bullish green / bearish rose /
+  neutral slate) with the Go-computed `basis` shown, a trust line, and — when `paywall_locked` — an
+  honest "unlock N more with Pro" CTA → /pro (reuses the Phase-2 banner look). `api.ts`
+  `getIndicatorSignals(ticker, token)` + `IndicatorSignal` type; `dict.ts` `signals.*` (EN+zh). tsc +
+  next build green; preview renders + card hides gracefully on 404. Populated render pending backend deploy.
 - **C3 — Event signals:** extend the Computer for SMA50/SMA200 + last-2 values; add cross/event signals.
 - **C4 — Screener** by indicator/signal conditions (Pro).
 - **C5 — Indicator/signal alerts** (reuse the existing alerts feature).
