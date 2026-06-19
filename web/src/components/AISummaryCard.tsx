@@ -162,7 +162,7 @@ export function AISummaryCard({ticker}: {ticker: string}) {
  * (login + 1/day quota) — that UX lives on the target route, so this is just the
  * navigation affordance.
  */
-function DeepEntry({
+export function DeepEntry({
   ticker,
   dark,
   tr,

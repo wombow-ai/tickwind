@@ -56,7 +56,7 @@ import {HoldingsPanel} from '@/components/HoldingsPanel';
 import {KLineChart} from '@/components/KLineChart';
 import {FundamentalsCard} from '@/components/FundamentalsCard';
 import {IndicatorsPanel} from '@/components/IndicatorsPanel';
-import {AISummaryCard} from '@/components/AISummaryCard';
+import {AISummaryCard, DeepEntry} from '@/components/AISummaryCard';
 import {MovementCard} from '@/components/MovementCard';
 import {FilingsCard} from '@/components/FilingsCard';
 import {InsiderActivityCard} from '@/components/InsiderActivityCard';
@@ -691,6 +691,11 @@ export function StockView({ticker}: {ticker: string}) {
           LLM-backed fetch fires only after the tab is first opened (`researchSeen`),
           then stays mounted via `hidden` so its state survives tab switches. */}
       <div hidden={topTab !== 'Research'}>
+        {/* Entry to the dedicated AI Deep Research page (also on the Overview AI
+            Digest). Outside the researchSeen guard so it shows immediately. */}
+        <div className="mb-4 flex items-center justify-end">
+          <DeepEntry ticker={norm} dark={dark} tr={tr} />
+        </div>
         {researchSeen && <ResearchReport ticker={norm} />}
       </div>
 

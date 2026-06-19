@@ -671,9 +671,10 @@ function DeepSection({
 }) {
   const title = lang === 'zh' ? sec.title_zh || sec.title_en : sec.title_en || sec.title_zh;
   const facts = sec.facts ?? [];
-  // The chart materially clarifies the valuation / technical sections (price
-  // history); show it once, on the technical section when present, else valuation.
-  const showChart = sec.key === 'technical' || sec.key === 'valuation';
+  // The price K-line clarifies the technical section; show it ONCE there (the
+  // technical section is always emitted). Was `technical || valuation`, which
+  // rendered the identical chart TWICE — once per section.
+  const showChart = sec.key === 'technical';
 
   return (
     <section id={sec.key} className={cx('scroll-mt-20 rounded-2xl border p-5', t.card, t.border, t.soft)}>
