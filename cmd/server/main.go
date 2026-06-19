@@ -169,9 +169,9 @@ func main() {
 	}
 
 	// Optional LLM enrichment (disabled without LLM_API_KEY).
-	enricher := enrich.New(enrich.Config{APIKey: cfg.LLMAPIKey, BaseURL: cfg.LLMBaseURL, Model: cfg.LLMModel, DeepModel: cfg.LLMDeepModel})
+	enricher := enrich.New(enrich.Config{APIKey: cfg.LLMAPIKey, BaseURL: cfg.LLMBaseURL, Model: cfg.LLMModel, DeepModel: cfg.LLMDeepModel, DeepBaseURL: cfg.LLMDeepBaseURL, DeepAPIKey: cfg.LLMDeepAPIKey})
 	if enricher.Enabled() {
-		log.Info("llm enrichment enabled", "model", cfg.LLMModel)
+		log.Info("llm enrichment enabled", "model", cfg.LLMModel, "deep_base_set", cfg.LLMDeepBaseURL != "")
 		// Chinese headline translation: one small batch per sweep, newest news
 		// first; each headline is translated once and cached forever.
 		go ingest.NewTranslateIngestor(st, enricher, 3*time.Minute, log).Run(ctx)

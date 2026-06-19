@@ -103,6 +103,14 @@ type Config struct {
 	// LLM_DEEP_MODEL (deliberate cost control: the pricey model stays off until the
 	// paywall goes live).
 	LLMDeepModel string
+	// LLMDeepBaseURL / LLMDeepAPIKey route the AI Deep Research compose to a
+	// SEPARATE provider from the routine LLM (cost-split): routine high-volume
+	// enrichment runs on the cheap default provider (e.g. DeepSeek-direct) while
+	// the flagship deep report runs on a premium provider (e.g. Claude via
+	// OpenRouter). Both empty → the deep path reuses the default client (LLMBaseURL
+	// / LLMAPIKey), so a single-provider deployment is unchanged.
+	LLMDeepBaseURL string
+	LLMDeepAPIKey  string
 
 	// DeepResearchMonthlyLimit is the per-user, per-ET-MONTH GENERATION quota for the
 	// AI Deep Research report (depth=deep): how many genuinely-new deep reports a
@@ -200,6 +208,8 @@ func Load() Config {
 		LLMBaseURL:              env("LLM_BASE_URL", ""),
 		LLMModel:                env("LLM_MODEL", ""),
 		LLMDeepModel:            env("LLM_DEEP_MODEL", ""),
+		LLMDeepBaseURL:          env("LLM_DEEP_BASE_URL", ""),
+		LLMDeepAPIKey:           env("LLM_DEEP_API_KEY", ""),
 		// New env name first; fall back to the legacy DEEP_RESEARCH_DAILY_LIMIT (whose
 		// own default is 1) so an existing deployment keeps working unchanged.
 		DeepResearchMonthlyLimit: envInt("DEEP_RESEARCH_MONTHLY_LIMIT", envInt("DEEP_RESEARCH_DAILY_LIMIT", 1)),

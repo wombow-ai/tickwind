@@ -25,7 +25,18 @@
 
 **Routing decision (owner: "看情况和场景使用"):**
 - **High-volume / routine LLM** (home morning briefing, news translation, movement explainer, 8-K material-events summaries, normal /research prose) → **DeepSeek direct** (`https://api.deepseek.com`, `deepseek-chat`) — cheapest, uses the new ¥10 key.
-- **Deep Research** (low-volume, 1/user/month, premium PAID) → **Claude Fable 5 via OpenRouter** (`anthropic/claude-fable-5`) — quality, uses the $5.
+- **Deep Research** (low-volume, 1/user/month, premium PAID) → **Claude Opus 4.8 via OpenRouter** (`anthropic/claude-opus-4.8`) — quality, uses the $5.
+
+> **2026-06-19 FINDING (step-1 model verification, live):** `anthropic/claude-fable-5`
+> returns **404 "Claude Fable 5 is not available"** on OpenRouter for this account
+> (Fable/Mythos requires special Anthropic access). Live-probed the alternatives with
+> the real key: **`anthropic/claude-opus-4.8` ✅ works** (provider Anthropic),
+> `anthropic/claude-sonnet-4.6` ✅ works, `deepseek/deepseek-r1` ✅ works.
+> **Chosen: Opus 4.8** — the strongest available Claude, and at $5/M in + $25/M out it
+> is actually CHEAPER than Fable 5 would have been ($10/$50). Est. ~$0.12–0.17/report
+> (2–4k in + 3–6k out); ~$5 ≈ ~30–40 reports, fine at the 1/user/month quota pre-paywall.
+> Cheaper alternative if more reports/$ wanted: **Sonnet 4.6** — a one-line `.env` swap
+> (`LLM_DEEP_MODEL`). All code is env-driven, so the model is not hardcoded anywhere.
 
 **Keys (already staged on the VPS `.env`, NEVER in git):**
 - `DEEPSEEK_API_KEY=sk-ef6…` (staged this session) → will become the default `LLM_API_KEY` (DeepSeek direct).
@@ -40,7 +51,7 @@
 6. **VPS `.env`** (one careful SSH; copy OpenRouter key first):
    - `LLM_DEEP_API_KEY` = (current `LLM_API_KEY` value, the OpenRouter key)
    - `LLM_DEEP_BASE_URL=https://openrouter.ai/api/v1`
-   - `LLM_DEEP_MODEL=anthropic/claude-fable-5` (per step 1)
+   - `LLM_DEEP_MODEL=anthropic/claude-opus-4.8` (per step-1 finding: Fable 5 is 404/gated; Opus 4.8 is the chosen, cheaper-than-Fable premium Claude)
    - `LLM_BASE_URL=https://api.deepseek.com`
    - `LLM_API_KEY=$DEEPSEEK_API_KEY` (the staged DeepSeek key)
    - `LLM_MODEL=deepseek-chat`

@@ -78,6 +78,21 @@ func TestParseSectionProse(t *testing.T) {
 			want:    map[string]string{"fundamentals": "净利润为正"},
 		},
 		{
+			name:    "leading <think> block stripped (reasoning model)",
+			content: "<think>let me reason about {this} carefully</think>\n```json\n{\"valuation\":\"估值偏高\"}\n```",
+			want:    map[string]string{"valuation": "估值偏高"},
+		},
+		{
+			name:    "array value coerced to newline-joined string",
+			content: `{"bull":["现金流稳健","回购加速"],"valuation":"中性"}`,
+			want:    map[string]string{"bull": "现金流稳健\n回购加速", "valuation": "中性"},
+		},
+		{
+			name:    "prose with braces then the real object - last balanced wins",
+			content: "分析(含{花括号}干扰)如下:{\"technical\":\"超买\"}",
+			want:    map[string]string{"technical": "超买"},
+		},
+		{
 			name:    "no sections is an error",
 			content: `抱歉无法完成`,
 			wantErr: true,
@@ -172,12 +187,14 @@ func TestComposeReport(t *testing.T) {
 }
 
 // TestComposeDeepReport asserts the deep compose parses the section-keyed reply
-// (sharing parseSectionProse), uses the deep model + a larger token budget, and
-// sends the json_object response_format — the same safety wiring as ComposeReport.
+// (sharing parseSectionProse, here via a fenced ```json block — the deep prompt's
+// requested format), uses the deep model + a larger token budget, and sends NO
+// response_format (Anthropic and reasoning models reject OpenAI's json_object; the
+// prompt + hardened parser carry the contract instead).
 func TestComposeDeepReport(t *testing.T) {
 	var gotModel string
 	var gotMaxTokens float64
-	var gotFormat string
+	var hasFormat bool
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var req struct {
 			Model          string         `json:"model"`
@@ -187,12 +204,10 @@ func TestComposeDeepReport(t *testing.T) {
 		_ = json.NewDecoder(r.Body).Decode(&req)
 		gotModel = req.Model
 		gotMaxTokens = req.MaxTokens
-		if req.ResponseFormat != nil {
-			gotFormat, _ = req.ResponseFormat["type"].(string)
-		}
+		hasFormat = req.ResponseFormat != nil
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"choices": []map[string]any{
-				{"message": map[string]string{"content": `{"valuation":"估值偏高,需结合行业背景看待。","overview":"综合梳理。以上为基于公开数据的客观梳理,非投资建议。"}`}},
+				{"message": map[string]string{"content": "```json\n{\"valuation\":\"估值偏高,需结合行业背景看待。\",\"overview\":\"综合梳理。以上为基于公开数据的客观梳理,非投资建议。\"}\n```"}},
 			},
 		})
 	}))
@@ -214,8 +229,56 @@ func TestComposeDeepReport(t *testing.T) {
 	if gotMaxTokens != composeDeepMaxTokens {
 		t.Errorf("max_tokens = %v, want %d", gotMaxTokens, composeDeepMaxTokens)
 	}
-	if gotFormat != "json_object" {
-		t.Errorf("response_format type = %q, want json_object", gotFormat)
+	if hasFormat {
+		t.Error("deep compose must NOT send response_format (Claude/reasoning-safe)")
+	}
+}
+
+// TestComposeDeepReportSeparateProvider asserts the cost-split routing: when
+// DeepBaseURL/DeepAPIKey are set, ComposeDeepReport hits the DEEP provider (its URL
+// + key + model) while everything else stays on the default provider.
+func TestComposeDeepReportSeparateProvider(t *testing.T) {
+	var deepAuth, defaultAuth string
+	deepSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		deepAuth = r.Header.Get("Authorization")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{{"message": map[string]string{"content": `{"valuation":"deep prose"}`}}},
+		})
+	}))
+	defer deepSrv.Close()
+	defaultSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defaultAuth = r.Header.Get("Authorization")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{{"message": map[string]string{"content": `{"valuation":"routine prose"}`}}},
+		})
+	}))
+	defer defaultSrv.Close()
+
+	enr := New(Config{
+		APIKey: "default-key", BaseURL: defaultSrv.URL, Model: "default-model",
+		DeepAPIKey: "deep-key", DeepBaseURL: deepSrv.URL, DeepModel: "deep-model",
+	})
+
+	got, err := enr.ComposeDeepReport(context.Background(), "valuation: PE 31.2x", "zh")
+	if err != nil {
+		t.Fatalf("ComposeDeepReport: %v", err)
+	}
+	if got["valuation"] != "deep prose" {
+		t.Fatalf("deep report hit the wrong provider: %v", got)
+	}
+	if deepAuth != "Bearer deep-key" {
+		t.Errorf("deep Authorization = %q, want Bearer deep-key", deepAuth)
+	}
+	if defaultAuth != "" {
+		t.Errorf("default provider should not have been called by the deep compose; got auth %q", defaultAuth)
+	}
+
+	// A routine method still uses the default provider/key.
+	if _, err := enr.ComposeReport(context.Background(), "valuation: PE 31.2x", "zh"); err != nil {
+		t.Fatalf("ComposeReport: %v", err)
+	}
+	if defaultAuth != "Bearer default-key" {
+		t.Errorf("routine Authorization = %q, want Bearer default-key", defaultAuth)
 	}
 }
 
