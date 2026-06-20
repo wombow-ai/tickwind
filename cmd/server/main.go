@@ -607,9 +607,11 @@ func main() {
 		apiServer.SetIndicatorCompute(computer)
 		log.Info("per-stock indicator compute enabled")
 
-		// Whole-universe signals SCREENER: a background cache recomputes ticker→signals
-		// every 15 min (off the request path) so GET /v1/screen/signals filters instantly.
-		signalScan := ingest.NewSignalScanCache(computer, universeCache, log)
+		// Signals SCREENER: a background cache recomputes ticker→signals every 15 min
+		// (off the request path, technicals-only, paced) so GET /v1/screen/signals filters
+		// instantly. Scans the BOUNDED tracked set (ingestTickers, ~maxIngestTickers names
+		// the poller already follows) — NOT the full ~7k universe, which would storm Alpaca/SEC.
+		signalScan := ingest.NewSignalScanCache(computer, ingestTickers, log)
 		go signalScan.Run(ctx)
 		apiServer.SetSignalScan(signalScan)
 

@@ -183,6 +183,7 @@ func (s *Server) getScreenSignals(w http.ResponseWriter, r *http.Request) {
 		Direction: strings.ToLower(strings.TrimSpace(q.Get("direction"))),
 		SignalID:  strings.TrimSpace(q.Get("signal")),
 	})
+	total := len(matches) // full match count BEFORE any truncation (drives "N more with Pro")
 	lim := queryLimit(r, 100)
 	if lim > 200 {
 		lim = 200
@@ -190,7 +191,6 @@ func (s *Server) getScreenSignals(w http.ResponseWriter, r *http.Request) {
 	if lim > 0 && len(matches) > lim {
 		matches = matches[:lim]
 	}
-	total := len(matches)
 	locked := false
 	// Pro-gate: a free viewer gets the first freeScreenTeaserLimit matches + a lock flag.
 	if s.indicatorsPaywallEnabled {

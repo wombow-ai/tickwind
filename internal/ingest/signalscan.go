@@ -10,59 +10,59 @@ import (
 	"github.com/wombow-ai/tickwind/internal/indicators"
 )
 
-// signalScanEvery is the background refresh cadence for the whole-universe signals
-// scan. Signals derive from DAILY bars (and the deterministic rules over them), so
-// they change slowly — a sub-hourly refresh buys nothing. The scan runs off the
-// request path, so this is purely a freshness/cost tradeoff.
-const signalScanEvery = 15 * time.Minute
+// signalScanEvery is the background refresh cadence for the signals scan. Signals
+// derive from DAILY bars, so they change slowly — a sub-hourly refresh buys nothing.
+// signalScanPace is a polite gap between per-ticker computes so the scan never bursts
+// the shared Alpaca client (which has no rate limiter) and never starves the live
+// price poller; with the bounded tracked-ticker set this spreads the scan over ~tens
+// of seconds, well within the 15-min cadence.
+const (
+	signalScanEvery = 15 * time.Minute
+	signalScanPace  = 60 * time.Millisecond
+)
 
-// SignalComputeSource computes a ticker's indicator set (the input to the signals
-// layer). Satisfied by *indicators.Computer — declared here so this package does not
-// depend on the api package (which depends on this one).
+// SignalComputeSource computes a ticker's TECHNICAL indicator set (the input to the
+// signals layer — NO SEC fundamentals, which signals never read). Satisfied by
+// *indicators.Computer; declared here so this package does not depend on the api
+// package (which depends on this one).
 type SignalComputeSource interface {
-	StockIndicators(ctx context.Context, ticker string) indicators.StockIndicatorsResult
+	StockIndicatorsTechnical(ctx context.Context, ticker string) indicators.StockIndicatorsResult
 }
 
-// UniverseTickers yields the universe of tickers to scan (satisfied by *universe.Cache).
-type UniverseTickers interface {
-	Tickers() []string
-}
-
-// SignalScanCache holds a periodically-refreshed map of ticker → deterministic
-// signals for the WHOLE universe, so the signals SCREENER endpoint can filter
-// instantly without recomputing 200 tickers on the request path. It mirrors
-// OptionsCache's whole-market background-scan pattern. Everything it serves is
-// Go-computed (anti-hallucination-safe) — it only caches what indicators.Signals
-// produced.
+// SignalScanCache holds a periodically-refreshed map of ticker → deterministic signals
+// for the TRACKED ticker set (the bounded ~maxIngestTickers names the poller already
+// follows — NOT the whole ~7k price universe, which would storm Alpaca/SEC), so the
+// signals SCREENER endpoint can filter instantly without recomputing on the request
+// path. Mirrors OptionsCache's background-scan pattern; serves only Go-computed signals
+// (anti-hallucination-safe).
 type SignalScanCache struct {
-	compute  SignalComputeSource
-	universe UniverseTickers
-	every    time.Duration
-	log      *slog.Logger
+	compute SignalComputeSource
+	tickers TickerSource // bounded tracked set (e.g. the poller's ingestTickers)
+	every   time.Duration
+	log     *slog.Logger
 
 	mu       sync.RWMutex
 	bySignal map[string][]indicators.Signal
 	at       time.Time
 }
 
-// NewSignalScanCache builds the cache. A nil logger is tolerated (discarded).
-func NewSignalScanCache(compute SignalComputeSource, universe UniverseTickers, log *slog.Logger) *SignalScanCache {
+// NewSignalScanCache builds the cache over a bounded TickerSource (pass the poller's
+// ingestTickers, NOT the full universe). A nil logger is tolerated (discarded).
+func NewSignalScanCache(compute SignalComputeSource, tickers TickerSource, log *slog.Logger) *SignalScanCache {
 	if log == nil {
 		log = slog.New(slog.NewTextHandler(io.Discard, nil))
 	}
 	return &SignalScanCache{
 		compute:  compute,
-		universe: universe,
+		tickers:  tickers,
 		every:    signalScanEvery,
 		log:      log,
 		bySignal: map[string][]indicators.Signal{},
 	}
 }
 
-// Run scans the universe immediately, then every `every` until ctx is cancelled.
-// It runs on a background goroutine — the per-ticker indicator compute reads cached
-// data (warm for the ingested universe) but a cold ticker may trigger a candle
-// fetch, which is fine off the request path.
+// Run scans the tracked set immediately, then every `every` until ctx is cancelled,
+// on a background goroutine (off the request path).
 func (c *SignalScanCache) Run(ctx context.Context) {
 	c.scan(ctx)
 	t := time.NewTicker(c.every)
@@ -77,27 +77,35 @@ func (c *SignalScanCache) Run(ctx context.Context) {
 	}
 }
 
-// scan recomputes signals for every universe ticker and atomically swaps in the new
-// map. On a total miss (empty universe / nothing computed) it keeps the previous
+// scan recomputes signals for each tracked ticker and atomically swaps in the new map.
+// It uses the TECHNICALS-ONLY compute (no SEC) and paces between tickers so it never
+// bursts Alpaca. On a total miss (empty set / nothing computed) it keeps the previous
 // snapshot rather than blanking the board.
 func (c *SignalScanCache) scan(ctx context.Context) {
-	tickers := c.universe.Tickers()
+	tickers := c.tickers(ctx)
 	next := make(map[string][]indicators.Signal, len(tickers))
 	scanned := 0
-	for _, tk := range tickers {
+	for i, tk := range tickers {
 		select {
 		case <-ctx.Done():
 			return
 		default:
 		}
-		res := c.compute.StockIndicators(ctx, tk)
+		if i > 0 {
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(signalScanPace):
+			}
+		}
+		res := c.compute.StockIndicatorsTechnical(ctx, tk)
 		if sigs := indicators.Signals(res); len(sigs) > 0 {
 			next[tk] = sigs
 		}
 		scanned++
 	}
 	if scanned == 0 {
-		return // empty universe — keep the previous board
+		return // empty set — keep the previous board
 	}
 	c.mu.Lock()
 	c.bySignal, c.at = next, time.Now().UTC()

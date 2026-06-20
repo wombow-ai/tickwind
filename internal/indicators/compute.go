@@ -478,7 +478,19 @@ type FearGreed struct {
 // technicals). The returned Indicators are sorted ok → insufficient →
 // unsupported.
 func (c *Computer) StockIndicators(ctx context.Context, ticker string) StockIndicatorsResult {
-	in, asOf := c.gather(ctx, ticker)
+	return c.stockIndicators(ctx, ticker, false)
+}
+
+// StockIndicatorsTechnical is like StockIndicators but SKIPS the SEC fundamentals
+// fetch — it computes only what the deterministic signals layer needs (technical
+// indicators + Price + Closes). The background screener scan uses this so it never
+// originates whole-universe SEC traffic for fundamentals it doesn't read.
+func (c *Computer) StockIndicatorsTechnical(ctx context.Context, ticker string) StockIndicatorsResult {
+	return c.stockIndicators(ctx, ticker, true)
+}
+
+func (c *Computer) stockIndicators(ctx context.Context, ticker string, skipFund bool) StockIndicatorsResult {
+	in, asOf := c.gather(ctx, ticker, skipFund)
 
 	records := c.computedIDs()
 	out := make([]StockIndicator, 0, len(records))
@@ -518,7 +530,7 @@ const marketBenchmarkTicker = "SPY"
 // gather fetches the per-ticker data once and assembles the computeInput plus the
 // newest underlying data date (the latest candle's date, else the fundamentals
 // AsOf). Missing sources leave the corresponding fields zero/empty.
-func (c *Computer) gather(ctx context.Context, ticker string) (computeInput, string) {
+func (c *Computer) gather(ctx context.Context, ticker string, skipFund bool) (computeInput, string) {
 	var in computeInput
 	var asOf string
 	var stockCandles []store.Candle
@@ -541,7 +553,7 @@ func (c *Computer) gather(ctx context.Context, ticker string) (computeInput, str
 			asOf = candles[len(candles)-1].Time.Format("2006-01-02")
 		}
 	}
-	if c.fund != nil {
+	if c.fund != nil && !skipFund {
 		if f, err := c.fund.Fundamentals(ctx, ticker); err == nil && f.HasData() {
 			in.fund = f
 			in.hasFund = true
