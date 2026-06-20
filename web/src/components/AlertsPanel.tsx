@@ -8,7 +8,21 @@ import {useT} from '@/lib/i18n';
 import {useDark} from '@/lib/theme';
 import {btnPrimary, cx, tok} from '@/lib/ui';
 
-const KINDS = ['price_above', 'price_below', 'pct_move', 'new_filing'] as const;
+const PRICE_KINDS = ['price_above', 'price_below', 'pct_move', 'new_filing'] as const;
+// Deterministic signal-condition alerts (self-describing — no threshold needed).
+const SIGNAL_KINDS = [
+  'golden_cross',
+  'death_cross',
+  'rsi_oversold',
+  'rsi_overbought',
+  'signal_bullish',
+  'signal_bearish',
+] as const;
+
+// Thresholdless kinds: new_filing + every signal kind ignore the threshold field.
+function isThresholdless(kind: string): boolean {
+  return kind === 'new_filing' || (SIGNAL_KINDS as readonly string[]).includes(kind);
+}
 
 function kindLabelKey(kind: string): string {
   switch (kind) {
@@ -18,6 +32,18 @@ function kindLabelKey(kind: string): string {
       return 'alerts.priceBelow';
     case 'pct_move':
       return 'alerts.pctMove';
+    case 'golden_cross':
+      return 'alerts.goldenCross';
+    case 'death_cross':
+      return 'alerts.deathCross';
+    case 'rsi_oversold':
+      return 'alerts.rsiOversold';
+    case 'rsi_overbought':
+      return 'alerts.rsiOverbought';
+    case 'signal_bullish':
+      return 'alerts.signalBullish';
+    case 'signal_bearish':
+      return 'alerts.signalBearish';
     default:
       return 'alerts.newFiling';
   }
@@ -51,7 +77,7 @@ export function AlertsPanel({ticker}: {ticker: string}) {
     load();
   }, [load]);
 
-  const needsThreshold = kind !== 'new_filing';
+  const needsThreshold = !isThresholdless(kind);
   const canAdd = !busy && (!needsThreshold || parseFloat(threshold) > 0);
 
   async function add() {
@@ -85,7 +111,7 @@ export function AlertsPanel({ticker}: {ticker: string}) {
 
   function describe(a: Alert): string {
     const k = tr(kindLabelKey(a.kind));
-    if (a.kind === 'new_filing') return k;
+    if (isThresholdless(a.kind)) return k;
     if (a.kind === 'pct_move') return `${k} ${a.threshold}%`;
     return `${k} $${a.threshold}`;
   }
@@ -101,11 +127,20 @@ export function AlertsPanel({ticker}: {ticker: string}) {
               onChange={e => setKind(e.target.value)}
               className={cx('rounded-lg border bg-transparent px-2.5 py-1.5 text-[13px]', t.border, t.text)}
             >
-              {KINDS.map(k => (
-                <option key={k} value={k} className={dark ? 'bg-slate-800' : ''}>
-                  {tr(kindLabelKey(k))}
-                </option>
-              ))}
+              <optgroup label={tr('alerts.group.price')}>
+                {PRICE_KINDS.map(k => (
+                  <option key={k} value={k} className={dark ? 'bg-slate-800' : ''}>
+                    {tr(kindLabelKey(k))}
+                  </option>
+                ))}
+              </optgroup>
+              <optgroup label={tr('alerts.group.signal')}>
+                {SIGNAL_KINDS.map(k => (
+                  <option key={k} value={k} className={dark ? 'bg-slate-800' : ''}>
+                    {tr(kindLabelKey(k))}
+                  </option>
+                ))}
+              </optgroup>
             </select>
           </label>
           {needsThreshold && (

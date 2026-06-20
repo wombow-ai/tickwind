@@ -10,6 +10,20 @@ import {useDark} from '@/lib/theme';
 import {cx, tok} from '@/lib/ui';
 import {useToast} from '@/components/ui/Toast';
 
+// Signal-condition alert kinds are self-describing (no threshold to render).
+const SIGNAL_KINDS = [
+  'golden_cross',
+  'death_cross',
+  'rsi_oversold',
+  'rsi_overbought',
+  'signal_bullish',
+  'signal_bearish',
+];
+
+function isThresholdless(kind: string): boolean {
+  return kind === 'new_filing' || SIGNAL_KINDS.includes(kind);
+}
+
 function kindLabelKey(kind: string): string {
   switch (kind) {
     case 'price_above':
@@ -18,6 +32,18 @@ function kindLabelKey(kind: string): string {
       return 'alerts.priceBelow';
     case 'pct_move':
       return 'alerts.pctMove';
+    case 'golden_cross':
+      return 'alerts.goldenCross';
+    case 'death_cross':
+      return 'alerts.deathCross';
+    case 'rsi_oversold':
+      return 'alerts.rsiOversold';
+    case 'rsi_overbought':
+      return 'alerts.rsiOverbought';
+    case 'signal_bullish':
+      return 'alerts.signalBullish';
+    case 'signal_bearish':
+      return 'alerts.signalBearish';
     default:
       return 'alerts.newFiling';
   }
@@ -74,7 +100,7 @@ export function AlertsCenter() {
 
   function describe(a: Alert): string {
     const k = tr(kindLabelKey(a.kind));
-    if (a.kind === 'new_filing') return k;
+    if (isThresholdless(a.kind)) return k;
     if (a.kind === 'pct_move') return `${k} ±${a.threshold}%`;
     return `${k} $${a.threshold}`;
   }
