@@ -132,9 +132,13 @@ Deep Research (one subscription unlocks both) is the simplest, highest-conversio
   congressbt's injected-data, no-clock pattern) — replays a rule (golden/death cross, macd cross, rsi
   oversold/overbought as per-bar transitions reusing the live signal math) and reports win rate, avg
   forward return, trade count, and a buy-and-hold baseline. A disclosed historical statistic, NOT a
-  prediction/advice. Unit-tested (flat-then-trend series forcing a known cross + guards). **NEXT C6.2:**
-  the endpoint (`GET /v1/stocks/{ticker}/backtest?rule=&horizon=` — fetch candles via the compute/bars
-  source, run BacktestSignal, Pro-gate) + C6.3 a UI (a backtest widget on the signals card or a tab).
+  prediction/advice. Unit-tested (flat-then-trend series forcing a known cross + guards). **C6.2 endpoint ✅ DONE (commit, ahead 32):**
+  `GET /v1/stocks/{ticker}/backtest?rule=&horizon=` (horizon default 20, clamp 60) reuses the Server's
+  existing `bars` (BarSource.DailyCandles) → BacktestSignal → {ticker, result}; Pro-gated (flag off=all;
+  on + non-Pro = paywall_locked hard lock); 404 no-bars/no-history, 400 bad rule, 422 insufficient
+  history. Handler tests (fakeBars). **NEXT C6.3:** a backtest UI (a small widget — pick a rule + horizon,
+  show win rate / avg forward return / trades / baseline + the "historical, not advice" disclaimer; on the
+  signals card or a tab). Then C6 (and the indicators-monetization plan C1–C6) is fully built.
 
 C1 is the highest-value, lowest-risk, anti-hallucination-safe first increment.
 
