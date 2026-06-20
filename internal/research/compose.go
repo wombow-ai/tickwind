@@ -114,15 +114,30 @@ const maxBullBearPoints = 5
 // — but NOT a bare leading number that is part of the content (e.g. "10x P/E …").
 var bulletRe = regexp.MustCompile(`^\s*(?:[-–—•*·‣◦]+|\d{1,2}[.)、])\s*`)
 
-// advicePhrases are unambiguous investment-advice / price-target markers. A bull or
-// bear point containing one is dropped — a deterministic backstop to the prompt
-// guardrail (more reliable than asking the model to self-censor, and zero extra
-// cost). Bare "买入/卖出/buy/sell" is intentionally absent: it legitimately describes
-// insider-buy or congressional-sale activity inside a point.
+// advicePhrases are unambiguous investment-advice / price-target / valuation-judgment
+// markers. A bull/bear point (deep report) or a chat prose line that contains one is
+// dropped — a deterministic backstop to the prompt guardrail (more reliable than asking
+// the model to self-censor, zero latency). Bare "买入/卖出/加仓/建仓/减仓/buy/sell" is
+// intentionally ABSENT: those describe insider-buy, 13F position-change, or congressional-
+// sale FACTS, not advice. Expanded 2026-06-20 after an adversarial red-team found hedged
+// synonyms (fair value, entry point, accumulate-at-a-price, 低估/抄底) leaking past.
 var advicePhrases = []string{
-	"目标价", "目标股价", "强烈推荐", "强烈建议", "建议买", "建议卖", "应该买", "应该卖", "值得买入", "可以买入", "立即买",
-	"price target", "target price", "strong buy", "strong sell", "should buy", "should sell", "recommend buy", "recommend sell", "must buy",
+	// ZH advice / price-target / valuation-judgment (NOT 买入/卖出/加仓/建仓/减仓 — facts).
+	"目标价", "目标股价", "目标位", "强烈推荐", "强烈建议", "建议买", "建议卖", "应该买", "应该卖",
+	"值得买入", "值得入手", "可以买入", "立即买", "逢低买入", "逢低吸纳", "抄底", "上车", "入场点",
+	"合理估值", "合理价值", "内在价值", "低估", "高估",
+	// EN advice / price-target / valuation-judgment (NOT bare buy/sell — facts).
+	"price target", "target price", "strong buy", "strong sell", "should buy", "should sell",
+	"recommend buy", "recommend sell", "must buy", "fair value", "intrinsic value",
+	"fairly valued", "undervalued", "overvalued", "entry point", "good entry", "buy the dip",
+	"compelling buy", "worth buying", "a buy here", "buy here", "deserves a position",
 }
+
+// adviceRe catches a buy-side action tied to a PRICE LEVEL ("buy at $150", "accumulate
+// below 100", "entry around $200") — always a recommendation even when no listed phrase
+// appears. Past-tense facts ("insider bought at $50") use bought/sold (not matched), and
+// a bare buy/sell with no price level is not matched either.
+var adviceRe = regexp.MustCompile(`(?i)\b(buy|buying|accumulate|accumulating|enter|entry|short)\b[\w\s]{0,12}?\b(at|above|below|around|near|under)\b\s*\$?\d`)
 
 // splitPoints turns the model's newline-joined bull/bear string into trimmed points:
 // it strips list markers, drops blanks, drops any point that trips the advice-guard,
@@ -154,7 +169,7 @@ func hasAdvice(p string) bool {
 			return true
 		}
 	}
-	return false
+	return adviceRe.MatchString(p)
 }
 
 // buildMaterial assembles the single pre-formatted material string the LLM sees,

@@ -740,7 +740,20 @@ func (l *llm) Chat(ctx context.Context, messages []ChatMessage, tools []ChatTool
 
 	msgs := make([]map[string]any, 0, len(messages))
 	for _, m := range messages {
-		mm := map[string]any{"role": m.Role, "content": m.Content}
+		mm := map[string]any{"role": m.Role}
+		if m.Role == "system" {
+			// Anthropic prompt caching (via OpenRouter): cache the large, per-thread-constant
+			// system prompt + per-ticker facts so a Haiku turn costs ~$0.001 instead of
+			// re-billing the whole prefix each turn. Other OpenAI-compatible providers accept
+			// the array content block and ignore the cache_control field, so this stays safe.
+			mm["content"] = []map[string]any{{
+				"type":          "text",
+				"text":          m.Content,
+				"cache_control": map[string]string{"type": "ephemeral"},
+			}}
+		} else {
+			mm["content"] = m.Content
+		}
 		if m.Role == "tool" {
 			mm["tool_call_id"] = m.ToolCallID
 		}
@@ -816,11 +829,12 @@ func (l *llm) Chat(ctx context.Context, messages []ChatMessage, tools []ChatTool
 			} `json:"message"`
 		} `json:"choices"`
 		Usage struct {
-			PromptTokens        int `json:"prompt_tokens"`
-			CompletionTokens    int `json:"completion_tokens"`
-			TotalTokens         int `json:"total_tokens"`
-			PromptTokensDetails struct {
-				CachedTokens int `json:"cached_tokens"`
+			PromptTokens         int `json:"prompt_tokens"`
+			CompletionTokens     int `json:"completion_tokens"`
+			TotalTokens          int `json:"total_tokens"`
+			CacheReadInputTokens int `json:"cache_read_input_tokens"` // Anthropic-native shape
+			PromptTokensDetails  struct {
+				CachedTokens int `json:"cached_tokens"` // OpenAI / OpenRouter-normalized shape
 			} `json:"prompt_tokens_details"`
 		} `json:"usage"`
 	}
@@ -830,11 +844,16 @@ func (l *llm) Chat(ctx context.Context, messages []ChatMessage, tools []ChatTool
 	if len(out.Choices) == 0 {
 		return "", nil, Usage{}, errors.New("enrich: empty chat response")
 	}
+	// Cached prompt tokens land under different keys per provider; take whichever is set.
+	cached := out.Usage.PromptTokensDetails.CachedTokens
+	if out.Usage.CacheReadInputTokens > cached {
+		cached = out.Usage.CacheReadInputTokens
+	}
 	usage := Usage{
 		PromptTokens:     out.Usage.PromptTokens,
 		CompletionTokens: out.Usage.CompletionTokens,
 		TotalTokens:      out.Usage.TotalTokens,
-		CachedTokens:     out.Usage.PromptTokensDetails.CachedTokens,
+		CachedTokens:     cached,
 	}
 	msg := out.Choices[0].Message
 	var calls []ChatToolCall

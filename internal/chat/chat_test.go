@@ -222,6 +222,54 @@ func TestAnswerAllAdviceRedirects(t *testing.T) {
 	}
 }
 
+// TestAnswerHardenedAdviceFilter covers the red-team hardening: valuation/entry synonyms
+// + a buy-action-at-a-price-level all collapse to the redirect note.
+func TestAnswerHardenedAdviceFilter(t *testing.T) {
+	cases := []struct{ name, prose string }{
+		{"fair-value", "AAPL fair value is around $250."},
+		{"buy-at-price", "I'd buy at $150 here."},
+		{"deserves-position", "For long-term holders it deserves a position."},
+		{"undervalued", "The stock looks undervalued to me."},
+		{"entry-point", "This is a great entry point."},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			llm := &scriptedLLM{enabled: true, replies: []reply{{content: tc.prose}}}
+			svc := NewService(llm, fakeFacts{sampleSheet()}, "")
+			ans, _ := svc.Answer(context.Background(), "AAPL", "en", nil, "q")
+			if textOf(ans) != redirectNote("en") {
+				t.Fatalf("%s: want redirect, got %q", tc.name, textOf(ans))
+			}
+		})
+	}
+}
+
+// TestAnswerCrossLineAdviceRedirects: advice split so NO single line trips, but the
+// joined whole-text pass catches it.
+func TestAnswerCrossLineAdviceRedirects(t *testing.T) {
+	llm := &scriptedLLM{enabled: true, replies: []reply{
+		{content: "The fundamentals look strong.\nGiven that, this is a compelling\nbuy."},
+	}}
+	svc := NewService(llm, fakeFacts{sampleSheet()}, "")
+	ans, _ := svc.Answer(context.Background(), "AAPL", "en", nil, "q")
+	if textOf(ans) != redirectNote("en") {
+		t.Fatalf("cross-line advice not caught: %q", textOf(ans))
+	}
+}
+
+// TestAnswerKeepsLegitInsiderFact: bare buy/sell describing a FACT must NOT be stripped
+// (the contract's deliberate exclusion).
+func TestAnswerKeepsLegitInsiderFact(t *testing.T) {
+	llm := &scriptedLLM{enabled: true, replies: []reply{
+		{content: "Insiders bought 12,000 shares last quarter, per Form 4."},
+	}}
+	svc := NewService(llm, fakeFacts{sampleSheet()}, "")
+	ans, _ := svc.Answer(context.Background(), "AAPL", "en", nil, "q")
+	if !strings.Contains(textOf(ans), "Insiders bought") {
+		t.Fatalf("legit insider fact was wrongly stripped: %q", textOf(ans))
+	}
+}
+
 func TestAnswerNotFoundAndDisabled(t *testing.T) {
 	// Empty fact sheet → ErrNotFound.
 	llm := &scriptedLLM{enabled: true}
