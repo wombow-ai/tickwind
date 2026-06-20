@@ -277,6 +277,14 @@ export function DeepResearchView({ticker, inline = false}: {ticker: string; inli
 
   return (
     <Shell header={header} inline={inline}>
+      {/* Prominent generating banner at the TOP: the AI prose is composed async, so
+          the data sections render instantly while the narrative streams in. Without a
+          clear top-of-report cue a (Pro) reader just sees static data then prose
+          "pops in" with no explanation — the reported poor experience. */}
+      {(prose === 'generating' || prose === 'slow') && (
+        <GeneratingBanner status={prose} onRetry={onRetryProse} dark={dark} t={t} tr={tr} />
+      )}
+
       {/* Monthly-limit note: over the per-user quota with no cached prose → the
           data-only report below is final. */}
       {prose === 'quota' && (
@@ -632,6 +640,62 @@ function ProseAffordance({
       <Loader2 size={14} className="animate-spin" />
       {tr('deep.proseGenerating')}
     </div>
+  );
+}
+
+/**
+ * The prominent, full-width banner shown at the TOP of the report while the AI prose
+ * is still being composed (async). It tells the reader the narrative is on its way and
+ * that the data below is already usable — so the prose no longer silently "pops in".
+ * In the 'slow' state (poll cap reached) it offers a keep-waiting retry.
+ */
+function GeneratingBanner({
+  status,
+  onRetry,
+  dark,
+  t,
+  tr,
+}: {
+  status: 'generating' | 'slow';
+  onRetry: () => void;
+  dark: boolean;
+  t: Tokens;
+  tr: (key: string) => string;
+}) {
+  const slow = status === 'slow';
+  return (
+    <section
+      className={cx(
+        'mb-4 flex items-center gap-3 rounded-2xl border p-4',
+        dark ? 'border-violet-500/30 bg-violet-500/[0.07]' : 'border-violet-200 bg-violet-50/70',
+      )}
+    >
+      {slow ? (
+        <RefreshCw size={18} className={cx('shrink-0', dark ? 'text-violet-300' : 'text-violet-500')} />
+      ) : (
+        <Loader2 size={18} className={cx('shrink-0 animate-spin', dark ? 'text-violet-300' : 'text-violet-500')} />
+      )}
+      <div className="min-w-0 flex-1">
+        <p className={cx('text-[13.5px] font-bold', t.text)}>
+          {slow ? tr('deep.gen.slowTitle') : tr('deep.gen.title')}
+        </p>
+        <p className={cx('mt-0.5 text-[12px] leading-relaxed', t.sub)}>
+          {slow ? tr('deep.gen.slowBody') : tr('deep.gen.body')}
+        </p>
+      </div>
+      {slow && (
+        <button
+          type="button"
+          onClick={onRetry}
+          className={cx(
+            'shrink-0 rounded-full px-3.5 py-1.5 text-[12px] font-semibold',
+            btnPrimary(dark),
+          )}
+        >
+          {tr('deep.gen.retry')}
+        </button>
+      )}
+    </section>
   );
 }
 

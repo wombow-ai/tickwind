@@ -222,6 +222,12 @@ func (l *Limiter) reject(w http.ResponseWriter, ip string) {
 	}
 	w.Header().Set("Retry-After", strconv.Itoa(retry))
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	// Belt-and-suspenders: emit CORS too, so a throttled cross-origin request degrades
+	// to a readable 429 (which the browser/JS can handle + retry) rather than an
+	// ACAO-less response the browser reports as a CORS error. The outermost
+	// CORSMiddleware already sets this, but keeping it here makes the limiter
+	// self-contained if the middleware order ever changes.
+	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.WriteHeader(http.StatusTooManyRequests)
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"error":       "rate limit exceeded",

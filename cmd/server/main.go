@@ -729,9 +729,14 @@ func main() {
 	})
 	log.Info("api rate limiter enabled", "rpm", cfg.RateLimitRPM, "burst", cfg.RateLimitBurst, "exempt", "/healthz,/v1/stream")
 
+	// CORS is the OUTERMOST layer so a rate-limiter 429 (or any 4xx/panic) still
+	// carries Access-Control-Allow-Origin — otherwise a bursty page load that trips
+	// the limiter gets an ACAO-less 429 that the browser reports as a CORS error and
+	// blanks the page. CORS also answers OPTIONS preflights before the limiter counts
+	// them, so a preflight is never the throttled request.
 	srv := &http.Server{
 		Addr:              ":" + cfg.Port,
-		Handler:           limiter.Middleware(apiServer),
+		Handler:           api.CORSMiddleware(limiter.Middleware(apiServer)),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 

@@ -606,9 +606,19 @@ func New(st store.Store, hub QuoteStream, enricher enrich.Enricher, verifier *au
 	return s
 }
 
-func (s *Server) middleware(next http.Handler) http.Handler {
+// CORSMiddleware sets permissive CORS headers and answers OPTIONS preflights with
+// 204. It MUST be wired as the OUTERMOST middleware — ahead of the rate limiter,
+// auth, and the mux — so that EVERY response (incl. a rate-limiter 429, a 401, or a
+// panic) carries Access-Control-Allow-Origin. A 429 WITHOUT it surfaces in the
+// browser as a misleading "No 'Access-Control-Allow-Origin' header" CORS error that
+// blanks the page (the root cause of the intermittent blank-page reports: a bursty
+// page load trips the limiter and the ACAO-less 429 reads as a CORS failure).
+// Short-circuiting preflights here also keeps OPTIONS from being counted/throttled by
+// the limiter, so a preflight is never the rejected request. ACAO is "*", which (by
+// spec) cannot be combined with credentials — fine here since auth uses a Bearer
+// header, not cookies.
+func CORSMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		start := time.Now()
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
@@ -616,6 +626,16 @@ func (s *Server) middleware(next http.Handler) http.Handler {
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// middleware logs each request. CORS now lives in the outermost CORSMiddleware (so
+// rate-limited / 4xx / panic responses still carry CORS headers); this remains for
+// request logging only.
+func (s *Server) middleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
 		next.ServeHTTP(w, r)
 		s.log.Info("http", "method", r.Method, "path", r.URL.Path, "dur", time.Since(start).String())
 	})
