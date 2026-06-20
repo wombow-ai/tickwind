@@ -2378,6 +2378,55 @@ export async function getScreenSignals(
   }
 }
 
+/**
+ * Backtest of a signal rule on one ticker: a disclosed HISTORICAL statistic (win rate
+ * / average forward return over `horizon` trading days / trade count / buy-and-hold
+ * baseline), NOT a prediction or advice.
+ */
+export interface SignalBacktestResult {
+  rule: string;
+  horizon: number;
+  trades: number;
+  wins: number;
+  win_rate: number; // 0..1
+  avg_return: number; // %
+  baseline: number; // buy-and-hold over the span, %
+}
+
+/** Envelope returned by `GET /v1/stocks/{ticker}/backtest`. */
+export interface SignalBacktestResponse {
+  ticker: string;
+  result?: SignalBacktestResult;
+  /** True when the screener is Pro-gated and the viewer is not Pro (hard-locked). */
+  paywall_locked?: boolean;
+}
+
+/**
+ * Backtests a signal rule over a ticker's daily candles. Resolves to `null` when the
+ * ticker has no price history / not enough to backtest (404/422), so the widget can
+ * show a graceful message. Pass the user token so a Pro viewer gets results once the
+ * paywall is live.
+ */
+export async function getBacktest(
+  ticker: string,
+  rule: string,
+  horizon: number,
+  token?: string | null,
+  abort?: AbortSignal,
+): Promise<SignalBacktestResponse | null> {
+  const q = new URLSearchParams({rule, horizon: String(horizon)});
+  try {
+    return await getJson<SignalBacktestResponse>(
+      `/v1/stocks/${encodeURIComponent(normalizeTicker(ticker))}/backtest?${q.toString()}`,
+      abort,
+      token,
+    );
+  } catch (e) {
+    if (e instanceof ApiError && (e.status === 404 || e.status === 422)) return null;
+    throw e;
+  }
+}
+
 // ── Per-user prefs (generic JSON UI-state blob) ──────────────────────────
 //
 // A small, generic per-user JSON-prefs surface. The blob is namespaced by
