@@ -1,6 +1,6 @@
 'use client';
 
-import {ChevronDown, LogOut, Menu, Moon, Search, Settings, Star, StickyNote, Sun, Wallet, X} from 'lucide-react';
+import {ChevronDown, CreditCard, LogOut, Menu, Moon, Search, Settings, Star, StickyNote, Sun, Wallet, X} from 'lucide-react';
 import Link from '@/components/LocalLink';
 import {usePathname, useRouter} from 'next/navigation';
 import {useEffect, useRef, useState} from 'react';
@@ -456,6 +456,17 @@ function AccountMenu({
               )}
             >
               <Wallet size={15} className={t.sub} /> {tr('nav.portfolio')}
+            </Link>
+            <Link
+              href="/settings#subscription"
+              onClick={() => setOpen(false)}
+              className={cx(
+                'flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-[13px]',
+                t.text,
+                t.ghost,
+              )}
+            >
+              <CreditCard size={15} className={t.sub} /> {tr('nav.subscription')}
             </Link>
             <Link
               href="/settings"

@@ -84,7 +84,7 @@ export default function SettingsPage() {
         </div>
       </section>
 
-      <section className={cx('mt-5 rounded-3xl border p-6', t.card, t.border, t.soft)}>
+      <section id="subscription" className={cx('mt-5 scroll-mt-20 rounded-3xl border p-6', t.card, t.border, t.soft)}>
         <h2 className={cx('text-[13px] font-semibold uppercase tracking-wide', t.faint)}>
           {tr('settings.subscription')}
         </h2>
