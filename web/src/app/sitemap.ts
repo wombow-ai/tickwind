@@ -161,6 +161,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     {path: '/guide', changeFrequency: 'weekly', priority: 0.6},
     {path: '/stocks', changeFrequency: 'weekly', priority: 0.6},
     {path: '/announcements', changeFrequency: 'weekly', priority: 0.5},
+    {path: '/contact', changeFrequency: 'yearly', priority: 0.3},
   ];
   // The A–Z stock directory: the hub (above) + one page per letter, aiding crawl
   // discovery of the thousands of `/stock/{t}` pages they internally link.

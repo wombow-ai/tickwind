@@ -27,6 +27,7 @@ const COLUMNS: Array<[string, Array<[string, string]>]> = [
     'footer.account',
     [
       ['nav.settings', '/settings'],
+      ['footer.contact', '/contact'],
       ['nav.login', '/login'],
       ['nav.signup', '/signup'],
     ],
