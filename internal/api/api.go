@@ -25,6 +25,7 @@ import (
 	"github.com/wombow-ai/tickwind/internal/auth"
 	"github.com/wombow-ai/tickwind/internal/billing"
 	"github.com/wombow-ai/tickwind/internal/cashtag"
+	"github.com/wombow-ai/tickwind/internal/chat"
 	"github.com/wombow-ai/tickwind/internal/clip"
 	"github.com/wombow-ai/tickwind/internal/congress"
 	"github.com/wombow-ai/tickwind/internal/congress/ptr"
@@ -435,6 +436,19 @@ type Server struct {
 	// signalScan is the whole-universe signals SCREENER source (a background cache),
 	// injected post-New via SetSignalScan. nil → /v1/screen/signals 404s.
 	signalScan SignalScanSource
+	// chatSvc is the Product B personalized-chat engine (tool loop + anti-hallucination
+	// firewall), injected post-New via SetChat. nil → /v1/stocks/{ticker}/chat 503s.
+	chatSvc *chat.Service
+	// chatMonthlyLimit is the per-Pro-user, per-ET-month MESSAGE soft-cap (SetChatLimit,
+	// default 150). Over it the chat endpoint soft-degrades (a note, not an error).
+	chatMonthlyLimit int
+	// chatRL throttles chat posts per user (burst control atop the monthly meter).
+	chatRL *rateLimiter
+	// Global per-ET-day chat-generation backstop (catastrophic LLM-cost guard), guarded
+	// by chatMu and reset on a new ET day.
+	chatMu       sync.Mutex
+	chatDayDate  string
+	chatDayCount int
 	// Move-explainer cache: the data-only explanation (Go number + evidence + canned
 	// line) is cheap, but the LLM's hedged sentence is one small generation per
 	// (ticker, ET day, lang), then served from memory — mirrors the AI digest cache.
@@ -502,7 +516,7 @@ func New(st store.Store, hub QuoteStream, enricher enrich.Enricher, verifier *au
 			admins[id] = true
 		}
 	}
-	s := &Server{store: st, hub: hub, clip: clip.NewFetcher(), enrich: enricher, auth: verifier, bars: bars, topics: topicSrc, opps: oppSrc, universe: universeSrc, gurus: guruSrc, ingestor: ingestor, symbols: symbolSrc, events: eventSrc, fundamentals: fundSrc, earnings: earningsSrc, congress: congressSrc, institutional: institutionalSrc, live: liveSub, indices: indicesSrc, short: shortSrc, briefing: briefingSrc, options: optionsSrc, thirteenf: thirteenfSrc, admins: admins, commentRL: newRateLimiter(10, 10*time.Minute), sumCache: map[string]summaryEntry{}, sumInflight: map[string]chan struct{}{}, researchCache: map[string]researchEntry{}, researchInflight: map[string]chan struct{}{}, deepResearchLimit: 1, deepResearchLimitPro: 100, moveCache: map[string]movementEntry{}, moveInflight: map[string]chan struct{}{}, meCache: map[string]materialEventsEntry{}, meInflight: map[string]chan struct{}{}, iaCache: map[string]insiderActivityEntry{}, iaInflight: map[string]chan struct{}{}, btCache: map[string]backtestEntry{}, digestCache: map[string]digestEntry{}, log: log}
+	s := &Server{store: st, hub: hub, clip: clip.NewFetcher(), enrich: enricher, auth: verifier, bars: bars, topics: topicSrc, opps: oppSrc, universe: universeSrc, gurus: guruSrc, ingestor: ingestor, symbols: symbolSrc, events: eventSrc, fundamentals: fundSrc, earnings: earningsSrc, congress: congressSrc, institutional: institutionalSrc, live: liveSub, indices: indicesSrc, short: shortSrc, briefing: briefingSrc, options: optionsSrc, thirteenf: thirteenfSrc, admins: admins, commentRL: newRateLimiter(10, 10*time.Minute), chatMonthlyLimit: 150, chatRL: newRateLimiter(20, 10*time.Minute), sumCache: map[string]summaryEntry{}, sumInflight: map[string]chan struct{}{}, researchCache: map[string]researchEntry{}, researchInflight: map[string]chan struct{}{}, deepResearchLimit: 1, deepResearchLimitPro: 100, moveCache: map[string]movementEntry{}, moveInflight: map[string]chan struct{}{}, meCache: map[string]materialEventsEntry{}, meInflight: map[string]chan struct{}{}, iaCache: map[string]insiderActivityEntry{}, iaInflight: map[string]chan struct{}{}, btCache: map[string]backtestEntry{}, digestCache: map[string]digestEntry{}, log: log}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", s.health)
 
@@ -594,6 +608,8 @@ func New(st store.Store, hub QuoteStream, enricher enrich.Enricher, verifier *au
 	mux.HandleFunc("GET /v1/stocks/{ticker}/indicator-signals", s.getStockSignals)
 	mux.HandleFunc("GET /v1/stocks/{ticker}/backtest", s.getBacktest)
 	mux.HandleFunc("GET /v1/stocks/{ticker}/research", s.getResearch)
+	mux.HandleFunc("POST /v1/stocks/{ticker}/chat", s.postChat)
+	mux.HandleFunc("GET /v1/stocks/{ticker}/chat", s.getChatHistory)
 	mux.HandleFunc("GET /v1/stocks/{ticker}/movement", s.getMovement)
 	mux.HandleFunc("GET /v1/stocks/{ticker}/material-events", s.getMaterialEvents)
 	mux.HandleFunc("GET /v1/stocks/{ticker}/insider-activity", s.getInsiderActivity)

@@ -22,6 +22,7 @@ import (
 	"github.com/wombow-ai/tickwind/internal/bluesky"
 	"github.com/wombow-ai/tickwind/internal/brapi"
 	"github.com/wombow-ai/tickwind/internal/cboe"
+	"github.com/wombow-ai/tickwind/internal/chat"
 	"github.com/wombow-ai/tickwind/internal/config"
 	"github.com/wombow-ai/tickwind/internal/congress"
 	"github.com/wombow-ai/tickwind/internal/congress/ptr"
@@ -664,6 +665,12 @@ func main() {
 		apiServer.SetDeepResearchLimit(cfg.DeepResearchMonthlyLimit)       // free: per-user, per-ET-month deep-report GENERATION quota
 		apiServer.SetDeepResearchLimitPro(cfg.DeepResearchMonthlyLimitPro) // pro: the high (≈on-demand) quota the upsell promises
 		log.Info("deep-research report enabled", "llm", enricher.Enabled(), "deep_model", cfg.LLMDeepModel, "deep_monthly_limit", cfg.DeepResearchMonthlyLimit, "deep_monthly_limit_pro", cfg.DeepResearchMonthlyLimitPro)
+
+		// Product B — personalized chat (Pro-gated, metered). Grounds on the SAME research
+		// fact sheet; uses the cheap chat client (LLM_CHAT_MODEL → falls back to deep).
+		apiServer.SetChat(chat.NewService(enricher, researchSvc, cfg.LLMChatModel))
+		apiServer.SetChatLimit(cfg.ChatMonthlyLimit)
+		log.Info("personalized chat enabled", "chat_model", cfg.LLMChatModel, "chat_monthly_limit", cfg.ChatMonthlyLimit)
 	} else {
 		log.Warn("per-stock indicator compute disabled — no price feed (Alpaca) for daily candles")
 	}

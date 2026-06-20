@@ -138,6 +138,12 @@ type Config struct {
 	// upsell promises, so this MUST exceed the free limit or the upsell is hollow.
 	DeepResearchMonthlyLimitPro int
 
+	// ChatMonthlyLimit is the per-Pro-user, per-ET-MONTH MESSAGE soft-cap for Product B
+	// (the personalized chat). Over it, the endpoint soft-degrades (a "limit reached"
+	// note, not an error). Env CHAT_MONTHLY_LIMIT, default 150 (≈$0.80/Pro/mo worst case
+	// with a cached Haiku turn; the global daily backstop bounds total spend).
+	ChatMonthlyLimit int
+
 	// Stripe billing (Pro entitlement). ALL OPTIONAL — every field defaults empty,
 	// and the billing surface stays INERT (webhook + checkout/portal endpoints are
 	// not registered, no rows ever written) until StripeSecretKey is set, exactly
@@ -261,6 +267,7 @@ func Load() Config {
 		// own default is 1) so an existing deployment keeps working unchanged.
 		DeepResearchMonthlyLimit:    envInt("DEEP_RESEARCH_MONTHLY_LIMIT", envInt("DEEP_RESEARCH_DAILY_LIMIT", 1)),
 		DeepResearchMonthlyLimitPro: envInt("DEEP_RESEARCH_MONTHLY_LIMIT_PRO", 100),
+		ChatMonthlyLimit:            envInt("CHAT_MONTHLY_LIMIT", 150),
 		StripeSecretKey:             env("STRIPE_SECRET_KEY", ""),
 		StripeWebhookSecret:         env("STRIPE_WEBHOOK_SECRET", ""),
 		StripePriceMonthly:          env("STRIPE_PRICE_MONTHLY", ""),
