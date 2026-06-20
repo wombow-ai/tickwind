@@ -13,6 +13,8 @@ import (
 	"encoding/json"
 	"errors"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/wombow-ai/tickwind/internal/enrich"
 	"github.com/wombow-ai/tickwind/internal/research"
@@ -49,11 +51,47 @@ type Service struct {
 	llm   LLM
 	facts FactSource
 	model string
+
+	// fsCache holds a recently-assembled fact sheet per (ticker, lang) so consecutive
+	// turns in a thread reuse the IDENTICAL per-ticker material. This keeps the cached
+	// system prompt prefix STABLE across turns — otherwise a fresh assemble (with a
+	// live-ticking price) changes the prefix every turn and Anthropic prompt caching
+	// never hits. TTL matches Anthropic's ~5-min ephemeral cache window.
+	mu      sync.Mutex
+	fsCache map[string]fsCacheEntry
 }
+
+type fsCacheEntry struct {
+	fs research.FactSheet
+	at time.Time
+}
+
+// chatFactTTL bounds how long a chat reuses a cached fact sheet — aligned with the
+// Anthropic ephemeral prompt-cache TTL so a thread's turns share one cacheable prefix.
+const chatFactTTL = 5 * time.Minute
 
 // NewService builds a chat Service. model may be "" to use the enricher's chat default.
 func NewService(llm LLM, facts FactSource, model string) *Service {
-	return &Service{llm: llm, facts: facts, model: model}
+	return &Service{llm: llm, facts: facts, model: model, fsCache: map[string]fsCacheEntry{}}
+}
+
+// factSheet returns the (cached, ≤chatFactTTL) fact sheet for a ticker so the per-turn
+// material — and thus the cacheable system prefix — is stable across a thread's turns.
+func (s *Service) factSheet(ctx context.Context, ticker, lang string) research.FactSheet {
+	k := ticker + "|" + lang
+	s.mu.Lock()
+	if e, ok := s.fsCache[k]; ok && time.Since(e.at) < chatFactTTL {
+		s.mu.Unlock()
+		return e.fs
+	}
+	s.mu.Unlock()
+	fs := s.facts.Report(ctx, ticker, lang)
+	if len(fs.Sections) > 0 || fs.AsOf != "" {
+		s.mu.Lock()
+		s.fsCache[k] = fsCacheEntry{fs: fs, at: time.Now()}
+		s.mu.Unlock()
+	}
+	return fs
 }
 
 // Enabled reports whether the underlying LLM is configured.
@@ -87,7 +125,7 @@ func (s *Service) Answer(ctx context.Context, ticker, lang string, history []enr
 	if !s.Enabled() {
 		return Answer{}, enrich.ErrDisabled
 	}
-	fs := s.facts.Report(ctx, ticker, lang)
+	fs := s.factSheet(ctx, ticker, lang)
 	if len(fs.Sections) == 0 && fs.AsOf == "" {
 		return Answer{}, ErrNotFound
 	}
