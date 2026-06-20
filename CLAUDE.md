@@ -507,6 +507,24 @@ feature-flagged plugin, never on the critical path. Web only.
   web build green (1060 static pages). **NOTE for future: two near-identical stock strips exist — `HomeHub`
   (home `/`) and `Board` (`/me?tab=watchlist` only); both now share `StockRow`'s toggle/hook. Don't assume an
   edit to one covers the other** (this batch's #1 initially missed HomeHub — the preview caught it).
+- **2026-06-20 — 💰 PAYWALL FULLY LIVE (real money) + indicators shipped to prod.** Owner returned, said
+  GO on all 4 decisions: deploy the indicator features · indicators fold into the SAME Pro tier · teaser/Pro
+  split delegated to me (locked: signals free-teaser 3 / screener free-teaser 5 / backtest Pro / signal
+  alerts free) · paywall go-live. **Pre-deploy adversarial review (workflow) CAUGHT A CRITICAL** before
+  pushing: the SignalScanCache scanned the WHOLE ~7k universe (not ~200) unthrottled → would storm
+  Alpaca/SEC + the 4GB VPS + starve the live poller. FIXED: scan the bounded `ingestTickers` set via a
+  TickerSource func + technicals-only compute (`StockIndicatorsTechnical`, skips SEC) + 60ms pace; +
+  screener total_matches before truncation. **Deployed:** pushed main → backend via /root/deploy-ptr.sh,
+  PUBLIC-VERIFIED healthy (signals/backtest/screener real; /indicators + /quote unbroken; VPS 3GB free,
+  zero 429s — the fix held). **Live Stripe:** owner's 1st rk_live had only Checkout+Customer Portal (the
+  runtime scopes; "Customer Portal" = renamed "Billing Portal"); made a 2nd rk_live with Products+Prices+
+  Webhook write → created live product `prod_UjhUe5F0scW7F3` + prices `price_1TkE5CEd…lAfbAT3s` ($12.99/mo) /
+  `…RgSTl7n7` ($99/yr) + webhook → set 4 STRIPE_* live on VPS .env. **Vercel gotcha:** the Ignored Build
+  Step (`git diff HEAD^ HEAD .`) canceled the FE deploy (last commit was backend-only) → pushed a
+  web-touching commit (3008983) to retrigger → FE live. **Flipped PAYWALL_ENABLED + INDICATORS_PAYWALL_ENABLED
+  = true + restarted → VERIFIED LIVE via anon:** screener 5-of-16 + paywall_locked, backtest locked, signals
+  teaser. **One owner spot-check pending:** log in → /pro → Subscribe → confirm the real live checkout page +
+  prices. Rollback = flip both flags false + restart (.env backups at /root/tickwind/.env.bak.*).
 - **2026-06-20 — INDICATORS monetization: plan C1–C6 FULLY BUILT — FOUR deterministic Pro features,
   each backend+endpoint+UI, all flag-gated + unit-tested, LOCAL/NOT DEPLOYED (ahead ~34). Full design +
   per-increment log: `docs/indicators-monetization-plan.md`; owner directive
