@@ -658,15 +658,29 @@ function DeepGate({
         <p className={cx('mx-auto mt-2 max-w-md text-[13px] leading-relaxed', t.sub)}>
           {tr('deep.gate.body').replace('{t}', ticker)}
         </p>
-        <Link
-          href="/login"
-          className={cx(
-            'mt-4 inline-flex items-center justify-center rounded-full px-5 py-2 text-[13px] font-semibold',
-            btnPrimary(dark),
-          )}
-        >
-          {tr('deep.gate.cta')}
-        </Link>
+        <div className="mt-4 flex flex-wrap items-center justify-center gap-2.5">
+          <Link
+            href="/login"
+            className={cx(
+              'inline-flex items-center justify-center rounded-full px-5 py-2 text-[13px] font-semibold',
+              btnPrimary(dark),
+            )}
+          >
+            {tr('deep.gate.cta')}
+          </Link>
+          <Link
+            href="/pro"
+            className={cx(
+              'inline-flex items-center justify-center gap-1 rounded-full border px-4 py-2 text-[13px] font-semibold',
+              dark
+                ? 'border-violet-500/40 text-violet-300 hover:bg-violet-500/10'
+                : 'border-violet-300 text-violet-600 hover:bg-violet-50',
+            )}
+          >
+            {tr('deep.paywall.cta')}
+            <ArrowRight size={13} />
+          </Link>
+        </div>
       </div>
 
       {/* public-research preview teaser (renders only when it has content) */}
@@ -724,17 +738,36 @@ function DeepSection({
   // Pro-paywall: a locked section shows only its title + an unlock hint (the Go
   // backend already stripped its prose/facts for the free tier).
   if (sec.locked) {
+    // The locked card IS the upgrade affordance — clickable straight to /pro (the
+    // most natural click target at the point of friction).
     return (
-      <section
+      <Link
+        href="/pro"
         id={sec.key}
-        className={cx('scroll-mt-20 rounded-2xl border border-dashed p-5', t.card, t.border, t.soft)}
+        className={cx(
+          'group block scroll-mt-20 rounded-2xl border border-dashed p-5 transition',
+          t.card,
+          t.border,
+          t.soft,
+          dark
+            ? 'hover:border-violet-500/50 hover:bg-violet-500/[0.05]'
+            : 'hover:border-violet-300 hover:bg-violet-50/60',
+        )}
       >
         <h2 className={cx('flex items-center gap-1.5 text-[15px] font-bold', t.sub)}>
           <Lock size={14} className={dark ? 'text-violet-300' : 'text-violet-500'} />
           {title}
         </h2>
-        <p className={cx('mt-1.5 text-[12.5px]', t.faint)}>{tr('deep.locked.section')}</p>
-      </section>
+        <p
+          className={cx(
+            'mt-1.5 flex items-center gap-1 text-[12.5px] font-semibold',
+            dark ? 'text-violet-300' : 'text-violet-600',
+          )}
+        >
+          {tr('deep.locked.section')}
+          <ArrowRight size={13} className="transition group-hover:translate-x-0.5" />
+        </p>
+      </Link>
     );
   }
 
