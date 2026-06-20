@@ -1,13 +1,60 @@
 package billing
 
 import (
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 )
+
+// TestSubscriptionPeriodEnd checks the item-level current_period_end fallback (newer
+// Stripe API versions carry it on the line item, not the subscription).
+func TestSubscriptionPeriodEnd(t *testing.T) {
+	var top Subscription
+	top.CurrentPeriodEnd = 100
+	if top.PeriodEnd() != 100 {
+		t.Errorf("top-level period end = %d, want 100", top.PeriodEnd())
+	}
+	var item Subscription
+	item.Items.Data = append(item.Items.Data, struct {
+		CurrentPeriodEnd int64 `json:"current_period_end"`
+		Price            struct {
+			ID        string `json:"id"`
+			Recurring struct {
+				Interval string `json:"interval"`
+			} `json:"recurring"`
+		} `json:"price"`
+	}{CurrentPeriodEnd: 200})
+	if item.PeriodEnd() != 200 {
+		t.Errorf("item-level period end = %d, want 200", item.PeriodEnd())
+	}
+	var none Subscription
+	if none.PeriodEnd() != 0 {
+		t.Errorf("no period end = %d, want 0", none.PeriodEnd())
+	}
+}
+
+// TestListSubscriptionsRefusesTruncation ensures a never-ending has_more (more than
+// maxPages) returns an ERROR rather than a silently-partial slice — the reconciler must
+// never reverse-revoke users off a truncated list.
+func TestListSubscriptionsRefusesTruncation(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		// Always claim more pages with a stable cursor id → forces the page cap.
+		io.WriteString(w, `{"object":"list","has_more":true,"data":[{"id":"sub_x","customer":"cus_x","status":"active"}]}`)
+	}))
+	defer srv.Close()
+	s := New(Config{SecretKey: "sk_test_x", APIBaseURL: srv.URL})
+	if _, err := s.ListSubscriptions(context.Background()); err == nil || !strings.Contains(err.Error(), "truncated") {
+		t.Fatalf("want a truncation error, got %v", err)
+	}
+}
 
 // sign produces a valid Stripe-Signature header for a payload at time t.
 func sign(secret string, payload []byte, t time.Time) string {

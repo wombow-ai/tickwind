@@ -1274,6 +1274,31 @@ func (s *Store) GetSubscriptionByCustomer(ctx context.Context, customerID string
 	return s.scanSubscription(ctx, `WHERE stripe_customer_id = $1`, customerID)
 }
 
+// ListProSubscriptions returns every subscription whose tier is pro OR whose status
+// still entitles (active/trialing/past_due) — the rows the reconciler must check for a
+// vanished Stripe customer.
+func (s *Store) ListProSubscriptions(ctx context.Context) ([]store.Subscription, error) {
+	const q = `SELECT user_id, stripe_customer_id, stripe_subscription_id, status, tier, price_id, plan_interval, current_period_end, cancel_at_period_end, updated_at FROM subscriptions WHERE tier = 'pro' OR status IN ('active','trialing','past_due')`
+	rows, err := s.pool.Query(ctx, q)
+	if err != nil {
+		return nil, fmt.Errorf("postgres: list pro subscriptions: %w", err)
+	}
+	defer rows.Close()
+	var out []store.Subscription
+	for rows.Next() {
+		var sub store.Subscription
+		if err := rows.Scan(
+			&sub.UserID, &sub.StripeCustomerID, &sub.StripeSubscriptionID, &sub.Status,
+			&sub.Tier, &sub.PriceID, &sub.Interval, &sub.CurrentPeriodEnd,
+			&sub.CancelAtPeriodEnd, &sub.UpdatedAt,
+		); err != nil {
+			return nil, fmt.Errorf("postgres: scan pro subscription: %w", err)
+		}
+		out = append(out, sub)
+	}
+	return out, rows.Err()
+}
+
 func (s *Store) scanSubscription(ctx context.Context, where, arg string) (store.Subscription, bool, error) {
 	const cols = `SELECT user_id, stripe_customer_id, stripe_subscription_id, status, tier, price_id, plan_interval, current_period_end, cancel_at_period_end, updated_at FROM subscriptions `
 	var sub store.Subscription

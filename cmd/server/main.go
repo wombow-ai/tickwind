@@ -581,6 +581,13 @@ func main() {
 	apiServer.SetPaywallEnabled(cfg.PaywallEnabled)                     // user-facing Pro paywall; OFF until go-live
 	apiServer.SetIndicatorsPaywallEnabled(cfg.IndicatorsPaywallEnabled) // signals Pro paywall; OFF until go-live
 	log.Info("billing", "enabled", billingSvc.Enabled(), "webhook_enabled", billingSvc.WebhookEnabled(), "paywall", cfg.PaywallEnabled, "indicators_paywall", cfg.IndicatorsPaywallEnabled)
+	// Periodic Stripe subscription reconciler — a safety backstop that re-syncs stored
+	// tiers to Stripe's authoritative state (corrects a missed/out-of-order webhook; never
+	// changes billing). OFF by default; the goroutine also no-ops without a Stripe key.
+	if cfg.BillingReconcileEnabled {
+		go apiServer.RunBillingReconciler(ctx, 6*time.Hour)
+		log.Info("billing reconciler enabled", "every", "6h")
+	}
 
 	// Stock-applicable indicator catalog: a static, embedded metadata library
 	// (Phase 0 of the indicator engine — browse/filter only). Loaded once at

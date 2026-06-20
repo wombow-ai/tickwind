@@ -171,6 +171,13 @@ type Config struct {
 	// the two paid points can go live separately.
 	IndicatorsPaywallEnabled bool
 
+	// BillingReconcileEnabled turns ON the periodic Stripe subscription reconciler — a
+	// safety backstop that re-syncs each user's stored tier to Stripe's authoritative
+	// subscription state (it never CHANGES billing, only corrects our DB when a webhook
+	// was missed or delivered out of order). Default FALSE so deploying it is inert; the
+	// owner flips BILLING_RECONCILE_ENABLED=true on the VPS .env once comfortable.
+	BillingReconcileEnabled bool
+
 	// Supabase auth. SupabaseURL (e.g. https://<ref>.supabase.co) enables ES256
 	// verification via the project's JWKS — required because Supabase now signs
 	// user tokens with asymmetric keys. SupabaseJWTSecret keeps legacy HS256
@@ -274,6 +281,7 @@ func Load() Config {
 		StripePriceAnnual:           env("STRIPE_PRICE_ANNUAL", ""),
 		PaywallEnabled:              envBool("PAYWALL_ENABLED", false),
 		IndicatorsPaywallEnabled:    envBool("INDICATORS_PAYWALL_ENABLED", false),
+		BillingReconcileEnabled:     envBool("BILLING_RECONCILE_ENABLED", false),
 		SupabaseURL:                 strings.TrimRight(env("SUPABASE_URL", ""), "/"),
 		SupabaseJWTSecret:           env("SUPABASE_JWT_SECRET", ""),
 		AdminUserIDs:                splitCSVRaw(env("ADMIN_USER_IDS", "")),

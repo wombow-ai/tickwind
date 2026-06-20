@@ -281,6 +281,9 @@ func (s Split) GetSubscription(ctx context.Context, userID string) (Subscription
 func (s Split) GetSubscriptionByCustomer(ctx context.Context, customerID string) (Subscription, bool, error) {
 	return s.Market.GetSubscriptionByCustomer(ctx, customerID)
 }
+func (s Split) ListProSubscriptions(ctx context.Context) ([]Subscription, error) {
+	return s.Market.ListProSubscriptions(ctx)
+}
 func (s Split) UpsertSubscription(ctx context.Context, sub Subscription) error {
 	return s.Market.UpsertSubscription(ctx, sub)
 }

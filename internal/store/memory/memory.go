@@ -874,6 +874,19 @@ func (s *Store) GetSubscriptionByCustomer(_ context.Context, customerID string) 
 	return store.Subscription{}, false, nil
 }
 
+// ListProSubscriptions returns rows that grant (or recently granted) Pro.
+func (s *Store) ListProSubscriptions(_ context.Context) ([]store.Subscription, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	var out []store.Subscription
+	for _, sub := range s.subs {
+		if sub.Tier == "pro" || sub.Status == "active" || sub.Status == "trialing" || sub.Status == "past_due" {
+			out = append(out, sub)
+		}
+	}
+	return out, nil
+}
+
 // UpsertSubscription writes the full entitlement row, keyed by user_id.
 func (s *Store) UpsertSubscription(_ context.Context, sub store.Subscription) error {
 	s.mu.Lock()

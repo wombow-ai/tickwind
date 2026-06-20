@@ -168,7 +168,10 @@ type Subscription struct {
 	CurrentPeriodEnd  int64  `json:"current_period_end"`
 	Items             struct {
 		Data []struct {
-			Price struct {
+			// Newer Stripe API versions moved current_period_end OFF the subscription
+			// onto the line item; we read both and prefer the top-level (PeriodEnd).
+			CurrentPeriodEnd int64 `json:"current_period_end"`
+			Price            struct {
 				ID        string `json:"id"`
 				Recurring struct {
 					Interval string `json:"interval"`
@@ -176,6 +179,19 @@ type Subscription struct {
 			} `json:"price"`
 		} `json:"data"`
 	} `json:"items"`
+}
+
+// PeriodEnd returns the subscription's current-period-end unix ts, falling back to the
+// first line item's value (newer Stripe API versions carry it there, not on the sub). 0
+// if neither is set.
+func (sub Subscription) PeriodEnd() int64 {
+	if sub.CurrentPeriodEnd > 0 {
+		return sub.CurrentPeriodEnd
+	}
+	if len(sub.Items.Data) > 0 {
+		return sub.Items.Data[0].CurrentPeriodEnd
+	}
+	return 0
 }
 
 // PriceID returns the subscription's first line-item price id (the plan), "" if none.
@@ -281,6 +297,45 @@ func (s *Service) GetSubscription(ctx context.Context, subID string) (Subscripti
 		return Subscription{}, err
 	}
 	return sub, nil
+}
+
+// ListSubscriptions fetches ALL subscriptions from Stripe (any status), following
+// pagination via the starting_after cursor. The reconciler uses this to re-sync our
+// stored tiers against Stripe's authoritative state. Bounded by maxPages so a runaway
+// cursor (or an enormous account) can never loop forever.
+func (s *Service) ListSubscriptions(ctx context.Context) ([]Subscription, error) {
+	const pageSize = 100
+	const maxPages = 100 // 10k subscriptions hard cap — far beyond any realistic size
+	var out []Subscription
+	startingAfter := ""
+	for page := 0; page < maxPages; page++ {
+		q := url.Values{}
+		q.Set("status", "all")
+		q.Set("limit", strconv.Itoa(pageSize))
+		if startingAfter != "" {
+			q.Set("starting_after", startingAfter)
+		}
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, s.baseURL+"/v1/subscriptions?"+q.Encode(), nil)
+		if err != nil {
+			return nil, err
+		}
+		var resp struct {
+			Data    []Subscription `json:"data"`
+			HasMore bool           `json:"has_more"`
+		}
+		if err := s.do(req, "/v1/subscriptions", &resp); err != nil {
+			return nil, err
+		}
+		out = append(out, resp.Data...)
+		if !resp.HasMore || len(resp.Data) == 0 {
+			return out, nil
+		}
+		startingAfter = resp.Data[len(resp.Data)-1].ID
+	}
+	// Hit the page cap while Stripe still has more: a PARTIAL list. Refuse it rather than
+	// return silently truncated data — the reconciler must never reverse-revoke users off
+	// an incomplete snapshot.
+	return nil, fmt.Errorf("billing: subscription list exceeded %d pages — refusing a truncated result", maxPages)
 }
 
 // do sets the secret-key bearer, executes the request, and decodes the JSON response.

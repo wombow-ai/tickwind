@@ -168,8 +168,8 @@ func applyStripeSub(target *store.Subscription, ss billing.Subscription) {
 	target.PriceID = ss.PriceID()
 	target.Interval = ss.Interval()
 	target.CancelAtPeriodEnd = ss.CancelAtPeriodEnd
-	if ss.CurrentPeriodEnd > 0 {
-		target.CurrentPeriodEnd = time.Unix(ss.CurrentPeriodEnd, 0)
+	if pe := ss.PeriodEnd(); pe > 0 {
+		target.CurrentPeriodEnd = time.Unix(pe, 0)
 	}
 }
 

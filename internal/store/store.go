@@ -500,6 +500,11 @@ type Store interface {
 	GetSubscription(ctx context.Context, userID string) (Subscription, bool, error)
 	GetSubscriptionByCustomer(ctx context.Context, customerID string) (Subscription, bool, error)
 	UpsertSubscription(ctx context.Context, sub Subscription) error
+	// ListProSubscriptions returns every subscription that currently grants (or recently
+	// granted) Pro — tier="pro" or an entitling status — so the reconciler can revoke any
+	// whose Stripe customer has vanished from the authoritative list (a permanently-missed
+	// cancel the webhook never delivered).
+	ListProSubscriptions(ctx context.Context) ([]Subscription, error)
 	// MarkStripeEventSeen records a webhook event id for idempotency; it returns
 	// fresh=true the FIRST time an id is seen (the caller then processes it) and
 	// false if it was already recorded (skip — Stripe delivers at-least-once).
