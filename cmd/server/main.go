@@ -551,10 +551,6 @@ func main() {
 		go oppIngestor.Run(ctx)
 		go ingest.NewUniverseIngestor(priceClient, symbolCache, universeCache, cfg.UniverseSweepEvery, log).Run(ctx)
 		log.Info("opportunity board enabled (SEC insider buys)", "backfill_days", cfg.OpportunityBackfillDays)
-
-		// Alert evaluator: checks active user alerts against the latest price.
-		go ingest.NewAlertEvaluator(st, bars, 2*time.Minute, log).Run(ctx)
-		log.Info("alert evaluator enabled", "every", "2m")
 	} else {
 		log.Warn("ALPACA_API_KEY/SECRET not set — price polling + opportunity board disabled")
 	}
@@ -616,6 +612,12 @@ func main() {
 		signalScan := ingest.NewSignalScanCache(computer, universeCache, log)
 		go signalScan.Run(ctx)
 		apiServer.SetSignalScan(signalScan)
+
+		// Alert evaluator: checks active user alerts against the latest price AND the
+		// deterministic signals (golden/death cross, RSI extremes, …) from signalScan.
+		// Constructed here (not in the price block) so it can read the signals cache.
+		go ingest.NewAlertEvaluator(st, bars, signalScan, 2*time.Minute, log).Run(ctx)
+		log.Info("alert evaluator enabled", "every", "2m", "signal_alerts", true)
 
 		// Deep-research report (R2): a Go-assembled, source-attributed fact sheet
 		// plus optional per-section LLM prose. The data-only report serves regardless

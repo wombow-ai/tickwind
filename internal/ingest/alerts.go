@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/wombow-ai/tickwind/internal/indicators"
 	"github.com/wombow-ai/tickwind/internal/store"
 )
 
@@ -20,20 +21,61 @@ type PriceLatest interface {
 	LatestQuote(ctx context.Context, ticker string) (store.Quote, bool, error)
 }
 
+// AlertSignalSource returns a ticker's latest deterministic signals (SignalScanCache
+// satisfies it). Optional — when nil, signal-condition alerts never fire.
+type AlertSignalSource interface {
+	SignalsFor(ticker string) []indicators.Signal
+}
+
+// signalAlertSpec maps each signal-condition alert kind to the screen query that
+// satisfies it. A kind fires when the ticker has ≥1 signal matching the query. These
+// are deterministic (a signal is a Go rule) — anti-hallucination-safe, no advice.
+var signalAlertSpec = map[string]indicators.SignalScreen{
+	"golden_cross":   {SignalID: "technical.ma-cross", Direction: indicators.DirBullish},
+	"death_cross":    {SignalID: "technical.ma-cross", Direction: indicators.DirBearish},
+	"rsi_oversold":   {SignalID: "technical.rsi", Direction: indicators.DirBullish},
+	"rsi_overbought": {SignalID: "technical.rsi", Direction: indicators.DirBearish},
+	"signal_bullish": {Direction: indicators.DirBullish},
+	"signal_bearish": {Direction: indicators.DirBearish},
+}
+
+// IsSignalAlertKind reports whether a kind is a signal-condition alert (vs a
+// price/filing alert). Exported so the api layer can validate it against the same set.
+func IsSignalAlertKind(kind string) bool {
+	_, ok := signalAlertSpec[kind]
+	return ok
+}
+
+// signalAlertHit reports whether any of a ticker's signals satisfies the alert kind.
+func signalAlertHit(kind string, sigs []indicators.Signal) bool {
+	spec, ok := signalAlertSpec[kind]
+	if !ok {
+		return false
+	}
+	for _, s := range sigs {
+		if spec.Matches(s) {
+			return true
+		}
+	}
+	return false
+}
+
 // AlertEvaluator periodically checks active user alerts against the latest price
 // and stamps matches as triggered. Runs in its own goroutine off the request
 // path (like the pruner / opportunity ingestor). Currently handles price_above /
 // price_below; pct_move and new_filing are added next.
 type AlertEvaluator struct {
-	store  AlertStore
-	prices PriceLatest
-	every  time.Duration
-	log    *slog.Logger
+	store   AlertStore
+	prices  PriceLatest
+	signals AlertSignalSource // optional; nil → signal-condition alerts never fire
+	every   time.Duration
+	log     *slog.Logger
 }
 
-// NewAlertEvaluator builds the evaluator; every is the check cadence.
-func NewAlertEvaluator(st AlertStore, prices PriceLatest, every time.Duration, log *slog.Logger) *AlertEvaluator {
-	return &AlertEvaluator{store: st, prices: prices, every: every, log: log}
+// NewAlertEvaluator builds the evaluator; every is the check cadence. signals may be
+// nil (then signal-condition alert kinds simply never fire).
+func NewAlertEvaluator(st AlertStore, prices PriceLatest, signals AlertSignalSource, every time.Duration, log *slog.Logger) *AlertEvaluator {
+	return &AlertEvaluator{store: st, prices: prices, signals: signals, every: every, log: log}
 }
 
 // Run blocks until ctx is cancelled.
@@ -54,10 +96,12 @@ func (e *AlertEvaluator) Run(ctx context.Context) {
 // tickerData caches a ticker's latest quote + newest filing time for one
 // evaluate cycle (fetched lazily, once per ticker).
 type tickerData struct {
-	q          store.Quote
-	haveQuote  bool
-	lastFiling time.Time
-	haveFiling bool
+	q           store.Quote
+	haveQuote   bool
+	lastFiling  time.Time
+	haveFiling  bool
+	signals     []indicators.Signal
+	haveSignals bool
 }
 
 func (e *AlertEvaluator) evaluate(ctx context.Context) {
@@ -79,7 +123,8 @@ func (e *AlertEvaluator) evaluate(ctx context.Context) {
 			cache[a.Ticker] = d
 		}
 		var hit bool
-		if a.Kind == "new_filing" {
+		switch {
+		case a.Kind == "new_filing":
 			if !d.haveFiling {
 				if fs, ferr := e.store.ListFilings(ctx, a.Ticker, 5); ferr == nil {
 					for _, f := range fs {
@@ -91,7 +136,15 @@ func (e *AlertEvaluator) evaluate(ctx context.Context) {
 				d.haveFiling = true
 			}
 			hit = !d.lastFiling.IsZero() && d.lastFiling.After(a.CreatedAt)
-		} else {
+		case IsSignalAlertKind(a.Kind):
+			if !d.haveSignals {
+				if e.signals != nil {
+					d.signals = e.signals.SignalsFor(a.Ticker)
+				}
+				d.haveSignals = true
+			}
+			hit = signalAlertHit(a.Kind, d.signals)
+		default:
 			if !d.haveQuote {
 				if q, found, qerr := e.prices.LatestQuote(ctx, a.Ticker); qerr == nil && found {
 					d.q = q

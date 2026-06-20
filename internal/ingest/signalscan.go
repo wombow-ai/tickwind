@@ -105,6 +105,15 @@ func (c *SignalScanCache) scan(ctx context.Context) {
 	c.log.Debug("signal scan refreshed", "tickers", scanned, "with_signals", len(next))
 }
 
+// SignalsFor returns a ticker's cached signals (nil if the ticker is not in the latest
+// scan — e.g. not in the universe, or before the first scan). Cache-read only, no
+// compute — used by the alert evaluator to check signal-condition alerts cheaply.
+func (c *SignalScanCache) SignalsFor(ticker string) []indicators.Signal {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.bySignal[ticker]
+}
+
 // Screen filters the latest cached scan by the query and returns the matches plus
 // when the scan was built (zero time before the first scan completes). Instant — no
 // compute, no I/O.

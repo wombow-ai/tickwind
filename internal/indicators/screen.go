@@ -16,8 +16,8 @@ type SignalScreen struct {
 	SignalID string
 }
 
-// matches reports whether a single signal satisfies the (AND-ed) query filters.
-func (q SignalScreen) matches(s Signal) bool {
+// Matches reports whether a single signal satisfies the (AND-ed) query filters.
+func (q SignalScreen) Matches(s Signal) bool {
 	if q.Direction != "" && s.Direction != q.Direction {
 		return false
 	}
@@ -44,7 +44,7 @@ func ScreenSignals(bySignal map[string][]Signal, q SignalScreen) []SignalMatch {
 	for ticker, sigs := range bySignal {
 		var matched []Signal
 		for _, s := range sigs {
-			if q.matches(s) {
+			if q.Matches(s) {
 				matched = append(matched, s)
 			}
 		}

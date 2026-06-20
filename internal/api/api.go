@@ -951,9 +951,13 @@ func (s *Server) deleteNote(w http.ResponseWriter, r *http.Request) {
 
 // ── Per-user: alerts ─────────────────────────────────────────────────────
 
-// validAlertKinds gates the alert types the evaluator (added next) understands.
+// validAlertKinds gates the alert types the evaluator understands. The price/filing
+// kinds use Threshold; the signal-condition kinds (golden_cross … signal_bearish) are
+// self-describing and ignore Threshold (gated via ingest.IsSignalAlertKind below).
 var validAlertKinds = map[string]bool{
 	"price_above": true, "price_below": true, "pct_move": true, "new_filing": true,
+	"golden_cross": true, "death_cross": true, "rsi_oversold": true,
+	"rsi_overbought": true, "signal_bullish": true, "signal_bearish": true,
 }
 
 func (s *Server) postAlert(w http.ResponseWriter, r *http.Request) {
@@ -979,7 +983,9 @@ func (s *Server) postAlert(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, errBody("invalid alert kind"))
 		return
 	}
-	if req.Kind != "new_filing" && req.Threshold <= 0 {
+	// Threshold is required only for the price kinds; new_filing and the signal-
+	// condition kinds are self-describing and ignore it.
+	if req.Kind != "new_filing" && !ingest.IsSignalAlertKind(req.Kind) && req.Threshold <= 0 {
 		writeJSON(w, http.StatusBadRequest, errBody("threshold must be positive"))
 		return
 	}
