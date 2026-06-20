@@ -2,8 +2,8 @@
 
 import {ChevronDown, Search} from 'lucide-react';
 import Link from '@/components/LocalLink';
-import {useMemo, useState} from 'react';
-import {indicatorSlug, type Indicator, type IndicatorFacets} from '@/lib/api';
+import {useEffect, useMemo, useState} from 'react';
+import {getIndicators, indicatorSlug, type Indicator, type IndicatorFacets} from '@/lib/api';
 import {useLang, useT} from '@/lib/i18n';
 import {useDark} from '@/lib/theme';
 import {cx, tok} from '@/lib/ui';
@@ -225,9 +225,36 @@ export function IndicatorLibrary({
   const [domain, setDomain] = useState('');
   const [priority, setPriority] = useState('');
 
+  // Self-healing fallback: the catalog is fetched server-side (ISR). If that render
+  // happened while the API was momentarily down (e.g. mid-deploy), the page baked an
+  // EMPTY catalog for the 24h revalidate window. When `initial` is empty, fetch the
+  // (now-healthy) catalog on the client so the library populates instead of showing
+  // "no indicators". No-op when the SSR catalog came through.
+  const [fallback, setFallback] = useState<{
+    indicators: Indicator[];
+    facets: IndicatorFacets;
+    total: number;
+  } | null>(null);
+  useEffect(() => {
+    if (initial.length > 0) return;
+    const c = new AbortController();
+    getIndicators({}, c.signal)
+      .then(r => {
+        if (r && r.indicators.length > 0) {
+          setFallback({indicators: r.indicators, facets: r.facets, total: r.total});
+        }
+      })
+      .catch(() => {});
+    return () => c.abort();
+  }, [initial]);
+
+  const items = fallback?.indicators ?? initial;
+  const facetData = fallback?.facets ?? facets;
+  const totalCount = fallback?.total ?? total;
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return initial.filter(ind => {
+    return items.filter(ind => {
       if (domain && ind.domain !== domain) return false;
       if (priority && ind.priority !== priority) return false;
       if (q) {
@@ -236,7 +263,7 @@ export function IndicatorLibrary({
       }
       return true;
     });
-  }, [initial, query, domain, priority]);
+  }, [items, query, domain, priority]);
 
   // Group the filtered set by domain, in canonical order; P0-first within domain
   // surfaces the core indicators at the top of each group.
@@ -259,7 +286,7 @@ export function IndicatorLibrary({
   }, [filtered]);
 
   const facetCount = (kind: 'domains' | 'priorities', value: string): number =>
-    facets[kind]?.find(f => f.value === value)?.count ?? 0;
+    facetData[kind]?.find(f => f.value === value)?.count ?? 0;
 
   const hasFilters = !!(query || domain || priority);
   // When the user has narrowed down (search or a single domain), open all
@@ -293,7 +320,7 @@ export function IndicatorLibrary({
       {/* Domain + priority filter chips */}
       <div className="mb-2 flex flex-wrap items-center gap-1.5">
         <button onClick={() => setDomain('')} className={chip(!domain)}>
-          {tr('ind.allDomains')} · {total}
+          {tr('ind.allDomains')} · {totalCount}
         </button>
         {DOMAINS.map(d => (
           <button key={d} onClick={() => setDomain(domain === d ? '' : d)} className={chip(domain === d)}>
@@ -318,7 +345,7 @@ export function IndicatorLibrary({
 
       <div className="mb-4 flex items-center justify-between">
         <p className={cx('text-[12px]', t.faint)}>
-          {tr('ind.matches').replace('{n}', String(filtered.length)).replace('{total}', String(total))}
+          {tr('ind.matches').replace('{n}', String(filtered.length)).replace('{total}', String(totalCount))}
         </p>
         {hasFilters && (
           <button
