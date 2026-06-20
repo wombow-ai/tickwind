@@ -219,9 +219,22 @@ func writeSection(sb *strings.Builder, sec SectionFacts, lang string) {
 			label = f.LabelZH
 		}
 		if f.Status == StatusOK {
-			src := ""
+			// Citation bracket carries the source AND the per-fact freshness stamp. The
+			// single-section tool path (FactsForSection → this) has no sheet-level "As of:"
+			// line and no <facts> block for cross-ticker get_stock_facts, so without this the
+			// model would quote a ~45-day-stale 13F / FINRA settlement figure with no
+			// traceable vintage. Facts within one section have different vintages (a live
+			// price vs a 13F quarter), so the stamp is per-fact, not sheet-level.
+			var cite []string
 			if f.Source != "" {
-				src = " [" + f.Source + "]"
+				cite = append(cite, f.Source)
+			}
+			if f.AsOf != "" {
+				cite = append(cite, pickLang(lang, "as of ", "截至 ")+f.AsOf)
+			}
+			src := ""
+			if len(cite) > 0 {
+				src = " [" + strings.Join(cite, ", ") + "]"
 			}
 			fmt.Fprintf(sb, "- %s: %s%s\n", label, f.Value, src)
 		} else {

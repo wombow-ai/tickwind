@@ -109,6 +109,38 @@ func TestAnswerGetFactsToolRoundTrip(t *testing.T) {
 	}
 }
 
+// TestAnswerGetFactsCarriesAsOf guards the staleness fix: a fact that carries a
+// freshness stamp (e.g. a ~45-day-stale 13F holder) must surface its as-of inside
+// the citation bracket in the tool result, so the model never quotes it as current
+// with no traceable vintage. (get_facts → FactsForSection → writeSection.)
+func TestAnswerGetFactsCarriesAsOf(t *testing.T) {
+	sheet := research.FactSheet{
+		Ticker: "AAPL", Name: "Apple", AsOf: "2026-06-20", PriceLabel: "$200",
+		Sections: []research.SectionFacts{
+			{Key: "flows", TitleEN: "Smart Money", TitleZH: "资金面", Facts: []research.Fact{
+				{Key: "top13f", LabelEN: "Top institutional holder", Value: "Berkshire 22%", Status: research.StatusOK, Source: "SEC 13F", AsOf: "2026-03-31"},
+			}},
+		},
+	}
+	llm := &scriptedLLM{enabled: true, replies: []reply{
+		{calls: []enrich.ChatToolCall{{ID: "c1", Name: "get_facts", Arguments: `{"section":"flows"}`}}},
+		{content: "Berkshire holds 22%."},
+	}}
+	svc := NewService(llm, fakeFacts{sheet}, nil, "")
+	if _, err := svc.Answer(context.Background(), "u", "AAPL", "en", nil, "who holds it?", true); err != nil {
+		t.Fatalf("Answer: %v", err)
+	}
+	var toolMsg string
+	for _, m := range llm.gotMessages[1] {
+		if m.Role == "tool" {
+			toolMsg = m.Content
+		}
+	}
+	if !strings.Contains(toolMsg, "[SEC 13F, as of 2026-03-31]") {
+		t.Fatalf("tool result missing per-fact as-of stamp: %q", toolMsg)
+	}
+}
+
 func TestAnswerSurfaceWidget(t *testing.T) {
 	llm := &scriptedLLM{enabled: true, replies: []reply{
 		{calls: []enrich.ChatToolCall{{ID: "c1", Name: "surface_widget", Arguments: `{"type":"kline","range":"1Y"}`}}},
