@@ -10,6 +10,7 @@ import {
 import {SITE_URL} from '@/lib/config';
 import {GUIDES} from '@/lib/guides';
 import {SCREEN_PRESETS} from '@/lib/presets';
+import {SIGNAL_SCREEN_PRESETS} from '@/lib/signalPresets';
 import {popularTickers, quoteBearingTickers, STOCK_DIRECTORY_LETTERS} from '@/lib/pseo';
 
 // Regenerate hourly so newly-trending tickers enter the sitemap without a deploy.
@@ -147,6 +148,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     {path: '/smart-money', changeFrequency: 'daily', priority: 0.7},
     {path: '/hot', changeFrequency: 'hourly', priority: 0.7},
     {path: '/screen', changeFrequency: 'daily', priority: 0.6},
+    {path: '/screen/signals', changeFrequency: 'daily', priority: 0.6},
     {path: '/calendar/earnings', changeFrequency: 'daily', priority: 0.6},
     {path: '/calendar/ipo', changeFrequency: 'daily', priority: 0.6},
     {path: '/news', changeFrequency: 'hourly', priority: 0.6},
@@ -174,6 +176,12 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   // daily change frequency mirrors the interactive /screen hub.
   const presetPages: Page[] = SCREEN_PRESETS.map(p => ({
     path: `/screen/${p.key}`,
+    changeFrequency: 'daily',
+    priority: 0.6,
+  }));
+  // Curated SIGNAL-screener landing pages (`/screen/signals/{preset}`).
+  const signalPresetPages: Page[] = SIGNAL_SCREEN_PRESETS.map(p => ({
+    path: `/screen/signals/${p.key}`,
     changeFrequency: 'daily',
     priority: 0.6,
   }));
@@ -213,6 +221,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     ...staticPages,
     ...guidePages,
     ...presetPages,
+    ...signalPresetPages,
     ...stockDirectoryPages,
     ...stockPages,
     ...memberPages,
