@@ -31,6 +31,13 @@ const maxChatHistory = 400
 // tokens ≈ a couple dozen turns; a fresh thread (the reset) starts cheap again.
 const maxThreadHistoryTokens = 9000
 
+// chatTurnTimeout bounds the WHOLE chat turn (the ≤5 sequential LLM round-trips of the
+// tool loop). Every other AI surface wraps its LLM call in a deadline; chat was the only
+// unbounded one — without this a stalled upstream could hold a goroutine + LLM slot for
+// ~5×150s. 90s covers a normal multi-tool turn (Haiku) with headroom; past it the handler
+// returns a clean "try again" rather than hanging.
+const chatTurnTimeout = 90 * time.Second
+
 // estTokens is a cheap (chars/4) token estimate for the thread-budget check.
 func estTokens(msgs []enrich.ChatMessage) int {
 	chars := 0
@@ -174,7 +181,9 @@ func (s *Server) chatTurn(w http.ResponseWriter, r *http.Request, u auth.User, c
 		})
 		return
 	}
-	ans, err := s.chatSvc.Answer(r.Context(), u.ID, anchorTicker, lang, llmHist, msg, s.chatPersonalDataAllowed(r.Context(), u.ID))
+	ctx, cancel := context.WithTimeout(r.Context(), chatTurnTimeout)
+	defer cancel()
+	ans, err := s.chatSvc.Answer(ctx, u.ID, anchorTicker, lang, llmHist, msg, s.chatPersonalDataAllowed(ctx, u.ID))
 	if err != nil {
 		switch {
 		case errors.Is(err, chat.ErrNotFound):

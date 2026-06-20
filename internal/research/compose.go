@@ -70,7 +70,7 @@ func compose(ctx context.Context, fs FactSheet, enr ResearchEnricher, lang strin
 	}
 	for i := range fs.Sections {
 		if p, ok := prose[fs.Sections[i].Key]; ok {
-			fs.Sections[i].Prose = strings.TrimSpace(p)
+			fs.Sections[i].Prose = ScrubAdvice(p)
 		}
 	}
 	// The overview is a synthesis the LLM writes over all the other sections'
@@ -78,7 +78,7 @@ func compose(ctx context.Context, fs FactSheet, enr ResearchEnricher, lang strin
 	// prose plus the two-sided 看多/看空 (bull/bear) reading — prose-only, no facts of
 	// its own — so it exists only when the LLM produced it; the data-only report (LLM
 	// off) has no overview. Rendered FIRST (prepended).
-	ov := strings.TrimSpace(prose[overviewKey])
+	ov := ScrubAdvice(prose[overviewKey])
 	bull := splitPoints(prose[bullKey])
 	bear := splitPoints(prose[bearKey])
 	if ov != "" || len(bull) > 0 || len(bear) > 0 {
@@ -156,6 +156,32 @@ func splitPoints(s string) []string {
 		if len(out) >= maxBullBearPoints {
 			break
 		}
+	}
+	return out
+}
+
+// ScrubAdvice is the deterministic advice backstop for FREE PROSE (report section
+// bodies + the overview synthesis) — the same guard the bull/bear points and the chat
+// path already run. It drops any line that trips hasAdvice, then re-checks the joined
+// survivors as one string (advice phrased ACROSS lines); if that still trips, it returns
+// "" so the section degrades to its Go-owned data-only facts rather than shipping advice.
+// Without this, a price target / "undervalued" / "should buy" in the model's prose body
+// reaches the user stopped only by the system prompt.
+func ScrubAdvice(prose string) string {
+	if strings.TrimSpace(prose) == "" {
+		return ""
+	}
+	lines := strings.Split(prose, "\n")
+	kept := lines[:0]
+	for _, ln := range lines {
+		if hasAdvice(ln) {
+			continue
+		}
+		kept = append(kept, ln)
+	}
+	out := strings.TrimSpace(strings.Join(kept, "\n"))
+	if out != "" && hasAdvice(strings.ReplaceAll(out, "\n", " ")) {
+		return ""
 	}
 	return out
 }

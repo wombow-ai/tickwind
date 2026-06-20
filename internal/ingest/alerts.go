@@ -62,8 +62,9 @@ func signalAlertHit(kind string, sigs []indicators.Signal) bool {
 
 // AlertEvaluator periodically checks active user alerts against the latest price
 // and stamps matches as triggered. Runs in its own goroutine off the request
-// path (like the pruner / opportunity ingestor). Currently handles price_above /
-// price_below; pct_move and new_filing are added next.
+// path (like the pruner / opportunity ingestor). Handles price_above / price_below /
+// pct_move / new_filing plus the deterministic signal-condition kinds (golden_cross,
+// death_cross, rsi_oversold, rsi_overbought, signal_bullish, signal_bearish).
 type AlertEvaluator struct {
 	store   AlertStore
 	prices  PriceLatest

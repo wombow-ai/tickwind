@@ -483,6 +483,41 @@ func TestComposeBullBear(t *testing.T) {
 	}
 }
 
+// TestComposeScrubsAdviceFromProse asserts the deterministic advice backstop now also
+// covers the report BODY (section prose + overview), not just bull/bear points: an advice
+// line in the overview is dropped (clean lines kept), and an all-advice section paragraph
+// degrades to its data-only facts (Prose == "").
+func TestComposeScrubsAdviceFromProse(t *testing.T) {
+	src := Sources{
+		Indicators: &fakeIndicators{res: indicators.StockIndicatorsResult{
+			Indicators: []indicators.StockIndicator{okIndicator("technical.rsi", 56.3, "")},
+		}},
+	}
+	enr := &fakeEnricher{enabled: true, prose: map[string]string{
+		"overview":  "基本面稳健,营收同比增长。\n目标价 $250,强烈推荐买入。",
+		"technical": "RSI 56.3 处于中性区间。建议逢低买入,fair value $300。",
+	}}
+	composed := Compose(context.Background(), Assemble(context.Background(), "X", "zh", src), enr, "zh")
+
+	ov, ok := section(composed, overviewKey)
+	if !ok {
+		t.Fatal("overview missing")
+	}
+	if hasAdvice(ov.Prose) || strings.Contains(ov.Prose, "目标价") {
+		t.Errorf("advice leaked into overview prose: %q", ov.Prose)
+	}
+	if !strings.Contains(ov.Prose, "营收同比增长") {
+		t.Errorf("clean overview line was dropped: %q", ov.Prose)
+	}
+	tech, ok := section(composed, "technical")
+	if !ok {
+		t.Fatal("technical section missing")
+	}
+	if tech.Prose != "" {
+		t.Errorf("all-advice section prose should degrade to data-only, got: %q", tech.Prose)
+	}
+}
+
 // TestComposeNeverMutatesNumbers asserts the LLM map only touches Prose — every
 // Fact.Value and Fact.Raw is byte-for-byte identical before and after Compose,
 // even when the model returns prose AND a stray bogus number-looking key.
