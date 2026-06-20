@@ -1113,6 +1113,14 @@ func (s *Store) ListChatMessages(ctx context.Context, userID, ticker string, lim
 	return out, nil
 }
 
+// ClearChatMessages deletes the user's whole (user, ticker) chat thread.
+func (s *Store) ClearChatMessages(ctx context.Context, userID, ticker string) error {
+	if _, err := s.pool.Exec(ctx, `DELETE FROM chat_message WHERE user_id = $1 AND ticker = $2`, userID, ticker); err != nil {
+		return fmt.Errorf("postgres: clear chat messages: %w", err)
+	}
+	return nil
+}
+
 // GetChatMsgUsed returns the user's Product B chat-message count for the period (ET
 // month); 0 when there's no row (pgx.ErrNoRows is a clean zero).
 func (s *Store) GetChatMsgUsed(ctx context.Context, userID, period string) (int, error) {

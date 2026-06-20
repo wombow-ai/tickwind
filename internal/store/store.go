@@ -435,6 +435,9 @@ type Store interface {
 	// display and the windowed LLM context.
 	AppendChatMessage(ctx context.Context, m ChatMessage) error
 	ListChatMessages(ctx context.Context, userID, ticker string, limit int) ([]ChatMessage, error)
+	// ClearChatMessages deletes the user's whole thread for a ticker (the "new
+	// conversation" reset) — bounds context growth + cost when a thread gets long.
+	ClearChatMessages(ctx context.Context, userID, ticker string) error
 
 	// ChatMsgQuota is the per-user, per-ET-MONTH MESSAGE meter for Product B (Pro is
 	// soft-capped at ~150 msgs/mo). Same shape + best-effort semantics as

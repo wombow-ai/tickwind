@@ -1,12 +1,12 @@
 'use client';
 
-import {ArrowLeft, ArrowRight, Loader2, Lock, Send, ShieldCheck, Sparkles} from 'lucide-react';
+import {ArrowLeft, ArrowRight, Loader2, Lock, Plus, Send, ShieldCheck, Sparkles} from 'lucide-react';
 import {useCallback, useEffect, useRef, useState} from 'react';
 import {FundamentalsCard} from '@/components/FundamentalsCard';
 import {KLineChart} from '@/components/KLineChart';
 import Link from '@/components/LocalLink';
 import {Markdown} from '@/components/Markdown';
-import {type ChatBlock, getChatHistory, postChat} from '@/lib/api';
+import {type ChatBlock, clearChat, getChatHistory, postChat} from '@/lib/api';
 import {useAuth} from '@/lib/auth';
 import {useEntitlement} from '@/lib/entitlement';
 import {useLang, useT} from '@/lib/i18n';
@@ -82,6 +82,20 @@ export function ChatThread({ticker}: {ticker: string}) {
     [norm, lang, sending, getToken],
   );
 
+  // "New conversation": clear the persisted thread (resets the token budget so the chat
+  // stays sharp + cheap) and the local view.
+  const newConversation = useCallback(async () => {
+    try {
+      const token = await getToken();
+      await clearChat(norm, token);
+    } catch {
+      /* best-effort */
+    }
+    setMessages([]);
+    setMeter(null);
+    setErr(false);
+  }, [norm, getToken]);
+
   if (authLoading || entLoading) {
     return (
       <Wrap dark={dark} t={t} tr={tr} norm={norm} meter={null}>
@@ -108,6 +122,17 @@ export function ChatThread({ticker}: {ticker: string}) {
 
   return (
     <Wrap dark={dark} t={t} tr={tr} norm={norm} meter={meter}>
+      {messages.length > 0 && (
+        <div className="mb-3 flex justify-end">
+          <button
+            type="button"
+            onClick={newConversation}
+            className={cx('inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-medium', t.border, t.faint, dark ? 'hover:bg-slate-800/60' : 'hover:bg-slate-50')}
+          >
+            <Plus size={12} /> {tr('chat.new')}
+          </button>
+        </div>
+      )}
       <div className="space-y-4">
         {messages.length === 0 ? (
           <p className={cx('text-[13px]', t.sub)}>{tr('chat.empty')}</p>

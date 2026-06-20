@@ -17,9 +17,26 @@ import (
 // A cached Haiku turn is ~$0.005, so 500/day caps worst-case spend at ~$2.5/day.
 const chatDailyCap = 500
 
-// maxChatHistory is how many recent messages (≈ turns×2) of a thread are replayed into
-// the model context each turn (bounds input tokens; older turns drop off).
-const maxChatHistory = 20
+// maxChatHistory caps how many messages of a thread are loaded — generous so a normal
+// thread is sent in FULL (a stable, growing prefix is what lets Anthropic prompt-cache
+// the conversation; a front-sliding window would shift the prefix and break the cache).
+// The real bound is maxThreadHistoryTokens below.
+const maxChatHistory = 400
+
+// maxThreadHistoryTokens caps a single thread's replayed context (estimated). Past it the
+// turn soft-degrades with a "start a new conversation" note — bounding per-turn cost +
+// latency (this is the token-based limit, on top of the monthly message meter). ~9000
+// tokens ≈ a couple dozen turns; a fresh thread (the reset) starts cheap again.
+const maxThreadHistoryTokens = 9000
+
+// estTokens is a cheap (chars/4) token estimate for the thread-budget check.
+func estTokens(msgs []enrich.ChatMessage) int {
+	chars := 0
+	for _, m := range msgs {
+		chars += len(m.Content)
+	}
+	return chars / 4
+}
 
 // SetChat injects the Product B chat engine (nil → the chat endpoint 503s).
 func (s *Server) SetChat(svc *chat.Service) { s.chatSvc = svc }
@@ -110,9 +127,17 @@ func (s *Server) postChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Windowed history (most recent ~10 turns, oldest→newest).
+	// Full thread (stable prefix for prompt-caching), bounded by a token budget.
 	hist, _ := s.store.ListChatMessages(r.Context(), u.ID, ticker, maxChatHistory)
-	ans, err := s.chatSvc.Answer(r.Context(), ticker, lang, storeMsgsToLLM(hist), msg)
+	llmHist := storeMsgsToLLM(hist)
+	if estTokens(llmHist) > maxThreadHistoryTokens {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"blocks":      []chat.Block{{Kind: "text", Text: chatThreadFullNote(lang)}},
+			"thread_full": true,
+		})
+		return
+	}
+	ans, err := s.chatSvc.Answer(r.Context(), ticker, lang, llmHist, msg)
 	if err != nil {
 		switch {
 		case errors.Is(err, chat.ErrNotFound):
@@ -184,6 +209,20 @@ func (s *Server) getChatHistory(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"messages": out})
 }
 
+// deleteChat clears the user's whole thread for a ticker (the "new conversation" reset).
+func (s *Server) deleteChat(w http.ResponseWriter, r *http.Request) {
+	u, ok := s.requireUser(w, r)
+	if !ok {
+		return
+	}
+	ticker := strings.ToUpper(strings.TrimSpace(r.PathValue("ticker")))
+	if err := s.store.ClearChatMessages(r.Context(), u.ID, ticker); err != nil {
+		writeJSON(w, http.StatusInternalServerError, errBody(err.Error()))
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
 // storeMsgsToLLM maps persisted messages to the model history: user messages pass through
 // as text; assistant messages contribute only their PROSE (widget refs are dropped — the
 // model doesn't need them and they'd waste tokens). Empty messages are skipped.
@@ -233,6 +272,13 @@ func chatBusyNote(lang string) string {
 		return "AI 对话暂时繁忙,请稍后再试。"
 	}
 	return "Chat is briefly at capacity — please try again shortly."
+}
+
+func chatThreadFullNote(lang string) string {
+	if lang == "zh" {
+		return "这个对话已经很长了 —— 点「新对话」开个新的,保持清晰也更省 token。"
+	}
+	return "This conversation is getting long — start a new one to keep it sharp (and cheaper)."
 }
 
 func chatDisclaimer(lang string) string {

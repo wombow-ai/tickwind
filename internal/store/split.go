@@ -244,6 +244,9 @@ func (s Split) AppendChatMessage(ctx context.Context, m ChatMessage) error {
 func (s Split) ListChatMessages(ctx context.Context, userID, ticker string, limit int) ([]ChatMessage, error) {
 	return s.User.ListChatMessages(ctx, userID, ticker, limit)
 }
+func (s Split) ClearChatMessages(ctx context.Context, userID, ticker string) error {
+	return s.User.ClearChatMessages(ctx, userID, ticker)
+}
 func (s Split) GetChatMsgUsed(ctx context.Context, userID, period string) (int, error) {
 	return s.User.GetChatMsgUsed(ctx, userID, period)
 }

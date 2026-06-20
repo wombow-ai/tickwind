@@ -751,6 +751,14 @@ func (s *Store) ListChatMessages(_ context.Context, userID, ticker string, limit
 	return out, nil
 }
 
+// ClearChatMessages deletes the user's whole (user, ticker) chat thread.
+func (s *Store) ClearChatMessages(_ context.Context, userID, ticker string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.chatMsgs, chatKey(userID, ticker))
+	return nil
+}
+
 // GetChatMsgUsed returns the user's Product B chat-message count for the period (ET
 // month); 0 when there's no row. (Reuses the deepQuotaKey shape.)
 func (s *Store) GetChatMsgUsed(_ context.Context, userID, period string) (int, error) {

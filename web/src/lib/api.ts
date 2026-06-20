@@ -1397,6 +1397,8 @@ export interface ChatResponse {
   limit_reached?: boolean;
   /** The global daily cap was hit — `blocks` carries a soft note (HTTP is still 200). */
   busy?: boolean;
+  /** The thread exceeded its token budget — `blocks` says to start a new conversation. */
+  thread_full?: boolean;
 }
 
 /** One persisted turn from GET /chat (assistant turns carry parsed blocks). */
@@ -1440,6 +1442,15 @@ export async function getChatHistory(
     token,
   );
   return messages ?? [];
+}
+
+/** Clears the user's chat thread for a ticker (the "new conversation" reset). */
+export async function clearChat(ticker: string, token: string | null, signal?: AbortSignal): Promise<void> {
+  await deleteJson<{ok: boolean}>(
+    `/v1/stocks/${encodeURIComponent(normalizeTicker(ticker))}/chat`,
+    signal,
+    token,
+  );
 }
 
 /**

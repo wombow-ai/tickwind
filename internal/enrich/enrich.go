@@ -773,6 +773,22 @@ func (l *llm) Chat(ctx context.Context, messages []ChatMessage, tools []ChatTool
 		}
 		msgs = append(msgs, mm)
 	}
+	// Second cache breakpoint on the LAST message → caches the whole CONVERSATION prefix
+	// (system + facts + all prior turns), not just the system block. The system block
+	// alone (~2.9K) is below Haiku's ~4K cache minimum, so it never cached; once a thread
+	// grows past the minimum, each later turn reads the cached prefix and only pays full
+	// price for the new message (verified: a 2nd turn read 4925 cached tokens). Only a
+	// string-content message is converted (the last sent message is always a user
+	// question or a tool result — both string content).
+	if n := len(msgs); n > 0 {
+		if s, ok := msgs[n-1]["content"].(string); ok && s != "" {
+			msgs[n-1]["content"] = []map[string]any{{
+				"type":          "text",
+				"text":          s,
+				"cache_control": map[string]string{"type": "ephemeral"},
+			}}
+		}
+	}
 
 	reqBody := map[string]any{
 		"model":       chosen,
