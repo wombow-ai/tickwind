@@ -2,6 +2,13 @@
 
 Status: ✅ done · 🟡 in progress · ⬜ todo
 
+> **🟢 AI CHAT LIVE (2026-06-20)** — ✅ Product B (per-stock personalized AI chat, Research-tab entry) + ✅
+> **Product C: unified AI chat hub `/chat`** (ChatGPT/Claude-style; conversation sidebar; cross-stock grounding
+> via `get_stock_facts`; reads the user's OWN watchlist/holdings/notes; inline portfolio widgets holdings_pnl/
+> watchlist_summary/portfolio_heatmap; "Use my data" privacy toggle). Pro-gated + metered (Haiku 4.5, 150/mo).
+> All C1-C6 shipped+deployed; C6 adversarial audit found privacy/anti-hallucination/advice CLEAN (fixed 1
+> staleness + 1 prose-P&L), synthetic-Pro E2E 5/5. Anti-hallucination contract holds across free-form chat.
+
 ## Phase 0 — Backbone ✅
 - ✅ Go service skeleton (config, `store.Store` iface, ingest scheduler, HTTP API)
 - ✅ SEC EDGAR client + filings ingestion (live, verified end-to-end)

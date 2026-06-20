@@ -175,6 +175,30 @@ feature-flagged plugin, never on the critical path. Web only.
 - Full stack (server): `docker compose up -d --build`.
 
 ## Current state (update each iteration)
+- **2026-06-20 — 🟢 PRODUCT C: unified AI chat hub `/chat` LIVE (Pro-gated "one intelligence").** Evolves
+  the per-stock chat (Product B) into a ChatGPT/Claude-style hub deeply integrated with platform data. All
+  6 increments shipped+deployed+E2E-verified (commits C1 `2ac117f` → C6 `0acd77e`; see [[tickwind-product-b-chat]]).
+  **What's live:** a `/chat` hub (conversation sidebar: new/rename/delete, `?ticker=` warm-start; TopNav "Chat"
+  when authed); conversations are first-class (`conversation` table; messages conversation-keyed; legacy
+  per-(user,ticker) threads lazy-migrated). The model answers in prose over CLOSED Go tools — `get_facts`/
+  `get_stock_facts(any ticker)` (cross-stock grounding), `get_watchlist`/`get_holdings`/`get_my_notes` (the
+  user's OWN data, every store call `WHERE user_id=$1`), `surface_widget` (returns ONLY a "rendered:"
+  string — numbers never enter model context). **Portfolio widgets** (`holdings_pnl` table w/ Go-computed
+  P&L+weight, `watchlist_summary`, `portfolio_heatmap`) render from the user's own authed `/v1/holdings`+
+  `/v1/watchlist`+`useQuotes` client-side. **Privacy toggle** ("Use my data" → `chat_personal_data` pref;
+  OFF → `chatTurn` passes `allowUserData=false` → no user-data tools + systemPrompt drops the user-data rule).
+  **Anti-hallucination contract holds** across free-form chat (Go owns every number; `research.HasAdvice`
+  post-filter strips advice; widgets carry no model-visible numbers). **C6 hardening:** an adversarial Workflow
+  audit (4 finders privacy/hallucination/advice/staleness + independent skeptics) found **privacy + anti-
+  hallucination + advice CLEAN**; fixed 1 staleness finding (`writeSection` now surfaces per-fact `AsOf` in the
+  chat fact tools so the model can't quote a ~45-day-stale 13F with no vintage) + 1 prose blemish caught by the
+  live E2E (Holdings formatter now emits the Go-computed absolute unrealized P&L $, was letting the model
+  mislabel the share price). **Synthetic-Pro live E2E PASSED 5/5** (mint HS256 JWT + throwaway Pro sub on the
+  VPS, cleaned up): Pro gate (free→"Pro required", anon→401), user-data tools surfaced both portfolio widgets
+  with correct numbers, privacy-OFF→no user data/no widgets, cross-user isolation (UB→UA conv=404), cross-stock
+  valuation table. **Cost controls** unchanged (Pro gate + per-user 20/10min throttle + 150/mo meter + 500/day
+  global cap + per-thread token cap + conversation-prefix prompt caching). Model = Haiku 4.5. **Owner verify
+  pending:** real Pro session at `/chat` (allalphaplus@gmail.com is Pro).
 - **Session status (2026-06-14):** dev driven by an autonomous `/loop` (multi-subagent workflows).
   **v8 重点收费路线 R1 + R2 P0 shipped + live-verified this session:** **R1 indicator engine** —
   catalog `/v1/indicators` (282 stock-applicable, dataset-driven) + `/indicators` page; per-stock
