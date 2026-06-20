@@ -241,11 +241,14 @@ func (s Split) IncrDeepQuotaUsed(ctx context.Context, userID, period string) err
 func (s Split) AppendChatMessage(ctx context.Context, m ChatMessage) error {
 	return s.User.AppendChatMessage(ctx, m)
 }
-func (s Split) ListChatMessages(ctx context.Context, userID, ticker string, limit int) ([]ChatMessage, error) {
-	return s.User.ListChatMessages(ctx, userID, ticker, limit)
+func (s Split) ListChatMessages(ctx context.Context, conversationID string, limit int) ([]ChatMessage, error) {
+	return s.User.ListChatMessages(ctx, conversationID, limit)
 }
-func (s Split) ClearChatMessages(ctx context.Context, userID, ticker string) error {
-	return s.User.ClearChatMessages(ctx, userID, ticker)
+func (s Split) ClearChatMessages(ctx context.Context, conversationID string) error {
+	return s.User.ClearChatMessages(ctx, conversationID)
+}
+func (s Split) GetOrCreateStockConversation(ctx context.Context, userID, ticker string) (string, error) {
+	return s.User.GetOrCreateStockConversation(ctx, userID, ticker)
 }
 func (s Split) CreateConversation(ctx context.Context, userID, title, anchorTicker string) (string, error) {
 	return s.User.CreateConversation(ctx, userID, title, anchorTicker)

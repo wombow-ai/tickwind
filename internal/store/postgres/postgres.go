@@ -1074,23 +1074,26 @@ ON CONFLICT (user_id, day) DO UPDATE SET used = deep_research_quota.used + 1, up
 	return nil
 }
 
-// AppendChatMessage appends one Product B chat turn for the (user, ticker) thread.
+// AppendChatMessage appends one chat turn to a conversation + bumps its updated_at.
 func (s *Store) AppendChatMessage(ctx context.Context, m store.ChatMessage) error {
-	const q = `INSERT INTO chat_message (user_id, ticker, role, content, created_at) VALUES ($1, $2, $3, $4, now())`
-	if _, err := s.pool.Exec(ctx, q, m.UserID, m.Ticker, m.Role, m.Content); err != nil {
+	const q = `INSERT INTO chat_message (conversation_id, user_id, ticker, role, content, created_at) VALUES ($1, $2, $3, $4, $5, now())`
+	if _, err := s.pool.Exec(ctx, q, m.ConversationID, m.UserID, m.Ticker, m.Role, m.Content); err != nil {
 		return fmt.Errorf("postgres: append chat message: %w", err)
+	}
+	if _, err := s.pool.Exec(ctx, `UPDATE conversation SET updated_at = now() WHERE id = $1`, m.ConversationID); err != nil {
+		return fmt.Errorf("postgres: bump conversation: %w", err)
 	}
 	return nil
 }
 
-// ListChatMessages returns the most recent `limit` messages for the (user, ticker)
-// thread in CHRONOLOGICAL order (oldest first). limit<=0 defaults to 100.
-func (s *Store) ListChatMessages(ctx context.Context, userID, ticker string, limit int) ([]store.ChatMessage, error) {
+// ListChatMessages returns the most recent `limit` messages of a conversation in
+// CHRONOLOGICAL order (oldest first). limit<=0 defaults to 100.
+func (s *Store) ListChatMessages(ctx context.Context, conversationID string, limit int) ([]store.ChatMessage, error) {
 	if limit <= 0 {
 		limit = 100
 	}
-	const q = `SELECT user_id, ticker, role, content, created_at FROM chat_message WHERE user_id = $1 AND ticker = $2 ORDER BY id DESC LIMIT $3`
-	rows, err := s.pool.Query(ctx, q, userID, ticker, limit)
+	const q = `SELECT conversation_id, user_id, ticker, role, content, created_at FROM chat_message WHERE conversation_id = $1 ORDER BY id DESC LIMIT $2`
+	rows, err := s.pool.Query(ctx, q, conversationID, limit)
 	if err != nil {
 		return nil, fmt.Errorf("postgres: list chat messages: %w", err)
 	}
@@ -1098,27 +1101,62 @@ func (s *Store) ListChatMessages(ctx context.Context, userID, ticker string, lim
 	var out []store.ChatMessage
 	for rows.Next() {
 		var m store.ChatMessage
-		if err := rows.Scan(&m.UserID, &m.Ticker, &m.Role, &m.Content, &m.CreatedAt); err != nil {
+		var convID, ticker *string
+		if err := rows.Scan(&convID, &m.UserID, &ticker, &m.Role, &m.Content, &m.CreatedAt); err != nil {
 			return nil, fmt.Errorf("postgres: scan chat message: %w", err)
+		}
+		if convID != nil {
+			m.ConversationID = *convID
+		}
+		if ticker != nil {
+			m.Ticker = *ticker
 		}
 		out = append(out, m)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("postgres: list chat messages rows: %w", err)
 	}
-	// Fetched newest-first (to honor LIMIT); reverse to chronological.
 	for i, j := 0, len(out)-1; i < j; i, j = i+1, j-1 {
 		out[i], out[j] = out[j], out[i]
 	}
 	return out, nil
 }
 
-// ClearChatMessages deletes the user's whole (user, ticker) chat thread.
-func (s *Store) ClearChatMessages(ctx context.Context, userID, ticker string) error {
-	if _, err := s.pool.Exec(ctx, `DELETE FROM chat_message WHERE user_id = $1 AND ticker = $2`, userID, ticker); err != nil {
+// ClearChatMessages deletes a conversation's messages (keeps the conversation row).
+func (s *Store) ClearChatMessages(ctx context.Context, conversationID string) error {
+	if _, err := s.pool.Exec(ctx, `DELETE FROM chat_message WHERE conversation_id = $1`, conversationID); err != nil {
 		return fmt.Errorf("postgres: clear chat messages: %w", err)
 	}
 	return nil
+}
+
+// GetOrCreateStockConversation returns the per-(user,ticker) stock conversation id,
+// creating it (anchored to the ticker) on first use and LAZILY migrating any legacy
+// (user,ticker) messages that predate conversation_id — idempotent, per-thread, no
+// big-bang backfill.
+func (s *Store) GetOrCreateStockConversation(ctx context.Context, userID, ticker string) (string, error) {
+	var id string
+	err := s.pool.QueryRow(ctx,
+		`SELECT id FROM conversation WHERE user_id = $1 AND anchor_ticker = $2 ORDER BY created_at LIMIT 1`, userID, ticker).Scan(&id)
+	switch {
+	case err == nil:
+		return id, nil
+	case !errors.Is(err, pgx.ErrNoRows):
+		return "", fmt.Errorf("postgres: find stock conversation: %w", err)
+	}
+	id = store.NewID()
+	if _, err := s.pool.Exec(ctx,
+		`INSERT INTO conversation (id, user_id, title, anchor_ticker, created_at, updated_at) VALUES ($1, $2, $3, $3, now(), now())`,
+		id, userID, ticker); err != nil {
+		return "", fmt.Errorf("postgres: create stock conversation: %w", err)
+	}
+	// Lazy migrate legacy messages for this (user,ticker) that have no conversation_id.
+	if _, err := s.pool.Exec(ctx,
+		`UPDATE chat_message SET conversation_id = $1 WHERE user_id = $2 AND ticker = $3 AND conversation_id IS NULL`,
+		id, userID, ticker); err != nil {
+		return "", fmt.Errorf("postgres: migrate legacy chat messages: %w", err)
+	}
+	return id, nil
 }
 
 // CreateConversation inserts a new conversation owned by userID and returns its id.

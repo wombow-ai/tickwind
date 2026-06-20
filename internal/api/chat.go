@@ -1,12 +1,14 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
 	"time"
 
+	"github.com/wombow-ai/tickwind/internal/auth"
 	"github.com/wombow-ai/tickwind/internal/chat"
 	"github.com/wombow-ai/tickwind/internal/enrich"
 	"github.com/wombow-ai/tickwind/internal/store"
@@ -48,35 +50,73 @@ func (s *Server) SetChatLimit(n int) {
 	}
 }
 
-// postChat handles one Product B chat turn: POST /v1/stocks/{ticker}/chat with
-// {message, lang?}. Pro-gated, per-user throttled, monthly-metered, and bounded by a
-// global daily cap. On success it persists both turns, charges the meter, and returns
-// the assistant's ordered blocks (prose + surfaced widgets) + a meter readout.
+// chatReady checks the chat is enabled, the user is Pro, and within the burst throttle;
+// it writes the appropriate response + returns false on any failure.
+func (s *Server) chatReady(w http.ResponseWriter, r *http.Request, u auth.User) bool {
+	if s.chatSvc == nil || !s.chatSvc.Enabled() {
+		writeJSON(w, http.StatusServiceUnavailable, errBody("chat unavailable"))
+		return false
+	}
+	if s.tierOf(r.Context(), u.ID) != tierPro {
+		writeJSON(w, http.StatusPaymentRequired, map[string]any{"error": "Tickwind Pro required", "upgrade": true})
+		return false
+	}
+	if !s.chatRL.allow(u.ID) {
+		writeJSON(w, http.StatusTooManyRequests, errBody("too many messages — give it a moment"))
+		return false
+	}
+	return true
+}
+
+// postChat handles a chat turn for a STOCK conversation: POST /v1/stocks/{ticker}/chat
+// (backward-compat). It resolves the per-(user,ticker) conversation, then runs the turn.
 func (s *Server) postChat(w http.ResponseWriter, r *http.Request) {
 	u, ok := s.requireUser(w, r)
 	if !ok {
 		return
 	}
-	if s.chatSvc == nil || !s.chatSvc.Enabled() {
-		writeJSON(w, http.StatusServiceUnavailable, errBody("chat unavailable"))
+	if !s.chatReady(w, r, u) {
 		return
 	}
-	// Pro gate — Product B is a whole-feature Pro unlock (the only real cost center).
-	if s.tierOf(r.Context(), u.ID) != tierPro {
-		writeJSON(w, http.StatusPaymentRequired, map[string]any{"error": "Tickwind Pro required", "upgrade": true})
-		return
-	}
-	// Per-user burst throttle (atop the monthly meter).
-	if !s.chatRL.allow(u.ID) {
-		writeJSON(w, http.StatusTooManyRequests, errBody("too many messages — give it a moment"))
-		return
-	}
-
 	ticker := strings.ToUpper(strings.TrimSpace(r.PathValue("ticker")))
 	if ticker == "" {
 		writeJSON(w, http.StatusBadRequest, errBody("missing ticker"))
 		return
 	}
+	convID, err := s.store.GetOrCreateStockConversation(r.Context(), u.ID, ticker)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, errBody("conversation error"))
+		return
+	}
+	s.chatTurn(w, r, u, convID, ticker)
+}
+
+// postConvChat handles a chat turn for an explicit conversation: POST
+// /v1/conversations/{id}/chat. Ownership is enforced (404 if not the user's).
+func (s *Server) postConvChat(w http.ResponseWriter, r *http.Request) {
+	u, ok := s.requireUser(w, r)
+	if !ok {
+		return
+	}
+	if !s.chatReady(w, r, u) {
+		return
+	}
+	conv, found, err := s.store.GetConversation(r.Context(), u.ID, r.PathValue("id"))
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, errBody(err.Error()))
+		return
+	}
+	if !found {
+		writeJSON(w, http.StatusNotFound, errBody("conversation not found"))
+		return
+	}
+	s.chatTurn(w, r, u, conv.ID, conv.AnchorTicker)
+}
+
+// chatTurn runs the shared chat turn for a resolved conversation: decode + meter + global
+// cap + token-budget cap + answer + persist + charge. anchorTicker grounds the answer (""
+// = general/cross-stock, handled from C3). The user is already Pro-gated + throttled.
+func (s *Server) chatTurn(w http.ResponseWriter, r *http.Request, u auth.User, convID, anchorTicker string) {
 	var req struct {
 		Message string `json:"message"`
 		Lang    string `json:"lang"`
@@ -95,10 +135,9 @@ func (s *Server) postChat(w http.ResponseWriter, r *http.Request) {
 	}
 	lang := req.Lang
 	if lang != "zh" {
-		lang = "en" // English-first default
+		lang = "en"
 	}
 
-	// Per-user monthly meter (read fails OPEN → 0). Over → soft-degrade, not an error.
 	period := researchMonth()
 	used, _ := s.store.GetChatMsgUsed(r.Context(), u.ID, period)
 	if used >= s.chatMonthlyLimit {
@@ -110,7 +149,6 @@ func (s *Server) postChat(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	// Global per-ET-day backstop.
 	day := summaryDay()
 	s.chatMu.Lock()
 	if s.chatDayDate != day {
@@ -127,8 +165,7 @@ func (s *Server) postChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Full thread (stable prefix for prompt-caching), bounded by a token budget.
-	hist, _ := s.store.ListChatMessages(r.Context(), u.ID, ticker, maxChatHistory)
+	hist, _ := s.store.ListChatMessages(r.Context(), convID, maxChatHistory)
 	llmHist := storeMsgsToLLM(hist)
 	if estTokens(llmHist) > maxThreadHistoryTokens {
 		writeJSON(w, http.StatusOK, map[string]any{
@@ -137,31 +174,30 @@ func (s *Server) postChat(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	ans, err := s.chatSvc.Answer(r.Context(), ticker, lang, llmHist, msg)
+	ans, err := s.chatSvc.Answer(r.Context(), anchorTicker, lang, llmHist, msg)
 	if err != nil {
 		switch {
 		case errors.Is(err, chat.ErrNotFound):
-			writeJSON(w, http.StatusNotFound, errBody("no data for "+ticker))
+			writeJSON(w, http.StatusNotFound, errBody("no data for "+anchorTicker))
 		case errors.Is(err, enrich.ErrDisabled):
 			writeJSON(w, http.StatusServiceUnavailable, errBody("chat unavailable"))
 		default:
-			s.log.Debug("chat answer failed", "ticker", ticker, "err", err)
+			s.log.Debug("chat answer failed", "conv", convID, "err", err)
 			writeJSON(w, http.StatusBadGateway, errBody("chat failed — try again"))
 		}
 		return
 	}
 
-	// Success: persist BOTH turns, charge the meter, count the global slot.
 	blob, _ := json.Marshal(ans.Blocks)
-	_ = s.store.AppendChatMessage(r.Context(), store.ChatMessage{UserID: u.ID, Ticker: ticker, Role: "user", Content: msg})
-	_ = s.store.AppendChatMessage(r.Context(), store.ChatMessage{UserID: u.ID, Ticker: ticker, Role: "assistant", Content: string(blob)})
+	_ = s.store.AppendChatMessage(r.Context(), store.ChatMessage{ConversationID: convID, UserID: u.ID, Ticker: anchorTicker, Role: "user", Content: msg})
+	_ = s.store.AppendChatMessage(r.Context(), store.ChatMessage{ConversationID: convID, UserID: u.ID, Ticker: anchorTicker, Role: "assistant", Content: string(blob)})
 	if err := s.store.IncrChatMsgUsed(r.Context(), u.ID, period); err != nil {
 		s.log.Debug("chat meter incr failed (non-fatal)", "user", u.ID, "err", err)
 	}
 	s.chatMu.Lock()
 	s.chatDayCount++
 	s.chatMu.Unlock()
-	s.log.Info("chat", "ticker", ticker, "user", u.ID,
+	s.log.Info("chat", "ticker", anchorTicker, "conv", convID, "user", u.ID,
 		"prompt_tokens", ans.Usage.PromptTokens, "cached_tokens", ans.Usage.CachedTokens, "completion_tokens", ans.Usage.CompletionTokens)
 
 	writeJSON(w, http.StatusOK, map[string]any{
@@ -171,20 +207,20 @@ func (s *Server) postChat(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// getChatHistory returns the user's persisted thread for a ticker (GET
-// /v1/stocks/{ticker}/chat). The thread is the user's own data — no Pro gate (a
-// non-subscriber simply has none). Assistant messages are returned as parsed blocks.
-func (s *Server) getChatHistory(w http.ResponseWriter, r *http.Request) {
-	u, ok := s.requireUser(w, r)
-	if !ok {
-		return
+// findStockConv returns the user's existing conversation for a ticker WITHOUT creating
+// one (used by read/reset paths so merely viewing a stock chat doesn't litter the list).
+func (s *Server) findStockConv(ctx context.Context, userID, ticker string) string {
+	convs, _ := s.store.ListConversations(ctx, userID)
+	for _, c := range convs {
+		if c.AnchorTicker == ticker {
+			return c.ID
+		}
 	}
-	ticker := strings.ToUpper(strings.TrimSpace(r.PathValue("ticker")))
-	msgs, err := s.store.ListChatMessages(r.Context(), u.ID, ticker, 100)
-	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, errBody(err.Error()))
-		return
-	}
+	return ""
+}
+
+// writeChatMessages renders a message slice to the wire shape (assistant → parsed blocks).
+func writeChatMessages(w http.ResponseWriter, msgs []store.ChatMessage) {
 	type wireMsg struct {
 		Role   string       `json:"role"`
 		Blocks []chat.Block `json:"blocks,omitempty"`
@@ -209,14 +245,165 @@ func (s *Server) getChatHistory(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"messages": out})
 }
 
-// deleteChat clears the user's whole thread for a ticker (the "new conversation" reset).
+// getChatHistory returns the user's stock thread (GET /v1/stocks/{ticker}/chat) — the
+// user's own data, no Pro gate. Empty when the stock conversation doesn't exist yet.
+func (s *Server) getChatHistory(w http.ResponseWriter, r *http.Request) {
+	u, ok := s.requireUser(w, r)
+	if !ok {
+		return
+	}
+	ticker := strings.ToUpper(strings.TrimSpace(r.PathValue("ticker")))
+	convID := s.findStockConv(r.Context(), u.ID, ticker)
+	if convID == "" {
+		writeJSON(w, http.StatusOK, map[string]any{"messages": []any{}})
+		return
+	}
+	msgs, err := s.store.ListChatMessages(r.Context(), convID, 100)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, errBody(err.Error()))
+		return
+	}
+	writeChatMessages(w, msgs)
+}
+
+// getConvHistory returns an explicit conversation's messages (GET
+// /v1/conversations/{id}/chat). Ownership enforced (404 otherwise).
+func (s *Server) getConvHistory(w http.ResponseWriter, r *http.Request) {
+	u, ok := s.requireUser(w, r)
+	if !ok {
+		return
+	}
+	conv, found, err := s.store.GetConversation(r.Context(), u.ID, r.PathValue("id"))
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, errBody(err.Error()))
+		return
+	}
+	if !found {
+		writeJSON(w, http.StatusNotFound, errBody("conversation not found"))
+		return
+	}
+	msgs, err := s.store.ListChatMessages(r.Context(), conv.ID, 100)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, errBody(err.Error()))
+		return
+	}
+	writeChatMessages(w, msgs)
+}
+
+// deleteChat clears the user's stock thread (DELETE /v1/stocks/{ticker}/chat — the "new
+// conversation" reset). No-op when the conversation doesn't exist.
 func (s *Server) deleteChat(w http.ResponseWriter, r *http.Request) {
 	u, ok := s.requireUser(w, r)
 	if !ok {
 		return
 	}
 	ticker := strings.ToUpper(strings.TrimSpace(r.PathValue("ticker")))
-	if err := s.store.ClearChatMessages(r.Context(), u.ID, ticker); err != nil {
+	if convID := s.findStockConv(r.Context(), u.ID, ticker); convID != "" {
+		if err := s.store.ClearChatMessages(r.Context(), convID); err != nil {
+			writeJSON(w, http.StatusInternalServerError, errBody(err.Error()))
+			return
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+// convWire is the conversation list/detail wire shape.
+type convWire struct {
+	ID           string    `json:"id"`
+	Title        string    `json:"title"`
+	AnchorTicker string    `json:"anchor_ticker,omitempty"`
+	UpdatedAt    time.Time `json:"updated_at"`
+}
+
+// getConversations lists the user's conversations (GET /v1/conversations), newest first.
+func (s *Server) getConversations(w http.ResponseWriter, r *http.Request) {
+	u, ok := s.requireUser(w, r)
+	if !ok {
+		return
+	}
+	convs, err := s.store.ListConversations(r.Context(), u.ID)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, errBody(err.Error()))
+		return
+	}
+	out := make([]convWire, 0, len(convs))
+	for _, c := range convs {
+		out = append(out, convWire{ID: c.ID, Title: c.Title, AnchorTicker: c.AnchorTicker, UpdatedAt: c.UpdatedAt})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"conversations": out})
+}
+
+// postConversation creates a new conversation (POST /v1/conversations {title?,
+// anchor_ticker?}). Pro-gated (it's a chat feature). For a stock anchor it reuses the
+// existing per-(user,ticker) conversation.
+func (s *Server) postConversation(w http.ResponseWriter, r *http.Request) {
+	u, ok := s.requireUser(w, r)
+	if !ok {
+		return
+	}
+	if !s.chatReady(w, r, u) {
+		return
+	}
+	var req struct {
+		Title        string `json:"title"`
+		AnchorTicker string `json:"anchor_ticker"`
+	}
+	_ = json.NewDecoder(http.MaxBytesReader(w, r.Body, 4<<10)).Decode(&req)
+	anchor := strings.ToUpper(strings.TrimSpace(req.AnchorTicker))
+	var id string
+	var err error
+	if anchor != "" {
+		id, err = s.store.GetOrCreateStockConversation(r.Context(), u.ID, anchor)
+	} else {
+		title := strings.TrimSpace(req.Title)
+		if title == "" {
+			title = "New chat"
+		}
+		id, err = s.store.CreateConversation(r.Context(), u.ID, title, "")
+	}
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, errBody(err.Error()))
+		return
+	}
+	conv, _, _ := s.store.GetConversation(r.Context(), u.ID, id)
+	writeJSON(w, http.StatusOK, convWire{ID: conv.ID, Title: conv.Title, AnchorTicker: conv.AnchorTicker, UpdatedAt: conv.UpdatedAt})
+}
+
+// patchConversation renames a conversation (PATCH /v1/conversations/{id} {title}).
+func (s *Server) patchConversation(w http.ResponseWriter, r *http.Request) {
+	u, ok := s.requireUser(w, r)
+	if !ok {
+		return
+	}
+	var req struct {
+		Title string `json:"title"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 2<<10)).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, errBody("bad request"))
+		return
+	}
+	title := strings.TrimSpace(req.Title)
+	if title == "" {
+		writeJSON(w, http.StatusBadRequest, errBody("empty title"))
+		return
+	}
+	if len(title) > 120 {
+		title = title[:120]
+	}
+	if err := s.store.RenameConversation(r.Context(), u.ID, r.PathValue("id"), title); err != nil {
+		writeJSON(w, http.StatusInternalServerError, errBody(err.Error()))
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+// deleteConversation removes a conversation + its messages (DELETE /v1/conversations/{id}).
+func (s *Server) deleteConversation(w http.ResponseWriter, r *http.Request) {
+	u, ok := s.requireUser(w, r)
+	if !ok {
+		return
+	}
+	if err := s.store.DeleteConversation(r.Context(), u.ID, r.PathValue("id")); err != nil {
 		writeJSON(w, http.StatusInternalServerError, errBody(err.Error()))
 		return
 	}

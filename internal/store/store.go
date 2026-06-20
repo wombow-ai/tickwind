@@ -438,18 +438,19 @@ type Store interface {
 	GetDeepQuotaUsed(ctx context.Context, userID, period string) (int, error)
 	IncrDeepQuotaUsed(ctx context.Context, userID, period string) error
 
-	// Chat persistence (Product B personalized chat). A "thread" is IMPLICIT per
-	// (UserID, Ticker) — ticker-scoped, one conversation per stock. Messages are
-	// ordered oldest→newest. Routed to the cheap-to-rebuild User store via Split
-	// (losing it only drops chat history, never market or billing data).
-	// AppendChatMessage adds one turn; ListChatMessages returns the most recent
-	// `limit` messages for the (user, ticker) thread in chronological order — for both
-	// display and the windowed LLM context.
+	// Chat persistence (Product B/C). Messages belong to a CONVERSATION (m.ConversationID);
+	// ordered oldest→newest. Routed to the cheap-to-rebuild User store via Split.
+	// AppendChatMessage adds one turn (and bumps the conversation's updated_at);
+	// ListChatMessages returns the most recent `limit` messages for a conversation in
+	// chronological order (display + windowed LLM context); ClearChatMessages deletes a
+	// conversation's messages (keeping the conversation row). GetOrCreateStockConversation
+	// returns the per-(user,ticker) stock conversation, creating it (anchored to the
+	// ticker) on first use and LAZILY migrating any legacy (user,ticker) messages that
+	// predate conversation_id — so the per-stock chat keeps working with no big-bang backfill.
 	AppendChatMessage(ctx context.Context, m ChatMessage) error
-	ListChatMessages(ctx context.Context, userID, ticker string, limit int) ([]ChatMessage, error)
-	// ClearChatMessages deletes the user's whole thread for a ticker (the "new
-	// conversation" reset) — bounds context growth + cost when a thread gets long.
-	ClearChatMessages(ctx context.Context, userID, ticker string) error
+	ListChatMessages(ctx context.Context, conversationID string, limit int) ([]ChatMessage, error)
+	ClearChatMessages(ctx context.Context, conversationID string) error
+	GetOrCreateStockConversation(ctx context.Context, userID, ticker string) (string, error)
 
 	// Conversations (Product C — the unified chat hub). A Conversation is a named chat
 	// thread owned by a user, optionally anchored to a stock (AnchorTicker) or general /
@@ -511,11 +512,12 @@ type Store interface {
 // prose + surfaced-widget refs) — the chat service owns that encoding. CreatedAt is set
 // by the store on append (used only for ordering/display).
 type ChatMessage struct {
-	UserID    string
-	Ticker    string
-	Role      string
-	Content   string
-	CreatedAt time.Time
+	ConversationID string
+	UserID         string
+	Ticker         string // anchor/context ticker ("" for general conversations)
+	Role           string
+	Content        string
+	CreatedAt      time.Time
 }
 
 // Conversation is a named chat thread in the unified hub (Product C). AnchorTicker is the

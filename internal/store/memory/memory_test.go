@@ -537,3 +537,56 @@ func TestDeepQuotaMonthly(t *testing.T) {
 		t.Fatalf("u1 %s used after a legacy day-key incr = %d; want still 2 (no collision)", month, used)
 	}
 }
+
+func TestConversationFlow(t *testing.T) {
+	s := New()
+	ctx := context.Background()
+	u := "user-1"
+
+	// GetOrCreateStockConversation is idempotent per (user, ticker).
+	id1, _ := s.GetOrCreateStockConversation(ctx, u, "AAPL")
+	id2, _ := s.GetOrCreateStockConversation(ctx, u, "AAPL")
+	if id1 == "" || id1 != id2 {
+		t.Fatalf("stock conversation not idempotent: %q vs %q", id1, id2)
+	}
+	// A different ticker (and a general conversation) are distinct.
+	idMsft, _ := s.GetOrCreateStockConversation(ctx, u, "MSFT")
+	idGen, _ := s.CreateConversation(ctx, u, "My ideas", "")
+	if idMsft == id1 || idGen == id1 || idMsft == idGen {
+		t.Fatal("conversations should be distinct")
+	}
+
+	// Append messages → they read back chronological + bump ordering.
+	_ = s.AppendChatMessage(ctx, store.ChatMessage{ConversationID: id1, UserID: u, Ticker: "AAPL", Role: "user", Content: "hi"})
+	_ = s.AppendChatMessage(ctx, store.ChatMessage{ConversationID: id1, UserID: u, Ticker: "AAPL", Role: "assistant", Content: "hello"})
+	msgs, _ := s.ListChatMessages(ctx, id1, 10)
+	if len(msgs) != 2 || msgs[0].Role != "user" || msgs[1].Content != "hello" {
+		t.Fatalf("messages = %+v", msgs)
+	}
+
+	// List shows all three; newest-updated (id1, just messaged) is first.
+	convs, _ := s.ListConversations(ctx, u)
+	if len(convs) != 3 || convs[0].ID != id1 {
+		t.Fatalf("list = %+v", convs)
+	}
+	// Ownership isolation: another user sees none of these.
+	if other, _ := s.ListConversations(ctx, "user-2"); len(other) != 0 {
+		t.Fatalf("cross-user leak: %+v", other)
+	}
+	if _, found, _ := s.GetConversation(ctx, "user-2", id1); found {
+		t.Fatal("cross-user GetConversation should not find another user's conversation")
+	}
+
+	// Rename + delete.
+	_ = s.RenameConversation(ctx, u, idGen, "Renamed")
+	if c, _, _ := s.GetConversation(ctx, u, idGen); c.Title != "Renamed" {
+		t.Fatalf("rename failed: %q", c.Title)
+	}
+	_ = s.DeleteConversation(ctx, u, id1)
+	if _, found, _ := s.GetConversation(ctx, u, id1); found {
+		t.Fatal("delete failed")
+	}
+	if m, _ := s.ListChatMessages(ctx, id1, 10); len(m) != 0 {
+		t.Fatal("delete should drop messages")
+	}
+}

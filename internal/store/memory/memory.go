@@ -724,26 +724,28 @@ func (s *Store) IncrDeepQuotaUsed(_ context.Context, userID, period string) erro
 }
 
 // chatKey is the per-(user, ticker) implicit-thread key for Product B chat history.
-func chatKey(userID, ticker string) string { return userID + "|" + ticker }
-
-// AppendChatMessage appends one turn to the (user, ticker) thread, stamping CreatedAt.
+// AppendChatMessage appends one turn to a conversation (keyed by m.ConversationID),
+// stamping CreatedAt and bumping the conversation's updated_at.
 func (s *Store) AppendChatMessage(_ context.Context, m store.ChatMessage) error {
 	if m.CreatedAt.IsZero() {
 		m.CreatedAt = time.Now().UTC()
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	k := chatKey(m.UserID, m.Ticker)
-	s.chatMsgs[k] = append(s.chatMsgs[k], m)
+	s.chatMsgs[m.ConversationID] = append(s.chatMsgs[m.ConversationID], m)
+	if c, ok := s.convs[m.ConversationID]; ok {
+		c.UpdatedAt = m.CreatedAt
+		s.convs[m.ConversationID] = c
+	}
 	return nil
 }
 
-// ListChatMessages returns the most recent `limit` messages for the (user, ticker)
-// thread in chronological order (oldest first). limit<=0 returns all.
-func (s *Store) ListChatMessages(_ context.Context, userID, ticker string, limit int) ([]store.ChatMessage, error) {
+// ListChatMessages returns the most recent `limit` messages of a conversation in
+// chronological order (oldest first). limit<=0 returns all.
+func (s *Store) ListChatMessages(_ context.Context, conversationID string, limit int) ([]store.ChatMessage, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	all := s.chatMsgs[chatKey(userID, ticker)]
+	all := s.chatMsgs[conversationID]
 	start := 0
 	if limit > 0 && len(all) > limit {
 		start = len(all) - limit
@@ -753,12 +755,28 @@ func (s *Store) ListChatMessages(_ context.Context, userID, ticker string, limit
 	return out, nil
 }
 
-// ClearChatMessages deletes the user's whole (user, ticker) chat thread.
-func (s *Store) ClearChatMessages(_ context.Context, userID, ticker string) error {
+// ClearChatMessages deletes a conversation's messages (keeps the conversation row).
+func (s *Store) ClearChatMessages(_ context.Context, conversationID string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	delete(s.chatMsgs, chatKey(userID, ticker))
+	delete(s.chatMsgs, conversationID)
 	return nil
+}
+
+// GetOrCreateStockConversation returns the per-(user,ticker) stock conversation id,
+// creating it on first use. (Memory is ephemeral/dev — no legacy migration needed.)
+func (s *Store) GetOrCreateStockConversation(_ context.Context, userID, ticker string) (string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, c := range s.convs {
+		if c.UserID == userID && c.AnchorTicker == ticker {
+			return c.ID, nil
+		}
+	}
+	id := store.NewID()
+	now := time.Now().UTC()
+	s.convs[id] = store.Conversation{ID: id, UserID: userID, Title: ticker, AnchorTicker: ticker, CreatedAt: now, UpdatedAt: now}
+	return id, nil
 }
 
 // CreateConversation adds a new conversation owned by userID and returns its id.
@@ -808,12 +826,13 @@ func (s *Store) RenameConversation(_ context.Context, userID, id, title string) 
 	return nil
 }
 
-// DeleteConversation removes the conversation (no-op if not owned).
+// DeleteConversation removes the conversation + its messages (no-op if not owned).
 func (s *Store) DeleteConversation(_ context.Context, userID, id string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if c, ok := s.convs[id]; ok && c.UserID == userID {
 		delete(s.convs, id)
+		delete(s.chatMsgs, id)
 	}
 	return nil
 }
