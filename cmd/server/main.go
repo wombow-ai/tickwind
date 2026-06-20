@@ -66,6 +66,7 @@ import (
 	"github.com/wombow-ai/tickwind/internal/treasury"
 	"github.com/wombow-ai/tickwind/internal/twse"
 	"github.com/wombow-ai/tickwind/internal/universe"
+	"github.com/wombow-ai/tickwind/internal/websearch"
 )
 
 // maxIngestTickers caps how many distinct tickers we ingest, to control cost as
@@ -675,9 +676,17 @@ func main() {
 
 		// Product B — personalized chat (Pro-gated, metered). Grounds on the SAME research
 		// fact sheet; uses the cheap chat client (LLM_CHAT_MODEL → falls back to deep).
-		apiServer.SetChat(chat.NewService(enricher, researchSvc, api.NewChatUserData(st), cfg.LLMChatModel))
+		chatSvc := chat.NewService(enricher, researchSvc, api.NewChatUserData(st), cfg.LLMChatModel)
+		// Optional attributed web-context tool — INERT without WEBSEARCH_API_KEY (the
+		// chat stays grounded-only). When keyed, the model may quote attributed web
+		// snippets but never derive a number from them (the systemPrompt firewall).
+		webClient := websearch.New(websearch.Config{APIKey: cfg.WebSearchAPIKey, Provider: cfg.WebSearchProvider})
+		if ws := api.NewChatWebSearch(webClient); ws != nil {
+			chatSvc.SetWebSearch(ws)
+		}
+		apiServer.SetChat(chatSvc)
 		apiServer.SetChatLimit(cfg.ChatMonthlyLimit)
-		log.Info("personalized chat enabled", "chat_model", cfg.LLMChatModel, "chat_monthly_limit", cfg.ChatMonthlyLimit)
+		log.Info("personalized chat enabled", "chat_model", cfg.LLMChatModel, "chat_monthly_limit", cfg.ChatMonthlyLimit, "web_search", webClient.Enabled())
 	} else {
 		log.Warn("per-stock indicator compute disabled — no price feed (Alpaca) for daily candles")
 	}

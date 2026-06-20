@@ -157,6 +157,12 @@ type Config struct {
 	StripePriceMonthly  string
 	StripePriceAnnual   string
 
+	// WebSearchAPIKey enables the chat's attributed web-context tool (search_web).
+	// Empty → the tool is never offered (the chat stays grounded-only, exactly as today).
+	// Provider defaults to "tavily". Key lives in the VPS .env only, never git.
+	WebSearchAPIKey   string
+	WebSearchProvider string
+
 	// PaywallEnabled turns ON the user-facing Pro paywall (server-side truncation of
 	// the deep report for free viewers). Default FALSE — the paywall stays invisible
 	// (every viewer gets the full report, exactly as today) until the owner flips it
@@ -282,6 +288,8 @@ func Load() Config {
 		PaywallEnabled:              envBool("PAYWALL_ENABLED", false),
 		IndicatorsPaywallEnabled:    envBool("INDICATORS_PAYWALL_ENABLED", false),
 		BillingReconcileEnabled:     envBool("BILLING_RECONCILE_ENABLED", false),
+		WebSearchAPIKey:             env("WEBSEARCH_API_KEY", ""),
+		WebSearchProvider:           env("WEBSEARCH_PROVIDER", "tavily"),
 		SupabaseURL:                 strings.TrimRight(env("SUPABASE_URL", ""), "/"),
 		SupabaseJWTSecret:           env("SUPABASE_JWT_SECRET", ""),
 		AdminUserIDs:                splitCSVRaw(env("ADMIN_USER_IDS", "")),

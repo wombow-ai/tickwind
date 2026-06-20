@@ -483,6 +483,42 @@ func TestComposeBullBear(t *testing.T) {
 	}
 }
 
+// TestHasAdviceAnalystTargets locks in the analystRe additions: third-party analyst
+// price-targets / ratings / quantified upside-downside are flagged as advice (so the
+// chat web-search scrub and the final-prose backstop drop them), while factual prose
+// that merely contains "target"/a number/"rating" is NOT mis-flagged.
+func TestHasAdviceAnalystTargets(t *testing.T) {
+	advice := []string{
+		"Morgan Stanley raised its target to $250",     // bare target + price
+		"Bank of America cut its price target to $180", // "price target" phrase
+		"Goldman maintains a $300 target on the stock", // "$300 target"
+		"analysts see ~30% upside from here",           // quantified upside
+		"the stock has 15% downside to fair value",     // downside + "fair value" phrase
+		"Goldman Sachs initiated with a Buy rating",    // analyst rating
+		"downgraded to an Underweight rating",          // analyst rating
+		"目标价 $250,上涨空间可观",                              // ZH target + upside room
+		"给予买入评级",                                       // ZH analyst rating
+	}
+	for _, p := range advice {
+		if !hasAdvice(p) {
+			t.Errorf("hasAdvice(%q) = false, want true (analyst advice)", p)
+		}
+	}
+	// Factual prose that must NOT trip the (high-precision) analyst patterns.
+	factual := []string{
+		"its total addressable market target is $5 billion", // "target ... market", not a price target
+		"revenue grew 30% year over year",                   // a growth %, not "% upside/downside"
+		"the company holds a strong credit rating",          // "credit rating", not an analyst call
+		"an insider bought 1,000 shares at $50",             // past-tense insider fact
+		"shares reached $400 in regular trading",            // factual print, not "to reach $400"
+	}
+	for _, p := range factual {
+		if hasAdvice(p) {
+			t.Errorf("hasAdvice(%q) = true, want false (factual prose mis-flagged)", p)
+		}
+	}
+}
+
 // TestComposeScrubsAdviceFromProse asserts the deterministic advice backstop now also
 // covers the report BODY (section prose + overview), not just bull/bear points: an advice
 // line in the overview is dropped (clean lines kept), and an all-advice section paragraph

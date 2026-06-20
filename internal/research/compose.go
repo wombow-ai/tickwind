@@ -126,6 +126,9 @@ var advicePhrases = []string{
 	"目标价", "目标股价", "目标位", "强烈推荐", "强烈建议", "建议买", "建议卖", "应该买", "应该卖",
 	"值得买入", "值得入手", "可以买入", "立即买", "逢低买入", "逢低吸纳", "抄底", "上车", "入场点",
 	"合理估值", "合理价值", "内在价值", "低估", "高估",
+	// ZH analyst-style judgments (a third party's rating / quantified up-down room — an
+	// opinion Tickwind must not surface; distinct from 增持/减持 the position-change facts).
+	"上涨空间", "下跌空间", "买入评级", "卖出评级", "增持评级", "减持评级", "中性评级", "评级上调", "评级下调",
 	// EN advice / price-target / valuation-judgment (NOT bare buy/sell — facts).
 	"price target", "target price", "strong buy", "strong sell", "should buy", "should sell",
 	"recommend buy", "recommend sell", "must buy", "fair value", "intrinsic value",
@@ -138,6 +141,19 @@ var advicePhrases = []string{
 // appears. Past-tense facts ("insider bought at $50") use bought/sold (not matched), and
 // a bare buy/sell with no price level is not matched either.
 var adviceRe = regexp.MustCompile(`(?i)\b(buy|buying|accumulate|accumulating|enter|entry|short)\b[\w\s]{0,12}?\b(at|above|below|around|near|under)\b\s*\$?\d`)
+
+// analystRe catches third-party ANALYST-style forward judgments — a price target tied to
+// a number ("target of $250", "$300 target"), a quantified upside/downside ("30% upside"),
+// or an analyst rating ("Buy rating", "Overweight rating") — that the advicePhrases list
+// misses. These are opinions/forecasts Tickwind must never surface, and open-web search
+// snippets carry them at a high rate (see the chat web-search advice scrub). Patterns are
+// kept high-precision so they don't strip legitimate report prose: bare "target market"
+// (no number) and a factual "$5B revenue" are not matched, only target/rating-with-a-figure.
+var analystRe = regexp.MustCompile(`(?i)` +
+	`\b(price\s+)?target\s+(of|to|at)\s+\$?\d` + // "target of $250", "price target to $300"
+	`|\$\s?\d[\d.,]*\s+(price\s+)?target\b` + // "$300 target"
+	`|\b\d+(\.\d+)?\s?%\s+(upside|downside)\b` + // "30% upside"
+	`|\b(buy|sell|overweight|underweight|outperform|underperform)\s+rating\b`) // analyst rating
 
 // splitPoints turns the model's newline-joined bull/bear string into trimmed points:
 // it strips list markers, drops blanks, drops any point that trips the advice-guard,
@@ -195,7 +211,7 @@ func hasAdvice(p string) bool {
 			return true
 		}
 	}
-	return adviceRe.MatchString(p)
+	return adviceRe.MatchString(p) || analystRe.MatchString(p)
 }
 
 // buildMaterial assembles the single pre-formatted material string the LLM sees,

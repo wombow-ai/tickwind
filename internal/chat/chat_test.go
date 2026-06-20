@@ -25,6 +25,20 @@ type reply struct {
 	usage   enrich.Usage
 }
 
+// fakeWeb is a controllable chat.WebSearcher.
+type fakeWeb struct{ result string }
+
+func (f fakeWeb) Search(_ context.Context, _, _ string) string { return f.result }
+
+func hasTool(tools []enrich.ChatTool, name string) bool {
+	for _, t := range tools {
+		if t.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
 func (f *scriptedLLM) Enabled() bool { return f.enabled }
 
 func (f *scriptedLLM) Chat(_ context.Context, msgs []enrich.ChatMessage, tools []enrich.ChatTool, _ string) (string, []enrich.ChatToolCall, enrich.Usage, error) {
@@ -138,6 +152,45 @@ func TestAnswerGetFactsCarriesAsOf(t *testing.T) {
 	}
 	if !strings.Contains(toolMsg, "[SEC 13F, as of 2026-03-31]") {
 		t.Fatalf("tool result missing per-fact as-of stamp: %q", toolMsg)
+	}
+}
+
+// TestAnswerSearchWeb: when a WebSearcher is wired, the search_web tool is OFFERED and its
+// attributed result is delivered to the model as a tool message (the model may quote it,
+// but the firewall — tested elsewhere — forbids deriving numbers).
+func TestAnswerSearchWeb(t *testing.T) {
+	llm := &scriptedLLM{enabled: true, replies: []reply{
+		{calls: []enrich.ChatToolCall{{ID: "c1", Name: "search_web", Arguments: `{"query":"AAPL latest news"}`}}},
+		{content: "Recent coverage notes a product launch."},
+	}}
+	svc := NewService(llm, fakeFacts{sampleSheet()}, nil, "")
+	svc.SetWebSearch(fakeWeb{result: "Web search results (attributed):\n- Apple unveils X — snippet [reuters.com]"})
+	if _, err := svc.Answer(context.Background(), "u", "AAPL", "en", nil, "any news?", true); err != nil {
+		t.Fatalf("Answer: %v", err)
+	}
+	if !hasTool(llm.lastTools, "search_web") {
+		t.Fatal("search_web tool was not offered despite a WebSearcher being set")
+	}
+	var toolMsg string
+	for _, m := range llm.gotMessages[1] {
+		if m.Role == "tool" {
+			toolMsg = m.Content
+		}
+	}
+	if !strings.Contains(toolMsg, "[reuters.com]") {
+		t.Fatalf("attributed web result not delivered to the model: %q", toolMsg)
+	}
+}
+
+// TestSearchWebNotOfferedWithoutWebSearcher: no WebSearcher → the tool is never offered.
+func TestSearchWebNotOfferedWithoutWebSearcher(t *testing.T) {
+	llm := &scriptedLLM{enabled: true, replies: []reply{{content: "ok"}}}
+	svc := NewService(llm, fakeFacts{sampleSheet()}, nil, "") // no SetWebSearch
+	if _, err := svc.Answer(context.Background(), "u", "AAPL", "en", nil, "hi", true); err != nil {
+		t.Fatalf("Answer: %v", err)
+	}
+	if hasTool(llm.lastTools, "search_web") {
+		t.Fatal("search_web offered without a WebSearcher wired")
 	}
 }
 
