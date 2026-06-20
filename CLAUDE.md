@@ -175,6 +175,16 @@ feature-flagged plugin, never on the critical path. Web only.
 - Full stack (server): `docker compose up -d --build`.
 
 ## Current state (update each iteration)
+- **2026-06-21 — 💳 Billing: owner reported 2 issues, both DIAGNOSED (1 not-a-bug, 1 frontend fix `23c441b`).**
+  ① "99% comp coupon → card not charged / no Stripe income" is **EXPECTED**: 99% off $12.99 ≈ $0.13 < Stripe's
+  **$0.50 min card charge** → can't collect, but the sub still activates (owner allalphaplus@gmail.com = active/pro,
+  renews 2026-07-20; /billing/me=pro). **For a true comp use a 100%-off coupon**; for a real revenue test the
+  post-discount must be ≥ $0.50. ② "no place to view/cancel": the Stripe Customer **Portal works in LIVE**
+  (POST /v1/billing/portal → 200 + real `billing.stripe.com/p/session/live_…`); the gap was discoverability —
+  **FIXED**: added a "Subscription" item to the TopNav account dropdown (→ /settings#subscription) + made `/pro`
+  show a "You're on Pro — Manage subscription" card for existing Pros (was showing Subscribe = duplicate-sub
+  footgun). EN+zh; tsc+build clean, preview hydration verified. Frontend-only (Vercel). **E2E gotcha recorded:**
+  api :8080 isn't host-published (docker-net only) → test via public api.tickwind.com w/ browser UA. [[tickwind-monetization-plan]]
 - **2026-06-21 — 🌐 AI chat: attributed WEB-SEARCH tool (`search_web`) BUILT + firewall-hardened; INERT until a
   Tavily key is set (owner action).** Owner chose (AskUserQuestion) to add a "带出处的 web 上下文" tool after
   asking why the chat had no browsing. Backend-only (the model cites sources inline in prose, like
