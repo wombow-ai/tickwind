@@ -175,6 +175,23 @@ feature-flagged plugin, never on the critical path. Web only.
 - Full stack (server): `docker compose up -d --build`.
 
 ## Current state (update each iteration)
+- **2026-06-20 — 🔍 FULL-PLATFORM ADVERSARIAL AUDIT + fixes (owner stepped away, autonomous /loop mandate
+  [[tickwind-autonomous-mandate]]).** A Workflow audit (5 finders: billing / AI anti-hallucination+cost /
+  security / indicators-gating / cohesion + independent skeptics) found **10 confirmed (3 high / 2 med / 5
+  low)**, 1 refuted. **Tick-1 fixed + deployed (`d3542a9`, DEPLOY_DONE 11:53Z):** ① (HIGH security) **IDOR** —
+  postgres `DeleteConversation` deleted chat_message rows with NO user_id scope → any authed user could wipe
+  another's chat history; now both deletes `AND user_id=$2` in a tx (memory store was already safe). ② (HIGH
+  ai) **report prose escaped the HasAdvice backstop** — only bull/bear points were filtered, the section prose
+  + overview shipped verbatim; added `research.ScrubAdvice` (reuses hasAdvice) applied in `compose()` to
+  section + overview prose, so bull/bear + report prose + chat prose now share ONE backstop. ③ (MED ai) **chat
+  turn had no LLM timeout** (~5×150s worst case) → wrapped in `context.WithTimeout(…, 90s)`. ④ (LOW) stale
+  alert-evaluator comment. **DEFERRED (own ticks):** the **billing bundle** — (HIGH) `stripeWebhook` marks an
+  event seen BEFORE processing → a transient DB error permanently loses a Pro grant/revoke with no
+  reconciliation; (MED) an out-of-order `customer.subscription.*` before `checkout.session.completed` strands a
+  paid user on free — fix together (reorder mark-seen-after-success + recover entitlement from `cs.Subscription`
+  + a periodic Stripe reconciliation job); plus low frontend-cohesion items (Board.tsx dead `markets` variant
+  dup of HomeHub; pct_move alert `±` inconsistency) + chat-meter non-atomic check-then-incr. Full ledger in the
+  mandate memory.
 - **2026-06-20 — 🟢 PRODUCT C: unified AI chat hub `/chat` LIVE (Pro-gated "one intelligence").** Evolves
   the per-stock chat (Product B) into a ChatGPT/Claude-style hub deeply integrated with platform data. All
   6 increments shipped+deployed+E2E-verified (commits C1 `2ac117f` → C6 `0acd77e`; see [[tickwind-product-b-chat]]).
