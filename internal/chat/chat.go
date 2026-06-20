@@ -27,10 +27,31 @@ const maxToolIters = 4
 
 // widgetTypes is the CLOSED enum a surface_widget call may render. Any other value is
 // rejected — the model cannot invent a widget, and a widget's numbers never enter its
-// context (the tool returns only a "rendered: …" confirmation).
+// context (the tool returns only a "rendered: …" confirmation). The last three are
+// PORTFOLIO widgets (the user's own watchlist/holdings) — offered + rendered only when
+// personal-data access is allowed.
 var widgetTypes = []string{
 	"valuation_table", "fundamentals_table", "kline", "indicators",
 	"flows_summary", "whales", "options", "insider",
+	"watchlist_summary", "holdings_pnl", "portfolio_heatmap",
+}
+
+// portfolioWidgets render the user's OWN data (no ticker) — gated on personal-data access.
+var portfolioWidgets = map[string]bool{"watchlist_summary": true, "holdings_pnl": true, "portfolio_heatmap": true}
+
+// widgetEnum returns the widget types offered to the model: the portfolio widgets are
+// included only when personal-data access is allowed.
+func widgetEnum(allowUserData bool) []string {
+	if allowUserData {
+		return widgetTypes
+	}
+	out := make([]string, 0, len(widgetTypes))
+	for _, w := range widgetTypes {
+		if !portfolioWidgets[w] {
+			out = append(out, w)
+		}
+	}
+	return out
 }
 
 // LLM is the narrow slice of enrich.Enricher this service needs (satisfied by the real
@@ -133,7 +154,7 @@ var ErrNotFound = errors.New("chat: no facts for ticker")
 // bounded tool loop, applies the deterministic advice post-filter, and returns the
 // assistant's blocks + usage. history is prior turns as role/content (assistant prose
 // only — no widget refs). It neither persists nor meters (the api owns that).
-func (s *Service) Answer(ctx context.Context, userID, anchorTicker, lang string, history []enrich.ChatMessage, question string) (Answer, error) {
+func (s *Service) Answer(ctx context.Context, userID, anchorTicker, lang string, history []enrich.ChatMessage, question string, allowUserData bool) (Answer, error) {
 	if !s.Enabled() {
 		return Answer{}, enrich.ErrDisabled
 	}
@@ -147,7 +168,7 @@ func (s *Service) Answer(ctx context.Context, userID, anchorTicker, lang string,
 		}
 		material = research.Material(fs, lang)
 	}
-	hasUserData := s.userData != nil
+	hasUserData := s.userData != nil && allowUserData
 
 	msgs := make([]enrich.ChatMessage, 0, len(history)+2)
 	msgs = append(msgs, enrich.ChatMessage{Role: "system", Content: systemPrompt(anchorTicker, lang, material, general, hasUserData)})
@@ -173,7 +194,7 @@ func (s *Service) Answer(ctx context.Context, userID, anchorTicker, lang string,
 			msgs = append(msgs, enrich.ChatMessage{
 				Role:       "tool",
 				ToolCallID: c.ID,
-				Content:    s.execTool(ctx, c, userID, anchorTicker, fs, lang, &widgets),
+				Content:    s.execTool(ctx, c, userID, anchorTicker, fs, lang, hasUserData, &widgets),
 			})
 		}
 	}
@@ -202,7 +223,7 @@ func (s *Service) finish(prose string, widgets []Block, usage enrich.Usage, lang
 // execTool runs one closed tool against the Go fact sheet and returns its (string) result.
 // surface_widget also records a widget block in widgets; its numbers never enter the
 // model's context (the result is only a confirmation string).
-func (s *Service) execTool(ctx context.Context, c enrich.ChatToolCall, userID, anchorTicker string, fs research.FactSheet, lang string, widgets *[]Block) string {
+func (s *Service) execTool(ctx context.Context, c enrich.ChatToolCall, userID, anchorTicker string, fs research.FactSheet, lang string, hasUserData bool, widgets *[]Block) string {
 	switch c.Name {
 	case "get_facts":
 		var args struct {
@@ -234,17 +255,17 @@ func (s *Service) execTool(ctx context.Context, c enrich.ChatToolCall, userID, a
 		}
 		return out
 	case "get_watchlist":
-		if s.userData == nil {
+		if !hasUserData || s.userData == nil {
 			return "User data not available."
 		}
 		return s.userData.Watchlist(ctx, userID, lang)
 	case "get_holdings":
-		if s.userData == nil {
+		if !hasUserData || s.userData == nil {
 			return "User data not available."
 		}
 		return s.userData.Holdings(ctx, userID, lang)
 	case "get_my_notes":
-		if s.userData == nil {
+		if !hasUserData || s.userData == nil {
 			return "User data not available."
 		}
 		var args struct {
@@ -260,7 +281,15 @@ func (s *Service) execTool(ctx context.Context, c enrich.ChatToolCall, userID, a
 		}
 		_ = json.Unmarshal([]byte(c.Arguments), &args)
 		if !validWidget(args.Type) {
-			return "Unknown widget type. Valid: " + strings.Join(widgetTypes, ", ")
+			return "Unknown widget type. Valid: " + strings.Join(widgetEnum(hasUserData), ", ")
+		}
+		if portfolioWidgets[args.Type] {
+			if !hasUserData {
+				return "Portfolio widgets are unavailable (personal-data access is off)."
+			}
+			// Portfolio widgets render the user's OWN data (no ticker).
+			*widgets = append(*widgets, Block{Kind: "widget", Widget: args.Type})
+			return "rendered: " + args.Type
 		}
 		params := map[string]string{}
 		rng := normalizeRange(args.Range)
@@ -387,8 +416,8 @@ func toolSpecs(lang string, general, hasUserData bool) []enrich.ChatTool {
 			Name:        "surface_widget",
 			Description: d("内联渲染一个真实 Tickwind 图表/表格(用户看到真实控件)。优先用它\"展示\"数据而非罗列数字。只会收到确认,不会拿到数据 —— 正常。", "Render a real Tickwind chart/table inline (the user sees the actual widget). PREFER showing a widget over reciting many numbers. You only get a confirmation back, not the data — that's expected."),
 			Parameters: map[string]any{"type": "object", "properties": map[string]any{
-				"type":   map[string]any{"type": "string", "enum": widgetTypes, "description": "Which preset widget to render."},
-				"ticker": map[string]any{"type": "string", "description": "Which stock (defaults to this conversation's stock)."},
+				"type":   map[string]any{"type": "string", "enum": widgetEnum(hasUserData), "description": "Which preset widget to render. watchlist_summary/holdings_pnl/portfolio_heatmap show the user's OWN portfolio (no ticker)."},
+				"ticker": map[string]any{"type": "string", "description": "Which stock (defaults to this conversation's stock); ignored for portfolio widgets."},
 				"range":  map[string]any{"type": "string", "enum": []string{"3M", "1Y", "5Y"}, "description": "Time range for chart widgets (kline/indicators)."},
 			}, "required": []string{"type"}},
 		},
@@ -465,8 +494,8 @@ func systemPrompt(ticker, lang, material string, general, hasUserData bool) stri
 	b.WriteString(d("- get_stock_facts(ticker, section):任意股票某板块的事实(跨股票对比)。\n- surface_widget(type[, ticker, range]):内联渲染真实图表/表格,优先用控件展示。\n",
 		"- get_stock_facts(ticker, section): any stock's facts (for comparisons).\n- surface_widget(type[, ticker, range]): render a real chart/table inline; prefer it over reciting numbers.\n"))
 	if hasUserData {
-		b.WriteString(d("- get_watchlist() / get_holdings() / get_my_notes(ticker?):用户本人的自选/持仓/笔记。\n",
-			"- get_watchlist() / get_holdings() / get_my_notes(ticker?): the user's own watchlist/holdings/notes.\n"))
+		b.WriteString(d("- get_watchlist() / get_holdings() / get_my_notes(ticker?):用户本人的自选/持仓/笔记。\n- surface_widget(watchlist_summary/holdings_pnl/portfolio_heatmap):内联展示用户本人组合(无需 ticker)。\n",
+			"- get_watchlist() / get_holdings() / get_my_notes(ticker?): the user's own watchlist/holdings/notes.\n- surface_widget(watchlist_summary/holdings_pnl/portfolio_heatmap): show the user's own portfolio inline (no ticker).\n"))
 	}
 	b.WriteString("\n")
 	b.WriteString(d("风格:简洁、以散文为主、平实。只说数据支持的内容。\n\n", "STYLE: concise, prose-first, plain language. Stay within what the data supports.\n\n"))

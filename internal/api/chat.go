@@ -174,7 +174,7 @@ func (s *Server) chatTurn(w http.ResponseWriter, r *http.Request, u auth.User, c
 		})
 		return
 	}
-	ans, err := s.chatSvc.Answer(r.Context(), u.ID, anchorTicker, lang, llmHist, msg)
+	ans, err := s.chatSvc.Answer(r.Context(), u.ID, anchorTicker, lang, llmHist, msg, s.chatPersonalDataAllowed(r.Context(), u.ID))
 	if err != nil {
 		switch {
 		case errors.Is(err, chat.ErrNotFound):
@@ -288,6 +288,23 @@ func (s *Server) getConvHistory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeChatMessages(w, msgs)
+}
+
+// chatPersonalDataAllowed reads the user's privacy pref: the chat reads their own
+// watchlist/holdings/notes UNLESS they opted out (prefs.chat_personal_data == false).
+// Defaults ON (absent pref / read error → true) — reading your own data in your own chat.
+func (s *Server) chatPersonalDataAllowed(ctx context.Context, userID string) bool {
+	blob, found, err := s.store.GetPrefs(ctx, userID)
+	if err != nil || !found {
+		return true
+	}
+	var p struct {
+		ChatPersonalData *bool `json:"chat_personal_data"`
+	}
+	if json.Unmarshal(blob, &p) != nil || p.ChatPersonalData == nil {
+		return true
+	}
+	return *p.ChatPersonalData
 }
 
 // deleteChat clears the user's stock thread (DELETE /v1/stocks/{ticker}/chat — the "new

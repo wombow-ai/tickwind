@@ -1,6 +1,6 @@
 'use client';
 
-import {ArrowRight, Loader2, Lock, Menu, Pencil, Plus, Sparkles, Trash2, X} from 'lucide-react';
+import {ArrowRight, Loader2, Lock, Menu, Pencil, Plus, ShieldCheck, Sparkles, Trash2, X} from 'lucide-react';
 import {useSearchParams} from 'next/navigation';
 import {useCallback, useEffect, useState} from 'react';
 import {ChatThreadPanel} from '@/components/ChatThreadPanel';
@@ -9,7 +9,9 @@ import {
   type Conversation,
   createConversation,
   deleteConversation,
+  getMyPrefs,
   listConversations,
+  putMyPrefs,
   renameConversation,
 } from '@/lib/api';
 import {useAuth} from '@/lib/auth';
@@ -35,6 +37,9 @@ export function ChatHub() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  // `chat_personal_data` pref (default true): when off, the chat endpoint serves no
+  // watchlist/holdings/notes tools for the turn. Mirrors the server-side default.
+  const [personalData, setPersonalData] = useState(true);
 
   const refresh = useCallback(async () => {
     const list = await listConversations(await getToken());
@@ -58,9 +63,17 @@ export function ChatHub() {
           sel = conv.id;
           list = await listConversations(token);
         }
+        let pd = true;
+        try {
+          const prefs = await getMyPrefs(token);
+          if (typeof prefs.chat_personal_data === 'boolean') pd = prefs.chat_personal_data;
+        } catch {
+          /* default on */
+        }
         if (active) {
           setConvs(list);
           setSelectedId(sel);
+          setPersonalData(pd);
         }
       } finally {
         if (active) setLoading(false);
@@ -86,6 +99,16 @@ export function ChatHub() {
     },
     [getToken, refresh],
   );
+
+  const togglePersonalData = useCallback(async () => {
+    const next = !personalData;
+    setPersonalData(next); // optimistic
+    try {
+      await putMyPrefs(await getToken(), {chat_personal_data: next});
+    } catch {
+      setPersonalData(!next); // revert on failure
+    }
+  }, [personalData, getToken]);
 
   const rename = useCallback(
     async (c: Conversation) => {
@@ -156,6 +179,21 @@ export function ChatHub() {
             </div>
           ))
         )}
+      </div>
+      <div className={cx('border-t p-2.5', t.border)}>
+        <button
+          type="button"
+          onClick={togglePersonalData}
+          aria-pressed={personalData}
+          className={cx('flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left', dark ? 'hover:bg-slate-800/50' : 'hover:bg-slate-50')}
+        >
+          <ShieldCheck size={14} className={personalData ? (dark ? 'text-emerald-400' : 'text-emerald-600') : t.faint} />
+          <span className={cx('flex-1 text-[12px] font-medium', t.sub)}>{tr('chat.hub.privacy')}</span>
+          <span className={cx('relative h-4 w-7 shrink-0 rounded-full transition-colors', personalData ? (dark ? 'bg-emerald-500' : 'bg-emerald-500') : dark ? 'bg-slate-700' : 'bg-slate-300')}>
+            <span className={cx('absolute top-0.5 h-3 w-3 rounded-full bg-white transition-all', personalData ? 'left-3.5' : 'left-0.5')} />
+          </span>
+        </button>
+        <p className={cx('mt-1 px-2 text-[10.5px] leading-snug', t.faint)}>{tr(personalData ? 'chat.hub.privacyOn' : 'chat.hub.privacyOff')}</p>
       </div>
     </div>
   );

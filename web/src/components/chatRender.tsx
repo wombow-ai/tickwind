@@ -5,8 +5,13 @@ import {FundamentalsCard} from '@/components/FundamentalsCard';
 import {KLineChart} from '@/components/KLineChart';
 import Link from '@/components/LocalLink';
 import {Markdown} from '@/components/Markdown';
+import {ChatPortfolioWidget} from '@/components/PortfolioWidgets';
 import {type ChatBlock} from '@/lib/api';
 import {cx, type Tokens} from '@/lib/ui';
+
+// Portfolio-level widgets render the user's OWN data (no ticker) — handled before the
+// per-stock ticker guard below.
+const PORTFOLIO_WIDGETS = new Set(['watchlist_summary', 'holdings_pnl', 'portfolio_heatmap']);
 
 // Shared chat-message rendering for both the per-stock thread and the unified hub. A
 // widget block carries its own ticker (block.params.ticker, set server-side) so a
@@ -69,6 +74,9 @@ function BlockView({block, fallbackTicker, dark, t, tr}: {block: ChatBlock; fall
 }
 
 function ChatWidget({widget, ticker, dark, t, tr}: {widget: string; ticker: string; dark: boolean; t: Tokens; tr: (k: string) => string}) {
+  if (PORTFOLIO_WIDGETS.has(widget)) {
+    return <ChatPortfolioWidget type={widget} />;
+  }
   if (!ticker) return null;
   if (widget === 'kline') {
     return (
