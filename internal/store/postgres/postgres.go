@@ -1213,12 +1213,24 @@ func (s *Store) RenameConversation(ctx context.Context, userID, id, title string
 }
 
 // DeleteConversation removes the conversation + its messages (ownership enforced).
+// BOTH deletes are scoped to userID (chat_message carries user_id): without the
+// user_id scope on the message delete, any authenticated user could wipe ANOTHER
+// user's chat history by passing a foreign conversation id (IDOR). Wrapped in a
+// transaction so the two deletes commit or roll back together.
 func (s *Store) DeleteConversation(ctx context.Context, userID, id string) error {
-	if _, err := s.pool.Exec(ctx, `DELETE FROM chat_message WHERE conversation_id = $1`, id); err != nil {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("postgres: delete conversation: begin: %w", err)
+	}
+	defer tx.Rollback(ctx)
+	if _, err := tx.Exec(ctx, `DELETE FROM chat_message WHERE conversation_id = $1 AND user_id = $2`, id, userID); err != nil {
 		return fmt.Errorf("postgres: delete conversation messages: %w", err)
 	}
-	if _, err := s.pool.Exec(ctx, `DELETE FROM conversation WHERE id = $1 AND user_id = $2`, id, userID); err != nil {
+	if _, err := tx.Exec(ctx, `DELETE FROM conversation WHERE id = $1 AND user_id = $2`, id, userID); err != nil {
 		return fmt.Errorf("postgres: delete conversation: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("postgres: delete conversation: commit: %w", err)
 	}
 	return nil
 }
