@@ -11,6 +11,7 @@ import {SITE_URL} from '@/lib/config';
 import {GUIDES} from '@/lib/guides';
 import {SCREEN_PRESETS} from '@/lib/presets';
 import {SIGNAL_SCREEN_PRESETS} from '@/lib/signalPresets';
+import {ZONES} from '@/lib/zones';
 import {popularTickers, quoteBearingTickers, STOCK_DIRECTORY_LETTERS} from '@/lib/pseo';
 
 // Regenerate hourly so newly-trending tickers enter the sitemap without a deploy.
@@ -149,6 +150,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     {path: '/hot', changeFrequency: 'hourly', priority: 0.7},
     {path: '/screen', changeFrequency: 'daily', priority: 0.6},
     {path: '/screen/signals', changeFrequency: 'daily', priority: 0.6},
+    {path: '/zone', changeFrequency: 'weekly', priority: 0.7},
     {path: '/calendar/earnings', changeFrequency: 'daily', priority: 0.6},
     {path: '/calendar/ipo', changeFrequency: 'daily', priority: 0.6},
     {path: '/news', changeFrequency: 'hourly', priority: 0.6},
@@ -184,6 +186,12 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     path: `/screen/signals/${p.key}`,
     changeFrequency: 'daily',
     priority: 0.6,
+  }));
+  // Curated theme zones (`/zone/{key}`) — the AI flagship + 10x theme siblings.
+  const zonePages: Page[] = ZONES.map(z => ({
+    path: `/zone/${z.key}`,
+    changeFrequency: 'weekly',
+    priority: 0.7,
   }));
   const [tickers, memberSlugs, funds, indicators, topics] = await Promise.all([
     indexableTickers(),
@@ -222,6 +230,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     ...guidePages,
     ...presetPages,
     ...signalPresetPages,
+    ...zonePages,
     ...stockDirectoryPages,
     ...stockPages,
     ...memberPages,
