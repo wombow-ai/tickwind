@@ -36,6 +36,7 @@ type Store struct {
 	prefs     map[string]json.RawMessage          // userID -> opaque JSON prefs blob
 	deepQuota map[string]int                      // "userID|PERIOD" (ET month, e.g. 2026-06) -> deep-research generations used
 	chatMsgs  map[string][]store.ChatMessage      // "userID|TICKER" -> ordered chat thread (Product B)
+	convs     map[string]store.Conversation       // conversationID -> Conversation (Product C hub)
 	chatQuota map[string]int                      // "userID|PERIOD" (ET month) -> Product B chat messages used
 	comments  map[string]store.Comment            // commentID -> Comment (public)
 	cmtLikes  map[string]map[string]bool          // commentID -> set of userIDs who liked
@@ -66,6 +67,7 @@ func New() *Store {
 		prefs:     make(map[string]json.RawMessage),
 		deepQuota: make(map[string]int),
 		chatMsgs:  make(map[string][]store.ChatMessage),
+		convs:     make(map[string]store.Conversation),
 		chatQuota: make(map[string]int),
 		comments:  make(map[string]store.Comment),
 		cmtLikes:  make(map[string]map[string]bool),
@@ -756,6 +758,63 @@ func (s *Store) ClearChatMessages(_ context.Context, userID, ticker string) erro
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	delete(s.chatMsgs, chatKey(userID, ticker))
+	return nil
+}
+
+// CreateConversation adds a new conversation owned by userID and returns its id.
+func (s *Store) CreateConversation(_ context.Context, userID, title, anchorTicker string) (string, error) {
+	id := store.NewID()
+	now := time.Now().UTC()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.convs[id] = store.Conversation{ID: id, UserID: userID, Title: title, AnchorTicker: anchorTicker, CreatedAt: now, UpdatedAt: now}
+	return id, nil
+}
+
+// ListConversations returns the user's conversations, newest-updated first.
+func (s *Store) ListConversations(_ context.Context, userID string) ([]store.Conversation, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	var out []store.Conversation
+	for _, c := range s.convs {
+		if c.UserID == userID {
+			out = append(out, c)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].UpdatedAt.After(out[j].UpdatedAt) })
+	return out, nil
+}
+
+// GetConversation returns the conversation if owned by userID.
+func (s *Store) GetConversation(_ context.Context, userID, id string) (store.Conversation, bool, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	c, ok := s.convs[id]
+	if !ok || c.UserID != userID {
+		return store.Conversation{}, false, nil
+	}
+	return c, true, nil
+}
+
+// RenameConversation sets the title (no-op if not owned).
+func (s *Store) RenameConversation(_ context.Context, userID, id, title string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if c, ok := s.convs[id]; ok && c.UserID == userID {
+		c.Title = title
+		c.UpdatedAt = time.Now().UTC()
+		s.convs[id] = c
+	}
+	return nil
+}
+
+// DeleteConversation removes the conversation (no-op if not owned).
+func (s *Store) DeleteConversation(_ context.Context, userID, id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if c, ok := s.convs[id]; ok && c.UserID == userID {
+		delete(s.convs, id)
+	}
 	return nil
 }
 

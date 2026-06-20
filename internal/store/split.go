@@ -247,6 +247,21 @@ func (s Split) ListChatMessages(ctx context.Context, userID, ticker string, limi
 func (s Split) ClearChatMessages(ctx context.Context, userID, ticker string) error {
 	return s.User.ClearChatMessages(ctx, userID, ticker)
 }
+func (s Split) CreateConversation(ctx context.Context, userID, title, anchorTicker string) (string, error) {
+	return s.User.CreateConversation(ctx, userID, title, anchorTicker)
+}
+func (s Split) ListConversations(ctx context.Context, userID string) ([]Conversation, error) {
+	return s.User.ListConversations(ctx, userID)
+}
+func (s Split) GetConversation(ctx context.Context, userID, id string) (Conversation, bool, error) {
+	return s.User.GetConversation(ctx, userID, id)
+}
+func (s Split) RenameConversation(ctx context.Context, userID, id, title string) error {
+	return s.User.RenameConversation(ctx, userID, id, title)
+}
+func (s Split) DeleteConversation(ctx context.Context, userID, id string) error {
+	return s.User.DeleteConversation(ctx, userID, id)
+}
 func (s Split) GetChatMsgUsed(ctx context.Context, userID, period string) (int, error) {
 	return s.User.GetChatMsgUsed(ctx, userID, period)
 }

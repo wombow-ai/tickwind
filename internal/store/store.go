@@ -5,9 +5,21 @@ package store
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"time"
 )
+
+// NewID returns a random 128-bit hex id (for conversations etc.). Falls back to a
+// time-based id if the system RNG is unavailable (never in practice).
+func NewID() string {
+	var b [16]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return "c" + hex.EncodeToString([]byte(time.Now().UTC().Format("20060102150405.000000")))
+	}
+	return hex.EncodeToString(b[:])
+}
 
 // Security is a tracked instrument.
 type Security struct {
@@ -439,6 +451,18 @@ type Store interface {
 	// conversation" reset) — bounds context growth + cost when a thread gets long.
 	ClearChatMessages(ctx context.Context, userID, ticker string) error
 
+	// Conversations (Product C — the unified chat hub). A Conversation is a named chat
+	// thread owned by a user, optionally anchored to a stock (AnchorTicker) or general /
+	// cross-stock (empty). Messages will reference a conversation; the legacy per-(user,
+	// ticker) chat is migrated lazily (C2). All routed to the cheap-to-rebuild User store.
+	// CreateConversation returns the new id; List is newest-updated first; Rename/Delete
+	// are no-ops on an id the user doesn't own (ownership enforced in the query).
+	CreateConversation(ctx context.Context, userID, title, anchorTicker string) (string, error)
+	ListConversations(ctx context.Context, userID string) ([]Conversation, error)
+	GetConversation(ctx context.Context, userID, id string) (Conversation, bool, error)
+	RenameConversation(ctx context.Context, userID, id, title string) error
+	DeleteConversation(ctx context.Context, userID, id string) error
+
 	// ChatMsgQuota is the per-user, per-ET-MONTH MESSAGE meter for Product B (Pro is
 	// soft-capped at ~150 msgs/mo). Same shape + best-effort semantics as
 	// DeepResearchQuota (read fails OPEN, increment is logged-not-fatal), routed to the
@@ -492,6 +516,18 @@ type ChatMessage struct {
 	Role      string
 	Content   string
 	CreatedAt time.Time
+}
+
+// Conversation is a named chat thread in the unified hub (Product C). AnchorTicker is the
+// stock it's anchored to ("" = general / cross-stock). Title is auto-derived from the
+// first message or user-set. UpdatedAt bumps on each new message (drives the sidebar order).
+type Conversation struct {
+	ID           string
+	UserID       string
+	Title        string
+	AnchorTicker string
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
 }
 
 // Subscription is a user's billing/entitlement state, synced from Stripe webhooks.

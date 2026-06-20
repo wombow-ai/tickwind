@@ -389,3 +389,19 @@ CREATE TABLE IF NOT EXISTS chat_msg_quota (
     updated_at timestamptz NOT NULL DEFAULT now(),
     PRIMARY KEY (user_id, period)
 );
+
+-- Product C: the unified chat hub. A conversation is a named thread owned by a user,
+-- optionally anchored to a stock (anchor_ticker) or general/cross-stock (empty). Cheap
+-- to lose (User store). Messages reference conversation_id (added additively below; the
+-- legacy per-(user,ticker) chat is migrated lazily by GetOrCreateStockConversation).
+CREATE TABLE IF NOT EXISTS conversation (
+    id            text PRIMARY KEY,
+    user_id       text NOT NULL,
+    title         text NOT NULL DEFAULT '',
+    anchor_ticker text NOT NULL DEFAULT '',
+    created_at    timestamptz NOT NULL DEFAULT now(),
+    updated_at    timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS conversation_user_idx ON conversation (user_id, updated_at DESC);
+ALTER TABLE chat_message ADD COLUMN IF NOT EXISTS conversation_id text;
+CREATE INDEX IF NOT EXISTS chat_message_conv_idx ON chat_message (conversation_id, id);

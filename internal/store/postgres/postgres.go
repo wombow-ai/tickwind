@@ -1121,6 +1121,70 @@ func (s *Store) ClearChatMessages(ctx context.Context, userID, ticker string) er
 	return nil
 }
 
+// CreateConversation inserts a new conversation owned by userID and returns its id.
+func (s *Store) CreateConversation(ctx context.Context, userID, title, anchorTicker string) (string, error) {
+	id := store.NewID()
+	const q = `INSERT INTO conversation (id, user_id, title, anchor_ticker, created_at, updated_at) VALUES ($1, $2, $3, $4, now(), now())`
+	if _, err := s.pool.Exec(ctx, q, id, userID, title, anchorTicker); err != nil {
+		return "", fmt.Errorf("postgres: create conversation: %w", err)
+	}
+	return id, nil
+}
+
+// ListConversations returns the user's conversations, newest-updated first.
+func (s *Store) ListConversations(ctx context.Context, userID string) ([]store.Conversation, error) {
+	rows, err := s.pool.Query(ctx,
+		`SELECT id, user_id, title, anchor_ticker, created_at, updated_at FROM conversation WHERE user_id = $1 ORDER BY updated_at DESC`, userID)
+	if err != nil {
+		return nil, fmt.Errorf("postgres: list conversations: %w", err)
+	}
+	defer rows.Close()
+	var out []store.Conversation
+	for rows.Next() {
+		var c store.Conversation
+		if err := rows.Scan(&c.ID, &c.UserID, &c.Title, &c.AnchorTicker, &c.CreatedAt, &c.UpdatedAt); err != nil {
+			return nil, fmt.Errorf("postgres: scan conversation: %w", err)
+		}
+		out = append(out, c)
+	}
+	return out, rows.Err()
+}
+
+// GetConversation returns the conversation if owned by userID (ok=false otherwise).
+func (s *Store) GetConversation(ctx context.Context, userID, id string) (store.Conversation, bool, error) {
+	var c store.Conversation
+	err := s.pool.QueryRow(ctx,
+		`SELECT id, user_id, title, anchor_ticker, created_at, updated_at FROM conversation WHERE id = $1 AND user_id = $2`, id, userID).
+		Scan(&c.ID, &c.UserID, &c.Title, &c.AnchorTicker, &c.CreatedAt, &c.UpdatedAt)
+	switch {
+	case errors.Is(err, pgx.ErrNoRows):
+		return store.Conversation{}, false, nil
+	case err != nil:
+		return store.Conversation{}, false, fmt.Errorf("postgres: get conversation: %w", err)
+	}
+	return c, true, nil
+}
+
+// RenameConversation sets the title (ownership enforced in the WHERE).
+func (s *Store) RenameConversation(ctx context.Context, userID, id, title string) error {
+	if _, err := s.pool.Exec(ctx,
+		`UPDATE conversation SET title = $3, updated_at = now() WHERE id = $1 AND user_id = $2`, id, userID, title); err != nil {
+		return fmt.Errorf("postgres: rename conversation: %w", err)
+	}
+	return nil
+}
+
+// DeleteConversation removes the conversation + its messages (ownership enforced).
+func (s *Store) DeleteConversation(ctx context.Context, userID, id string) error {
+	if _, err := s.pool.Exec(ctx, `DELETE FROM chat_message WHERE conversation_id = $1`, id); err != nil {
+		return fmt.Errorf("postgres: delete conversation messages: %w", err)
+	}
+	if _, err := s.pool.Exec(ctx, `DELETE FROM conversation WHERE id = $1 AND user_id = $2`, id, userID); err != nil {
+		return fmt.Errorf("postgres: delete conversation: %w", err)
+	}
+	return nil
+}
+
 // GetChatMsgUsed returns the user's Product B chat-message count for the period (ET
 // month); 0 when there's no row (pgx.ErrNoRows is a clean zero).
 func (s *Store) GetChatMsgUsed(ctx context.Context, userID, period string) (int, error) {
