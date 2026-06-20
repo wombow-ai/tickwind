@@ -126,7 +126,15 @@ Deep Research (one subscription unlocks both) is the simplest, highest-conversio
   the 6 signal-kind labels (EN+zh). tsc + next build green (AlertsPanel is auth-gated → populated preview
   needs a session). **C5 SIGNAL ALERTS COMPLETE (backend + UI).** Delivery is in-app (existing alerts
   bell); external channels (email/Telegram) remain owner-gated.
-- **C6 — Backtesting** (heaviest; defer).
+- **C6 — Backtesting: C6.1 pure core ✅ DONE (commit, ahead 30); feasibility CONFIRMED.** Was marked
+  "defer/heaviest", but the core turned out tractable: `DailyCandles` serves ~1300 bars (~5y), and
+  `internal/indicators/backtest.go` `BacktestSignal(candles, rule, horizon)` is a pure function (mirrors
+  congressbt's injected-data, no-clock pattern) — replays a rule (golden/death cross, macd cross, rsi
+  oversold/overbought as per-bar transitions reusing the live signal math) and reports win rate, avg
+  forward return, trade count, and a buy-and-hold baseline. A disclosed historical statistic, NOT a
+  prediction/advice. Unit-tested (flat-then-trend series forcing a known cross + guards). **NEXT C6.2:**
+  the endpoint (`GET /v1/stocks/{ticker}/backtest?rule=&horizon=` — fetch candles via the compute/bars
+  source, run BacktestSignal, Pro-gate) + C6.3 a UI (a backtest widget on the signals card or a tab).
 
 C1 is the highest-value, lowest-risk, anti-hallucination-safe first increment.
 
