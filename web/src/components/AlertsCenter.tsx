@@ -9,45 +9,7 @@ import {useT} from '@/lib/i18n';
 import {useDark} from '@/lib/theme';
 import {cx, tok} from '@/lib/ui';
 import {useToast} from '@/components/ui/Toast';
-
-// Signal-condition alert kinds are self-describing (no threshold to render).
-const SIGNAL_KINDS = [
-  'golden_cross',
-  'death_cross',
-  'rsi_oversold',
-  'rsi_overbought',
-  'signal_bullish',
-  'signal_bearish',
-];
-
-function isThresholdless(kind: string): boolean {
-  return kind === 'new_filing' || SIGNAL_KINDS.includes(kind);
-}
-
-function kindLabelKey(kind: string): string {
-  switch (kind) {
-    case 'price_above':
-      return 'alerts.priceAbove';
-    case 'price_below':
-      return 'alerts.priceBelow';
-    case 'pct_move':
-      return 'alerts.pctMove';
-    case 'golden_cross':
-      return 'alerts.goldenCross';
-    case 'death_cross':
-      return 'alerts.deathCross';
-    case 'rsi_oversold':
-      return 'alerts.rsiOversold';
-    case 'rsi_overbought':
-      return 'alerts.rsiOverbought';
-    case 'signal_bullish':
-      return 'alerts.signalBullish';
-    case 'signal_bearish':
-      return 'alerts.signalBearish';
-    default:
-      return 'alerts.newFiling';
-  }
-}
+import {describeAlert} from '@/lib/alerts';
 
 /**
  * Cross-stock alerts hub (the `/alerts` page): every alert the signed-in user
@@ -98,13 +60,6 @@ export function AlertsCenter() {
     }
   }
 
-  function describe(a: Alert): string {
-    const k = tr(kindLabelKey(a.kind));
-    if (isThresholdless(a.kind)) return k;
-    if (a.kind === 'pct_move') return `${k} ±${a.threshold}%`;
-    return `${k} $${a.threshold}`;
-  }
-
   if (!user) {
     return (
       <div className="mx-auto max-w-2xl">
@@ -131,7 +86,7 @@ export function AlertsCenter() {
       >
         {a.ticker}
       </Link>
-      <span className={cx('min-w-0 flex-1 truncate text-[13.5px] font-medium', t.text)}>{describe(a)}</span>
+      <span className={cx('min-w-0 flex-1 truncate text-[13.5px] font-medium', t.text)}>{describeAlert(a, tr)}</span>
       {isTriggered && (
         <button
           onClick={() => rearm(a)}

@@ -306,7 +306,7 @@ function MeHub() {
       </nav>
 
       {tab === 'overview' && <OverviewTab />}
-      {tab === 'watchlist' && <Board variant="watchlist" />}
+      {tab === 'watchlist' && <Board />}
       {tab === 'holdings' && <PortfolioView />}
       {tab === 'notes' && (
         <>
