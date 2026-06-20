@@ -200,6 +200,14 @@ func (s *Server) chatTurn(w http.ResponseWriter, r *http.Request, u auth.User, c
 	blob, _ := json.Marshal(ans.Blocks)
 	_ = s.store.AppendChatMessage(r.Context(), store.ChatMessage{ConversationID: convID, UserID: u.ID, Ticker: anchorTicker, Role: "user", Content: msg})
 	_ = s.store.AppendChatMessage(r.Context(), store.ChatMessage{ConversationID: convID, UserID: u.ID, Ticker: anchorTicker, Role: "assistant", Content: string(blob)})
+	// Auto-title a GENERAL conversation from its first user message, so the hub sidebar
+	// shows a meaningful name instead of the default "New chat". First message only
+	// (len(hist)==0); stock conversations are already named by their ticker.
+	if anchorTicker == "" && len(hist) == 0 {
+		if title := deriveChatTitle(msg); title != "" {
+			_ = s.store.RenameConversation(r.Context(), u.ID, convID, title)
+		}
+	}
 	if err := s.store.IncrChatMsgUsed(r.Context(), u.ID, period); err != nil {
 		s.log.Debug("chat meter incr failed (non-fatal)", "user", u.ID, "err", err)
 	}
@@ -214,6 +222,19 @@ func (s *Server) chatTurn(w http.ResponseWriter, r *http.Request, u auth.User, c
 		"disclaimer": chatDisclaimer(lang),
 		"meter":      map[string]int{"used": used + 1, "limit": s.chatMonthlyLimit},
 	})
+}
+
+// deriveChatTitle makes a short conversation title from the first user message: the
+// first non-empty line, trimmed, capped at ~48 runes (rune-safe for CJK).
+func deriveChatTitle(msg string) string {
+	title := strings.TrimSpace(msg)
+	if i := strings.IndexAny(title, "\r\n"); i >= 0 {
+		title = strings.TrimSpace(title[:i])
+	}
+	if r := []rune(title); len(r) > 48 {
+		title = strings.TrimSpace(string(r[:48])) + "…"
+	}
+	return title
 }
 
 // findStockConv returns the user's existing conversation for a ticker WITHOUT creating
