@@ -120,9 +120,12 @@ Deep Research (one subscription unlocks both) is the simplest, highest-conversio
   a ticker's cached signals (`SignalScanCache.SignalsFor` via the new `AlertSignalSource`); a kind fires
   when the ticker has ≥1 matching signal — deterministic, never fabricated. `validAlertKinds` extended +
   threshold exempted for signal kinds; evaluator moved into the bars block so it can read the signals
-  cache. Unit-tested. **NEXT C5.2:** the alert-creation UI (add the signal kinds to the AlertsPanel form,
-  hide the threshold input for them) — the existing AlertsCenter already LISTS any alert kind. Delivery is
-  in-app (the existing alerts UI / bell); external channels (email/Telegram) remain owner-gated.
+  cache. Unit-tested. **C5.2 ✅ DONE (commit, ahead 28):**
+  AlertsPanel kind `<select>` now has two optgroups (Price & filings / Technical signals), threshold
+  hidden for thresholdless kinds; AlertsCenter labels signal alerts correctly; dict.ts `alerts.group.*` +
+  the 6 signal-kind labels (EN+zh). tsc + next build green (AlertsPanel is auth-gated → populated preview
+  needs a session). **C5 SIGNAL ALERTS COMPLETE (backend + UI).** Delivery is in-app (existing alerts
+  bell); external channels (email/Telegram) remain owner-gated.
 - **C6 — Backtesting** (heaviest; defer).
 
 C1 is the highest-value, lowest-risk, anti-hallucination-safe first increment.
