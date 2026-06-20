@@ -58,7 +58,8 @@ import {FundamentalsCard} from '@/components/FundamentalsCard';
 import {IndicatorsPanel} from '@/components/IndicatorsPanel';
 import {SignalsCard} from '@/components/SignalsCard';
 import {BacktestWidget} from '@/components/BacktestWidget';
-import {AISummaryCard, DeepEntry} from '@/components/AISummaryCard';
+import {AISummaryCard} from '@/components/AISummaryCard';
+import {DeepResearchView} from '@/components/DeepResearchView';
 import {MovementCard} from '@/components/MovementCard';
 import {FilingsCard} from '@/components/FilingsCard';
 import {InsiderActivityCard} from '@/components/InsiderActivityCard';
@@ -68,7 +69,6 @@ import {ShortChip} from '@/components/ShortChip';
 import {CongressChip} from '@/components/CongressChip';
 import {WhalesChip} from '@/components/WhalesChip';
 import {CommentsPanel} from '@/components/CommentsPanel';
-import {ResearchReport} from '@/components/ResearchReport';
 import {ShareCardButton} from '@/components/ShareCardButton';
 
 type Status = 'loading' | 'ready' | 'error';
@@ -668,7 +668,7 @@ export function StockView({ticker}: {ticker: string}) {
           <FundamentalsCard ticker={norm} />
         </div>
         {/* AI digest: daily-cached bullets from news+social (hides when LLM off/empty) */}
-        <AISummaryCard ticker={norm} />
+        <AISummaryCard ticker={norm} onOpen={() => setTopTab('Research')} />
 
         {/* K-line candlestick chart + indicators — the price-and-indicators anchor */}
         <div className="mb-6">
@@ -695,12 +695,10 @@ export function StockView({ticker}: {ticker: string}) {
           LLM-backed fetch fires only after the tab is first opened (`researchSeen`),
           then stays mounted via `hidden` so its state survives tab switches. */}
       <div hidden={topTab !== 'Research'}>
-        {/* Entry to the dedicated AI Deep Research page (also on the Overview AI
-            Digest). Outside the researchSeen guard so it shows immediately. */}
-        <div className="mb-4 flex items-center justify-end">
-          <DeepEntry ticker={norm} dark={dark} tr={tr} />
-        </div>
-        {researchSeen && <ResearchReport ticker={norm} />}
+        {/* The AI Deep Research report lives HERE, inline (one home, no page round-trip).
+            The standalone /stock/{t}/research page is kept only for PDF export/share.
+            Lazy: mounted on first open since it fires an LLM-backed fetch. */}
+        {researchSeen && <DeepResearchView ticker={norm} inline />}
       </div>
 
       {/* ─────────────────────── FILINGS & MONEY TAB ──────────────────────── */}

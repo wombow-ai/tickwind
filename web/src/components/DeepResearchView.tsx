@@ -88,7 +88,7 @@ const MAX_POLLS = 35;
  * - llm:false / data-only → render the Go-owned facts/tables + a small
  *   "AI analysis unavailable — showing public data" note. Never a broken UI.
  */
-export function DeepResearchView({ticker}: {ticker: string}) {
+export function DeepResearchView({ticker, inline = false}: {ticker: string; inline?: boolean}) {
   const dark = useDark();
   const t = tok(dark);
   const tr = useT();
@@ -202,11 +202,13 @@ export function DeepResearchView({ticker}: {ticker: string}) {
   }, [ticker, lang, user, authLoading, getToken, reload, repoll]);
 
   // ---- chrome: a header that's shared across every state ----
-  const header = <DeepHeader ticker={ticker} dark={dark} t={t} tr={tr} report={data} lang={lang} />;
+  const header = (
+    <DeepHeader ticker={ticker} dark={dark} t={t} tr={tr} report={data} lang={lang} inline={inline} />
+  );
 
   if (state === 'auth-wait' || state === 'loading') {
     return (
-      <Shell header={header}>
+      <Shell header={header} inline={inline}>
         <DeepLoading dark={dark} t={t} tr={tr} authWait={state === 'auth-wait'} />
       </Shell>
     );
@@ -214,7 +216,7 @@ export function DeepResearchView({ticker}: {ticker: string}) {
 
   if (state === 'anon') {
     return (
-      <Shell header={header}>
+      <Shell header={header} inline={inline}>
         <DeepGate ticker={ticker} dark={dark} t={t} tr={tr} lang={lang} />
       </Shell>
     );
@@ -222,7 +224,7 @@ export function DeepResearchView({ticker}: {ticker: string}) {
 
   if (state === 'quota') {
     return (
-      <Shell header={header}>
+      <Shell header={header} inline={inline}>
         <Notice
           tone="amber"
           icon={<CalendarClock size={18} />}
@@ -237,7 +239,7 @@ export function DeepResearchView({ticker}: {ticker: string}) {
 
   if (state === 'notfound') {
     return (
-      <Shell header={header}>
+      <Shell header={header} inline={inline}>
         <div className={cx('rounded-2xl border p-6 text-center text-[13px]', t.card, t.border, t.soft, t.sub)}>
           {tr('research.empty')}
         </div>
@@ -247,7 +249,7 @@ export function DeepResearchView({ticker}: {ticker: string}) {
 
   if (state === 'error' || !data) {
     return (
-      <Shell header={header}>
+      <Shell header={header} inline={inline}>
         <div className={cx('rounded-2xl border p-6 text-center', t.card, t.border, t.soft)}>
           <p className={cx('text-[13.5px] font-semibold', t.text)}>{tr('deep.error.title')}</p>
           <button
@@ -268,7 +270,7 @@ export function DeepResearchView({ticker}: {ticker: string}) {
   const anchorBase = `/stock/${encodeURIComponent(ticker)}`;
 
   return (
-    <Shell header={header}>
+    <Shell header={header} inline={inline}>
       {/* Monthly-limit note: over the per-user quota with no cached prose → the
           data-only report below is final. */}
       {prose === 'quota' && (
@@ -359,16 +361,27 @@ export function DeepResearchView({ticker}: {ticker: string}) {
  * carries `tw-print-research`, so the browser's "Save as PDF" captures just the
  * report. No effect on normal on-screen rendering.
  */
-function Shell({header, children}: {header: React.ReactNode; children: React.ReactNode}) {
+function Shell({
+  header,
+  children,
+  inline = false,
+}: {
+  header: React.ReactNode;
+  children: React.ReactNode;
+  inline?: boolean;
+}) {
+  // Inline (rendered inside the stock page's Research tab): drop the print-scope hook
+  // and the export-only branding footer — both belong to the standalone /research page
+  // that owns PDF export. max-w-3xl is also dropped so it fills the tab column.
   return (
-    <div className="tw-research-print mx-auto max-w-3xl tw-fade">
+    <div className={inline ? 'tw-fade' : 'tw-research-print mx-auto max-w-3xl tw-fade'}>
       {header}
       {children}
-      {/* Branding footer — shown ONLY in the exported PDF (tw-print-only), so the
-          shared artifact carries the site identity (free promotion). */}
-      <div className="tw-print-only mt-6 border-t border-slate-200 pt-3 text-center text-[11px] text-slate-500">
-        Tickwind · tickwind.com — AI Deep Research over public data, not investment advice.
-      </div>
+      {!inline && (
+        <div className="tw-print-only mt-6 border-t border-slate-200 pt-3 text-center text-[11px] text-slate-500">
+          Tickwind · tickwind.com — AI Deep Research over public data, not investment advice.
+        </div>
+      )}
     </div>
   );
 }
@@ -412,6 +425,7 @@ function DeepHeader({
   tr,
   report,
   lang,
+  inline = false,
 }: {
   ticker: string;
   dark: boolean;
@@ -419,6 +433,7 @@ function DeepHeader({
   tr: (key: string) => string;
   report: ResearchReportResponse | null;
   lang: string;
+  inline?: boolean;
 }) {
   const shareCard: OgParams = {
     kind: 'page',
@@ -430,16 +445,20 @@ function DeepHeader({
   };
   return (
     <div className="mb-5">
-      <Link
-        href={`/stock/${encodeURIComponent(ticker)}`}
-        className={cx(
-          'tw-no-print mb-3 inline-flex items-center gap-1 text-[12.5px] font-medium hover:underline',
-          t.sub,
-        )}
-      >
-        <ArrowLeft size={14} />
-        {tr('deep.back').replace('{t}', ticker)}
-      </Link>
+      {/* Back link only on the standalone /research page; in the Research tab it would
+          point back to the same page the report already lives in. */}
+      {!inline && (
+        <Link
+          href={`/stock/${encodeURIComponent(ticker)}`}
+          className={cx(
+            'tw-no-print mb-3 inline-flex items-center gap-1 text-[12.5px] font-medium hover:underline',
+            t.sub,
+          )}
+        >
+          <ArrowLeft size={14} />
+          {tr('deep.back').replace('{t}', ticker)}
+        </Link>
+      )}
       <div className={cx('rounded-2xl border p-5', t.card, t.border, t.soft)}>
         <div className="flex flex-wrap items-center gap-2">
           <h1 className={cx('flex items-center gap-1.5 text-[19px] font-bold tracking-tight', t.text)}>

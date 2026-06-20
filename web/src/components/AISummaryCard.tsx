@@ -17,7 +17,7 @@ import {cx, tok} from '@/lib/ui';
  * flows / sentiment + a two-sided bull/bear read, AI-written + source-attributed)
  * and links into it — driving users to the flagship paid feature, no per-view cost.
  */
-export function AISummaryCard({ticker}: {ticker: string}) {
+export function AISummaryCard({ticker, onOpen}: {ticker: string; onOpen?: () => void}) {
   const dark = useDark();
   const t = tok(dark);
   const tr = useT();
@@ -44,7 +44,7 @@ export function AISummaryCard({ticker}: {ticker: string}) {
           {tr('ai.badge')}
         </span>
         <div className="ml-auto">
-          <DeepEntry ticker={ticker} dark={dark} tr={tr} />
+          <DeepEntry ticker={ticker} dark={dark} tr={tr} onClick={onOpen} />
         </div>
       </div>
       <p className={cx('mt-2 text-[12.5px]', t.sub)}>
@@ -74,23 +74,33 @@ export function DeepEntry({
   dark,
   tr,
   className,
+  onClick,
 }: {
   ticker: string;
   dark: boolean;
   tr: (key: string) => string;
   className?: string;
+  // When provided, the entry switches to the in-page Research tab (where the deep
+  // report now lives) instead of navigating to the standalone /research page.
+  onClick?: () => void;
 }) {
+  const cls = cx(
+    'inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-semibold transition',
+    dark
+      ? 'border-violet-500/30 text-violet-300 hover:border-violet-400/50 hover:bg-violet-500/10'
+      : 'border-violet-200 text-violet-600 hover:border-violet-300 hover:bg-violet-50',
+    className,
+  );
+  if (onClick) {
+    return (
+      <button type="button" onClick={onClick} className={cls}>
+        {tr('deep.entry')}
+        <ArrowRight size={12} />
+      </button>
+    );
+  }
   return (
-    <Link
-      href={`/stock/${encodeURIComponent(ticker)}/research`}
-      className={cx(
-        'inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-semibold transition',
-        dark
-          ? 'border-violet-500/30 text-violet-300 hover:border-violet-400/50 hover:bg-violet-500/10'
-          : 'border-violet-200 text-violet-600 hover:border-violet-300 hover:bg-violet-50',
-        className,
-      )}
-    >
+    <Link href={`/stock/${encodeURIComponent(ticker)}/research`} className={cls}>
       {tr('deep.entry')}
       <ArrowRight size={12} />
     </Link>
