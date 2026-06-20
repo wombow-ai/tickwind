@@ -3,7 +3,7 @@
 import {Plus, Send} from 'lucide-react';
 import {useCallback, useEffect, useRef, useState} from 'react';
 import {MsgRow, type Msg} from '@/components/chatRender';
-import {clearChat, getChatHistory, getConvHistory, postChat, postConvChat} from '@/lib/api';
+import {type ChatResponse, clearChat, getChatHistory, getConvHistory, postChat, postConvChatStream} from '@/lib/api';
 import {useAuth} from '@/lib/auth';
 import {chatVars, CHAT_MONO} from '@/lib/chatTheme';
 import {useLang, useT} from '@/lib/i18n';
@@ -37,6 +37,7 @@ export function ChatThreadPanel({source, onActivity, onMeter}: {source: ChatSour
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
+  const [streamStarted, setStreamStarted] = useState(false);
   const [err, setErr] = useState(false);
   const [meter, setMeter] = useState<{used: number; limit: number} | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
@@ -88,6 +89,7 @@ export function ChatThreadPanel({source, onActivity, onMeter}: {source: ChatSour
       if (!msg || sending) return;
       setErr(false);
       setSending(true);
+      setStreamStarted(false);
       setInput('');
       setMessages(m => {
         const next = [...m, {role: 'user' as const, text: msg}];
@@ -96,11 +98,35 @@ export function ChatThreadPanel({source, onActivity, onMeter}: {source: ChatSour
       });
       try {
         const token = await getToken();
-        const res = source.kind === 'stock'
-          ? await postChat(source.ticker, msg, token, lang)
-          : await postConvChat(source.id, msg, token, lang);
+        let res: ChatResponse;
+        if (source.kind === 'conversation') {
+          // Stream: append tokens to a live assistant message; `done` reconciles with the
+          // authoritative advice-filtered blocks (so the anti-hallucination filter wins).
+          res = await postConvChatStream(source.id, msg, token, lang, tok => {
+            setStreamStarted(true);
+            setMessages(m => {
+              const next = [...m];
+              const last = next[next.length - 1];
+              if (last && last.role === 'assistant' && last.blocks === undefined) {
+                next[next.length - 1] = {...last, text: (last.text ?? '') + tok};
+              } else {
+                next.push({role: 'assistant', text: tok});
+              }
+              return next;
+            });
+          });
+        } else {
+          res = await postChat(source.ticker, msg, token, lang);
+        }
         setMessages(m => {
-          const next = [...m, {role: 'assistant' as const, blocks: res.blocks}];
+          const next = [...m];
+          const last = next[next.length - 1];
+          const finalMsg: Msg = {role: 'assistant', blocks: res.blocks};
+          if (last && last.role === 'assistant' && last.blocks === undefined) {
+            next[next.length - 1] = finalMsg; // replace the streamed placeholder
+          } else {
+            next.push(finalMsg);
+          }
           threadCache.set(key, next);
           return next;
         });
@@ -111,8 +137,15 @@ export function ChatThreadPanel({source, onActivity, onMeter}: {source: ChatSour
         onActivity?.();
       } catch {
         setErr(true);
+        setMessages(m => {
+          const next = [...m];
+          const last = next[next.length - 1];
+          if (last && last.role === 'assistant' && last.blocks === undefined) next.pop();
+          return next;
+        });
       } finally {
         setSending(false);
+        setStreamStarted(false);
       }
     },
     [key, lang, sending, getToken, onActivity, onMeter], // eslint-disable-line react-hooks/exhaustive-deps
@@ -160,7 +193,7 @@ export function ChatThreadPanel({source, onActivity, onMeter}: {source: ChatSour
           ) : (
             messages.map((m, i) => <MsgRow key={i} m={m} fallbackTicker={fallbackTicker} tr={tr} />)
           )}
-          {sending && <ThinkingRow tr={tr} />}
+          {sending && !streamStarted && <ThinkingRow tr={tr} />}
           {err && <p style={{fontSize: 12.5, color: 'var(--down)'}}>{tr('chat.error')}</p>}
         </div>
       </div>

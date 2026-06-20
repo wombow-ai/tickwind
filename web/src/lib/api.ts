@@ -1509,6 +1509,77 @@ export async function postConvChat(
   );
 }
 
+/**
+ * Streaming variant of postConvChat (POST /v1/conversations/{id}/chat/stream): reads the
+ * SSE response and invokes onToken for each content delta as the answer generates, then
+ * resolves with the terminal payload — the AUTHORITATIVE advice-filtered blocks + meter.
+ * The caller renders tokens live, then reconciles its accumulated text with the returned
+ * blocks (so the anti-hallucination filter always wins). Throws on a transport error or a
+ * server "error" event; the caller can fall back to the non-streaming postConvChat.
+ */
+export async function postConvChatStream(
+  id: string,
+  message: string,
+  token: string | null,
+  lang: string | undefined,
+  onToken: (text: string) => void,
+  signal?: AbortSignal,
+): Promise<ChatResponse> {
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}/v1/conversations/${encodeURIComponent(id)}/chat/stream`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? {Authorization: `Bearer ${token}`} : {}),
+      },
+      body: JSON.stringify({message, lang: lang === 'zh' ? 'zh' : 'en'}),
+      signal,
+    });
+  } catch {
+    throw new ApiError(`network error contacting ${API_BASE}`, 0);
+  }
+  if (!res.ok || !res.body) {
+    throw new ApiError('chat stream failed', res.status);
+  }
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buf = '';
+  let done: ChatResponse | null = null;
+  for (;;) {
+    const {value, done: streamDone} = await reader.read();
+    if (value) buf += decoder.decode(value, {stream: true});
+    let sep: number;
+    // SSE events are blank-line ("\n\n") separated; parse each complete event.
+    while ((sep = buf.indexOf('\n\n')) >= 0) {
+      const event = buf.slice(0, sep);
+      buf = buf.slice(sep + 2);
+      for (const line of event.split('\n')) {
+        const s = line.trim();
+        if (!s.startsWith('data:')) continue;
+        const data = s.slice(5).trim();
+        if (!data) continue;
+        let ev: {type?: string; text?: string} & Partial<ChatResponse>;
+        try {
+          ev = JSON.parse(data);
+        } catch {
+          continue;
+        }
+        if (ev.type === 'token') {
+          if (ev.text) onToken(ev.text);
+        } else if (ev.type === 'error') {
+          throw new ApiError('chat stream error', 502);
+        } else if (ev.type === 'done') {
+          done = {blocks: ev.blocks ?? [], disclaimer: ev.disclaimer, meter: ev.meter, limit_reached: ev.limit_reached, busy: ev.busy, thread_full: ev.thread_full};
+        }
+      }
+    }
+    if (streamDone) break;
+  }
+  if (!done) throw new ApiError('chat stream ended without a result', 0);
+  return done;
+}
+
 /** A conversation's persisted messages (GET /v1/conversations/{id}/chat). */
 export async function getConvHistory(id: string, token: string | null, signal?: AbortSignal): Promise<ChatHistoryMessage[]> {
   const {messages} = await getJson<{messages: ChatHistoryMessage[]}>(
