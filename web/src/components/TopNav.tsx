@@ -100,6 +100,7 @@ export function TopNav() {
     {href: '/news', label: tr('nav.news')},
   ];
   const my: NavItem = {href: '/me', label: tr('nav.my')};
+  const chat: NavItem = {href: '/chat', label: tr('nav.chat')};
   const secondary: NavItem[] = [
     {href: '/stocks', label: tr('nav.stocks')},
     {href: '/screen', label: tr('nav.screen')},
@@ -113,7 +114,7 @@ export function TopNav() {
   // The full ordered list for the mobile sheet.
   const mobileItems: NavItem[] = [
     ...primary,
-    ...(authed ? [my] : []),
+    ...(authed ? [chat, my] : []),
     ...secondary,
     whatsnew,
   ];
@@ -158,6 +159,7 @@ export function TopNav() {
           {primary.map(item => (
             <NavPill key={item.href} item={item} pathname={pathname} t={t} />
           ))}
+          {authed && <NavPill item={chat} pathname={pathname} t={t} />}
           {authed && <NavPill item={my} pathname={pathname} t={t} />}
           <MoreMenu pathname={pathname} items={secondary} />
         </nav>

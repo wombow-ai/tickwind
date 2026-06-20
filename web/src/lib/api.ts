@@ -1453,6 +1453,72 @@ export async function clearChat(ticker: string, token: string | null, signal?: A
   );
 }
 
+// ── Product C: the unified chat hub (conversations) ─────────────────────────
+
+/** One conversation in the hub (the sidebar list shape). */
+export interface Conversation {
+  id: string;
+  title: string;
+  anchor_ticker?: string;
+  updated_at: string;
+}
+
+/** Lists the user's conversations, newest-updated first (GET /v1/conversations). */
+export async function listConversations(token: string | null, signal?: AbortSignal): Promise<Conversation[]> {
+  const {conversations} = await getJson<{conversations: Conversation[]}>('/v1/conversations', signal, token);
+  return conversations ?? [];
+}
+
+/** Creates a conversation (general, or stock-anchored when anchor_ticker is given). */
+export async function createConversation(
+  opts: {title?: string; anchorTicker?: string},
+  token: string | null,
+  signal?: AbortSignal,
+): Promise<Conversation> {
+  return postJson<Conversation>(
+    '/v1/conversations',
+    {title: opts.title ?? '', anchor_ticker: opts.anchorTicker ?? ''},
+    signal,
+    token,
+  );
+}
+
+/** Renames a conversation (PATCH /v1/conversations/{id}). */
+export async function renameConversation(id: string, title: string, token: string | null, signal?: AbortSignal): Promise<void> {
+  await patchJson<{ok: boolean}>(`/v1/conversations/${encodeURIComponent(id)}`, {title}, signal, token);
+}
+
+/** Deletes a conversation + its messages (DELETE /v1/conversations/{id}). */
+export async function deleteConversation(id: string, token: string | null, signal?: AbortSignal): Promise<void> {
+  await deleteJson<{ok: boolean}>(`/v1/conversations/${encodeURIComponent(id)}`, signal, token);
+}
+
+/** Sends one chat turn to a conversation (POST /v1/conversations/{id}/chat). */
+export async function postConvChat(
+  id: string,
+  message: string,
+  token: string | null,
+  lang?: string,
+  signal?: AbortSignal,
+): Promise<ChatResponse> {
+  return postJson<ChatResponse>(
+    `/v1/conversations/${encodeURIComponent(id)}/chat`,
+    {message, lang: lang === 'zh' ? 'zh' : 'en'},
+    signal,
+    token,
+  );
+}
+
+/** A conversation's persisted messages (GET /v1/conversations/{id}/chat). */
+export async function getConvHistory(id: string, token: string | null, signal?: AbortSignal): Promise<ChatHistoryMessage[]> {
+  const {messages} = await getJson<{messages: ChatHistoryMessage[]}>(
+    `/v1/conversations/${encodeURIComponent(id)}/chat`,
+    signal,
+    token,
+  );
+  return messages ?? [];
+}
+
 /**
  * One attributed evidence item behind a notable price move: a recent news
  * headline, a filing, or an insider buy. `title`/`url` are set in Go from the
