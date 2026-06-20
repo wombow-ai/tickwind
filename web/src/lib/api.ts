@@ -1375,6 +1375,73 @@ export async function createPortal(token: string | null, signal?: AbortSignal): 
   return url;
 }
 
+// ── Product B: personalized AI chat (Pro-gated) ─────────────────────────────
+
+/**
+ * One ordered piece of an assistant answer: prose `text`, or a `widget` reference the
+ * UI renders from the real store (the chat layer never ships a widget's numbers).
+ */
+export interface ChatBlock {
+  kind: 'text' | 'widget';
+  text?: string;
+  widget?: string;
+  params?: Record<string, string>;
+}
+
+/** The POST /chat response: the assistant's blocks + a meter readout + soft-state flags. */
+export interface ChatResponse {
+  blocks: ChatBlock[];
+  disclaimer?: string;
+  meter?: {used: number; limit: number};
+  /** The monthly message cap was hit — `blocks` carries a soft note (HTTP is still 200). */
+  limit_reached?: boolean;
+  /** The global daily cap was hit — `blocks` carries a soft note (HTTP is still 200). */
+  busy?: boolean;
+}
+
+/** One persisted turn from GET /chat (assistant turns carry parsed blocks). */
+export interface ChatHistoryMessage {
+  role: 'user' | 'assistant';
+  blocks?: ChatBlock[];
+  text?: string;
+  at: string;
+}
+
+/**
+ * Sends one Product B chat turn (POST /v1/stocks/{ticker}/chat). Pro-gated server-side:
+ * a non-Pro user gets a **402** ({@link ApiError} status 402) → the caller shows the
+ * upgrade CTA. The monthly-cap / busy soft states return HTTP 200 with the note in
+ * `blocks` + the matching flag set.
+ */
+export async function postChat(
+  ticker: string,
+  message: string,
+  token: string | null,
+  lang?: string,
+  signal?: AbortSignal,
+): Promise<ChatResponse> {
+  return postJson<ChatResponse>(
+    `/v1/stocks/${encodeURIComponent(normalizeTicker(ticker))}/chat`,
+    {message, lang: lang === 'zh' ? 'zh' : 'en'},
+    signal,
+    token,
+  );
+}
+
+/** The user's persisted chat thread for a ticker (GET /v1/stocks/{ticker}/chat). */
+export async function getChatHistory(
+  ticker: string,
+  token: string | null,
+  signal?: AbortSignal,
+): Promise<ChatHistoryMessage[]> {
+  const {messages} = await getJson<{messages: ChatHistoryMessage[]}>(
+    `/v1/stocks/${encodeURIComponent(normalizeTicker(ticker))}/chat`,
+    signal,
+    token,
+  );
+  return messages ?? [];
+}
+
 /**
  * One attributed evidence item behind a notable price move: a recent news
  * headline, a filing, or an insider buy. `title`/`url` are set in Go from the

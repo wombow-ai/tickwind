@@ -695,6 +695,24 @@ export function StockView({ticker}: {ticker: string}) {
           LLM-backed fetch fires only after the tab is first opened (`researchSeen`),
           then stays mounted via `hidden` so its state survives tab switches. */}
       <div hidden={topTab !== 'Research'}>
+        {/* Product B entry: the personalized, Pro-gated chat — "ask your own question"
+            beside the fixed deep report (the report is the same for everyone; the chat
+            interrogates it). */}
+        <Link
+          href={`/stock/${encodeURIComponent(norm)}/chat`}
+          className={cx(
+            'mb-4 flex items-center gap-3 rounded-2xl border p-4 transition',
+            t.card,
+            t.border,
+            dark ? 'bg-violet-500/[0.05] hover:border-violet-400/40' : 'bg-violet-50/50 hover:border-violet-300',
+          )}
+        >
+          <MessageSquare size={18} className={dark ? 'text-violet-300' : 'text-violet-500'} />
+          <div className="min-w-0 flex-1">
+            <p className={cx('text-[13.5px] font-bold', t.text)}>{tr('chat.entry')}</p>
+            <p className={cx('text-[12px]', t.sub)}>{tr('chat.entry.sub').replace('{t}', norm)}</p>
+          </div>
+        </Link>
         {/* The AI Deep Research report lives HERE, inline (one home, no page round-trip).
             The standalone /stock/{t}/research page is kept only for PDF export/share.
             Lazy: mounted on first open since it fires an LLM-backed fetch. */}
