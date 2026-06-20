@@ -32,6 +32,24 @@ export default async function ScreenPage({
     <div className="mx-auto max-w-3xl">
       <Screener />
 
+      {/* Cross-link to the deterministic signal screener (golden cross, RSI, MACD…). */}
+      <Link
+        href="/screen/signals"
+        className="mt-4 flex items-center justify-between rounded-xl border border-violet-200 bg-violet-50/60 px-3.5 py-3 hover:border-violet-300 dark:border-violet-500/30 dark:bg-violet-500/[0.06] dark:hover:border-violet-500/50"
+      >
+        <span>
+          <span className="block text-[13px] font-semibold text-slate-800 dark:text-slate-100">
+            {zh ? '信号筛选器' : 'Signal Screener'}
+          </span>
+          <span className="block text-[11.5px] text-slate-500 dark:text-slate-400">
+            {zh ? '按金叉、RSI、MACD 等技术信号筛选' : 'Screen by golden cross, RSI, MACD and more'}
+          </span>
+        </span>
+        <span aria-hidden className="text-violet-500 dark:text-violet-300">
+          →
+        </span>
+      </Link>
+
       {/* Curated preset landing pages — internal links into the pSEO screener family. */}
       <section className="mt-8">
         <h2 className="mb-2.5 text-[15px] font-bold text-slate-900 dark:text-slate-100">

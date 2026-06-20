@@ -2333,6 +2333,51 @@ export async function getIndicatorSignals(
   }
 }
 
+/** One screened stock: its ticker + the signals that matched the screen query. */
+export interface SignalMatch {
+  ticker: string;
+  signals: IndicatorSignal[];
+}
+
+/** Envelope returned by `GET /v1/screen/signals` (the deterministic signals screener). */
+export interface ScreenSignalsResponse {
+  count: number;
+  results: SignalMatch[];
+  /** When the background scan was built (RFC3339); absent before the first scan. */
+  as_of?: string;
+  /** True when the screener is Pro-gated and the viewer is not Pro (results hard-locked). */
+  paywall_locked?: boolean;
+}
+
+/**
+ * Screens the whole universe for stocks whose deterministic signals match. Filters are
+ * optional and AND-ed (e.g. signal=`technical.ma-cross` + direction=`bullish` → golden
+ * crosses). Resolves to an empty result when the endpoint is unavailable (404), so the
+ * page degrades gracefully. Pass the user token so a Pro viewer gets full results once
+ * the screener paywall is live.
+ */
+export async function getScreenSignals(
+  params: {direction?: string; signal?: string; limit?: number},
+  token?: string | null,
+  abort?: AbortSignal,
+): Promise<ScreenSignalsResponse> {
+  const q = new URLSearchParams();
+  if (params.direction) q.set('direction', params.direction);
+  if (params.signal) q.set('signal', params.signal);
+  if (params.limit) q.set('limit', String(params.limit));
+  const qs = q.toString();
+  try {
+    return await getJson<ScreenSignalsResponse>(
+      `/v1/screen/signals${qs ? `?${qs}` : ''}`,
+      abort,
+      token,
+    );
+  } catch (e) {
+    if (e instanceof ApiError && e.status === 404) return {count: 0, results: []};
+    throw e;
+  }
+}
+
 // ── Per-user prefs (generic JSON UI-state blob) ──────────────────────────
 //
 // A small, generic per-user JSON-prefs surface. The blob is namespaced by
