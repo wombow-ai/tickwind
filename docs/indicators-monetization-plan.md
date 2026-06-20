@@ -112,7 +112,17 @@ Deep Research (one subscription unlocks both) is the simplest, highest-conversio
   from the main `/screen` page. tsc + next build green; preview renders + degrades gracefully. **C4
   SCREENER COMPLETE (C4.1 core + C4.2 backend + C4.3 UI), flag off, not deployed.** Optional follow-up:
   pSEO preset landing pages for the signals screener (like `/screen/[preset]`).
-- **C5 — Indicator/signal alerts** (reuse the existing alerts feature).
+- **C5 — Signal alerts (reuse the existing alerts feature): C5.1 backend ✅ DONE (commit, ahead 26).**
+  The app already has a full alert system (store CRUD + `GET/POST/DELETE/PATCH /v1/alerts` + the
+  `AlertEvaluator` in `internal/ingest/alerts.go` + web AlertsCenter/Bell/Panel). C5.1 added 6
+  self-describing **signal-condition** kinds (Threshold ignored): `golden_cross`, `death_cross`,
+  `rsi_oversold`, `rsi_overbought`, `signal_bullish`, `signal_bearish`. The evaluator checks them against
+  a ticker's cached signals (`SignalScanCache.SignalsFor` via the new `AlertSignalSource`); a kind fires
+  when the ticker has ≥1 matching signal — deterministic, never fabricated. `validAlertKinds` extended +
+  threshold exempted for signal kinds; evaluator moved into the bars block so it can read the signals
+  cache. Unit-tested. **NEXT C5.2:** the alert-creation UI (add the signal kinds to the AlertsPanel form,
+  hide the threshold input for them) — the existing AlertsCenter already LISTS any alert kind. Delivery is
+  in-app (the existing alerts UI / bell); external channels (email/Telegram) remain owner-gated.
 - **C6 — Backtesting** (heaviest; defer).
 
 C1 is the highest-value, lowest-risk, anti-hallucination-safe first increment.
