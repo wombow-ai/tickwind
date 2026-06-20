@@ -661,8 +661,9 @@ func main() {
 			Store:  st,
 		}, enricher, cfg.LLMModel, cfg.LLMDeepModel)
 		apiServer.SetResearch(researchSvc)
-		apiServer.SetDeepResearchLimit(cfg.DeepResearchMonthlyLimit) // per-user, per-ET-month deep-report GENERATION quota
-		log.Info("deep-research report enabled", "llm", enricher.Enabled(), "deep_model", cfg.LLMDeepModel, "deep_monthly_limit", cfg.DeepResearchMonthlyLimit)
+		apiServer.SetDeepResearchLimit(cfg.DeepResearchMonthlyLimit)       // free: per-user, per-ET-month deep-report GENERATION quota
+		apiServer.SetDeepResearchLimitPro(cfg.DeepResearchMonthlyLimitPro) // pro: the high (≈on-demand) quota the upsell promises
+		log.Info("deep-research report enabled", "llm", enricher.Enabled(), "deep_model", cfg.LLMDeepModel, "deep_monthly_limit", cfg.DeepResearchMonthlyLimit, "deep_monthly_limit_pro", cfg.DeepResearchMonthlyLimitPro)
 	} else {
 		log.Warn("per-stock indicator compute disabled — no price feed (Alpaca) for daily candles")
 	}

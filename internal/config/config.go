@@ -121,6 +121,13 @@ type Config struct {
 	// DEEP_RESEARCH_DAILY_LIMIT name (e.g. raise it for a paid tier later).
 	DeepResearchMonthlyLimit int
 
+	// DeepResearchMonthlyLimitPro is the same per-user, per-ET-MONTH GENERATION quota
+	// for PRO subscribers — set high enough to read as "on-demand" for a real user,
+	// while the global daily backstop (researchDailyCap) still bounds total LLM spend.
+	// Env DEEP_RESEARCH_MONTHLY_LIMIT_PRO, default 100. Pro is what the quota-reached
+	// upsell promises, so this MUST exceed the free limit or the upsell is hollow.
+	DeepResearchMonthlyLimitPro int
+
 	// Stripe billing (Pro entitlement). ALL OPTIONAL — every field defaults empty,
 	// and the billing surface stays INERT (webhook + checkout/portal endpoints are
 	// not registered, no rows ever written) until StripeSecretKey is set, exactly
@@ -239,18 +246,19 @@ func Load() Config {
 		LLMDeepAPIKey:           env("LLM_DEEP_API_KEY", ""),
 		// New env name first; fall back to the legacy DEEP_RESEARCH_DAILY_LIMIT (whose
 		// own default is 1) so an existing deployment keeps working unchanged.
-		DeepResearchMonthlyLimit: envInt("DEEP_RESEARCH_MONTHLY_LIMIT", envInt("DEEP_RESEARCH_DAILY_LIMIT", 1)),
-		StripeSecretKey:          env("STRIPE_SECRET_KEY", ""),
-		StripeWebhookSecret:      env("STRIPE_WEBHOOK_SECRET", ""),
-		StripePriceMonthly:       env("STRIPE_PRICE_MONTHLY", ""),
-		StripePriceAnnual:        env("STRIPE_PRICE_ANNUAL", ""),
-		PaywallEnabled:           envBool("PAYWALL_ENABLED", false),
-		IndicatorsPaywallEnabled: envBool("INDICATORS_PAYWALL_ENABLED", false),
-		SupabaseURL:              strings.TrimRight(env("SUPABASE_URL", ""), "/"),
-		SupabaseJWTSecret:        env("SUPABASE_JWT_SECRET", ""),
-		AdminUserIDs:             splitCSVRaw(env("ADMIN_USER_IDS", "")),
-		RateLimitRPM:             envInt("RATELIMIT_RPM", 300),
-		RateLimitBurst:           envInt("RATELIMIT_BURST", 60),
+		DeepResearchMonthlyLimit:    envInt("DEEP_RESEARCH_MONTHLY_LIMIT", envInt("DEEP_RESEARCH_DAILY_LIMIT", 1)),
+		DeepResearchMonthlyLimitPro: envInt("DEEP_RESEARCH_MONTHLY_LIMIT_PRO", 100),
+		StripeSecretKey:             env("STRIPE_SECRET_KEY", ""),
+		StripeWebhookSecret:         env("STRIPE_WEBHOOK_SECRET", ""),
+		StripePriceMonthly:          env("STRIPE_PRICE_MONTHLY", ""),
+		StripePriceAnnual:           env("STRIPE_PRICE_ANNUAL", ""),
+		PaywallEnabled:              envBool("PAYWALL_ENABLED", false),
+		IndicatorsPaywallEnabled:    envBool("INDICATORS_PAYWALL_ENABLED", false),
+		SupabaseURL:                 strings.TrimRight(env("SUPABASE_URL", ""), "/"),
+		SupabaseJWTSecret:           env("SUPABASE_JWT_SECRET", ""),
+		AdminUserIDs:                splitCSVRaw(env("ADMIN_USER_IDS", "")),
+		RateLimitRPM:                envInt("RATELIMIT_RPM", 300),
+		RateLimitBurst:              envInt("RATELIMIT_BURST", 60),
 		Retention: RetentionConfig{
 			NewsDays:             envInt("RETAIN_NEWS_DAYS", 60),
 			NewsHotDays:          envInt("RETAIN_NEWS_HOT_DAYS", 120),

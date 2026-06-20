@@ -21,6 +21,7 @@ import {
   type ResearchSection,
 } from '@/lib/api';
 import {useAuth} from '@/lib/auth';
+import {useEntitlement} from '@/lib/entitlement';
 import {useLang, useT} from '@/lib/i18n';
 import {useDark} from '@/lib/theme';
 import {btnPrimary, cx, tok} from '@/lib/ui';
@@ -94,6 +95,10 @@ export function DeepResearchView({ticker, inline = false}: {ticker: string; inli
   const tr = useT();
   const {lang} = useLang();
   const {user, loading: authLoading, getToken} = useAuth();
+  // Pro entitlement drives the limit-reached upsell: a free user who exhausted their
+  // monthly generation sees an "upgrade for on-demand reports" CTA (the conversion
+  // moment); a Pro user who somehow hits the high cap just sees the neutral reset note.
+  const {isPro} = useEntitlement();
 
   const [state, setState] = useState<State>('auth-wait');
   const [data, setData] = useState<ResearchReportResponse | null>(null);
@@ -230,6 +235,7 @@ export function DeepResearchView({ticker, inline = false}: {ticker: string; inli
           icon={<CalendarClock size={18} />}
           title={tr('deep.quota.title')}
           body={tr('deep.quota.body')}
+          cta={isPro ? undefined : <QuotaUpgradeCTA dark={dark} tr={tr} />}
           dark={dark}
           t={t}
         />
@@ -279,6 +285,7 @@ export function DeepResearchView({ticker, inline = false}: {ticker: string; inli
           icon={<CalendarClock size={18} />}
           title={tr('deep.proseQuota')}
           body={tr('deep.quota.body')}
+          cta={isPro ? undefined : <QuotaUpgradeCTA dark={dark} tr={tr} />}
           dark={dark}
           t={t}
         />
@@ -859,12 +866,14 @@ function Citations({
   );
 }
 
-/** A small tinted notice card (data-only / quota), tone-keyed. */
+/** A small tinted notice card (data-only / quota), tone-keyed. An optional `cta` renders
+ *  below the body — used to attach the Pro upsell to the monthly-limit notice. */
 function Notice({
   tone,
   icon,
   title,
   body,
+  cta,
   dark,
   t,
 }: {
@@ -872,6 +881,7 @@ function Notice({
   icon: React.ReactNode;
   title: string;
   body?: string;
+  cta?: React.ReactNode;
   dark: boolean;
   t: Tokens;
 }) {
@@ -897,7 +907,29 @@ function Notice({
       <div className="min-w-0">
         <p className={cx('text-[13px] font-semibold', t.text)}>{title}</p>
         {body && <p className={cx('mt-0.5 text-[12px] leading-relaxed', t.sub)}>{body}</p>}
+        {cta && <div className="mt-2.5">{cta}</div>}
       </div>
     </div>
+  );
+}
+
+/**
+ * The Pro upsell button shown on the monthly-limit notice to a NON-Pro user — the prime
+ * conversion moment (they wanted another report this month). Links to /pro; honest framing:
+ * Pro lifts the per-month generation cap to on-demand. Hidden for Pro viewers.
+ */
+function QuotaUpgradeCTA({dark, tr}: {dark: boolean; tr: (key: string) => string}) {
+  return (
+    <Link
+      href="/pro"
+      className={cx(
+        'inline-flex items-center gap-1 rounded-full px-3.5 py-1.5 text-[12px] font-semibold',
+        btnPrimary(dark),
+      )}
+    >
+      <Sparkles size={13} />
+      {tr('deep.quota.upgrade')}
+      <ArrowRight size={13} />
+    </Link>
   );
 }

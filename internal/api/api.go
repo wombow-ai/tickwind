@@ -419,6 +419,11 @@ type Server struct {
 	// LLM compose that produced prose) consumes a user's quota; viewing a globally
 	// cached deep report, or a still-generating poll, is free.
 	deepResearchLimit int
+	// deepResearchLimitPro is the same per-user, per-ET-MONTH GENERATION quota for PRO
+	// subscribers (set from config via SetDeepResearchLimitPro, default 100 ≈ on-demand).
+	// The quota check picks this when tierOf == pro so upgrading actually lifts the cap —
+	// otherwise the "upgrade to Pro" upsell on the limit-reached screen would be hollow.
+	deepResearchLimitPro int
 	// paywallEnabled turns ON the user-facing Pro paywall (free-tier deep-report
 	// truncation). Default false (no paywall; full report for everyone) until the owner
 	// flips it at go-live; injected post-New via SetPaywallEnabled.
@@ -497,7 +502,7 @@ func New(st store.Store, hub QuoteStream, enricher enrich.Enricher, verifier *au
 			admins[id] = true
 		}
 	}
-	s := &Server{store: st, hub: hub, clip: clip.NewFetcher(), enrich: enricher, auth: verifier, bars: bars, topics: topicSrc, opps: oppSrc, universe: universeSrc, gurus: guruSrc, ingestor: ingestor, symbols: symbolSrc, events: eventSrc, fundamentals: fundSrc, earnings: earningsSrc, congress: congressSrc, institutional: institutionalSrc, live: liveSub, indices: indicesSrc, short: shortSrc, briefing: briefingSrc, options: optionsSrc, thirteenf: thirteenfSrc, admins: admins, commentRL: newRateLimiter(10, 10*time.Minute), sumCache: map[string]summaryEntry{}, sumInflight: map[string]chan struct{}{}, researchCache: map[string]researchEntry{}, researchInflight: map[string]chan struct{}{}, deepResearchLimit: 1, moveCache: map[string]movementEntry{}, moveInflight: map[string]chan struct{}{}, meCache: map[string]materialEventsEntry{}, meInflight: map[string]chan struct{}{}, iaCache: map[string]insiderActivityEntry{}, iaInflight: map[string]chan struct{}{}, btCache: map[string]backtestEntry{}, digestCache: map[string]digestEntry{}, log: log}
+	s := &Server{store: st, hub: hub, clip: clip.NewFetcher(), enrich: enricher, auth: verifier, bars: bars, topics: topicSrc, opps: oppSrc, universe: universeSrc, gurus: guruSrc, ingestor: ingestor, symbols: symbolSrc, events: eventSrc, fundamentals: fundSrc, earnings: earningsSrc, congress: congressSrc, institutional: institutionalSrc, live: liveSub, indices: indicesSrc, short: shortSrc, briefing: briefingSrc, options: optionsSrc, thirteenf: thirteenfSrc, admins: admins, commentRL: newRateLimiter(10, 10*time.Minute), sumCache: map[string]summaryEntry{}, sumInflight: map[string]chan struct{}{}, researchCache: map[string]researchEntry{}, researchInflight: map[string]chan struct{}{}, deepResearchLimit: 1, deepResearchLimitPro: 100, moveCache: map[string]movementEntry{}, moveInflight: map[string]chan struct{}{}, meCache: map[string]materialEventsEntry{}, meInflight: map[string]chan struct{}{}, iaCache: map[string]insiderActivityEntry{}, iaInflight: map[string]chan struct{}{}, btCache: map[string]backtestEntry{}, digestCache: map[string]digestEntry{}, log: log}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", s.health)
 
@@ -2591,6 +2596,16 @@ func (s *Server) SetDeepResearchLimit(n int) {
 	}
 }
 
+// SetDeepResearchLimitPro sets the per-user, per-ET-MONTH GENERATION quota for PRO
+// subscribers (DEEP_RESEARCH_MONTHLY_LIMIT_PRO, default 100). A value <= 0 is ignored so
+// Pro always keeps a sane (high) default. This is what the limit-reached upsell promises,
+// so it must stay above the free limit.
+func (s *Server) SetDeepResearchLimitPro(n int) {
+	if n > 0 {
+		s.deepResearchLimitPro = n
+	}
+}
+
 // SetPaywallEnabled turns the user-facing Pro paywall on/off (free-tier deep-report
 // truncation). Off by default → full report for everyone (current behavior).
 func (s *Server) SetPaywallEnabled(on bool) { s.paywallEnabled = on }
@@ -2929,12 +2944,18 @@ func (s *Server) getResearchDeep(w http.ResponseWriter, r *http.Request, ticker,
 		s.writeResearchStatus(w, dataOnly, proseStatusQuotaExhausted)
 		return
 	}
-	// Per-user MONTHLY generation quota. Read fails OPEN (a backend hiccup never locks a
-	// user out). Over quota with nothing cached → graceful data-only "quota_exhausted"
+	// Per-user MONTHLY generation quota, TIER-AWARE: Pro gets the high (≈on-demand)
+	// limit so upgrading actually lifts the cap (the limit-reached upsell's promise);
+	// free gets the base limit. Read fails OPEN (a backend hiccup never locks a user
+	// out). Over quota with nothing cached → graceful data-only "quota_exhausted"
 	// (replaces the old hard 429).
+	monthlyLimit := s.deepResearchLimit
+	if s.tierOf(r.Context(), userID) == tierPro {
+		monthlyLimit = s.deepResearchLimitPro
+	}
 	if used, err := s.store.GetDeepQuotaUsed(r.Context(), userID, period); err != nil {
 		s.log.Debug("deep-research quota read failed — failing open (allow)", "user", userID, "period", period, "err", err)
-	} else if used >= s.deepResearchLimit {
+	} else if used >= monthlyLimit {
 		s.researchMu.Unlock()
 		s.writeResearchStatus(w, dataOnly, proseStatusQuotaExhausted)
 		return
