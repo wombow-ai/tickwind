@@ -136,9 +136,22 @@ Deep Research (one subscription unlocks both) is the simplest, highest-conversio
   `GET /v1/stocks/{ticker}/backtest?rule=&horizon=` (horizon default 20, clamp 60) reuses the Server's
   existing `bars` (BarSource.DailyCandles) → BacktestSignal → {ticker, result}; Pro-gated (flag off=all;
   on + non-Pro = paywall_locked hard lock); 404 no-bars/no-history, 400 bad rule, 422 insufficient
-  history. Handler tests (fakeBars). **NEXT C6.3:** a backtest UI (a small widget — pick a rule + horizon,
-  show win rate / avg forward return / trades / baseline + the "historical, not advice" disclaimer; on the
-  signals card or a tab). Then C6 (and the indicators-monetization plan C1–C6) is fully built.
+  history. Handler tests (fakeBars). **C6.3 ✅ DONE (commit, ahead 34):**
+  `web/src/components/BacktestWidget.tsx` (on the stock page under the signals card) — rule + horizon
+  (10/20/60d) dropdowns, four stats (win rate / avg forward return / signals / buy-hold baseline,
+  sign-coloured) + the "historical statistic, not a prediction or advice" disclaimer + a Pro lock;
+  `api.ts getBacktest` (types Signal-prefixed to avoid the congress Backtest types). tsc + build green;
+  preview renders. **C6 — and the WHOLE indicators-monetization plan C1–C6 — is FULLY BUILT.**
+
+## 8. Status — C1–C6 complete (2026-06-20)
+
+All four Pro features are built end-to-end (backend + endpoint + UI), flag-gated
+(`INDICATORS_PAYWALL_ENABLED` default off), unit-tested, Go + web gates green, LOCAL / NOT DEPLOYED:
+**signals layer** · **signals screener** (`/screen/signals`) · **signal alerts** (6 kinds reusing the
+alert system) · **signal backtest**. Owner-gated to ship (deploying surfaces new UI to all users even
+flag-off; flipping the paywall needs owner go). Remaining/optional: signals-screener pSEO preset pages;
+any tuning from owner decisions (§7) — teaser depths, same-Pro-tier vs separate price, deploy-free-now vs
+hold.
 
 C1 is the highest-value, lowest-risk, anti-hallucination-safe first increment.
 

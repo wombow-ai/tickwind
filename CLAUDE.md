@@ -507,6 +507,34 @@ feature-flagged plugin, never on the critical path. Web only.
   web build green (1060 static pages). **NOTE for future: two near-identical stock strips exist — `HomeHub`
   (home `/`) and `Board` (`/me?tab=watchlist` only); both now share `StockRow`'s toggle/hook. Don't assume an
   edit to one covers the other** (this batch's #1 initially missed HomeHub — the preview caught it).
+- **2026-06-20 — INDICATORS monetization: plan C1–C6 FULLY BUILT — FOUR deterministic Pro features,
+  each backend+endpoint+UI, all flag-gated + unit-tested, LOCAL/NOT DEPLOYED (ahead ~34). Full design +
+  per-increment log: `docs/indicators-monetization-plan.md`; owner directive
+  [[tickwind-next-indicators-monetization]].** All four reuse existing infra and honor the
+  anti-hallucination contract (every signal/stat is a Go-computed rule with a traceable basis; no LLM, no
+  advice/targets). Gate = `INDICATORS_PAYWALL_ENABLED` (config envBool **default OFF** → everything is
+  full/free, current-behavior-safe; ON → non-Pro gets a teaser or a hard lock per feature). **(1) Signals
+  layer** — `internal/indicators/signals.go` `Signals(StockIndicatorsResult) []Signal` (RSI/KDJ
+  overbought-oversold, MACD posture+cross, price-vs-SMA/EMA, Bollinger breach, golden/death cross, salience
+  ordering) + `compute.go` (Price/Closes/prev_hist) + `GET /v1/stocks/{ticker}/indicator-signals` (teaser=2
+  when locked) + web `SignalsCard`. Adversarially self-reviewed (fixed a KDJ Extra-key fabrication risk +
+  salience label-keying). **(2) Screener** — `internal/indicators/screen.go` `ScreenSignals` +
+  `internal/ingest/signalscan.go` `SignalScanCache` (background scan of the ~200-ticker universe every
+  15min, like OptionsCache) + `GET /v1/screen/signals?direction=&signal=` (Pro hard-lock) + web
+  `/screen/signals` page. **(3) Signal alerts** — reuses the full existing alert system; 6 self-describing
+  kinds (golden_cross/death_cross/rsi_oversold/rsi_overbought/signal_bullish/signal_bearish) in
+  `internal/ingest/alerts.go` (evaluator checks `SignalScanCache.SignalsFor`) + the AlertsPanel/Center UI.
+  **(4) Backtest** — `internal/indicators/backtest.go` `BacktestSignal(candles, rule, horizon)` pure fn
+  (replays a rule over ~1300 daily bars → win rate / avg forward return / trades / buy-hold baseline; a
+  disclosed historical statistic, NOT a prediction) + `GET /v1/stocks/{ticker}/backtest?rule=&horizon=`
+  (reuses `bars.DailyCandles`) + web `BacktestWidget`. **Go gate (gofmt/build/vet/test -race) + web gate
+  (tsc + next build) green throughout; previews render + degrade gracefully (prod lacks the endpoints
+  until deploy).** **OWNER-GATED to ship:** (a) deploying surfaces NEW UI (Signals card, /screen/signals,
+  signal-alert kinds, Backtest widget) to ALL users even with the flag OFF — a product change; (b)
+  flipping `INDICATORS_PAYWALL_ENABLED` on (the paywall) needs explicit owner go. The loop does NOT deploy
+  either. **Open owner decisions (recorded, non-blocking):** deploy these free (flag-off) now vs hold; fold
+  indicators into the SAME Pro tier as Deep Research vs a separate price; teaser depths; the signal-alert /
+  backtest Pro granularity. **Older sub-entry below (signals-layer-only snapshot) is superseded by this.**
 - **2026-06-20 — INDICATORS monetization: deterministic SIGNALS layer BUILT + self-reviewed (the
   NEXT paid hook after the Deep-Research paywall; owner directive [[tickwind-next-indicators-monetization]];
   full design `docs/indicators-monetization-plan.md`). LOCAL, NOT DEPLOYED, flag OFF — ahead ~18.**
