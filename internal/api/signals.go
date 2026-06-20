@@ -80,6 +80,66 @@ func (s *Server) getStockSignals(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
+// backtestResp is the wire shape of GET /v1/stocks/{ticker}/backtest.
+type backtestResp struct {
+	Ticker        string                     `json:"ticker"`
+	Result        *indicators.BacktestResult `json:"result,omitempty"`
+	PaywallLocked bool                       `json:"paywall_locked,omitempty"`
+}
+
+// defaultBacktestHorizon / maxBacktestHorizon bound the forward-return window.
+const (
+	defaultBacktestHorizon = 20 // ~1 trading month
+	maxBacktestHorizon     = 60
+)
+
+// getBacktest replays a signal rule over a ticker's daily candles and returns the
+// historical win rate / avg forward return / trade count / buy-and-hold baseline (see
+// indicators.BacktestSignal). It is a disclosed historical statistic, never advice.
+// Pro-gated: when INDICATORS_PAYWALL_ENABLED and the viewer is not Pro, returns
+// paywall_locked (a hard lock — backtesting is Pro-only). Flag off → available to all.
+func (s *Server) getBacktest(w http.ResponseWriter, r *http.Request) {
+	if s.bars == nil {
+		writeJSON(w, http.StatusNotFound, errBody("backtest unavailable"))
+		return
+	}
+	ticker := strings.ToUpper(strings.TrimSpace(r.PathValue("ticker")))
+	if ticker == "" {
+		writeJSON(w, http.StatusNotFound, errBody("no ticker"))
+		return
+	}
+	rule := strings.TrimSpace(r.URL.Query().Get("rule"))
+	if !indicators.BacktestableRule(rule) {
+		writeJSON(w, http.StatusBadRequest, errBody("invalid or missing rule"))
+		return
+	}
+	horizon := defaultBacktestHorizon
+	if v, ok := parseFloat(r.URL.Query().Get("horizon")); ok && v >= 1 {
+		horizon = int(v)
+	}
+	if horizon > maxBacktestHorizon {
+		horizon = maxBacktestHorizon
+	}
+	if s.indicatorsPaywallEnabled {
+		u, _ := auth.UserFrom(r.Context())
+		if s.tierOf(r.Context(), u.ID) != tierPro {
+			writeJSON(w, http.StatusOK, backtestResp{Ticker: ticker, PaywallLocked: true})
+			return
+		}
+	}
+	candles, err := s.bars.DailyCandles(r.Context(), ticker)
+	if err != nil || len(candles) == 0 {
+		writeJSON(w, http.StatusNotFound, errBody("no price history for "+ticker))
+		return
+	}
+	res, ok := indicators.BacktestSignal(candles, rule, horizon)
+	if !ok {
+		writeJSON(w, http.StatusUnprocessableEntity, errBody("insufficient history to backtest "+rule))
+		return
+	}
+	writeJSON(w, http.StatusOK, backtestResp{Ticker: ticker, Result: &res})
+}
+
 // SignalScanSource is the whole-universe signals SCREENER (a background cache that
 // precomputes ticker→signals so the endpoint never recomputes on the request path).
 type SignalScanSource interface {
