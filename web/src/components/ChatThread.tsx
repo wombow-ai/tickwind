@@ -150,11 +150,13 @@ export function ChatThread({ticker}: {ticker: string}) {
           }}
           rows={1}
           placeholder={tr('chat.placeholder')}
+          aria-label={tr('chat.title').replace('{t}', '')}
           className={cx('min-h-[44px] flex-1 resize-none rounded-xl border px-3 py-3 text-[13px] outline-none', t.card, t.border, t.text)}
         />
         <button
           type="submit"
           disabled={sending || !input.trim()}
+          aria-label={tr('chat.send')}
           className={cx('inline-flex h-[44px] shrink-0 items-center gap-1.5 rounded-xl px-4 text-[13px] font-semibold disabled:opacity-50', btnPrimary(dark))}
         >
           <Send size={14} /> {tr('chat.send')}
