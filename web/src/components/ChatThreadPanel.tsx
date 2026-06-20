@@ -36,7 +36,7 @@ export function ChatThreadPanel({source, onActivity}: {source: ChatSource; onAct
   const [sending, setSending] = useState(false);
   const [err, setErr] = useState(false);
   const [meter, setMeter] = useState<{used: number; limit: number} | null>(null);
-  const endRef = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
 
   const fallbackTicker = source.kind === 'stock' ? source.ticker.toUpperCase() : (source.anchorTicker ?? '').toUpperCase();
   const key = sourceKey(source);
@@ -65,8 +65,11 @@ export function ChatThreadPanel({source, onActivity}: {source: ChatSource; onAct
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key, getToken]);
 
+  // Auto-scroll the messages CONTAINER to the latest — NOT the page. scrollIntoView was
+  // scrolling the whole window (the stock page jumped to the bottom on every send).
   useEffect(() => {
-    endRef.current?.scrollIntoView({behavior: 'smooth'});
+    const el = listRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
   }, [messages, sending]);
 
   const send = useCallback(
@@ -129,7 +132,7 @@ export function ChatThreadPanel({source, onActivity}: {source: ChatSource; onAct
         )}
       </div>
 
-      <div className="mt-3 flex-1 space-y-4 overflow-y-auto">
+      <div ref={listRef} className="mt-3 flex-1 space-y-4 overflow-y-auto">
         {messages.length === 0 ? (
           <p className={cx('text-[13px]', t.sub)}>{tr('chat.empty')}</p>
         ) : (
@@ -141,7 +144,6 @@ export function ChatThreadPanel({source, onActivity}: {source: ChatSource; onAct
           </div>
         )}
         {err && <p className="text-[12.5px] text-rose-500">{tr('chat.error')}</p>}
-        <div ref={endRef} />
       </div>
 
       {messages.length === 0 && (

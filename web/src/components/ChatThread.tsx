@@ -47,7 +47,11 @@ export function ChatThread({ticker}: {ticker: string}) {
   }
   return (
     <Wrap dark={dark} t={t} tr={tr} norm={norm}>
-      <ChatThreadPanel source={{kind: 'stock', ticker: norm}} />
+      {/* Bounded height so the thread scrolls INTERNALLY (composer fixed; the page
+          never jumps) — mirrors the hub's h-72vh panel. */}
+      <div className="h-[68vh]">
+        <ChatThreadPanel source={{kind: 'stock', ticker: norm}} />
+      </div>
     </Wrap>
   );
 }
