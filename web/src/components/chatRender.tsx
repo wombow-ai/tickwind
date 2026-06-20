@@ -36,7 +36,7 @@ const WIDGET_LABEL: Record<string, string> = {
   fundamentals_table: 'fundamentals',
 };
 
-export function MsgRow({m, fallbackTicker, dark, tr}: {m: Msg; fallbackTicker: string; dark: boolean; tr: (k: string) => string}) {
+export function MsgRow({m, fallbackTicker, tr}: {m: Msg; fallbackTicker: string; tr: (k: string) => string}) {
   if (m.role === 'user') {
     return (
       <div style={{display: 'flex', justifyContent: 'flex-end'}}>
@@ -55,7 +55,7 @@ export function MsgRow({m, fallbackTicker, dark, tr}: {m: Msg; fallbackTicker: s
           <span style={{fontSize: 12.5, fontWeight: 600, color: 'var(--text)'}}>{tr('chat.aiName')}</span>
           <span style={{fontSize: 11, color: 'var(--text3)'}}>{tr('chat.justNow')}</span>
         </div>
-        {(m.blocks ?? []).map((b, i) => <BlockView key={i} block={b} fallbackTicker={fallbackTicker} dark={dark} tr={tr} />)}
+        {(m.blocks ?? []).map((b, i) => <BlockView key={i} block={b} fallbackTicker={fallbackTicker} tr={tr} />)}
         {!m.blocks && m.text && (
           <div style={{fontSize: 14, lineHeight: 1.62, color: 'var(--text)'}}>
             <Markdown>{m.text}</Markdown>
@@ -92,7 +92,7 @@ function CopyButton({text, tr}: {text: string; tr: (k: string) => string}) {
   );
 }
 
-function BlockView({block, fallbackTicker, dark, tr}: {block: ChatBlock; fallbackTicker: string; dark: boolean; tr: (k: string) => string}) {
+function BlockView({block, fallbackTicker, tr}: {block: ChatBlock; fallbackTicker: string; tr: (k: string) => string}) {
   if (block.kind === 'text') {
     return (
       <div style={{fontSize: 14, lineHeight: 1.62, color: 'var(--text)'}} className="tw-chat-prose">
@@ -101,28 +101,21 @@ function BlockView({block, fallbackTicker, dark, tr}: {block: ChatBlock; fallbac
     );
   }
   const ticker = block.params?.ticker || fallbackTicker;
-  return <ChatWidget widget={block.widget ?? ''} ticker={ticker} dark={dark} tr={tr} />;
+  return <ChatWidget widget={block.widget ?? ''} ticker={ticker} tr={tr} />;
 }
 
-// Card shell matching the hub aesthetic — widgets render the real Go-owned data inside.
-function WidgetCard({children}: {children: React.ReactNode}) {
-  return (
-    <div style={{border: '1px solid var(--border)', borderRadius: 14, background: 'var(--surface)', overflow: 'hidden'}}>
-      {children}
-    </div>
-  );
-}
-
-function ChatWidget({widget, ticker, dark, tr}: {widget: string; ticker: string; dark: boolean; tr: (k: string) => string}) {
+// Widgets render the real Go-owned data via their own components (each already a card),
+// so they're placed directly — no extra wrapper (a double card left dead space below).
+function ChatWidget({widget, ticker, tr}: {widget: string; ticker: string; tr: (k: string) => string}) {
   if (PORTFOLIO_WIDGETS.has(widget)) {
-    return <WidgetCard><div style={{padding: 6}}><ChatPortfolioWidget type={widget} /></div></WidgetCard>;
+    return <ChatPortfolioWidget type={widget} />;
   }
   if (!ticker) return null;
   if (widget === 'kline') {
-    return <WidgetCard><div style={{padding: 10}}><KLineChart ticker={ticker} /></div></WidgetCard>;
+    return <KLineChart ticker={ticker} />;
   }
   if (widget === 'fundamentals_table' || widget === 'valuation_table') {
-    return <WidgetCard><div style={{padding: 6}}><FundamentalsCard ticker={ticker} /></div></WidgetCard>;
+    return <FundamentalsCard ticker={ticker} />;
   }
   const anchor = WIDGET_ANCHOR[widget] ?? '';
   const label = WIDGET_LABEL[widget] ?? widget;

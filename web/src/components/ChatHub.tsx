@@ -199,17 +199,20 @@ export function ChatHub() {
           </div>
 
           <div style={{flex: 'none', borderTop: '1px solid var(--border)', padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 12}}>
-            {meter && (
-              <div>
-                <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6}}>
-                  <span style={{fontSize: 11.5, color: 'var(--text2)'}}>{tr('chat.hub.usage')}</span>
-                  <span style={{fontSize: 11.5, fontFamily: CHAT_MONO, color: 'var(--text)', fontWeight: 500}}>{meter.used} <span style={{color: 'var(--text3)'}}>/ {meter.limit}</span></span>
+            {meter && (() => {
+              const pct = Math.min(100, Math.round((meter.used / Math.max(1, meter.limit)) * 100));
+              return (
+                <div title={`${meter.used} / ${meter.limit}`}>
+                  <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6}}>
+                    <span style={{fontSize: 11.5, color: 'var(--text2)'}}>{tr('chat.hub.usage')}</span>
+                    <span style={{fontSize: 11.5, fontFamily: CHAT_MONO, color: pct >= 100 ? 'var(--down)' : 'var(--text)', fontWeight: 500}}>{tr('chat.hub.usedPct').replace('{p}', String(pct))}</span>
+                  </div>
+                  <div style={{height: 5, borderRadius: 4, background: 'var(--surface2)', overflow: 'hidden'}}>
+                    <div style={{height: '100%', width: `${pct}%`, borderRadius: 4, background: pct >= 100 ? 'var(--down)' : 'var(--accent)'}} />
+                  </div>
                 </div>
-                <div style={{height: 5, borderRadius: 4, background: 'var(--surface2)', overflow: 'hidden'}}>
-                  <div style={{height: '100%', width: `${Math.min(100, Math.round((meter.used / Math.max(1, meter.limit)) * 100))}%`, borderRadius: 4, background: 'var(--accent)'}} />
-                </div>
-              </div>
-            )}
+              );
+            })()}
             <div style={{display: 'flex', alignItems: 'flex-start', gap: 10}}>
               <div style={{flex: 1, minWidth: 0}}>
                 <div style={{fontSize: 12.5, fontWeight: 500, color: 'var(--text)'}}>{tr('chat.hub.privacy')}</div>
@@ -237,17 +240,11 @@ export function ChatHub() {
               <div style={{fontSize: 14, fontWeight: 600, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'}}>{activeTitle}</div>
               {activeSub && <div style={{fontSize: 11, color: 'var(--text3)'}}>{activeSub}</div>}
             </div>
-            {meter && (
-              <div style={{display: 'flex', alignItems: 'center', gap: 6, padding: '5px 10px', borderRadius: 8, background: 'var(--surface2)', border: '1px solid var(--border)', whiteSpace: 'nowrap'}}>
-                <div style={{width: 6, height: 6, borderRadius: '50%', background: 'var(--accent)'}} />
-                <span style={{fontSize: 11.5, fontFamily: CHAT_MONO, color: 'var(--text2)'}}>{tr('chat.hub.left').replace('{n}', String(Math.max(0, meter.limit - meter.used)))}</span>
-              </div>
-            )}
           </div>
 
           <div style={{flex: 1, minHeight: 0, overflow: 'hidden'}}>
             {selected ? (
-              <div style={{height: '100%', maxWidth: 820, margin: '0 auto', padding: '18px 20px', display: 'flex', flexDirection: 'column'}}>
+              <div style={{height: '100%'}}>
                 <ChatThreadPanel source={{kind: 'conversation', id: selected.id, anchorTicker: selected.anchor_ticker}} onActivity={refresh} onMeter={setMeter} />
               </div>
             ) : (

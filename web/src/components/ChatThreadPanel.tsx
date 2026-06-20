@@ -11,15 +11,18 @@ import {useDark} from '@/lib/theme';
 
 // ChatThreadPanel renders one conversation's messages + composer, for BOTH surfaces: a
 // per-stock chat ({kind:'stock'}) and the unified hub ({kind:'conversation'}). The caller
-// owns the auth/Pro gate + page chrome. onActivity fires after a successful send (so the hub
-// can refresh the sidebar order); onMeter reports the monthly meter so the hub header can show
-// it. Styled on the chat-hub palette (CSS vars set on this root so it also themes the embed).
+// owns the auth/Pro gate + page chrome. onActivity fires after a successful send; onMeter
+// reports the monthly meter so the hub header can show it.
 
 export type ChatSource =
   | {kind: 'stock'; ticker: string}
   | {kind: 'conversation'; id: string; anchorTicker?: string};
 
 const SUGGESTIONS = ['chat.suggest.valuation', 'chat.suggest.bear', 'chat.suggest.flows'];
+
+// In-memory thread cache (keyed by source). Switching back to an already-loaded conversation
+// is INSTANT — no backend round-trip — since the user is the only writer of their own threads.
+const threadCache = new Map<string, Msg[]>();
 
 function sourceKey(s: ChatSource): string {
   return s.kind === 'stock' ? 'stock:' + s.ticker.toUpperCase() : 'conv:' + s.id;
@@ -41,11 +44,17 @@ export function ChatThreadPanel({source, onActivity, onMeter}: {source: ChatSour
   const fallbackTicker = source.kind === 'stock' ? source.ticker.toUpperCase() : (source.anchorTicker ?? '').toUpperCase();
   const key = sourceKey(source);
 
-  // Load the persisted thread when the source changes.
+  // Load the persisted thread when the source changes — from cache instantly if present,
+  // otherwise fetch once and cache it.
   useEffect(() => {
+    setMeter(null);
+    const cached = threadCache.get(key);
+    if (cached) {
+      setMessages(cached);
+      return;
+    }
     let active = true;
     setMessages([]);
-    setMeter(null);
     const c = new AbortController();
     (async () => {
       try {
@@ -53,7 +62,9 @@ export function ChatThreadPanel({source, onActivity, onMeter}: {source: ChatSour
         const h = source.kind === 'stock'
           ? await getChatHistory(source.ticker, token, c.signal)
           : await getConvHistory(source.id, token, c.signal);
-        if (active) setMessages(h.map(m => ({role: m.role, blocks: m.blocks, text: m.text})));
+        const loaded = h.map(m => ({role: m.role, blocks: m.blocks, text: m.text}));
+        threadCache.set(key, loaded);
+        if (active) setMessages(loaded);
       } catch {
         /* empty thread is fine */
       }
@@ -78,13 +89,21 @@ export function ChatThreadPanel({source, onActivity, onMeter}: {source: ChatSour
       setErr(false);
       setSending(true);
       setInput('');
-      setMessages(m => [...m, {role: 'user', text: msg}]);
+      setMessages(m => {
+        const next = [...m, {role: 'user' as const, text: msg}];
+        threadCache.set(key, next);
+        return next;
+      });
       try {
         const token = await getToken();
         const res = source.kind === 'stock'
           ? await postChat(source.ticker, msg, token, lang)
           : await postConvChat(source.id, msg, token, lang);
-        setMessages(m => [...m, {role: 'assistant', blocks: res.blocks}]);
+        setMessages(m => {
+          const next = [...m, {role: 'assistant' as const, blocks: res.blocks}];
+          threadCache.set(key, next);
+          return next;
+        });
         if (res.meter) {
           setMeter(res.meter);
           onMeter?.(res.meter);
@@ -106,6 +125,7 @@ export function ChatThreadPanel({source, onActivity, onMeter}: {source: ChatSour
     } catch {
       /* best-effort */
     }
+    threadCache.delete(key);
     setMessages([]);
     setMeter(null);
     setErr(false);
@@ -113,6 +133,7 @@ export function ChatThreadPanel({source, onActivity, onMeter}: {source: ChatSour
 
   const placeholder = source.kind === 'stock' ? tr('chat.placeholder') : tr('chat.hub.placeholder');
   const sendActive = input.trim().length > 0 && !sending;
+  const empty = messages.length === 0 && !sending;
 
   return (
     <div style={{...chatVars(dark), display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, color: 'var(--text)'}}>
@@ -131,56 +152,63 @@ export function ChatThreadPanel({source, onActivity, onMeter}: {source: ChatSour
         </div>
       )}
 
-      <div ref={listRef} style={{flex: 1, minHeight: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 22, padding: '4px 2px'}}>
-        {messages.length === 0 && !sending ? (
-          <p style={{fontSize: 13, color: 'var(--text2)'}}>{tr('chat.empty')}</p>
-        ) : (
-          messages.map((m, i) => <MsgRow key={i} m={m} fallbackTicker={fallbackTicker} dark={dark} tr={tr} />)
-        )}
-        {sending && <ThinkingRow tr={tr} />}
-        {err && <p style={{fontSize: 12.5, color: 'var(--down)'}}>{tr('chat.error')}</p>}
+      {/* Full-width scroll surface — the WHOLE area scrolls; the thread is centered inside. */}
+      <div ref={listRef} style={{flex: 1, minHeight: 0, overflowY: 'auto'}}>
+        <div style={{maxWidth: 760, margin: '0 auto', padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: 22}}>
+          {empty ? (
+            <p style={{fontSize: 13, color: 'var(--text2)'}}>{tr('chat.empty')}</p>
+          ) : (
+            messages.map((m, i) => <MsgRow key={i} m={m} fallbackTicker={fallbackTicker} tr={tr} />)
+          )}
+          {sending && <ThinkingRow tr={tr} />}
+          {err && <p style={{fontSize: 12.5, color: 'var(--down)'}}>{tr('chat.error')}</p>}
+        </div>
       </div>
 
-      {messages.length === 0 && !sending && (
-        <div style={{marginTop: 12, display: 'flex', flexWrap: 'wrap', gap: 8}}>
-          {SUGGESTIONS.map(k => (
-            <button key={k} type="button" onClick={() => send(tr(k))} style={{borderRadius: 999, border: '1px solid var(--border)', background: 'var(--surface)', padding: '7px 13px', fontSize: 12, fontWeight: 500, color: 'var(--text2)', cursor: 'pointer'}}>
-              {tr(k)}
-            </button>
-          ))}
+      {/* Composer footer — full width, content centered, pinned below the scroll. */}
+      <div style={{flex: 'none', borderTop: '1px solid var(--border)', padding: '12px 20px 14px'}}>
+        <div style={{maxWidth: 760, margin: '0 auto'}}>
+          {empty && (
+            <div style={{marginBottom: 10, display: 'flex', flexWrap: 'wrap', gap: 8}}>
+              {SUGGESTIONS.map(k => (
+                <button key={k} type="button" onClick={() => send(tr(k))} style={{borderRadius: 999, border: '1px solid var(--border)', background: 'var(--surface)', padding: '7px 13px', fontSize: 12, fontWeight: 500, color: 'var(--text2)', cursor: 'pointer'}}>
+                  {tr(k)}
+                </button>
+              ))}
+            </div>
+          )}
+          <form onSubmit={e => { e.preventDefault(); send(input); }}>
+            <div style={{display: 'flex', alignItems: 'flex-end', gap: 10, padding: '8px 8px 8px 14px', borderRadius: 15, background: 'var(--surface)', border: '1px solid var(--border2)'}}>
+              <textarea
+                value={input}
+                onChange={e => setInput(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    send(input);
+                  }
+                }}
+                rows={1}
+                placeholder={placeholder}
+                aria-label={placeholder}
+                style={{flex: 1, resize: 'none', border: 'none', outline: 'none', background: 'transparent', color: 'var(--text)', fontSize: 14, lineHeight: 1.5, maxHeight: 140, minHeight: 24, padding: '5px 0', fontFamily: 'inherit'}}
+              />
+              <button
+                type="submit"
+                disabled={!sendActive}
+                aria-label={tr('chat.send')}
+                style={{flex: 'none', width: 34, height: 34, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', border: 'none', cursor: sendActive ? 'pointer' : 'default', background: sendActive ? 'var(--accent)' : 'var(--surface2)', color: sendActive ? '#1c1404' : 'var(--text3)'}}
+              >
+                <Send size={15} />
+              </button>
+            </div>
+          </form>
+          <div style={{display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginTop: 7, flexWrap: 'wrap'}}>
+            <span style={{fontSize: 10.5, color: 'var(--text3)'}}>{tr('chat.disclaimer')}</span>
+            <span style={{fontSize: 10.5, color: 'var(--text3)', fontFamily: CHAT_MONO}}>{tr('chat.sendHint')}</span>
+          </div>
         </div>
-      )}
-
-      <form onSubmit={e => { e.preventDefault(); send(input); }} style={{marginTop: 12}}>
-        <div style={{display: 'flex', alignItems: 'flex-end', gap: 10, padding: '8px 8px 8px 14px', borderRadius: 15, background: 'var(--surface)', border: '1px solid var(--border2)'}}>
-          <textarea
-            value={input}
-            onChange={e => setInput(e.target.value)}
-            onKeyDown={e => {
-              if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                send(input);
-              }
-            }}
-            rows={1}
-            placeholder={placeholder}
-            aria-label={placeholder}
-            style={{flex: 1, resize: 'none', border: 'none', outline: 'none', background: 'transparent', color: 'var(--text)', fontSize: 14, lineHeight: 1.5, maxHeight: 140, minHeight: 24, padding: '5px 0', fontFamily: 'inherit'}}
-          />
-          <button
-            type="submit"
-            disabled={!sendActive}
-            aria-label={tr('chat.send')}
-            style={{flex: 'none', width: 34, height: 34, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', border: 'none', cursor: sendActive ? 'pointer' : 'default', background: sendActive ? 'var(--accent)' : 'var(--surface2)', color: sendActive ? '#1c1404' : 'var(--text3)'}}
-          >
-            <Send size={15} />
-          </button>
-        </div>
-        <div style={{display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginTop: 7, flexWrap: 'wrap'}}>
-          <span style={{fontSize: 10.5, color: 'var(--text3)'}}>{tr('chat.disclaimer')}</span>
-          <span style={{fontSize: 10.5, color: 'var(--text3)', fontFamily: CHAT_MONO}}>{tr('chat.sendHint')}</span>
-        </div>
-      </form>
+      </div>
     </div>
   );
 }
