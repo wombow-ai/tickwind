@@ -157,7 +157,12 @@ function PortfolioHeatmap() {
           : `rgba(244,63,94,${intensity})`;
         const big = tile.value > max * 0.5;
         return (
-          <div key={tile.ticker} className={cx('flex flex-col items-center justify-center rounded-lg px-2 py-3 text-center', big ? 'col-span-2' : '')} style={{backgroundColor: bg}}>
+          <div
+            key={tile.ticker}
+            title={tile.value > 0 ? `${tile.ticker} · ${money(tile.value)} · ${pct(tile.gainPct)}` : tile.ticker}
+            className={cx('flex flex-col items-center justify-center rounded-lg px-2 py-3 text-center', big ? 'col-span-2' : '')}
+            style={{backgroundColor: bg}}
+          >
             <span className={cx('text-[12px] font-bold', t.text)}>{tile.ticker}</span>
             <span className={cx('text-[11px] font-semibold tabular-nums', up(tile.gainPct, dark))}>{pct(tile.gainPct)}</span>
           </div>
