@@ -3,6 +3,8 @@
  * plain data (NO React, NOT 'use client') so Server Components, generateMetadata
  * and the server translator {@link getT} can import it. Keep keys dotted-
  * namespaced; add new keys to BOTH maps — missing zh keys fall back to en.
+ *
+ * (Indicators monetization UI — signals / screener / backtest — shipped 2026-06-20.)
  */
 
 import type {Lang} from '@/lib/i18n';
