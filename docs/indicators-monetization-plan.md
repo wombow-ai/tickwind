@@ -104,9 +104,14 @@ Deep Research (one subscription unlocks both) is the simplest, highest-conversio
   empty) + `GET /v1/screen/signals?direction=&signal=&limit=` reading it, Pro-gated (`tierOf` +
   `INDICATORS_PAYWALL_ENABLED`; screener is Pro-only per §3 → flag-on + non-Pro = empty + paywall_locked
   HARD lock, not a teaser; flag off = all). Wired in main.go. Tests: cache scan/screen/keep-previous +
-  handler nil-404/flag-off/flag-on-hard-lock. **NEXT C4.3:** a screener UI page (`/screen` or a signals
-  filter UI) — api.ts `getScreenSignals` + a page listing matches with their basis + Pro CTA on lock.
-  Free/redistribution-safe (reuses computed indicators).
+  handler nil-404/flag-off/flag-on-hard-lock. **C4.3 ✅ DONE (commit, ahead 24):**
+  `/screen/signals` page (static segment, overrides `/screen/[preset]`) — `SignalsScreen.tsx` with
+  direction + signal-type filter dropdowns, a results list (ticker + matching signals as
+  direction-coloured chips with their basis), a whole-page Pro lock on `paywall_locked`, loading/empty
+  states; `api.ts getScreenSignals` (404→empty graceful) + `dict.ts sigscreen.*` (EN+zh) + a cross-link
+  from the main `/screen` page. tsc + next build green; preview renders + degrades gracefully. **C4
+  SCREENER COMPLETE (C4.1 core + C4.2 backend + C4.3 UI), flag off, not deployed.** Optional follow-up:
+  pSEO preset landing pages for the signals screener (like `/screen/[preset]`).
 - **C5 — Indicator/signal alerts** (reuse the existing alerts feature).
 - **C6 — Backtesting** (heaviest; defer).
 
