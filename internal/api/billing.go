@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/wombow-ai/tickwind/internal/billing"
@@ -173,6 +174,11 @@ func applyStripeSub(target *store.Subscription, ss billing.Subscription) {
 	}
 }
 
+// validStripeCustomer reports whether id is a real Stripe customer id (cus_…). Guards
+// the checkout/portal handlers against manual/admin-grant placeholders (e.g.
+// "manual_admin_grant") that would 400 the Stripe API.
+func validStripeCustomer(id string) bool { return strings.HasPrefix(id, "cus_") }
+
 // subTier derives the entitlement tier from a Stripe subscription status.
 func subTier(status string) string {
 	switch status {
@@ -202,9 +208,12 @@ func (s *Server) billingCheckout(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, errBody("unknown plan"))
 		return
 	}
-	// Reuse the user's existing Stripe customer when known (avoids duplicate customers).
+	// Reuse the user's existing Stripe customer ONLY if it's a real Stripe id (cus_…).
+	// A manual/admin-grant placeholder (or any non-Stripe value) must NOT be passed to
+	// Stripe — it 400s "No such customer" and the checkout 502s. Pass "" so Stripe
+	// creates a fresh customer; the webhook then binds it.
 	customerID := ""
-	if sub, found, _ := s.store.GetSubscription(r.Context(), u.ID); found {
+	if sub, found, _ := s.store.GetSubscription(r.Context(), u.ID); found && validStripeCustomer(sub.StripeCustomerID) {
 		customerID = sub.StripeCustomerID
 	}
 	url, err := s.billing.Checkout(r.Context(), u.ID, customerID, interval)
@@ -228,7 +237,7 @@ func (s *Server) billingPortal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	sub, found, err := s.store.GetSubscription(r.Context(), u.ID)
-	if err != nil || !found || sub.StripeCustomerID == "" {
+	if err != nil || !found || !validStripeCustomer(sub.StripeCustomerID) {
 		writeJSON(w, http.StatusConflict, errBody("no subscription to manage"))
 		return
 	}

@@ -151,6 +151,25 @@ func TestCheckoutBindsEvenIfRecoveryFails(t *testing.T) {
 	}
 }
 
+// TestValidStripeCustomer guards the checkout/portal fix: only a real cus_ id may be
+// reused as the Stripe customer; a manual/admin-grant placeholder must be rejected (it
+// would 400 the Stripe API and 502 the checkout).
+func TestValidStripeCustomer(t *testing.T) {
+	for _, c := range []struct {
+		id   string
+		want bool
+	}{
+		{"cus_abc123", true},
+		{"manual_admin_grant", false},
+		{"", false},
+		{"sub_xyz", false},
+	} {
+		if got := validStripeCustomer(c.id); got != c.want {
+			t.Errorf("validStripeCustomer(%q) = %v, want %v", c.id, got, c.want)
+		}
+	}
+}
+
 // failUpsertStore makes UpsertSubscription fail on demand (to simulate a transient DB
 // error during webhook processing).
 type failUpsertStore struct {
