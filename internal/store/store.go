@@ -504,6 +504,11 @@ type Store interface {
 	// fresh=true the FIRST time an id is seen (the caller then processes it) and
 	// false if it was already recorded (skip — Stripe delivers at-least-once).
 	MarkStripeEventSeen(ctx context.Context, eventID, eventType string) (fresh bool, err error)
+	// StripeEventSeen reports whether a webhook event id was already recorded — a
+	// READ-ONLY pre-check so the webhook can record an event as seen only AFTER it has
+	// been processed successfully (a transient failure then leaves it unrecorded → the
+	// Stripe retry genuinely reprocesses it instead of being short-circuited as a dup).
+	StripeEventSeen(ctx context.Context, eventID string) (seen bool, err error)
 }
 
 // ChatMessage is one persisted turn of a Product B conversation. The thread is implicit

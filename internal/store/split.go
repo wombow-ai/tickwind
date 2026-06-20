@@ -287,6 +287,9 @@ func (s Split) UpsertSubscription(ctx context.Context, sub Subscription) error {
 func (s Split) MarkStripeEventSeen(ctx context.Context, eventID, eventType string) (bool, error) {
 	return s.Market.MarkStripeEventSeen(ctx, eventID, eventType)
 }
+func (s Split) StripeEventSeen(ctx context.Context, eventID string) (bool, error) {
+	return s.Market.StripeEventSeen(ctx, eventID)
+}
 
 // Comments are public, valuable community content → the durable Market store.
 

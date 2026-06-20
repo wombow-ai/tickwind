@@ -42,18 +42,24 @@ type Config struct {
 	PriceMonthly  string // price_… for the monthly Pro plan
 	PriceAnnual   string // price_… for the annual Pro plan
 	PublicSiteURL string // site origin (e.g. https://tickwind.com) for checkout/portal redirects
+	APIBaseURL    string // override the Stripe API base (tests/self-host); empty → stripeAPI
 }
 
 // Service talks to Stripe over its form API (stdlib net/http).
 type Service struct {
-	cfg  Config
-	http *http.Client
+	cfg     Config
+	http    *http.Client
+	baseURL string
 }
 
 // New returns a Service. It is always non-nil (so callers can hold a concrete
 // pointer), but Enabled() reports false until a secret key is set.
 func New(cfg Config) *Service {
-	return &Service{cfg: cfg, http: &http.Client{Timeout: 20 * time.Second}}
+	base := cfg.APIBaseURL
+	if base == "" {
+		base = stripeAPI
+	}
+	return &Service{cfg: cfg, http: &http.Client{Timeout: 20 * time.Second}, baseURL: base}
 }
 
 // Enabled reports whether a Stripe secret key is configured (the whole surface is
@@ -253,12 +259,34 @@ func (s *Service) Portal(ctx context.Context, customerID string) (string, error)
 // decodes the JSON response. A non-2xx status returns an error including Stripe's
 // body (truncated) for diagnosis.
 func (s *Service) post(ctx context.Context, path string, form url.Values, out any) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, stripeAPI+path, strings.NewReader(form.Encode()))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, s.baseURL+path, strings.NewReader(form.Encode()))
 	if err != nil {
 		return err
 	}
-	req.Header.Set("Authorization", "Bearer "+s.cfg.SecretKey)
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	return s.do(req, path, out)
+}
+
+// GetSubscription fetches a subscription's CURRENT authoritative state from Stripe by id.
+// Used to recover entitlement when a subscription.* webhook arrived out of order (before
+// the checkout that binds the user↔customer) — the checkout handler then re-pulls the
+// subscription rather than defaulting the user to free.
+func (s *Service) GetSubscription(ctx context.Context, subID string) (Subscription, error) {
+	var sub Subscription
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, s.baseURL+"/v1/subscriptions/"+url.PathEscape(subID), nil)
+	if err != nil {
+		return Subscription{}, err
+	}
+	if err := s.do(req, "/v1/subscriptions", &sub); err != nil {
+		return Subscription{}, err
+	}
+	return sub, nil
+}
+
+// do sets the secret-key bearer, executes the request, and decodes the JSON response.
+// A non-2xx status returns an error including Stripe's body (truncated) for diagnosis.
+func (s *Service) do(req *http.Request, path string, out any) error {
+	req.Header.Set("Authorization", "Bearer "+s.cfg.SecretKey)
 	resp, err := s.http.Do(req)
 	if err != nil {
 		return fmt.Errorf("billing: stripe %s: %w", path, err)

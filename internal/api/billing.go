@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/wombow-ai/tickwind/internal/billing"
+	"github.com/wombow-ai/tickwind/internal/store"
 )
 
 // SetBilling injects the Stripe billing service post-New. nil-safe: with no service
@@ -45,21 +46,40 @@ func (s *Server) stripeWebhook(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, errBody("parse event"))
 		return
 	}
-	// Idempotency: Stripe delivers at-least-once + out of order. Record-first; a
-	// duplicate is acknowledged 200 without reprocessing.
-	fresh, err := s.store.MarkStripeEventSeen(r.Context(), ev.ID, ev.Type)
+	// Idempotency: Stripe delivers at-least-once + out of order. PROCESS-then-record:
+	// check (read-only) whether the id was already handled; if so, ack 200 (dup). Only
+	// after handleStripeEvent SUCCEEDS do we record it as seen. This way a transient
+	// store failure during handling leaves the id unrecorded → the 5xx makes Stripe
+	// retry and the retry genuinely reprocesses (the old record-FIRST order would mark
+	// it seen, then a handling failure was permanently lost — a paid grant/revoke gone).
+	// INVARIANT: this read-precheck is an optimization, NOT an atomic gate — concurrent
+	// deliveries of the same event can both pass it and both process. That stays correct
+	// ONLY because every handler is an absolute-state UpsertSubscription (re-applying the
+	// same event converges to the same row). A future read-modify-increment handler would
+	// need its own atomicity, not this precheck.
+	seen, err := s.store.StripeEventSeen(r.Context(), ev.ID)
 	if err != nil {
-		s.log.Error("stripe webhook: idempotency write failed", "event", ev.ID, "err", err)
+		s.log.Error("stripe webhook: idempotency read failed", "event", ev.ID, "err", err)
 		w.WriteHeader(http.StatusInternalServerError) // 5xx → Stripe retries
 		return
 	}
-	if !fresh {
-		w.WriteHeader(http.StatusOK)
+	if seen {
+		w.WriteHeader(http.StatusOK) // already processed
 		return
 	}
 	if err := s.handleStripeEvent(r.Context(), ev); err != nil {
 		s.log.Error("stripe webhook: handle failed", "type", ev.Type, "event", ev.ID, "err", err)
-		w.WriteHeader(http.StatusInternalServerError) // 5xx → Stripe retries
+		w.WriteHeader(http.StatusInternalServerError) // 5xx → Stripe retries (NOT recorded → reprocesses)
+		return
+	}
+	if _, err := s.store.MarkStripeEventSeen(r.Context(), ev.ID, ev.Type); err != nil {
+		// Processed OK but failed to record the idempotency ledger. Return 5xx so Stripe
+		// RETRIES until the event is durably recorded: the retry reprocesses (absolute-state
+		// UpsertSubscription → harmless) and re-marks. Leaving it unrecorded-but-processed
+		// would let a later re-delivery replay it OUT OF ORDER against newer state (re-grant
+		// a canceled user, or revoke a re-subscribed one).
+		s.log.Error("stripe webhook: processed but idempotency write failed — 5xx to force re-record", "event", ev.ID, "err", err)
+		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
 	w.WriteHeader(http.StatusOK)
@@ -78,8 +98,7 @@ func (s *Server) handleStripeEvent(ctx context.Context, ev billing.Event) error 
 		if cs.ClientReferenceID == "" || cs.Customer == "" {
 			return nil // nothing to bind
 		}
-		// Bind the Supabase user ↔ Stripe customer. Preserve any tier already set by
-		// an out-of-order subscription.* event; the subscription.* sync sets tier.
+		// Bind the Supabase user ↔ Stripe customer.
 		sub, _, err := s.store.GetSubscription(ctx, cs.ClientReferenceID)
 		if err != nil {
 			return err
@@ -88,6 +107,28 @@ func (s *Server) handleStripeEvent(ctx context.Context, ev billing.Event) error 
 		sub.StripeCustomerID = cs.Customer
 		if sub.Tier == "" {
 			sub.Tier = tierFree
+		}
+		// Recover entitlement from the session's own subscription. A customer.subscription.*
+		// event can arrive BEFORE this checkout (Stripe does not order them) and gets dropped
+		// (no user↔customer binding existed yet) — which would strand a paying user on free
+		// until some later, unguaranteed event. Re-pull the authoritative subscription state
+		// here so the grant never depends on event ordering.
+		// Best-effort entitlement recovery: re-pull the authoritative subscription so an
+		// out-of-order subscription.* event that was dropped (before this binding existed)
+		// can't strand a paying user on free. A recovery failure must NEVER block the
+		// user↔customer BINDING itself — on any error we log + skip recovery and still bind
+		// (as free; a later subscription.* event or the reconciliation backstop grants Pro),
+		// rather than 5xx-looping with the user left unbound. Customer-match is a
+		// defense-in-depth guard (never grant Pro from a subscription that isn't this
+		// session's customer, even though a verified webhook already guarantees the linkage).
+		if cs.Subscription != "" && s.billing != nil && s.billing.Enabled() {
+			if ss, err := s.billing.GetSubscription(ctx, cs.Subscription); err != nil {
+				s.log.Warn("stripe webhook: checkout entitlement re-pull failed — binding only", "checkout", cs.ID, "subscription", cs.Subscription, "err", err)
+			} else if ss.Customer == "" || ss.Customer == cs.Customer {
+				applyStripeSub(&sub, ss)
+			} else {
+				s.log.Warn("stripe webhook: checkout subscription customer mismatch — skipping recovery", "checkout", cs.ID, "subscription", cs.Subscription, "sub_customer", ss.Customer, "session_customer", cs.Customer)
+			}
 		}
 		return s.store.UpsertSubscription(ctx, sub)
 
@@ -102,20 +143,12 @@ func (s *Server) handleStripeEvent(ctx context.Context, ev billing.Event) error 
 		}
 		if !ok {
 			// No user bound yet (subscription.* arrived before checkout.session.completed).
-			// We can't map customer → user; ack 2xx (checkout.completed will bind, and a
-			// later subscription.updated re-syncs) rather than 5xx-loop forever.
+			// We can't map customer → user here; ack 2xx and let the checkout handler recover
+			// the entitlement by re-pulling cs.Subscription (above), rather than 5xx-looping.
 			s.log.Warn("stripe webhook: subscription event for unbound customer", "customer", ss.Customer, "type", ev.Type)
 			return nil
 		}
-		existing.StripeSubscriptionID = ss.ID
-		existing.Status = ss.Status
-		existing.Tier = subTier(ss.Status)
-		existing.PriceID = ss.PriceID()
-		existing.Interval = ss.Interval()
-		existing.CancelAtPeriodEnd = ss.CancelAtPeriodEnd
-		if ss.CurrentPeriodEnd > 0 {
-			existing.CurrentPeriodEnd = time.Unix(ss.CurrentPeriodEnd, 0)
-		}
+		applyStripeSub(&existing, ss)
 		if ev.Type == "customer.subscription.deleted" {
 			existing.Status = "canceled"
 			existing.Tier = tierFree
@@ -123,6 +156,21 @@ func (s *Server) handleStripeEvent(ctx context.Context, ev billing.Event) error 
 		return s.store.UpsertSubscription(ctx, existing)
 	}
 	return nil // ignored event type
+}
+
+// applyStripeSub copies a Stripe subscription's authoritative state (status → tier, plan,
+// period, cancel flag) onto our stored row. Shared by the checkout-recovery path and the
+// subscription.* sync so both derive entitlement identically.
+func applyStripeSub(target *store.Subscription, ss billing.Subscription) {
+	target.StripeSubscriptionID = ss.ID
+	target.Status = ss.Status
+	target.Tier = subTier(ss.Status)
+	target.PriceID = ss.PriceID()
+	target.Interval = ss.Interval()
+	target.CancelAtPeriodEnd = ss.CancelAtPeriodEnd
+	if ss.CurrentPeriodEnd > 0 {
+		target.CurrentPeriodEnd = time.Unix(ss.CurrentPeriodEnd, 0)
+	}
 }
 
 // subTier derives the entitlement tier from a Stripe subscription status.

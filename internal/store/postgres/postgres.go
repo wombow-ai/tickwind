@@ -1329,6 +1329,15 @@ func (s *Store) MarkStripeEventSeen(ctx context.Context, eventID, eventType stri
 	return tag.RowsAffected() == 1, nil
 }
 
+// StripeEventSeen reports whether an event id was already recorded (read-only).
+func (s *Store) StripeEventSeen(ctx context.Context, eventID string) (bool, error) {
+	var seen bool
+	if err := s.pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM stripe_events WHERE event_id = $1)`, eventID).Scan(&seen); err != nil {
+		return false, fmt.Errorf("postgres: stripe event seen: %w", err)
+	}
+	return seen, nil
+}
+
 // SaveComment inserts a public comment (empty ticker → NULL = global board)
 // together with its cashtag mention rows ($TICKER fan-out).
 func (s *Store) SaveComment(ctx context.Context, c store.Comment) error {

@@ -897,6 +897,13 @@ func (s *Store) MarkStripeEventSeen(_ context.Context, eventID, _ string) (bool,
 	return true, nil
 }
 
+// StripeEventSeen reports whether an event id was already recorded (read-only).
+func (s *Store) StripeEventSeen(_ context.Context, eventID string) (bool, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.stripeEv[eventID], nil
+}
+
 func (s *Store) ListActiveAlerts(_ context.Context) ([]store.Alert, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
