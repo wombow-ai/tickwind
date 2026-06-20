@@ -229,6 +229,22 @@ func (s Split) IncrDeepQuotaUsed(ctx context.Context, userID, period string) err
 	return s.User.IncrDeepQuotaUsed(ctx, userID, period)
 }
 
+// Product B chat history + the per-user monthly message meter → the cheap-to-rebuild
+// User store (same class as the deep quota; losing it only drops chat history).
+
+func (s Split) AppendChatMessage(ctx context.Context, m ChatMessage) error {
+	return s.User.AppendChatMessage(ctx, m)
+}
+func (s Split) ListChatMessages(ctx context.Context, userID, ticker string, limit int) ([]ChatMessage, error) {
+	return s.User.ListChatMessages(ctx, userID, ticker, limit)
+}
+func (s Split) GetChatMsgUsed(ctx context.Context, userID, period string) (int, error) {
+	return s.User.GetChatMsgUsed(ctx, userID, period)
+}
+func (s Split) IncrChatMsgUsed(ctx context.Context, userID, period string) error {
+	return s.User.IncrChatMsgUsed(ctx, userID, period)
+}
+
 // Subscriptions / Stripe billing → the DURABLE Market store (billing is not cheap
 // to rebuild, unlike the per-user quota above).
 

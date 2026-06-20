@@ -416,6 +416,24 @@ type Store interface {
 	GetDeepQuotaUsed(ctx context.Context, userID, period string) (int, error)
 	IncrDeepQuotaUsed(ctx context.Context, userID, period string) error
 
+	// Chat persistence (Product B personalized chat). A "thread" is IMPLICIT per
+	// (UserID, Ticker) — ticker-scoped, one conversation per stock. Messages are
+	// ordered oldest→newest. Routed to the cheap-to-rebuild User store via Split
+	// (losing it only drops chat history, never market or billing data).
+	// AppendChatMessage adds one turn; ListChatMessages returns the most recent
+	// `limit` messages for the (user, ticker) thread in chronological order — for both
+	// display and the windowed LLM context.
+	AppendChatMessage(ctx context.Context, m ChatMessage) error
+	ListChatMessages(ctx context.Context, userID, ticker string, limit int) ([]ChatMessage, error)
+
+	// ChatMsgQuota is the per-user, per-ET-MONTH MESSAGE meter for Product B (Pro is
+	// soft-capped at ~150 msgs/mo). Same shape + best-effort semantics as
+	// DeepResearchQuota (read fails OPEN, increment is logged-not-fatal), routed to the
+	// User store. GetChatMsgUsed returns the count used in the period (0 when none);
+	// IncrChatMsgUsed upserts +1.
+	GetChatMsgUsed(ctx context.Context, userID, period string) (int, error)
+	IncrChatMsgUsed(ctx context.Context, userID, period string) error
+
 	// Comments are PUBLIC user posts on a stock (Ticker) or the global board
 	// (Ticker == ""). Durable (Market store). List excludes soft-deleted rows;
 	// Delete is author-or-admin (admin=true skips the author check); Report flags
@@ -448,6 +466,19 @@ type Store interface {
 	// fresh=true the FIRST time an id is seen (the caller then processes it) and
 	// false if it was already recorded (skip — Stripe delivers at-least-once).
 	MarkStripeEventSeen(ctx context.Context, eventID, eventType string) (fresh bool, err error)
+}
+
+// ChatMessage is one persisted turn of a Product B conversation. The thread is implicit
+// per (UserID, Ticker). Role is "user" | "assistant". Content holds the user's question
+// (plain text) or the assistant's rendered answer (a JSON-encoded ordered block list:
+// prose + surfaced-widget refs) — the chat service owns that encoding. CreatedAt is set
+// by the store on append (used only for ordering/display).
+type ChatMessage struct {
+	UserID    string
+	Ticker    string
+	Role      string
+	Content   string
+	CreatedAt time.Time
 }
 
 // Subscription is a user's billing/entitlement state, synced from Stripe webhooks.

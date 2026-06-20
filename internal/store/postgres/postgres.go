@@ -1046,6 +1046,72 @@ ON CONFLICT (user_id, day) DO UPDATE SET used = deep_research_quota.used + 1, up
 	return nil
 }
 
+// AppendChatMessage appends one Product B chat turn for the (user, ticker) thread.
+func (s *Store) AppendChatMessage(ctx context.Context, m store.ChatMessage) error {
+	const q = `INSERT INTO chat_message (user_id, ticker, role, content, created_at) VALUES ($1, $2, $3, $4, now())`
+	if _, err := s.pool.Exec(ctx, q, m.UserID, m.Ticker, m.Role, m.Content); err != nil {
+		return fmt.Errorf("postgres: append chat message: %w", err)
+	}
+	return nil
+}
+
+// ListChatMessages returns the most recent `limit` messages for the (user, ticker)
+// thread in CHRONOLOGICAL order (oldest first). limit<=0 defaults to 100.
+func (s *Store) ListChatMessages(ctx context.Context, userID, ticker string, limit int) ([]store.ChatMessage, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	const q = `SELECT user_id, ticker, role, content, created_at FROM chat_message WHERE user_id = $1 AND ticker = $2 ORDER BY id DESC LIMIT $3`
+	rows, err := s.pool.Query(ctx, q, userID, ticker, limit)
+	if err != nil {
+		return nil, fmt.Errorf("postgres: list chat messages: %w", err)
+	}
+	defer rows.Close()
+	var out []store.ChatMessage
+	for rows.Next() {
+		var m store.ChatMessage
+		if err := rows.Scan(&m.UserID, &m.Ticker, &m.Role, &m.Content, &m.CreatedAt); err != nil {
+			return nil, fmt.Errorf("postgres: scan chat message: %w", err)
+		}
+		out = append(out, m)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("postgres: list chat messages rows: %w", err)
+	}
+	// Fetched newest-first (to honor LIMIT); reverse to chronological.
+	for i, j := 0, len(out)-1; i < j; i, j = i+1, j-1 {
+		out[i], out[j] = out[j], out[i]
+	}
+	return out, nil
+}
+
+// GetChatMsgUsed returns the user's Product B chat-message count for the period (ET
+// month); 0 when there's no row (pgx.ErrNoRows is a clean zero).
+func (s *Store) GetChatMsgUsed(ctx context.Context, userID, period string) (int, error) {
+	var used int
+	err := s.pool.QueryRow(ctx, `SELECT used FROM chat_msg_quota WHERE user_id = $1 AND period = $2`, userID, period).Scan(&used)
+	switch {
+	case errors.Is(err, pgx.ErrNoRows):
+		return 0, nil
+	case err != nil:
+		return 0, fmt.Errorf("postgres: get chat-msg quota: %w", err)
+	}
+	return used, nil
+}
+
+// IncrChatMsgUsed upserts the user's Product B chat-message count for the period (ET
+// month) by one.
+func (s *Store) IncrChatMsgUsed(ctx context.Context, userID, period string) error {
+	const query = `
+INSERT INTO chat_msg_quota (user_id, period, used, updated_at)
+VALUES ($1, $2, 1, now())
+ON CONFLICT (user_id, period) DO UPDATE SET used = chat_msg_quota.used + 1, updated_at = now()`
+	if _, err := s.pool.Exec(ctx, query, userID, period); err != nil {
+		return fmt.Errorf("postgres: incr chat-msg quota: %w", err)
+	}
+	return nil
+}
+
 // GetSubscription returns the user's Stripe-synced entitlement (found=false when
 // the user has no row → the caller treats them as free).
 func (s *Store) GetSubscription(ctx context.Context, userID string) (store.Subscription, bool, error) {

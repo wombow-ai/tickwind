@@ -34,6 +34,8 @@ type Store struct {
 	holdings  map[string]map[string]store.Holding // userID -> holdingID -> Holding
 	prefs     map[string]json.RawMessage          // userID -> opaque JSON prefs blob
 	deepQuota map[string]int                      // "userID|PERIOD" (ET month, e.g. 2026-06) -> deep-research generations used
+	chatMsgs  map[string][]store.ChatMessage      // "userID|TICKER" -> ordered chat thread (Product B)
+	chatQuota map[string]int                      // "userID|PERIOD" (ET month) -> Product B chat messages used
 	comments  map[string]store.Comment            // commentID -> Comment (public)
 	cmtLikes  map[string]map[string]bool          // commentID -> set of userIDs who liked
 	subs      map[string]store.Subscription       // userID -> Stripe-synced entitlement
@@ -61,6 +63,8 @@ func New() *Store {
 		holdings:  make(map[string]map[string]store.Holding),
 		prefs:     make(map[string]json.RawMessage),
 		deepQuota: make(map[string]int),
+		chatMsgs:  make(map[string][]store.ChatMessage),
+		chatQuota: make(map[string]int),
 		comments:  make(map[string]store.Comment),
 		cmtLikes:  make(map[string]map[string]bool),
 		subs:      make(map[string]store.Subscription),
@@ -681,6 +685,53 @@ func (s *Store) IncrDeepQuotaUsed(_ context.Context, userID, period string) erro
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.deepQuota[deepQuotaKey(userID, period)]++
+	return nil
+}
+
+// chatKey is the per-(user, ticker) implicit-thread key for Product B chat history.
+func chatKey(userID, ticker string) string { return userID + "|" + ticker }
+
+// AppendChatMessage appends one turn to the (user, ticker) thread, stamping CreatedAt.
+func (s *Store) AppendChatMessage(_ context.Context, m store.ChatMessage) error {
+	if m.CreatedAt.IsZero() {
+		m.CreatedAt = time.Now().UTC()
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	k := chatKey(m.UserID, m.Ticker)
+	s.chatMsgs[k] = append(s.chatMsgs[k], m)
+	return nil
+}
+
+// ListChatMessages returns the most recent `limit` messages for the (user, ticker)
+// thread in chronological order (oldest first). limit<=0 returns all.
+func (s *Store) ListChatMessages(_ context.Context, userID, ticker string, limit int) ([]store.ChatMessage, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	all := s.chatMsgs[chatKey(userID, ticker)]
+	start := 0
+	if limit > 0 && len(all) > limit {
+		start = len(all) - limit
+	}
+	out := make([]store.ChatMessage, len(all)-start)
+	copy(out, all[start:])
+	return out, nil
+}
+
+// GetChatMsgUsed returns the user's Product B chat-message count for the period (ET
+// month); 0 when there's no row. (Reuses the deepQuotaKey shape.)
+func (s *Store) GetChatMsgUsed(_ context.Context, userID, period string) (int, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.chatQuota[deepQuotaKey(userID, period)], nil
+}
+
+// IncrChatMsgUsed increments the user's Product B chat-message count for the period
+// (ET month) by one.
+func (s *Store) IncrChatMsgUsed(_ context.Context, userID, period string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.chatQuota[deepQuotaKey(userID, period)]++
 	return nil
 }
 

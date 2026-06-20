@@ -352,3 +352,26 @@ CREATE TABLE IF NOT EXISTS stripe_events (
     type     text NOT NULL DEFAULT '',
     seen_at  timestamptz NOT NULL DEFAULT now()
 );
+
+-- Product B personalized chat (ticker-scoped, per user). The "thread" is IMPLICIT per
+-- (user_id, ticker). History is cheap to lose (User store) — losing it only resets the
+-- conversation, never market/billing data.
+CREATE TABLE IF NOT EXISTS chat_message (
+    id         bigserial PRIMARY KEY,
+    user_id    text NOT NULL,
+    ticker     text NOT NULL,
+    role       text NOT NULL,            -- 'user' | 'assistant'
+    content    text NOT NULL,            -- user question (text) or assistant blocks (JSON)
+    created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS chat_message_thread_idx ON chat_message (user_id, ticker, id);
+
+-- Product B per-user, per-ET-month MESSAGE meter (Pro soft-cap ~150/mo). Same shape as
+-- deep_research_quota; routed to the User store.
+CREATE TABLE IF NOT EXISTS chat_msg_quota (
+    user_id    text NOT NULL,
+    period     text NOT NULL,            -- ET month, e.g. "2026-06"
+    used       integer NOT NULL DEFAULT 0,
+    updated_at timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (user_id, period)
+);
