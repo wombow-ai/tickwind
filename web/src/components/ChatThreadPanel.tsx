@@ -1,18 +1,19 @@
 'use client';
 
-import {Loader2, Plus, Send, ShieldCheck} from 'lucide-react';
+import {Plus, Send} from 'lucide-react';
 import {useCallback, useEffect, useRef, useState} from 'react';
 import {MsgRow, type Msg} from '@/components/chatRender';
 import {clearChat, getChatHistory, getConvHistory, postChat, postConvChat} from '@/lib/api';
 import {useAuth} from '@/lib/auth';
+import {chatVars, CHAT_MONO} from '@/lib/chatTheme';
 import {useLang, useT} from '@/lib/i18n';
 import {useDark} from '@/lib/theme';
-import {btnPrimary, cx, tok} from '@/lib/ui';
 
-// ChatThreadPanel renders one conversation's messages + composer, for BOTH surfaces:
-// a per-stock chat ({kind:'stock'}) and the unified hub ({kind:'conversation'}). The
-// caller owns the auth/Pro gate + page chrome. onActivity fires after a successful send
-// (so the hub can refresh the sidebar order).
+// ChatThreadPanel renders one conversation's messages + composer, for BOTH surfaces: a
+// per-stock chat ({kind:'stock'}) and the unified hub ({kind:'conversation'}). The caller
+// owns the auth/Pro gate + page chrome. onActivity fires after a successful send (so the hub
+// can refresh the sidebar order); onMeter reports the monthly meter so the hub header can show
+// it. Styled on the chat-hub palette (CSS vars set on this root so it also themes the embed).
 
 export type ChatSource =
   | {kind: 'stock'; ticker: string}
@@ -24,9 +25,8 @@ function sourceKey(s: ChatSource): string {
   return s.kind === 'stock' ? 'stock:' + s.ticker.toUpperCase() : 'conv:' + s.id;
 }
 
-export function ChatThreadPanel({source, onActivity}: {source: ChatSource; onActivity?: () => void}) {
+export function ChatThreadPanel({source, onActivity, onMeter}: {source: ChatSource; onActivity?: () => void; onMeter?: (m: {used: number; limit: number}) => void}) {
   const dark = useDark();
-  const t = tok(dark);
   const tr = useT();
   const {lang} = useLang();
   const {getToken} = useAuth();
@@ -65,8 +65,7 @@ export function ChatThreadPanel({source, onActivity}: {source: ChatSource; onAct
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key, getToken]);
 
-  // Auto-scroll the messages CONTAINER to the latest — NOT the page. scrollIntoView was
-  // scrolling the whole window (the stock page jumped to the bottom on every send).
+  // Auto-scroll the messages CONTAINER to the latest — NOT the page.
   useEffect(() => {
     const el = listRef.current;
     if (el) el.scrollTop = el.scrollHeight;
@@ -86,7 +85,10 @@ export function ChatThreadPanel({source, onActivity}: {source: ChatSource; onAct
           ? await postChat(source.ticker, msg, token, lang)
           : await postConvChat(source.id, msg, token, lang);
         setMessages(m => [...m, {role: 'assistant', blocks: res.blocks}]);
-        if (res.meter) setMeter(res.meter);
+        if (res.meter) {
+          setMeter(res.meter);
+          onMeter?.(res.meter);
+        }
         onActivity?.();
       } catch {
         setErr(true);
@@ -94,7 +96,7 @@ export function ChatThreadPanel({source, onActivity}: {source: ChatSource; onAct
         setSending(false);
       }
     },
-    [key, lang, sending, getToken, onActivity], // eslint-disable-line react-hooks/exhaustive-deps
+    [key, lang, sending, getToken, onActivity, onMeter], // eslint-disable-line react-hooks/exhaustive-deps
   );
 
   const resetStockThread = useCallback(async () => {
@@ -110,85 +112,92 @@ export function ChatThreadPanel({source, onActivity}: {source: ChatSource; onAct
   }, [key, getToken]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const placeholder = source.kind === 'stock' ? tr('chat.placeholder') : tr('chat.hub.placeholder');
+  const sendActive = input.trim().length > 0 && !sending;
 
   return (
-    <div className="flex h-full flex-col">
-      <div className="flex items-center justify-between gap-2">
-        {meter ? (
-          <span className={cx('rounded-md px-2 py-1 text-[11px] font-semibold tabular-nums', dark ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600')}>
-            {tr('chat.meter').replace('{used}', String(meter.used)).replace('{limit}', String(meter.limit))}
-          </span>
+    <div style={{...chatVars(dark), display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, color: 'var(--text)'}}>
+      {source.kind === 'stock' && (
+        <div style={{flex: 'none', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 10}}>
+          {meter ? (
+            <span style={{fontSize: 11, fontWeight: 600, fontFamily: CHAT_MONO, color: 'var(--text2)', background: 'var(--surface2)', border: '1px solid var(--border)', padding: '3px 8px', borderRadius: 6}}>
+              {tr('chat.meter').replace('{used}', String(meter.used)).replace('{limit}', String(meter.limit))}
+            </span>
+          ) : <span />}
+          {messages.length > 0 && (
+            <button type="button" onClick={resetStockThread} style={{display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 500, color: 'var(--text3)', border: '1px solid var(--border)', background: 'transparent', borderRadius: 999, padding: '4px 10px', cursor: 'pointer'}}>
+              <Plus size={12} /> {tr('chat.new')}
+            </button>
+          )}
+        </div>
+      )}
+
+      <div ref={listRef} style={{flex: 1, minHeight: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 22, padding: '4px 2px'}}>
+        {messages.length === 0 && !sending ? (
+          <p style={{fontSize: 13, color: 'var(--text2)'}}>{tr('chat.empty')}</p>
         ) : (
-          <span />
+          messages.map((m, i) => <MsgRow key={i} m={m} fallbackTicker={fallbackTicker} dark={dark} tr={tr} />)
         )}
-        {source.kind === 'stock' && messages.length > 0 && (
-          <button
-            type="button"
-            onClick={resetStockThread}
-            className={cx('inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-medium', t.border, t.faint, dark ? 'hover:bg-slate-800/60' : 'hover:bg-slate-50')}
-          >
-            <Plus size={12} /> {tr('chat.new')}
-          </button>
-        )}
+        {sending && <ThinkingRow tr={tr} />}
+        {err && <p style={{fontSize: 12.5, color: 'var(--down)'}}>{tr('chat.error')}</p>}
       </div>
 
-      <div ref={listRef} className="mt-3 flex-1 space-y-4 overflow-y-auto">
-        {messages.length === 0 ? (
-          <p className={cx('text-[13px]', t.sub)}>{tr('chat.empty')}</p>
-        ) : (
-          messages.map((m, i) => <MsgRow key={i} m={m} fallbackTicker={fallbackTicker} dark={dark} t={t} tr={tr} />)
-        )}
-        {sending && (
-          <div className={cx('flex items-center gap-2 text-[12.5px]', t.faint)}>
-            <Loader2 size={14} className="animate-spin" /> {tr('chat.thinking')}
-          </div>
-        )}
-        {err && <p className="text-[12.5px] text-rose-500">{tr('chat.error')}</p>}
-      </div>
-
-      {messages.length === 0 && (
-        <div className="mt-3 flex flex-wrap gap-2">
+      {messages.length === 0 && !sending && (
+        <div style={{marginTop: 12, display: 'flex', flexWrap: 'wrap', gap: 8}}>
           {SUGGESTIONS.map(k => (
-            <button
-              key={k}
-              type="button"
-              onClick={() => send(tr(k))}
-              className={cx('rounded-full border px-3 py-1.5 text-[12px] font-medium transition', t.border, t.sub, dark ? 'hover:bg-slate-800/60' : 'hover:bg-slate-50')}
-            >
+            <button key={k} type="button" onClick={() => send(tr(k))} style={{borderRadius: 999, border: '1px solid var(--border)', background: 'var(--surface)', padding: '7px 13px', fontSize: 12, fontWeight: 500, color: 'var(--text2)', cursor: 'pointer'}}>
               {tr(k)}
             </button>
           ))}
         </div>
       )}
 
-      <form onSubmit={e => { e.preventDefault(); send(input); }} className="mt-3 flex items-end gap-2">
-        <textarea
-          value={input}
-          onChange={e => setInput(e.target.value)}
-          onKeyDown={e => {
-            if (e.key === 'Enter' && !e.shiftKey) {
-              e.preventDefault();
-              send(input);
-            }
-          }}
-          rows={1}
-          placeholder={placeholder}
-          aria-label={placeholder}
-          className={cx('min-h-[44px] flex-1 resize-none rounded-xl border px-3 py-3 text-[13px] outline-none', t.card, t.border, t.text)}
-        />
-        <button
-          type="submit"
-          disabled={sending || !input.trim()}
-          aria-label={tr('chat.send')}
-          className={cx('inline-flex h-[44px] shrink-0 items-center gap-1.5 rounded-xl px-4 text-[13px] font-semibold disabled:opacity-50', btnPrimary(dark))}
-        >
-          <Send size={14} /> {tr('chat.send')}
-        </button>
+      <form onSubmit={e => { e.preventDefault(); send(input); }} style={{marginTop: 12}}>
+        <div style={{display: 'flex', alignItems: 'flex-end', gap: 10, padding: '8px 8px 8px 14px', borderRadius: 15, background: 'var(--surface)', border: '1px solid var(--border2)'}}>
+          <textarea
+            value={input}
+            onChange={e => setInput(e.target.value)}
+            onKeyDown={e => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                send(input);
+              }
+            }}
+            rows={1}
+            placeholder={placeholder}
+            aria-label={placeholder}
+            style={{flex: 1, resize: 'none', border: 'none', outline: 'none', background: 'transparent', color: 'var(--text)', fontSize: 14, lineHeight: 1.5, maxHeight: 140, minHeight: 24, padding: '5px 0', fontFamily: 'inherit'}}
+          />
+          <button
+            type="submit"
+            disabled={!sendActive}
+            aria-label={tr('chat.send')}
+            style={{flex: 'none', width: 34, height: 34, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', border: 'none', cursor: sendActive ? 'pointer' : 'default', background: sendActive ? 'var(--accent)' : 'var(--surface2)', color: sendActive ? '#1c1404' : 'var(--text3)'}}
+          >
+            <Send size={15} />
+          </button>
+        </div>
+        <div style={{display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginTop: 7, flexWrap: 'wrap'}}>
+          <span style={{fontSize: 10.5, color: 'var(--text3)'}}>{tr('chat.disclaimer')}</span>
+          <span style={{fontSize: 10.5, color: 'var(--text3)', fontFamily: CHAT_MONO}}>{tr('chat.sendHint')}</span>
+        </div>
       </form>
-      <p className={cx('mt-2 flex items-center gap-1.5 text-[11px]', t.faint)}>
-        <ShieldCheck size={12} className={dark ? 'text-emerald-400' : 'text-emerald-500'} />
-        {tr('chat.disclaimer')}
-      </p>
+    </div>
+  );
+}
+
+function ThinkingRow({tr}: {tr: (k: string) => string}) {
+  return (
+    <div style={{display: 'flex', gap: 12}}>
+      <div style={{flex: 'none', width: 28, height: 28, borderRadius: 8, background: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 12, color: '#1c1404'}}>T</div>
+      <div style={{display: 'flex', alignItems: 'center', gap: 9}}>
+        <span style={{fontSize: 12.5, fontWeight: 600, color: 'var(--text)'}}>{tr('chat.aiName')}</span>
+        <span style={{display: 'flex', gap: 3, alignItems: 'center'}}>
+          {[0, 0.15, 0.3].map((d, i) => (
+            <span key={i} style={{width: 5, height: 5, borderRadius: '50%', background: 'var(--accent)', animation: `tw-chat-pulse 1.2s infinite ${d}s`}} />
+          ))}
+        </span>
+        <span style={{fontSize: 11.5, color: 'var(--text3)'}}>{tr('chat.thinking')}</span>
+      </div>
     </div>
   );
 }

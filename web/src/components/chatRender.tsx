@@ -1,21 +1,20 @@
 'use client';
 
-import {ArrowRight} from 'lucide-react';
+import {ArrowRight, Check, Copy} from 'lucide-react';
+import {useState} from 'react';
 import {FundamentalsCard} from '@/components/FundamentalsCard';
 import {KLineChart} from '@/components/KLineChart';
 import Link from '@/components/LocalLink';
 import {Markdown} from '@/components/Markdown';
 import {ChatPortfolioWidget} from '@/components/PortfolioWidgets';
 import {type ChatBlock} from '@/lib/api';
-import {cx, type Tokens} from '@/lib/ui';
 
-// Portfolio-level widgets render the user's OWN data (no ticker) — handled before the
-// per-stock ticker guard below.
+// Shared chat-message rendering for both the per-stock thread and the unified hub, styled
+// on the chat-hub palette (CSS vars set by the hub root — see lib/chatTheme). A widget block
+// carries its own ticker (block.params.ticker, set server-side) so a cross-stock answer can
+// surface AAPL's chart and MSFT's table in one thread.
+
 const PORTFOLIO_WIDGETS = new Set(['watchlist_summary', 'holdings_pnl', 'portfolio_heatmap']);
-
-// Shared chat-message rendering for both the per-stock thread and the unified hub. A
-// widget block carries its own ticker (block.params.ticker, set server-side) so a
-// cross-stock answer can surface AAPL's chart and MSFT's table in one thread.
 
 export type Msg = {role: 'user' | 'assistant'; blocks?: ChatBlock[]; text?: string};
 
@@ -37,67 +36,100 @@ const WIDGET_LABEL: Record<string, string> = {
   fundamentals_table: 'fundamentals',
 };
 
-export function MsgRow({m, fallbackTicker, dark, t, tr}: {m: Msg; fallbackTicker: string; dark: boolean; t: Tokens; tr: (k: string) => string}) {
+export function MsgRow({m, fallbackTicker, dark, tr}: {m: Msg; fallbackTicker: string; dark: boolean; tr: (k: string) => string}) {
   if (m.role === 'user') {
     return (
-      <div className="flex justify-end">
-        <div className={cx('max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-br-sm px-3.5 py-2 text-[13px]', dark ? 'bg-violet-500/20 text-violet-50' : 'bg-violet-100 text-violet-900')}>
+      <div style={{display: 'flex', justifyContent: 'flex-end'}}>
+        <div style={{maxWidth: '80%', padding: '11px 15px', borderRadius: '16px 16px 4px 16px', background: 'var(--bubble)', border: '1px solid var(--bubble-line)', fontSize: 14, lineHeight: 1.5, color: 'var(--text)', whiteSpace: 'pre-wrap'}}>
           {m.text}
         </div>
       </div>
     );
   }
+  const plain = (m.blocks ?? []).filter(b => b.kind === 'text').map(b => b.text ?? '').join('\n\n') || m.text || '';
   return (
-    <div className="flex justify-start">
-      <div className={cx('max-w-[92%] rounded-2xl rounded-bl-sm border px-3.5 py-2.5', t.card, t.border)}>
-        {(m.blocks ?? []).map((b, i) => <BlockView key={i} block={b} fallbackTicker={fallbackTicker} dark={dark} t={t} tr={tr} />)}
+    <div style={{display: 'flex', gap: 12}}>
+      <div style={{flex: 'none', width: 28, height: 28, borderRadius: 8, background: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 12, color: '#1c1404'}}>T</div>
+      <div style={{flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 14}}>
+        <div style={{display: 'flex', alignItems: 'center', gap: 8}}>
+          <span style={{fontSize: 12.5, fontWeight: 600, color: 'var(--text)'}}>{tr('chat.aiName')}</span>
+          <span style={{fontSize: 11, color: 'var(--text3)'}}>{tr('chat.justNow')}</span>
+        </div>
+        {(m.blocks ?? []).map((b, i) => <BlockView key={i} block={b} fallbackTicker={fallbackTicker} dark={dark} tr={tr} />)}
         {!m.blocks && m.text && (
-          <div className={cx('text-[13px] leading-relaxed', t.text)}>
+          <div style={{fontSize: 14, lineHeight: 1.62, color: 'var(--text)'}}>
             <Markdown>{m.text}</Markdown>
           </div>
         )}
+        <div style={{display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', paddingTop: 8, borderTop: '1px solid var(--border)'}}>
+          <span style={{fontSize: 10.5, color: 'var(--text3)', lineHeight: 1.4}}>{tr('chat.disclaimer')}</span>
+          <CopyButton text={plain} tr={tr} />
+        </div>
       </div>
     </div>
   );
 }
 
-function BlockView({block, fallbackTicker, dark, t, tr}: {block: ChatBlock; fallbackTicker: string; dark: boolean; t: Tokens; tr: (k: string) => string}) {
+function CopyButton({text, tr}: {text: string; tr: (k: string) => string}) {
+  const [done, setDone] = useState(false);
+  if (!text) return null;
+  return (
+    <button
+      type="button"
+      aria-label={tr('chat.copy')}
+      onClick={() => {
+        if (typeof navigator !== 'undefined' && navigator.clipboard) {
+          void navigator.clipboard.writeText(text).then(() => {
+            setDone(true);
+            setTimeout(() => setDone(false), 1400);
+          });
+        }
+      }}
+      style={{width: 28, height: 28, borderRadius: 7, border: 'none', background: 'transparent', color: done ? 'var(--up)' : 'var(--text3)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center'}}
+    >
+      {done ? <Check size={14} /> : <Copy size={14} />}
+    </button>
+  );
+}
+
+function BlockView({block, fallbackTicker, dark, tr}: {block: ChatBlock; fallbackTicker: string; dark: boolean; tr: (k: string) => string}) {
   if (block.kind === 'text') {
     return (
-      <div className={cx('text-[13px] leading-relaxed', t.text)}>
+      <div style={{fontSize: 14, lineHeight: 1.62, color: 'var(--text)'}} className="tw-chat-prose">
         <Markdown>{block.text ?? ''}</Markdown>
       </div>
     );
   }
   const ticker = block.params?.ticker || fallbackTicker;
-  return <ChatWidget widget={block.widget ?? ''} ticker={ticker} dark={dark} t={t} tr={tr} />;
+  return <ChatWidget widget={block.widget ?? ''} ticker={ticker} dark={dark} tr={tr} />;
 }
 
-function ChatWidget({widget, ticker, dark, t, tr}: {widget: string; ticker: string; dark: boolean; t: Tokens; tr: (k: string) => string}) {
+// Card shell matching the hub aesthetic — widgets render the real Go-owned data inside.
+function WidgetCard({children}: {children: React.ReactNode}) {
+  return (
+    <div style={{border: '1px solid var(--border)', borderRadius: 14, background: 'var(--surface)', overflow: 'hidden'}}>
+      {children}
+    </div>
+  );
+}
+
+function ChatWidget({widget, ticker, dark, tr}: {widget: string; ticker: string; dark: boolean; tr: (k: string) => string}) {
   if (PORTFOLIO_WIDGETS.has(widget)) {
-    return <ChatPortfolioWidget type={widget} />;
+    return <WidgetCard><div style={{padding: 6}}><ChatPortfolioWidget type={widget} /></div></WidgetCard>;
   }
   if (!ticker) return null;
   if (widget === 'kline') {
-    return (
-      <div className="my-2">
-        <KLineChart ticker={ticker} />
-      </div>
-    );
+    return <WidgetCard><div style={{padding: 10}}><KLineChart ticker={ticker} /></div></WidgetCard>;
   }
   if (widget === 'fundamentals_table' || widget === 'valuation_table') {
-    return (
-      <div className="my-2">
-        <FundamentalsCard ticker={ticker} />
-      </div>
-    );
+    return <WidgetCard><div style={{padding: 6}}><FundamentalsCard ticker={ticker} /></div></WidgetCard>;
   }
   const anchor = WIDGET_ANCHOR[widget] ?? '';
   const label = WIDGET_LABEL[widget] ?? widget;
   return (
     <Link
       href={`/stock/${encodeURIComponent(ticker)}${anchor}`}
-      className={cx('my-2 inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-[12.5px] font-medium', t.border, t.sub, dark ? 'hover:bg-slate-800/50' : 'hover:bg-slate-50')}
+      style={{display: 'inline-flex', alignItems: 'center', gap: 7, alignSelf: 'flex-start', padding: '8px 13px', borderRadius: 9, border: '1px solid var(--border2)', fontSize: 12.5, fontWeight: 500, color: 'var(--text)', textDecoration: 'none'}}
     >
       {tr('chat.widget.open').replace('{w}', `${ticker} ${label}`.trim())} <ArrowRight size={13} />
     </Link>

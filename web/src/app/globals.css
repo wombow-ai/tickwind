@@ -126,6 +126,18 @@ summary:focus-visible,
   }
 }
 
+/* Chat "thinking" dots (AI hub). */
+@keyframes tw-chat-pulse {
+  0%, 80%, 100% {
+    opacity: 0.22;
+    transform: translateY(0);
+  }
+  40% {
+    opacity: 1;
+    transform: translateY(-3px);
+  }
+}
+
 /* ------------------------------ price flash ------------------------------ */
 .tw-flash-up {
   animation: tw-up 0.85s ease-out;

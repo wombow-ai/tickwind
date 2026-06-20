@@ -1,8 +1,8 @@
 'use client';
 
-import {ArrowRight, Loader2, Lock, Menu, Pencil, Plus, ShieldCheck, Sparkles, Trash2, X} from 'lucide-react';
+import {ArrowRight, Lock, Menu, Pencil, Plus, Search, Sparkles, Trash2, X} from 'lucide-react';
 import {useSearchParams} from 'next/navigation';
-import {useCallback, useEffect, useState} from 'react';
+import {useCallback, useEffect, useMemo, useState} from 'react';
 import {ChatThreadPanel} from '@/components/ChatThreadPanel';
 import Link from '@/components/LocalLink';
 import {
@@ -15,19 +15,20 @@ import {
   renameConversation,
 } from '@/lib/api';
 import {useAuth} from '@/lib/auth';
+import {chatVars, CHAT_MONO} from '@/lib/chatTheme';
 import {useEntitlement} from '@/lib/entitlement';
 import {useT} from '@/lib/i18n';
 import {useDark} from '@/lib/theme';
-import {btnPrimary, cx, tok, type Tokens} from '@/lib/ui';
+import {cx} from '@/lib/ui';
 
 /**
- * ChatHub — Product C: the unified, ChatGPT/Claude-style chat hub (/chat). A sidebar of
- * the user's conversations + the active thread (the shared ChatThreadPanel). Pro-gated.
- * A ?ticker= query opens (or creates) that stock's conversation as a warm start.
+ * ChatHub — the full-screen, ChatGPT/Claude-style AI chat hub (/chat), in the owner's warm
+ * "Claude style" design. A sidebar of the user's conversations + the active thread (the shared
+ * ChatThreadPanel). Pro-gated. A ?ticker= query opens (or creates) that stock's conversation.
+ * Lives in the (fullscreen) route group so it has no TopNav/Footer — it feels like its own app.
  */
 export function ChatHub() {
   const dark = useDark();
-  const t = tok(dark);
   const tr = useT();
   const {user, loading: authLoading, getToken} = useAuth();
   const {isPro, loading: entLoading} = useEntitlement();
@@ -37,8 +38,8 @@ export function ChatHub() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  // `chat_personal_data` pref (default true): when off, the chat endpoint serves no
-  // watchlist/holdings/notes tools for the turn. Mirrors the server-side default.
+  const [query, setQuery] = useState('');
+  const [meter, setMeter] = useState<{used: number; limit: number} | null>(null);
   const [personalData, setPersonalData] = useState(true);
 
   const refresh = useCallback(async () => {
@@ -102,11 +103,11 @@ export function ChatHub() {
 
   const togglePersonalData = useCallback(async () => {
     const next = !personalData;
-    setPersonalData(next); // optimistic
+    setPersonalData(next);
     try {
       await putMyPrefs(await getToken(), {chat_personal_data: next});
     } catch {
-      setPersonalData(!next); // revert on failure
+      setPersonalData(!next);
     }
   }, [personalData, getToken]);
 
@@ -121,123 +122,191 @@ export function ChatHub() {
     [getToken, refresh, tr],
   );
 
+  // TODAY vs EARLIER grouping by updated_at, after the search filter.
+  const {today, earlier} = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    const list = q ? convs.filter(c => (c.title || c.anchor_ticker || '').toLowerCase().includes(q)) : convs;
+    const isToday = (iso?: string) => {
+      if (!iso) return false;
+      const d = new Date(iso);
+      const n = new Date();
+      return d.getFullYear() === n.getFullYear() && d.getMonth() === n.getMonth() && d.getDate() === n.getDate();
+    };
+    return {today: list.filter(c => isToday(c.updated_at)), earlier: list.filter(c => !isToday(c.updated_at))};
+  }, [convs, query]);
+
   if (authLoading || entLoading || loading) {
-    return (
-      <Center>
-        <div className={cx('flex items-center gap-2 text-[13px]', t.sub)}>
-          <Loader2 size={15} className="animate-spin" /> {tr('chat.thinking')}
-        </div>
-      </Center>
-    );
+    return <Shell dark={dark}><Center><span style={{fontSize: 13, color: 'var(--text3)'}}>{tr('chat.thinking')}</span></Center></Shell>;
   }
   if (!user) {
-    return (
-      <Center>
-        <Gate dark={dark} t={t} icon={<Lock size={20} />} title={tr('chat.gate.login.title')} body={tr('chat.gate.login.body')} cta={tr('chat.login')} href="/login" />
-      </Center>
-    );
+    return <Shell dark={dark}><Center><Gate icon={<Lock size={20} />} title={tr('chat.gate.login.title')} body={tr('chat.gate.login.body')} cta={tr('chat.login')} href="/login" /></Center></Shell>;
   }
   if (!isPro) {
-    return (
-      <Center>
-        <Gate dark={dark} t={t} icon={<Sparkles size={20} />} title={tr('chat.gate.pro.title')} body={tr('chat.gate.pro.body').replace('{t}', tr('chat.hub.yourPortfolio'))} cta={tr('chat.gate.cta')} href="/pro" />
-      </Center>
-    );
+    return <Shell dark={dark}><Center><Gate icon={<Sparkles size={20} />} title={tr('chat.gate.pro.title')} body={tr('chat.gate.pro.body').replace('{t}', tr('chat.hub.yourPortfolio'))} cta={tr('chat.gate.cta')} href="/pro" /></Center></Shell>;
   }
 
   const selected = convs.find(c => c.id === selectedId) || null;
-
-  const Sidebar = (
-    <div className={cx('flex h-full w-full flex-col rounded-2xl border', t.card, t.border)}>
-      <div className="flex items-center justify-between gap-2 p-3">
-        <span className={cx('text-[13px] font-bold', t.text)}>{tr('chat.hub.title')}</span>
-        <button type="button" onClick={newChat} className={cx('inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold', btnPrimary(dark))}>
-          <Plus size={12} /> {tr('chat.hub.new')}
-        </button>
-      </div>
-      <div className="flex-1 space-y-1 overflow-y-auto px-2 pb-2">
-        {convs.length === 0 ? (
-          <p className={cx('px-2 py-3 text-[12px]', t.faint)}>{tr('chat.hub.empty')}</p>
-        ) : (
-          convs.map(c => (
-            <div
-              key={c.id}
-              className={cx(
-                'group flex items-center gap-1 rounded-lg px-2 py-2 text-[12.5px]',
-                c.id === selectedId ? (dark ? 'bg-violet-500/15 text-violet-100' : 'bg-violet-50 text-violet-900') : cx(t.sub, dark ? 'hover:bg-slate-800/50' : 'hover:bg-slate-50'),
-              )}
-            >
-              <button type="button" onClick={() => { setSelectedId(c.id); setSidebarOpen(false); }} className="min-w-0 flex-1 truncate text-left">
-                {c.title || c.anchor_ticker || tr('chat.hub.untitled')}
-              </button>
-              <button type="button" aria-label="rename" onClick={() => rename(c)} className={cx('hidden shrink-0 rounded p-1 group-hover:block', t.faint)}>
-                <Pencil size={12} />
-              </button>
-              <button type="button" aria-label="delete" onClick={() => remove(c.id)} className={cx('hidden shrink-0 rounded p-1 group-hover:block', t.faint, 'hover:text-rose-500')}>
-                <Trash2 size={12} />
-              </button>
-            </div>
-          ))
-        )}
-      </div>
-      <div className={cx('border-t p-2.5', t.border)}>
-        <button
-          type="button"
-          onClick={togglePersonalData}
-          aria-pressed={personalData}
-          className={cx('flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left', dark ? 'hover:bg-slate-800/50' : 'hover:bg-slate-50')}
-        >
-          <ShieldCheck size={14} className={personalData ? (dark ? 'text-emerald-400' : 'text-emerald-600') : t.faint} />
-          <span className={cx('flex-1 text-[12px] font-medium', t.sub)}>{tr('chat.hub.privacy')}</span>
-          <span className={cx('relative h-4 w-7 shrink-0 rounded-full transition-colors', personalData ? (dark ? 'bg-emerald-500' : 'bg-emerald-500') : dark ? 'bg-slate-700' : 'bg-slate-300')}>
-            <span className={cx('absolute top-0.5 h-3 w-3 rounded-full bg-white transition-all', personalData ? 'left-3.5' : 'left-0.5')} />
-          </span>
-        </button>
-        <p className={cx('mt-1 px-2 text-[10.5px] leading-snug', t.faint)}>{tr(personalData ? 'chat.hub.privacyOn' : 'chat.hub.privacyOff')}</p>
-      </div>
-    </div>
-  );
+  const activeTitle = selected ? (selected.title || selected.anchor_ticker || tr('chat.hub.untitled')) : tr('chat.hub.newTitle');
+  const activeSub = selected?.anchor_ticker || '';
 
   return (
-    <div className="mx-auto max-w-6xl tw-fade">
-      <div className="mb-3 flex items-center gap-2 lg:hidden">
-        <button type="button" onClick={() => setSidebarOpen(o => !o)} className={cx('inline-flex items-center gap-1 rounded-full border px-3 py-1.5 text-[12px] font-medium', t.border, t.sub)}>
-          {sidebarOpen ? <X size={14} /> : <Menu size={14} />} {tr('chat.hub.title')}
-        </button>
-      </div>
-      <div className="grid gap-4 lg:grid-cols-[260px_1fr]">
-        <div className={cx('lg:block', sidebarOpen ? 'block' : 'hidden', 'h-[60vh] lg:h-[72vh]')}>{Sidebar}</div>
-        <div className={cx('h-[72vh] rounded-2xl border p-4', t.card, t.border)}>
-          {selected ? (
-            <ChatThreadPanel source={{kind: 'conversation', id: selected.id, anchorTicker: selected.anchor_ticker}} onActivity={refresh} />
-          ) : (
-            <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
-              <Sparkles size={22} className={dark ? 'text-violet-300' : 'text-violet-500'} />
-              <p className={cx('text-[14px] font-semibold', t.text)}>{tr('chat.hub.startTitle')}</p>
-              <p className={cx('max-w-md text-[12.5px]', t.sub)}>{tr('chat.hub.startBody')}</p>
-              <button type="button" onClick={newChat} className={cx('mt-1 inline-flex items-center gap-1 rounded-full px-4 py-1.5 text-[12.5px] font-semibold', btnPrimary(dark))}>
-                <Plus size={13} /> {tr('chat.hub.new')}
+    <Shell dark={dark}>
+      <div className="relative flex flex-1 min-h-0 overflow-hidden">
+        {sidebarOpen && <div onClick={() => setSidebarOpen(false)} className="absolute inset-0 z-30 lg:hidden" style={{background: 'rgba(0,0,0,.45)'}} />}
+
+        {/* SIDEBAR */}
+        <aside
+          className={cx('absolute inset-y-0 left-0 z-40 flex w-[284px] flex-col transition-transform lg:static lg:w-[272px] lg:translate-x-0', sidebarOpen ? 'translate-x-0' : '-translate-x-[110%] lg:translate-x-0')}
+          style={{background: 'var(--surface)', borderRight: '1px solid var(--border)'}}
+        >
+          <div style={{padding: '14px 14px 10px'}}>
+            <div style={{display: 'flex', alignItems: 'center', gap: 9, marginBottom: 14}}>
+              <div style={{width: 26, height: 26, borderRadius: 7, background: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 13, color: '#1c1404'}}>T</div>
+              <div style={{display: 'flex', alignItems: 'baseline', gap: 7}}>
+                <span style={{fontWeight: 600, fontSize: 15, letterSpacing: '-.01em', color: 'var(--text)'}}>Tickwind</span>
+                <span style={{fontSize: 9, fontWeight: 600, letterSpacing: '.1em', padding: '2px 5px', borderRadius: 5, background: 'var(--accent-soft)', color: 'var(--accent2)', fontFamily: CHAT_MONO}}>AI</span>
+              </div>
+              <button type="button" onClick={() => setSidebarOpen(false)} className="lg:hidden" style={{marginLeft: 'auto', color: 'var(--text3)', background: 'transparent', border: 'none', cursor: 'pointer'}}><X size={16} /></button>
+            </div>
+            <button type="button" onClick={newChat} style={{width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: 9, borderRadius: 10, background: 'var(--accent-fill)', border: '1px solid var(--accent-line)', color: 'var(--accent2)', fontWeight: 600, fontSize: 13, cursor: 'pointer'}}>
+              <Plus size={15} /> {tr('chat.hub.new')}
+            </button>
+          </div>
+
+          <div style={{padding: '0 14px 8px'}}>
+            <div style={{display: 'flex', alignItems: 'center', gap: 8, padding: '7px 10px', borderRadius: 9, background: 'var(--surface2)', border: '1px solid var(--border)'}}>
+              <Search size={13} style={{color: 'var(--text3)'}} />
+              <input
+                value={query}
+                onChange={e => setQuery(e.target.value)}
+                placeholder={tr('chat.hub.search')}
+                style={{flex: 1, border: 'none', outline: 'none', background: 'transparent', fontSize: 12.5, color: 'var(--text)', fontFamily: 'inherit'}}
+              />
+            </div>
+          </div>
+
+          <div style={{flex: 1, minHeight: 0, overflowY: 'auto', padding: '4px 10px'}}>
+            {convs.length === 0 ? (
+              <p style={{padding: '12px 8px', fontSize: 12, color: 'var(--text3)'}}>{tr('chat.hub.empty')}</p>
+            ) : (
+              <>
+                {today.length > 0 && <Group label={tr('chat.hub.today')} />}
+                {today.map(c => <ConvRow key={c.id} c={c} active={c.id === selectedId} onSelect={() => { setSelectedId(c.id); setSidebarOpen(false); }} onRename={() => rename(c)} onDelete={() => remove(c.id)} tr={tr} />)}
+                {earlier.length > 0 && <Group label={tr('chat.hub.earlier')} />}
+                {earlier.map(c => <ConvRow key={c.id} c={c} active={c.id === selectedId} onSelect={() => { setSelectedId(c.id); setSidebarOpen(false); }} onRename={() => rename(c)} onDelete={() => remove(c.id)} tr={tr} />)}
+              </>
+            )}
+          </div>
+
+          <div style={{flex: 'none', borderTop: '1px solid var(--border)', padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 12}}>
+            {meter && (
+              <div>
+                <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6}}>
+                  <span style={{fontSize: 11.5, color: 'var(--text2)'}}>{tr('chat.hub.usage')}</span>
+                  <span style={{fontSize: 11.5, fontFamily: CHAT_MONO, color: 'var(--text)', fontWeight: 500}}>{meter.used} <span style={{color: 'var(--text3)'}}>/ {meter.limit}</span></span>
+                </div>
+                <div style={{height: 5, borderRadius: 4, background: 'var(--surface2)', overflow: 'hidden'}}>
+                  <div style={{height: '100%', width: `${Math.min(100, Math.round((meter.used / Math.max(1, meter.limit)) * 100))}%`, borderRadius: 4, background: 'var(--accent)'}} />
+                </div>
+              </div>
+            )}
+            <div style={{display: 'flex', alignItems: 'flex-start', gap: 10}}>
+              <div style={{flex: 1, minWidth: 0}}>
+                <div style={{fontSize: 12.5, fontWeight: 500, color: 'var(--text)'}}>{tr('chat.hub.privacy')}</div>
+                <div style={{fontSize: 11, color: 'var(--text3)', marginTop: 2, lineHeight: 1.4}}>{tr(personalData ? 'chat.hub.privacyOn' : 'chat.hub.privacyOff')}</div>
+              </div>
+              <button type="button" onClick={togglePersonalData} aria-pressed={personalData} style={{width: 38, height: 22, borderRadius: 12, padding: 2, cursor: 'pointer', flex: 'none', border: personalData ? 'none' : '1px solid var(--border2)', background: personalData ? 'var(--accent)' : 'var(--surface2)', display: 'flex', justifyContent: personalData ? 'flex-end' : 'flex-start'}}>
+                <span style={{width: 18, height: 18, borderRadius: '50%', background: '#fff'}} />
               </button>
             </div>
-          )}
+            <div style={{display: 'flex', alignItems: 'center', gap: 9, paddingTop: 2}}>
+              <div style={{width: 28, height: 28, borderRadius: '50%', background: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 600, color: '#1c1404'}}>{(user.email ?? 'TW').slice(0, 2).toUpperCase()}</div>
+              <div style={{flex: 1, minWidth: 0}}>
+                <div style={{fontSize: 12.5, fontWeight: 500, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'}}>{user.email}</div>
+                <div style={{fontSize: 10.5, color: 'var(--text3)'}}>{tr('settings.planPro')}</div>
+              </div>
+            </div>
+          </div>
+        </aside>
+
+        {/* MAIN */}
+        <div className="flex flex-1 min-w-0 flex-col" style={{background: 'var(--bg)'}}>
+          <div style={{flex: 'none', display: 'flex', alignItems: 'center', gap: 10, padding: '12px 18px', borderBottom: '1px solid var(--border)'}}>
+            <button type="button" onClick={() => setSidebarOpen(true)} className="lg:hidden" style={{width: 32, height: 32, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text2)', background: 'transparent', border: 'none', cursor: 'pointer'}}><Menu size={16} /></button>
+            <div style={{flex: 1, minWidth: 0}}>
+              <div style={{fontSize: 14, fontWeight: 600, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'}}>{activeTitle}</div>
+              {activeSub && <div style={{fontSize: 11, color: 'var(--text3)'}}>{activeSub}</div>}
+            </div>
+            {meter && (
+              <div style={{display: 'flex', alignItems: 'center', gap: 6, padding: '5px 10px', borderRadius: 8, background: 'var(--surface2)', border: '1px solid var(--border)', whiteSpace: 'nowrap'}}>
+                <div style={{width: 6, height: 6, borderRadius: '50%', background: 'var(--accent)'}} />
+                <span style={{fontSize: 11.5, fontFamily: CHAT_MONO, color: 'var(--text2)'}}>{tr('chat.hub.left').replace('{n}', String(Math.max(0, meter.limit - meter.used)))}</span>
+              </div>
+            )}
+          </div>
+
+          <div style={{flex: 1, minHeight: 0, overflow: 'hidden'}}>
+            {selected ? (
+              <div style={{height: '100%', maxWidth: 820, margin: '0 auto', padding: '18px 20px', display: 'flex', flexDirection: 'column'}}>
+                <ChatThreadPanel source={{kind: 'conversation', id: selected.id, anchorTicker: selected.anchor_ticker}} onActivity={refresh} onMeter={setMeter} />
+              </div>
+            ) : (
+              <div style={{height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: 32, gap: 8}}>
+                <div style={{width: 46, height: 46, borderRadius: 13, background: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 22, color: '#1c1404', marginBottom: 6}}>T</div>
+                <div style={{fontSize: 21, fontWeight: 600, letterSpacing: '-.02em', color: 'var(--text)'}}>{tr('chat.hub.startTitle')}</div>
+                <div style={{fontSize: 13.5, color: 'var(--text2)', maxWidth: 420, lineHeight: 1.55}}>{tr('chat.hub.startBody')}</div>
+                <button type="button" onClick={newChat} style={{marginTop: 10, display: 'inline-flex', alignItems: 'center', gap: 8, padding: '9px 16px', borderRadius: 10, background: 'var(--accent-fill)', border: '1px solid var(--accent-line)', color: 'var(--accent2)', fontWeight: 600, fontSize: 13, cursor: 'pointer'}}>
+                  <Plus size={15} /> {tr('chat.hub.new')}
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
+    </Shell>
+  );
+}
+
+function Shell({dark, children}: {dark: boolean; children: React.ReactNode}) {
+  return (
+    <div style={{...chatVars(dark), height: '100%', display: 'flex', flexDirection: 'column', background: 'var(--bg)', color: 'var(--text)', fontFamily: 'Inter,system-ui,sans-serif', overflow: 'hidden'}}>
+      {children}
     </div>
   );
 }
 
 function Center({children}: {children: React.ReactNode}) {
-  return <div className="mx-auto flex min-h-[50vh] max-w-2xl items-center justify-center tw-fade">{children}</div>;
+  return <div style={{flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24}}>{children}</div>;
 }
 
-function Gate({dark, t, icon, title, body, cta, href}: {dark: boolean; t: Tokens; icon: React.ReactNode; title: string; body: string; cta: string; href: string}) {
+function Group({label}: {label: string}) {
+  return <div style={{fontSize: 10.5, fontWeight: 600, letterSpacing: '.08em', color: 'var(--text3)', padding: '10px 6px 5px', fontFamily: CHAT_MONO}}>{label}</div>;
+}
+
+function ConvRow({c, active, onSelect, onRename, onDelete, tr}: {c: Conversation; active: boolean; onSelect: () => void; onRename: () => void; onDelete: () => void; tr: (k: string) => string}) {
   return (
-    <div className={cx('rounded-2xl border p-6 text-center', t.card, t.border, dark ? 'bg-violet-500/[0.05]' : 'bg-violet-50/50')}>
-      <div className={cx('mx-auto mb-2 flex h-10 w-10 items-center justify-center rounded-full', dark ? 'bg-violet-500/15 text-violet-300' : 'bg-violet-100 text-violet-600')}>{icon}</div>
-      <p className={cx('text-[15px] font-bold', t.text)}>{title}</p>
-      <p className={cx('mx-auto mt-1.5 max-w-md text-[12.5px]', t.sub)}>{body}</p>
-      <Link href={href} className={cx('mt-3 inline-flex items-center gap-1 rounded-full px-4 py-1.5 text-[12.5px] font-semibold', btnPrimary(dark))}>
-        {cta} <ArrowRight size={13} />
+    <div className="group" style={{display: 'flex', alignItems: 'center', gap: 6, padding: '8px 10px', borderRadius: 10, cursor: 'pointer', border: '1px solid transparent', marginBottom: 2, background: active ? 'var(--surface2)' : 'transparent', borderColor: active ? 'var(--border)' : 'transparent'}}>
+      <button type="button" onClick={onSelect} style={{flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 2, textAlign: 'left', border: 'none', background: 'transparent', cursor: 'pointer', padding: 0}}>
+        <div style={{display: 'flex', alignItems: 'center', gap: 7, minWidth: 0}}>
+          {active && <div style={{width: 3, height: 14, borderRadius: 3, background: 'var(--accent)', flex: 'none'}} />}
+          <span style={{fontSize: 13, fontWeight: 500, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'}}>{c.title || c.anchor_ticker || tr('chat.hub.untitled')}</span>
+        </div>
+        {c.anchor_ticker && <span style={{fontSize: 11, color: 'var(--text3)', paddingLeft: active ? 10 : 0}}>{c.anchor_ticker}</span>}
+      </button>
+      <button type="button" aria-label={tr('chat.hub.rename')} onClick={onRename} className="hidden shrink-0 group-hover:block" style={{borderRadius: 6, padding: 4, color: 'var(--text3)', border: 'none', background: 'transparent', cursor: 'pointer'}}><Pencil size={12} /></button>
+      <button type="button" aria-label={tr('chat.hub.delete')} onClick={onDelete} className="hidden shrink-0 group-hover:block" style={{borderRadius: 6, padding: 4, color: 'var(--text3)', border: 'none', background: 'transparent', cursor: 'pointer'}}><Trash2 size={12} /></button>
+    </div>
+  );
+}
+
+function Gate({icon, title, body, cta, href}: {icon: React.ReactNode; title: string; body: string; cta: string; href: string}) {
+  return (
+    <div style={{borderRadius: 16, border: '1px solid var(--border)', background: 'var(--surface)', padding: 28, textAlign: 'center', maxWidth: 420}}>
+      <div style={{margin: '0 auto 10px', width: 44, height: 44, borderRadius: 12, background: 'var(--accent-soft)', color: 'var(--accent2)', display: 'flex', alignItems: 'center', justifyContent: 'center'}}>{icon}</div>
+      <p style={{fontSize: 16, fontWeight: 700, color: 'var(--text)', margin: 0}}>{title}</p>
+      <p style={{margin: '8px auto 0', maxWidth: 360, fontSize: 13, color: 'var(--text2)', lineHeight: 1.55}}>{body}</p>
+      <Link href={href} style={{marginTop: 16, display: 'inline-flex', alignItems: 'center', gap: 6, padding: '9px 18px', borderRadius: 11, background: 'var(--accent)', color: '#1c1404', fontWeight: 600, fontSize: 13.5, textDecoration: 'none'}}>
+        {cta} <ArrowRight size={14} />
       </Link>
     </div>
   );
