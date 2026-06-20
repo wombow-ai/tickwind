@@ -104,6 +104,14 @@ function TickerCard({
         <div className="flex items-center gap-1.5 min-w-0">
           <span className={cx('text-[13.5px] font-bold', t.text)}>{tk.ticker}</span>
           {tk.chokepoint && <Zap size={12} className={dark ? 'text-amber-300' : 'text-amber-600'} />}
+          {tk.speculative && (
+            <span
+              title={zh ? '投机:尚未盈利 / 近期 IPO / 二元结果' : 'Speculative: pre-revenue / recent IPO / binary outcome'}
+              className={cx('rounded px-1 py-0.5 text-[9px] font-bold uppercase leading-none', dark ? 'bg-rose-500/15 text-rose-300' : 'bg-rose-100 text-rose-600')}
+            >
+              {zh ? '投机' : 'Spec'}
+            </span>
+          )}
         </div>
         <div className="text-right">
           <span className={cx('text-[13px] font-semibold tabular-nums', t.text)}>

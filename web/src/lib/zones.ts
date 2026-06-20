@@ -20,6 +20,8 @@ export interface ZoneTicker {
   rationale: string;
   /** Owns/controls a supply-chain chokepoint → badge. */
   chokepoint?: boolean;
+  /** Pre-revenue / recent-IPO / binary-outcome name → speculative badge. */
+  speculative?: boolean;
 }
 
 /** A foreign-listed or private company named in a layer but with NO tradable US ticker. */
@@ -175,8 +177,111 @@ const AI_ZONE: Zone = {
   ],
 };
 
-/** The zone catalog. AI is the flagship; 10x theme siblings get added here later. */
-export const ZONES: readonly Zone[] = [AI_ZONE] as const;
+const SPACE_ZONE: Zone = {
+  key: 'space',
+  kind: 'tenx-theme',
+  titleEn: 'Launch & Space',
+  titleZh: '航天专区',
+  taglineEn: 'Launch · satellites · defense-space primes · eVTOL',
+  taglineZh: '发射 · 卫星 · 防务航天巨头 · eVTOL',
+  descEn:
+    'The space economy across four sub-themes — launch & infrastructure, satellites & direct-to-device, defense-space primes, and eVTOL air mobility. The defense primes are the quality anchors; many new-space names are recent IPOs or pre-revenue (flagged). Curated structure; live delayed prices. Not investment advice.',
+  descZh:
+    '航天经济四大子主题 —— 发射与基础设施、卫星与直连手机、防务航天巨头、eVTOL 飞行汽车。防务巨头是质量锚,多数新航天公司为近期 IPO 或尚未盈利(已标注)。层级为人工策展,价格为公开数据实时(延迟)行情。非投资建议。',
+  layers: [
+    {
+      key: 'launch',
+      titleEn: 'Launch & Space Infrastructure',
+      titleZh: '发射与基础设施',
+      blurbEn: 'Getting mass to orbit + the in-space infrastructure to use it. Several names IPO\'d in 2025 with short trading histories — higher risk.',
+      blurbZh: '把载荷送上轨道 + 在轨基础设施。多家公司 2025 年才 IPO、交易历史短 —— 风险更高。',
+      tickers: [
+        {ticker: 'RKLB', company: 'Rocket Lab', rationale: 'Most diversified small/mid-cap space pure-play: launch + satellite systems + defense.'},
+        {ticker: 'LUNR', company: 'Intuitive Machines', rationale: 'Lunar landers + NASA/defense backlog; closest to profitability among new-space names (execution risk).', speculative: true},
+        {ticker: 'FLY', company: 'Firefly Aerospace', rationale: 'Launch + lunar; IPO\'d Aug 2025, large backlog but very short trading history.', speculative: true},
+        {ticker: 'VOYG', company: 'Voyager Technologies', rationale: 'Starlab commercial space station + in-space infrastructure; IPO\'d Jun 2025, pre-scale.', speculative: true},
+        {ticker: 'KRMN', company: 'Karman Holdings', rationale: 'Payload/propulsion systems for missiles + launch; IPO\'d Feb 2025.', speculative: true},
+      ],
+    },
+    {
+      key: 'satellites',
+      titleEn: 'Satellites & Direct-to-Device',
+      titleZh: '卫星与直连手机',
+      blurbEn: 'Earth-observation data + satellite-to-phone connectivity. Big TAMs, but some are binary on technical execution.',
+      blurbZh: '对地观测数据 + 卫星直连手机连接。市场空间大,但部分公司成败取决于技术能否规模化(二元)。',
+      tickers: [
+        {ticker: 'ASTS', company: 'AST SpaceMobile', rationale: 'Direct satellite-to-standard-smartphone connectivity; binary but enormous TAM if it scales.', speculative: true},
+        {ticker: 'PL', company: 'Planet Labs', rationale: 'Large Earth-observation fleet with recurring data revenue + growing backlog — the space-data anchor.'},
+        {ticker: 'GSAT', company: 'Globalstar', rationale: 'Satellite connectivity with a large anchor-customer (Apple emergency SOS) relationship.', speculative: true},
+      ],
+    },
+    {
+      key: 'defense-primes',
+      titleEn: 'Defense-Space Primes',
+      titleZh: '防务航天巨头',
+      blurbEn: 'The quality anchors: profitable defense primes with major space + missile-defense exposure, dividends, lower beta.',
+      blurbZh: '质量锚:盈利的防务巨头,航天与导弹防御敞口大、有分红、波动较低。',
+      tickers: [
+        {ticker: 'LMT', company: 'Lockheed Martin', rationale: 'Defense prime with major space + missile-defense exposure; quality anchor with a dividend.'},
+        {ticker: 'RTX', company: 'RTX Corporation', rationale: 'Defense prime (missiles/sensors/space sensors); diversified aerospace-defense anchor.'},
+        {ticker: 'NOC', company: 'Northrop Grumman', rationale: 'Space systems + strategic missile/defense prime; strong space-segment exposure.'},
+        {ticker: 'LHX', company: 'L3Harris Technologies', rationale: 'Space sensors/electronics + defense tech; higher-margin electronics tilt vs pure primes.'},
+        {ticker: 'KTOS', company: 'Kratos Defense', rationale: 'Drones, hypersonics propulsion, satcom; revenue inflection expected (higher-growth tilt).', speculative: true},
+        {ticker: 'LDOS', company: 'Leidos Holdings', rationale: 'Government IT/services supporting space (ground systems, mission software) for NASA/Space Force.'},
+      ],
+    },
+    {
+      key: 'evtol',
+      titleEn: 'eVTOL — Advanced Air Mobility',
+      titleZh: 'eVTOL 飞行汽车',
+      blurbEn: 'Electric vertical-takeoff aircraft. Both leaders are pre-commercial-revenue and certification-gated — speculative.',
+      blurbZh: '电动垂直起降飞行器。两家龙头均尚未商业化、受适航认证制约 —— 投机。',
+      tickers: [
+        {ticker: 'JOBY', company: 'Joby Aviation', rationale: 'Leading eVTOL developer, well-capitalized; pre-commercial-revenue, certification-gated.', speculative: true},
+        {ticker: 'ACHR', company: 'Archer Aviation', rationale: 'eVTOL (Midnight) with FAA compliance progress + a Palantir defense-systems tie-up.', speculative: true},
+      ],
+    },
+  ],
+};
+
+const GLP1_ZONE: Zone = {
+  key: 'glp1-obesity',
+  kind: 'tenx-theme',
+  titleEn: 'GLP-1 & Obesity',
+  titleZh: 'GLP-1 减肥药专区',
+  taglineEn: 'The profitable obesity-drug duopoly + the oral challenger',
+  taglineZh: '盈利的减肥药双寡头 + 口服挑战者',
+  descEn:
+    'The obesity / GLP-1 drug wave — the most fundamentally-grounded 10x theme, anchored by two profitable mega-cap leaders with real, large revenue today, plus a high-risk clinical-stage challenger. Curated structure; live delayed prices. Not investment advice.',
+  descZh:
+    '肥胖症 / GLP-1 减肥药浪潮 —— 最有基本面支撑的 10 倍股主题:两家盈利的大盘龙头(今天就有真实、可观营收)+ 一家高风险临床期挑战者。层级为人工策展,价格为公开数据实时(延迟)行情。非投资建议。',
+  layers: [
+    {
+      key: 'leaders',
+      titleEn: 'The Duopoly Leaders',
+      titleZh: '双寡头龙头',
+      blurbEn: 'Two profitable mega-caps that own today\'s GLP-1 market and are racing on next-gen oral formulations.',
+      blurbZh: '两家盈利的大盘股,主导当下 GLP-1 市场,并在下一代口服剂型上竞速。',
+      tickers: [
+        {ticker: 'LLY', company: 'Eli Lilly', rationale: 'Co-leader (Mounjaro/Zepbound) pulling ahead on oral orforglipron; profitable mega-cap.'},
+        {ticker: 'NVO', company: 'Novo Nordisk (ADR)', rationale: 'Co-leader (semaglutide / Wegovy / Ozempic) defending its franchise with oral amycretin; profitable.'},
+      ],
+    },
+    {
+      key: 'challenger',
+      titleEn: 'The Clinical-Stage Challenger',
+      titleZh: '临床期挑战者',
+      blurbEn: 'The high-risk, high-reward third entrant — binary on Phase III trial readouts.',
+      blurbZh: '高风险高回报的第三玩家 —— 成败取决于三期试验数据(二元)。',
+      tickers: [
+        {ticker: 'VKTX', company: 'Viking Therapeutics', rationale: 'Dual GIPR/GLP-1 agonist VK2735 (oral + injectable) heading to Phase III — the high-beta challenger.', speculative: true},
+      ],
+    },
+  ],
+};
+
+/** The zone catalog. AI is the flagship; 10x theme siblings reuse the same engine. */
+export const ZONES: readonly Zone[] = [AI_ZONE, SPACE_ZONE, GLP1_ZONE] as const;
 
 /** Resolves a zone by its URL slug, or undefined. */
 export function zoneByKey(key: string): Zone | undefined {
