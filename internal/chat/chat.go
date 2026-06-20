@@ -45,12 +45,23 @@ type FactSource interface {
 	Report(ctx context.Context, ticker, lang string) research.FactSheet
 }
 
+// UserData reads the AUTHENTICATED user's OWN data, pre-formatted by Go (every number is
+// Go-computed — anti-hallucination preserved). Each method is scoped to userID and must
+// NEVER return another user's data (the api impl enforces this). Returns a human-readable
+// "Label: Value" string (or an empty-state line). nil → the user-data tools are not offered.
+type UserData interface {
+	Watchlist(ctx context.Context, userID, lang string) string
+	Holdings(ctx context.Context, userID, lang string) string
+	Notes(ctx context.Context, userID, ticker, lang string) string
+}
+
 // Service orchestrates one chat turn. model overrides the enricher's default chat model
 // when non-empty (e.g. a Sonnet deep-dive turn); "" uses the configured chat default.
 type Service struct {
-	llm   LLM
-	facts FactSource
-	model string
+	llm      LLM
+	facts    FactSource
+	userData UserData // the user's own watchlist/holdings/notes (nil → those tools off)
+	model    string
 
 	// fsCache holds a recently-assembled fact sheet per (ticker, lang) so consecutive
 	// turns in a thread reuse the IDENTICAL per-ticker material. This keeps the cached
@@ -70,9 +81,10 @@ type fsCacheEntry struct {
 // Anthropic ephemeral prompt-cache TTL so a thread's turns share one cacheable prefix.
 const chatFactTTL = 5 * time.Minute
 
-// NewService builds a chat Service. model may be "" to use the enricher's chat default.
-func NewService(llm LLM, facts FactSource, model string) *Service {
-	return &Service{llm: llm, facts: facts, model: model, fsCache: map[string]fsCacheEntry{}}
+// NewService builds a chat Service. model may be "" to use the enricher's chat default;
+// userData may be nil (the user-data tools are then not offered).
+func NewService(llm LLM, facts FactSource, userData UserData, model string) *Service {
+	return &Service{llm: llm, facts: facts, userData: userData, model: model, fsCache: map[string]fsCacheEntry{}}
 }
 
 // factSheet returns the (cached, ≤chatFactTTL) fact sheet for a ticker so the per-turn
@@ -121,22 +133,28 @@ var ErrNotFound = errors.New("chat: no facts for ticker")
 // bounded tool loop, applies the deterministic advice post-filter, and returns the
 // assistant's blocks + usage. history is prior turns as role/content (assistant prose
 // only — no widget refs). It neither persists nor meters (the api owns that).
-func (s *Service) Answer(ctx context.Context, ticker, lang string, history []enrich.ChatMessage, question string) (Answer, error) {
+func (s *Service) Answer(ctx context.Context, userID, anchorTicker, lang string, history []enrich.ChatMessage, question string) (Answer, error) {
 	if !s.Enabled() {
 		return Answer{}, enrich.ErrDisabled
 	}
-	fs := s.factSheet(ctx, ticker, lang)
-	if len(fs.Sections) == 0 && fs.AsOf == "" {
-		return Answer{}, ErrNotFound
+	general := anchorTicker == ""
+	var fs research.FactSheet
+	material := ""
+	if !general {
+		fs = s.factSheet(ctx, anchorTicker, lang)
+		if len(fs.Sections) == 0 && fs.AsOf == "" {
+			return Answer{}, ErrNotFound
+		}
+		material = research.Material(fs, lang)
 	}
-	material := research.Material(fs, lang)
+	hasUserData := s.userData != nil
 
 	msgs := make([]enrich.ChatMessage, 0, len(history)+2)
-	msgs = append(msgs, enrich.ChatMessage{Role: "system", Content: systemPrompt(ticker, lang, material)})
+	msgs = append(msgs, enrich.ChatMessage{Role: "system", Content: systemPrompt(anchorTicker, lang, material, general, hasUserData)})
 	msgs = append(msgs, history...)
 	msgs = append(msgs, enrich.ChatMessage{Role: "user", Content: question})
 
-	tools := toolSpecs(lang)
+	tools := toolSpecs(lang, general, hasUserData)
 	var widgets []Block
 	var total enrich.Usage
 
@@ -155,7 +173,7 @@ func (s *Service) Answer(ctx context.Context, ticker, lang string, history []enr
 			msgs = append(msgs, enrich.ChatMessage{
 				Role:       "tool",
 				ToolCallID: c.ID,
-				Content:    s.execTool(c, fs, lang, &widgets),
+				Content:    s.execTool(ctx, c, userID, anchorTicker, fs, lang, &widgets),
 			})
 		}
 	}
@@ -184,7 +202,7 @@ func (s *Service) finish(prose string, widgets []Block, usage enrich.Usage, lang
 // execTool runs one closed tool against the Go fact sheet and returns its (string) result.
 // surface_widget also records a widget block in widgets; its numbers never enter the
 // model's context (the result is only a confirmation string).
-func (s *Service) execTool(c enrich.ChatToolCall, fs research.FactSheet, lang string, widgets *[]Block) string {
+func (s *Service) execTool(ctx context.Context, c enrich.ChatToolCall, userID, anchorTicker string, fs research.FactSheet, lang string, widgets *[]Block) string {
 	switch c.Name {
 	case "get_facts":
 		var args struct {
@@ -193,13 +211,52 @@ func (s *Service) execTool(c enrich.ChatToolCall, fs research.FactSheet, lang st
 		_ = json.Unmarshal([]byte(c.Arguments), &args)
 		out := research.FactsForSection(fs, args.Section, lang)
 		if out == "" {
-			return "No such section. Valid sections: " + strings.Join(research.FactSectionKeys(), ", ")
+			return "No such section here. Valid sections: " + strings.Join(research.FactSectionKeys(), ", ") + ". For a DIFFERENT stock use get_stock_facts(ticker, section)."
 		}
 		return out
+	case "get_stock_facts":
+		var args struct {
+			Ticker  string `json:"ticker"`
+			Section string `json:"section"`
+		}
+		_ = json.Unmarshal([]byte(c.Arguments), &args)
+		t := strings.ToUpper(strings.TrimSpace(args.Ticker))
+		if t == "" {
+			return "Provide a ticker."
+		}
+		other := s.factSheet(ctx, t, lang)
+		if len(other.Sections) == 0 && other.AsOf == "" {
+			return "No data for " + t + "."
+		}
+		out := research.FactsForSection(other, args.Section, lang)
+		if out == "" {
+			return t + " has no such section. Valid sections: " + strings.Join(research.FactSectionKeys(), ", ")
+		}
+		return out
+	case "get_watchlist":
+		if s.userData == nil {
+			return "User data not available."
+		}
+		return s.userData.Watchlist(ctx, userID, lang)
+	case "get_holdings":
+		if s.userData == nil {
+			return "User data not available."
+		}
+		return s.userData.Holdings(ctx, userID, lang)
+	case "get_my_notes":
+		if s.userData == nil {
+			return "User data not available."
+		}
+		var args struct {
+			Ticker string `json:"ticker"`
+		}
+		_ = json.Unmarshal([]byte(c.Arguments), &args)
+		return s.userData.Notes(ctx, userID, strings.ToUpper(strings.TrimSpace(args.Ticker)), lang)
 	case "surface_widget":
 		var args struct {
-			Type  string `json:"type"`
-			Range string `json:"range"`
+			Type   string `json:"type"`
+			Range  string `json:"range"`
+			Ticker string `json:"ticker"`
 		}
 		_ = json.Unmarshal([]byte(c.Arguments), &args)
 		if !validWidget(args.Type) {
@@ -210,9 +267,16 @@ func (s *Service) execTool(c enrich.ChatToolCall, fs research.FactSheet, lang st
 		if rng != "" {
 			params["range"] = rng
 		}
+		tk := strings.ToUpper(strings.TrimSpace(args.Ticker))
+		if tk == "" {
+			tk = anchorTicker
+		}
+		if tk != "" {
+			params["ticker"] = tk
+		}
 		*widgets = append(*widgets, Block{Kind: "widget", Widget: args.Type, Params: params})
 		// Numbers NEVER enter the model context — only a confirmation.
-		return "rendered: " + args.Type + " " + rng
+		return "rendered: " + args.Type + " " + tk + " " + rng
 	case "get_news_context":
 		lines := research.NewsContext(fs)
 		if len(lines) == 0 {
@@ -279,59 +343,79 @@ func addUsage(dst *enrich.Usage, u enrich.Usage) {
 	dst.CachedTokens += u.CachedTokens
 }
 
-// toolSpecs is the closed tool surface offered to the model (descriptions lang-aware).
-func toolSpecs(lang string) []enrich.ChatTool {
+// toolSpecs is the closed tool surface offered to the model, varying by mode: anchor-only
+// tools (get_facts/get_news_context) appear for a stock conversation; get_stock_facts +
+// surface_widget always; the user-data tools appear when userData is wired.
+func toolSpecs(lang string, general, hasUserData bool) []enrich.ChatTool {
 	en := lang == "en"
-	getFactsDesc := "返回本股票某板块经 Go 校验、带来源的事实(每个数字都有出处,你可以引用)。在陈述你尚未掌握的数字前先调用它。"
-	widgetDesc := "在对话中内联渲染一个真实的 Tickwind 图表/表格(用户看到真实控件)。优先用它来\"展示\"数据,而不是罗列数字。你只会收到一个确认,不会拿到数据 —— 这是正常的。"
-	newsDesc := "返回本股票近期带出处的新闻/社区背景(引用时注明来源,切勿当作事实或据此推导数字)。"
-	if en {
-		getFactsDesc = "Return Tickwind's Go-verified, source-attributed facts for one section of this stock (every number is sourced; you may quote these). Call it before stating any number you don't already have."
-		widgetDesc = "Render a real Tickwind chart/table inline (the user sees the actual widget). PREFER showing a widget over reciting many numbers. You only get a confirmation back, not the data — that's expected."
-		newsDesc = "Return recent attributed news/community context for this stock (quote with the source; never treat as fact or derive a number from it)."
+	d := func(zh, enS string) string {
+		if en {
+			return enS
+		}
+		return zh
 	}
-	return []enrich.ChatTool{
-		{
-			Name:        "get_facts",
-			Description: getFactsDesc,
-			Parameters: map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"section": map[string]any{
-						"type":        "string",
-						"enum":        research.FactSectionKeys(),
-						"description": "Which section's facts to fetch.",
-					},
-				},
-				"required": []string{"section"},
+	sectionKeys := research.FactSectionKeys()
+	var tools []enrich.ChatTool
+
+	if !general {
+		tools = append(tools,
+			enrich.ChatTool{
+				Name:        "get_facts",
+				Description: d("返回本股票某板块经 Go 校验、带来源的事实(每个数字都有出处,可引用)。陈述你尚未掌握的数字前先调用。", "Return Tickwind's Go-verified, source-attributed facts for one section of THIS stock (every number is sourced; you may quote these). Call before stating a number you don't already have."),
+				Parameters: map[string]any{"type": "object", "properties": map[string]any{
+					"section": map[string]any{"type": "string", "enum": sectionKeys, "description": "Which section's facts to fetch."},
+				}, "required": []string{"section"}},
 			},
+			enrich.ChatTool{
+				Name:        "get_news_context",
+				Description: d("返回本股票近期带出处的新闻/社区背景(引用注明来源,切勿当作事实或据此推导数字)。", "Return recent attributed news/community context for this stock (quote with the source; never treat as fact or derive a number from it)."),
+				Parameters:  map[string]any{"type": "object", "properties": map[string]any{}},
+			},
+		)
+	}
+
+	tools = append(tools,
+		enrich.ChatTool{
+			Name:        "get_stock_facts",
+			Description: d("返回某只指定股票某板块经 Go 校验的事实 —— 任意 ticker,用于跨股票对比或通用提问。", "Return Go-verified facts for a SPECIFIC stock + section — any ticker, for cross-stock comparison or a general question."),
+			Parameters: map[string]any{"type": "object", "properties": map[string]any{
+				"ticker":  map[string]any{"type": "string", "description": "The stock ticker, e.g. AAPL."},
+				"section": map[string]any{"type": "string", "enum": sectionKeys, "description": "Which section's facts to fetch."},
+			}, "required": []string{"ticker", "section"}},
 		},
-		{
+		enrich.ChatTool{
 			Name:        "surface_widget",
-			Description: widgetDesc,
-			Parameters: map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"type": map[string]any{
-						"type":        "string",
-						"enum":        widgetTypes,
-						"description": "Which preset widget to render.",
-					},
-					"range": map[string]any{
-						"type":        "string",
-						"enum":        []string{"3M", "1Y", "5Y"},
-						"description": "Time range for chart widgets (kline/indicators).",
-					},
-				},
-				"required": []string{"type"},
+			Description: d("内联渲染一个真实 Tickwind 图表/表格(用户看到真实控件)。优先用它\"展示\"数据而非罗列数字。只会收到确认,不会拿到数据 —— 正常。", "Render a real Tickwind chart/table inline (the user sees the actual widget). PREFER showing a widget over reciting many numbers. You only get a confirmation back, not the data — that's expected."),
+			Parameters: map[string]any{"type": "object", "properties": map[string]any{
+				"type":   map[string]any{"type": "string", "enum": widgetTypes, "description": "Which preset widget to render."},
+				"ticker": map[string]any{"type": "string", "description": "Which stock (defaults to this conversation's stock)."},
+				"range":  map[string]any{"type": "string", "enum": []string{"3M", "1Y", "5Y"}, "description": "Time range for chart widgets (kline/indicators)."},
+			}, "required": []string{"type"}},
+		},
+	)
+
+	if hasUserData {
+		tools = append(tools,
+			enrich.ChatTool{
+				Name:        "get_watchlist",
+				Description: d("返回当前用户自己的自选股(关注的 ticker + 实时价)。是他本人的数据,可据此个性化回答。", "Return THIS USER's own watchlist (their tracked tickers + live prices). Their personal data — use it to personalize."),
+				Parameters:  map[string]any{"type": "object", "properties": map[string]any{}},
 			},
-		},
-		{
-			Name:        "get_news_context",
-			Description: newsDesc,
-			Parameters:  map[string]any{"type": "object", "properties": map[string]any{}},
-		},
+			enrich.ChatTool{
+				Name:        "get_holdings",
+				Description: d("返回当前用户自己的持仓(仓位、成本、Go 算的盈亏 + 组合占比)。本人数据。", "Return THIS USER's own holdings (positions, average cost, Go-computed gain/loss + portfolio weight). Their personal data."),
+				Parameters:  map[string]any{"type": "object", "properties": map[string]any{}},
+			},
+			enrich.ChatTool{
+				Name:        "get_my_notes",
+				Description: d("返回当前用户自己的私人笔记(可按某 ticker 过滤)。本人数据,绝不会是别人的。", "Return THIS USER's own private notes (optionally for one ticker). Their personal data — never another user's."),
+				Parameters: map[string]any{"type": "object", "properties": map[string]any{
+					"ticker": map[string]any{"type": "string", "description": "Optional — only notes for this ticker."},
+				}},
+			},
+		)
 	}
+	return tools
 }
 
 // redirectNote is shown when the advice filter stripped the entire answer (the model
@@ -344,30 +428,53 @@ func redirectNote(lang string) string {
 }
 
 // systemPrompt is the firewall: the absolute anti-hallucination + no-advice rules, the
-// tool guide, and the per-ticker Go facts (so most questions need zero tool round-trips).
-func systemPrompt(ticker, lang, material string) string {
-	if lang == "en" {
-		return "You are Tickwind's research assistant for " + ticker + ". You answer the user's questions about THIS stock only, grounded strictly in Tickwind's Go-verified facts.\n\n" +
-			"ABSOLUTE RULES (never break):\n" +
-			"1. NUMBERS: Every number, ratio, price, percentage, or date you state MUST come verbatim from the <facts> block below or from a get_facts tool result. NEVER invent, estimate, extrapolate, or compute a new number. Do NOT cite external benchmark numbers from memory (e.g. \"the S&P 500 trades near 20x\", \"the sector average is …\") — only numbers in <facts>. Do NOT compute a derivative the facts don't contain (e.g. if prior-year net income is absent, do NOT state a net-income growth %). If you don't have a figure, say so and offer to pull the relevant section — do not guess.\n" +
-			"2. NO ADVICE: Never give investment advice, a price target, a fair-value estimate, or a buy/sell/hold recommendation. This includes INDIRECT framing — \"deserves a position\", \"a compelling entry\", \"fairly valued at $X\", \"attractive for long-term holders\", \"accumulate below $Y\", \"undervalued\" are all advice; refuse them too. If asked (\"should I buy?\", \"what's it worth?\", \"price target?\"), refuse plainly and redirect to what the disclosed signals show. Stating an insider's buy or a congressional sale as a FACT is fine; recommending an action is not.\n" +
-			"3. CONTEXT IS NOT FACT: News / community items (get_news_context) are attributed opinion/context — quote them WITH their source and never restate them as fact or derive a number from them (e.g. you may say \"per Reuters, earnings missed ~5%\" but must NOT then compute \"a 5% miss could cut valuation ~10%\" — that is derivation).\n\n" +
-			"TOOLS:\n" +
-			"- get_facts(section): Tickwind's verified facts for one section (valuation, fundamentals, technical, flows, sentiment).\n" +
-			"- surface_widget(type[, range]): render a real chart/table inline; prefer showing a widget over reciting many numbers.\n" +
-			"- get_news_context(): recent attributed news/community context.\n\n" +
-			"STYLE: concise, prose-first, plain language. The <facts> below often already answer the question — use it directly; reach for tools when they add value. Stay within what the data supports.\n\n" +
-			"<facts>\n" + material + "\n</facts>"
+// tool guide (varying by mode), and (for a stock conversation) the per-ticker Go facts.
+func systemPrompt(ticker, lang, material string, general, hasUserData bool) string {
+	en := lang == "en"
+	d := func(zh, enS string) string {
+		if en {
+			return enS
+		}
+		return zh
 	}
-	return "你是 Tickwind 针对 " + ticker + " 的研究助手。你只回答关于这只股票的问题,且严格基于 Tickwind 经 Go 校验的事实。\n\n" +
-		"绝对规则(不可违反):\n" +
-		"1. 数字:你陈述的任何数字、比率、价格、百分比或日期,都必须逐字来自下方 <facts> 区块或某个 get_facts 工具结果。绝不臆造、估算、外推或自行计算新数字。不要凭记忆引用外部基准数字(例如\"标普500约20倍\"\"行业平均…\")—— 只用 <facts> 里的数字。不要计算 facts 里没有的衍生值(例如缺少去年净利润时,不要给出净利润增长率)。没有某个数字就直说,并提出去取对应板块 —— 不要猜。\n" +
-		"2. 不给建议:绝不给投资建议、目标价、估值结论或买入/卖出/持有建议。也包括间接措辞 —— \"值得配置\"\"是不错的入场点\"\"合理估值在 X\"\"适合长期持有者\"\"X 以下可吸纳\"\"被低估\"都算建议,同样拒绝。被问到(\"该买吗?\"\"值多少钱?\"\"目标价?\")时,明确拒绝,并转向已披露信号说明了什么。把内部人买入或国会议员卖出作为\"事实\"陈述可以;建议采取行动不行。\n" +
-		"3. 背景不是事实:新闻/社区内容(get_news_context)是带出处的观点/背景 —— 引用时注明来源,切勿当作事实复述或据此推导数字(例如可以说\"据路透,业绩不及预期约5%\",但不能据此推算\"5%的不及预期可能令估值下调约10%\"—— 那是推导)。\n\n" +
-		"工具:\n" +
-		"- get_facts(section):某板块经校验的事实(估值 valuation、基本面 fundamentals、技术面 technical、资金面 flows、情绪面 sentiment)。\n" +
-		"- surface_widget(type[, range]):内联渲染真实图表/表格;优先用控件展示,而非罗列数字。\n" +
-		"- get_news_context():近期带出处的新闻/社区背景。\n\n" +
-		"风格:简洁、以散文为主、平实。下方 <facts> 通常已能回答问题 —— 直接用;需要时再调工具。只说数据支持的内容。\n\n" +
-		"<facts>\n" + material + "\n</facts>"
+	var b strings.Builder
+	if general {
+		b.WriteString(d("你是 Tickwind 的研究助手。帮助用户分析任意美股,以及他本人的投资组合(自选/持仓/笔记),严格基于 Tickwind 经 Go 校验的事实。\n\n",
+			"You are Tickwind's research assistant. Help the user with any US stock AND their OWN portfolio (watchlist / holdings / notes), grounded strictly in Tickwind's Go-verified facts.\n\n"))
+	} else {
+		b.WriteString(d("你是 Tickwind 针对 "+ticker+" 的研究助手。主要回答这只股票(需要时也可对比相关股票),严格基于 Tickwind 经 Go 校验的事实。\n\n",
+			"You are Tickwind's research assistant for "+ticker+". Answer about this stock (and related ones on request), grounded strictly in Tickwind's Go-verified facts.\n\n"))
+	}
+	b.WriteString(d("绝对规则(不可违反):\n", "ABSOLUTE RULES (never break):\n"))
+	b.WriteString(d("1. 数字:你陈述的任何数字、比率、价格、百分比或日期,都必须逐字来自工具结果(get_facts / get_stock_facts / 用户数据工具)。绝不臆造、估算、外推或自行计算新数字。不要凭记忆引用外部基准(\"标普500约20倍\"等)。没有某个数字就直说并去取 —— 不要猜。\n",
+		"1. NUMBERS: Every number, ratio, price, percentage, or date you state MUST come verbatim from a tool result (get_facts / get_stock_facts / the user-data tools) or the <facts> block. NEVER invent, estimate, extrapolate, or compute a new number. Do NOT cite external benchmark numbers from memory (\"the S&P 500 trades near 20x\"). If you don't have a figure, say so and pull it — do not guess.\n"))
+	b.WriteString(d("2. 不给建议:绝不给投资建议、目标价、估值结论或买入/卖出/持有建议。也包括间接措辞(\"值得配置\"\"是不错的入场点\"\"合理估值在 X\"\"被低估\"等)。被问到(\"该买吗?\"\"该调仓吗?\"\"目标价?\")时明确拒绝,转向已披露信号说明了什么。\n",
+		"2. NO ADVICE: Never give investment advice, a price target, a fair-value estimate, or a buy/sell/hold recommendation. This includes INDIRECT framing (\"deserves a position\", \"a compelling entry\", \"fairly valued at $X\", \"undervalued\"). If asked (\"should I buy?\", \"should I rebalance?\", \"price target?\"), refuse plainly and redirect to what the disclosed signals show.\n"))
+	b.WriteString(d("3. 背景不是事实:新闻/社区内容是带出处的观点 —— 引用注明来源,切勿当作事实复述或据此推导数字。\n",
+		"3. CONTEXT IS NOT FACT: News / community items are attributed opinion — quote them WITH their source; never restate as fact or derive a number from them.\n"))
+	if hasUserData {
+		b.WriteString(d("4. 用户自己的数据:可用 get_watchlist/get_holdings/get_my_notes 读取【当前用户本人】的自选/持仓/笔记 —— 这是他的数据,用来个性化(\"你持有 100 股 AAPL,浮盈 $950\")。其中数字(仓位、盈亏)都是 Go 算好的,引用即可、不要重算。绝不引用任何【其他人】的数据。组合类问题(\"该不该卖掉/调仓?\")仍【不给建议】—— 只陈述信号、拒绝操作建议。\n",
+			"4. THE USER'S OWN DATA: read THIS user's own watchlist / holdings / notes via get_watchlist / get_holdings / get_my_notes — it is THEIR data; use it to personalize (\"you hold 100 AAPL, +$950\"). Its numbers (positions, gain/loss) are Go-computed — quote them, don't recompute. NEVER reference ANYONE ELSE's data. Portfolio questions (\"should I sell / rebalance?\") STILL get NO advice — describe the signals and refuse the recommendation.\n"))
+	}
+	b.WriteString("\n")
+	b.WriteString(d("工具:\n", "TOOLS:\n"))
+	if !general {
+		b.WriteString(d("- get_facts(section):本股票某板块的事实。\n- get_news_context():本股票近期带出处的新闻/社区背景。\n",
+			"- get_facts(section): this stock's facts (valuation/fundamentals/technical/flows/sentiment).\n- get_news_context(): recent attributed news/community context for this stock.\n"))
+	}
+	b.WriteString(d("- get_stock_facts(ticker, section):任意股票某板块的事实(跨股票对比)。\n- surface_widget(type[, ticker, range]):内联渲染真实图表/表格,优先用控件展示。\n",
+		"- get_stock_facts(ticker, section): any stock's facts (for comparisons).\n- surface_widget(type[, ticker, range]): render a real chart/table inline; prefer it over reciting numbers.\n"))
+	if hasUserData {
+		b.WriteString(d("- get_watchlist() / get_holdings() / get_my_notes(ticker?):用户本人的自选/持仓/笔记。\n",
+			"- get_watchlist() / get_holdings() / get_my_notes(ticker?): the user's own watchlist/holdings/notes.\n"))
+	}
+	b.WriteString("\n")
+	b.WriteString(d("风格:简洁、以散文为主、平实。只说数据支持的内容。\n\n", "STYLE: concise, prose-first, plain language. Stay within what the data supports.\n\n"))
+	if general {
+		b.WriteString(d("没有预载某一只股票。用 get_stock_facts 取任意股票的事实,用用户数据工具了解他的组合。",
+			"No single stock is pre-loaded. Use get_stock_facts for any stock's facts, and the user-data tools for the user's portfolio."))
+	} else {
+		b.WriteString("<facts>\n" + material + "\n</facts>")
+	}
+	return b.String()
 }

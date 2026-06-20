@@ -174,7 +174,7 @@ func (s *Server) chatTurn(w http.ResponseWriter, r *http.Request, u auth.User, c
 		})
 		return
 	}
-	ans, err := s.chatSvc.Answer(r.Context(), anchorTicker, lang, llmHist, msg)
+	ans, err := s.chatSvc.Answer(r.Context(), u.ID, anchorTicker, lang, llmHist, msg)
 	if err != nil {
 		switch {
 		case errors.Is(err, chat.ErrNotFound):

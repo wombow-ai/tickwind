@@ -668,7 +668,7 @@ func main() {
 
 		// Product B — personalized chat (Pro-gated, metered). Grounds on the SAME research
 		// fact sheet; uses the cheap chat client (LLM_CHAT_MODEL → falls back to deep).
-		apiServer.SetChat(chat.NewService(enricher, researchSvc, cfg.LLMChatModel))
+		apiServer.SetChat(chat.NewService(enricher, researchSvc, api.NewChatUserData(st), cfg.LLMChatModel))
 		apiServer.SetChatLimit(cfg.ChatMonthlyLimit)
 		log.Info("personalized chat enabled", "chat_model", cfg.LLMChatModel, "chat_monthly_limit", cfg.ChatMonthlyLimit)
 	} else {
