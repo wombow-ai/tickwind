@@ -280,8 +280,128 @@ const GLP1_ZONE: Zone = {
   ],
 };
 
+const QUANTUM_ZONE: Zone = {
+  key: 'quantum',
+  kind: 'tenx-theme',
+  titleEn: 'Quantum Computing',
+  titleZh: '量子计算专区',
+  taglineEn: 'The pure-play lottery tickets + the de-risked big-tech option',
+  taglineZh: '纯量子「彩票」+ 大厂的期权式敞口',
+  descEn:
+    'Quantum computing — the highest-risk/highest-reward theme here. The pure-plays trade on extreme multiples with minimal revenue and headline-driven swings; the real, profitable exposure is an embedded option inside mega-caps. Curated structure; live delayed prices. Not investment advice.',
+  descZh:
+    '量子计算 —— 本站风险/回报最极端的主题。纯量子公司营收极少、估值极高、靠消息驱动剧烈波动;真正盈利的敞口是嵌在大厂里的一个「期权」。层级为人工策展,价格为公开数据实时(延迟)行情。非投资建议。',
+  speculative: true,
+  layers: [
+    {
+      key: 'pure-plays',
+      titleEn: 'Pure-Plays',
+      titleZh: '纯量子公司',
+      blurbEn: 'Standalone quantum-hardware companies — tiny revenue, extreme valuation multiples, binary outcomes. Lottery-ticket risk/reward.',
+      blurbZh: '独立的量子硬件公司 —— 营收极小、估值倍数极高、结果二元。彩票式的风险回报。',
+      tickers: [
+        {ticker: 'IONQ', company: 'IonQ', rationale: 'Trapped-ion approach; largest pure-play by revenue and the most commercially advanced of the four.', speculative: true},
+        {ticker: 'RGTI', company: 'Rigetti Computing', rationale: 'Superconducting-qubit approach; tiny revenue, extreme multiple, headline-driven.', speculative: true},
+        {ticker: 'QBTS', company: 'D-Wave Quantum', rationale: 'Quantum annealing for optimization workloads — closest to commercial use-cases among the pure-plays.', speculative: true},
+        {ticker: 'QUBT', company: 'Quantum Computing Inc.', rationale: 'Photonic quantum-as-a-service; smallest and most speculative of the four, minimal revenue.', speculative: true},
+      ],
+    },
+    {
+      key: 'enabling',
+      titleEn: 'Big-Tech & Enabling Exposure',
+      titleZh: '大厂与使能敞口',
+      blurbEn: 'The de-risked way to own the theme: profitable mega-caps where quantum is a small embedded option, not the whole thesis.',
+      blurbZh: '更稳的拥有方式:盈利的大厂,量子只是其中一个嵌入式「期权」,而非全部逻辑。',
+      tickers: [
+        {ticker: 'IBM', company: 'IBM', rationale: 'Most advanced enterprise quantum roadmap among mega-caps (hardware + cloud access).'},
+        {ticker: 'GOOGL', company: 'Alphabet', rationale: 'Leading quantum research (error-correction milestones); a tiny option inside a profitable mega-cap.'},
+        {ticker: 'NVDA', company: 'NVIDIA', rationale: 'Quantum-classical hybrid / GPU-accelerated quantum simulation (CUDA-Q) + control-systems partnerships.'},
+      ],
+    },
+  ],
+};
+
+const GENE_ZONE: Zone = {
+  key: 'gene-editing',
+  kind: 'tenx-theme',
+  titleEn: 'Genomics & Gene Editing',
+  titleZh: '基因编辑与基因组学专区',
+  taglineEn: 'CRISPR editors + AI drug discovery — clinical-stage, binary readouts',
+  taglineZh: 'CRISPR 编辑公司 + AI 药物发现 —— 临床期、二元数据',
+  descEn:
+    'Gene editing + computational/AI drug discovery — mostly clinical-stage, pre-revenue names whose value turns on binary trial readouts, anchored by one profitable, de-risked franchise. Curated structure; live delayed prices. Not investment advice.',
+  descZh:
+    '基因编辑 + 计算/AI 药物发现 —— 多为临床期、尚未盈利的公司,价值取决于二元的试验数据,由一家盈利、已去风险的龙头压舱。层级为人工策展,价格为公开数据实时(延迟)行情。非投资建议。',
+  speculative: true,
+  layers: [
+    {
+      key: 'editors',
+      titleEn: 'CRISPR / Gene Editors',
+      titleZh: 'CRISPR / 基因编辑公司',
+      blurbEn: 'The editing platforms — one has an approved therapy, the rest are clinical-stage and binary on trial data. VRTX is the de-risked, profitable anchor (commercial CRISPR partner).',
+      blurbZh: '编辑平台 —— 一家已有获批疗法,其余处于临床期、成败取决于试验数据。VRTX 是已去风险、盈利的压舱锚(CRISPR 商业化伙伴)。',
+      tickers: [
+        {ticker: 'VRTX', company: 'Vertex Pharmaceuticals', rationale: 'De-risked anchor: profitable mega-cap, commercial CRISPR partner (Casgevy) + dominant cystic-fibrosis franchise.'},
+        {ticker: 'CRSP', company: 'CRISPR Therapeutics', rationale: 'First approved CRISPR therapy (Casgevy, with VRTX) + pipeline; commercial-but-early.', speculative: true},
+        {ticker: 'NTLA', company: 'Intellia Therapeutics', rationale: 'In-vivo gene editing; positive Phase 3 (hereditary angioedema) — an in-vivo first.', speculative: true},
+        {ticker: 'BEAM', company: 'Beam Therapeutics', rationale: 'Base-editing platform (more precise than cut-CRISPR); clinical-stage, pre-revenue.', speculative: true},
+        {ticker: 'EDIT', company: 'Editas Medicine', rationale: 'Gene-editing; smallest and most troubled of the editors — very high risk, frequent strategy shifts.', speculative: true},
+      ],
+    },
+    {
+      key: 'ai-drug-discovery',
+      titleEn: 'AI Drug Discovery & Precision Medicine',
+      titleZh: 'AI 药物发现与精准医疗',
+      blurbEn: 'Computational / AI platforms designing molecules + reading genomic-clinical data. Mostly pre-profit, partnership-milestone-driven.',
+      blurbZh: '用计算 / AI 设计分子、解读基因组与临床数据的平台。多数尚未盈利,靠合作里程碑驱动。',
+      tickers: [
+        {ticker: 'SDGR', company: 'Schrödinger', rationale: 'Physics-based computational drug-design software + an internal pipeline — dual software + biotech value.'},
+        {ticker: 'RXRX', company: 'Recursion Pharmaceuticals', rationale: 'Image-based AI drug-discovery platform (absorbed Exscientia in 2024); pre-profit.', speculative: true},
+        {ticker: 'TEM', company: 'Tempus AI', rationale: 'AI precision-medicine / diagnostics platform (genomic + clinical data); high-growth.', speculative: true},
+        {ticker: 'ABSI', company: 'Absci', rationale: 'Generative-AI antibody design; small-cap, pre-commercial, partnership-milestone-driven.', speculative: true},
+        {ticker: 'RLAY', company: 'Relay Therapeutics', rationale: 'Motion-based / computational drug discovery; clinical-stage, binary on trial readouts.', speculative: true},
+      ],
+    },
+  ],
+};
+
+const AI_SOFTWARE_ZONE: Zone = {
+  key: 'ai-software',
+  kind: 'tenx-theme',
+  titleEn: 'Applied AI & Software',
+  titleZh: 'AI 应用与软件专区',
+  taglineEn: 'Where the enterprise AI budget gets spent',
+  taglineZh: '企业 AI 预算的去处',
+  descEn:
+    "The application layer that captures the value of the AI build-out — enterprise software companies winning a growing share of the AI budget. (A standalone, value-capture angle on the same names in the AI flagship's Applications layer.) Curated structure; live delayed prices. Not investment advice.",
+  descZh:
+    'AI 建设浪潮中捕获价值的应用层 —— 在企业 AI 预算里抢占越来越大份额的软件公司。(与 AI 旗舰专区「应用」层是同一批股票的另一个编辑角度:价值捕获。)层级为人工策展,价格为公开数据实时(延迟)行情。非投资建议。',
+  layers: [
+    {
+      key: 'enterprise-ai',
+      titleEn: 'Enterprise AI Software',
+      titleZh: '企业 AI 软件',
+      blurbEn: 'Higher-multiple software compounders monetizing AI through agents, copilots, and data platforms — value depends on AI-budget share, not a physical bottleneck.',
+      blurbZh: '通过智能体、Copilot、数据平台变现 AI 的高估值软件复利公司 —— 价值取决于 AI 预算份额,而非物理瓶颈。',
+      tickers: [
+        {ticker: 'PLTR', company: 'Palantir Technologies', rationale: 'AI ops/decision platform (AIP) with rapid commercial + government growth — the marquee AI-software name.'},
+        {ticker: 'CRWD', company: 'CrowdStrike', rationale: 'AI-native cybersecurity platform; more durable/predictable growth than PLTR — the quality compounder.'},
+        {ticker: 'SNOW', company: 'Snowflake', rationale: 'Data platform positioned as the substrate for enterprise AI workloads; consumption model leverages AI usage.'},
+        {ticker: 'NOW', company: 'ServiceNow', rationale: 'Enterprise workflow platform embedding agentic AI; a large-cap, lower-beta AI-software compounder.'},
+      ],
+    },
+  ],
+};
+
 /** The zone catalog. AI is the flagship; 10x theme siblings reuse the same engine. */
-export const ZONES: readonly Zone[] = [AI_ZONE, SPACE_ZONE, GLP1_ZONE] as const;
+export const ZONES: readonly Zone[] = [
+  AI_ZONE,
+  SPACE_ZONE,
+  AI_SOFTWARE_ZONE,
+  GLP1_ZONE,
+  GENE_ZONE,
+  QUANTUM_ZONE,
+] as const;
 
 /** Resolves a zone by its URL slug, or undefined. */
 export function zoneByKey(key: string): Zone | undefined {
