@@ -51,6 +51,10 @@ func (f *fakeEnricher) Chat(context.Context, []enrich.ChatMessage, []enrich.Chat
 	return "", nil, enrich.Usage{}, enrich.ErrDisabled
 }
 
+func (f *fakeEnricher) ChatStream(context.Context, []enrich.ChatMessage, []enrich.ChatTool, string, func(string)) (string, []enrich.ChatToolCall, enrich.Usage, error) {
+	return "", nil, enrich.Usage{}, enrich.ErrDisabled
+}
+
 // newDigestServer builds an API server backed by a memory store (which also
 // serves as the earnings source) and the given enricher.
 func newDigestServer(st store.Store, enr enrich.Enricher) *httptest.Server {

@@ -120,6 +120,28 @@ func (s *Server) postConvChat(w http.ResponseWriter, r *http.Request) {
 	s.chatTurn(w, r, u, conv.ID, conv.AnchorTicker)
 }
 
+// postConvChatStream is the SSE variant of postConvChat (POST /v1/conversations/{id}/chat/stream):
+// same auth/Pro gate + conversation lookup, then streams the turn token-by-token.
+func (s *Server) postConvChatStream(w http.ResponseWriter, r *http.Request) {
+	u, ok := s.requireUser(w, r)
+	if !ok {
+		return
+	}
+	if !s.chatReady(w, r, u) {
+		return
+	}
+	conv, found, err := s.store.GetConversation(r.Context(), u.ID, r.PathValue("id"))
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, errBody(err.Error()))
+		return
+	}
+	if !found {
+		writeJSON(w, http.StatusNotFound, errBody("conversation not found"))
+		return
+	}
+	s.chatTurnStream(w, r, u, conv.ID, conv.AnchorTicker)
+}
+
 // chatTurn runs the shared chat turn for a resolved conversation: decode + meter + global
 // cap + token-budget cap + answer + persist + charge. anchorTicker grounds the answer (""
 // = general/cross-stock, handled from C3). The user is already Pro-gated + throttled.
@@ -222,6 +244,104 @@ func (s *Server) chatTurn(w http.ResponseWriter, r *http.Request, u auth.User, c
 		"disclaimer": chatDisclaimer(lang),
 		"meter":      map[string]int{"used": used + 1, "limit": s.chatMonthlyLimit},
 	})
+}
+
+// chatTurnStream is the SSE (streaming) variant of chatTurn: it streams the final answer's
+// content tokens as they generate (a "token" event each), then sends a terminal "done" event
+// carrying the AUTHORITATIVE advice-filtered blocks + meter (the client reconciles the
+// streamed text with these — the anti-hallucination contract is unchanged: Go owns every
+// number, finish() ran the advice filter). Same gating + persistence + metering as chatTurn.
+func (s *Server) chatTurnStream(w http.ResponseWriter, r *http.Request, u auth.User, convID, anchorTicker string) {
+	var req struct {
+		Message string `json:"message"`
+		Lang    string `json:"lang"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 8<<10)).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, errBody("bad request"))
+		return
+	}
+	msg := strings.TrimSpace(req.Message)
+	if msg == "" {
+		writeJSON(w, http.StatusBadRequest, errBody("empty message"))
+		return
+	}
+	if len(msg) > 2000 {
+		msg = msg[:2000]
+	}
+	lang := req.Lang
+	if lang != "zh" {
+		lang = "en"
+	}
+
+	flusher, _ := w.(http.Flusher)
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("X-Accel-Buffering", "no") // disable proxy buffering so tokens flush live
+	send := func(payload any) {
+		b, _ := json.Marshal(payload)
+		_, _ = w.Write([]byte("data: "))
+		_, _ = w.Write(b)
+		_, _ = w.Write([]byte("\n\n"))
+		if flusher != nil {
+			flusher.Flush()
+		}
+	}
+
+	period := researchMonth()
+	used, _ := s.store.GetChatMsgUsed(r.Context(), u.ID, period)
+	if used >= s.chatMonthlyLimit {
+		send(map[string]any{"type": "done", "blocks": []chat.Block{{Kind: "text", Text: chatLimitNote(lang)}}, "limit_reached": true, "meter": map[string]int{"used": used, "limit": s.chatMonthlyLimit}, "disclaimer": chatDisclaimer(lang)})
+		return
+	}
+	day := summaryDay()
+	s.chatMu.Lock()
+	if s.chatDayDate != day {
+		s.chatDayDate = day
+		s.chatDayCount = 0
+	}
+	over := s.chatDayCount >= chatDailyCap
+	s.chatMu.Unlock()
+	if over {
+		send(map[string]any{"type": "done", "blocks": []chat.Block{{Kind: "text", Text: chatBusyNote(lang)}}, "busy": true})
+		return
+	}
+	hist, _ := s.store.ListChatMessages(r.Context(), convID, maxChatHistory)
+	llmHist := storeMsgsToLLM(hist)
+	if estTokens(llmHist) > maxThreadHistoryTokens {
+		send(map[string]any{"type": "done", "blocks": []chat.Block{{Kind: "text", Text: chatThreadFullNote(lang)}}, "thread_full": true})
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), chatTurnTimeout)
+	defer cancel()
+	ans, err := s.chatSvc.AnswerStream(ctx, u.ID, anchorTicker, lang, llmHist, msg, s.chatPersonalDataAllowed(ctx, u.ID), func(tok string) {
+		send(map[string]any{"type": "token", "text": tok})
+	})
+	if err != nil {
+		s.log.Debug("chat stream failed", "conv", convID, "err", err)
+		send(map[string]any{"type": "error"})
+		return
+	}
+
+	blob, _ := json.Marshal(ans.Blocks)
+	_ = s.store.AppendChatMessage(r.Context(), store.ChatMessage{ConversationID: convID, UserID: u.ID, Ticker: anchorTicker, Role: "user", Content: msg})
+	_ = s.store.AppendChatMessage(r.Context(), store.ChatMessage{ConversationID: convID, UserID: u.ID, Ticker: anchorTicker, Role: "assistant", Content: string(blob)})
+	if anchorTicker == "" && len(hist) == 0 {
+		if title := deriveChatTitle(msg); title != "" {
+			_ = s.store.RenameConversation(r.Context(), u.ID, convID, title)
+		}
+	}
+	if err := s.store.IncrChatMsgUsed(r.Context(), u.ID, period); err != nil {
+		s.log.Debug("chat meter incr failed (non-fatal)", "user", u.ID, "err", err)
+	}
+	s.chatMu.Lock()
+	s.chatDayCount++
+	s.chatMu.Unlock()
+	s.log.Info("chat", "ticker", anchorTicker, "conv", convID, "user", u.ID, "stream", true,
+		"prompt_tokens", ans.Usage.PromptTokens, "cached_tokens", ans.Usage.CachedTokens, "completion_tokens", ans.Usage.CompletionTokens)
+
+	send(map[string]any{"type": "done", "blocks": ans.Blocks, "disclaimer": chatDisclaimer(lang), "meter": map[string]int{"used": used + 1, "limit": s.chatMonthlyLimit}})
 }
 
 // deriveChatTitle makes a short conversation title from the first user message: the

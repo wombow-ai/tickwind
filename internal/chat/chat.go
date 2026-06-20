@@ -59,6 +59,7 @@ func widgetEnum(allowUserData bool) []string {
 type LLM interface {
 	Enabled() bool
 	Chat(ctx context.Context, messages []enrich.ChatMessage, tools []enrich.ChatTool, model string) (string, []enrich.ChatToolCall, enrich.Usage, error)
+	ChatStream(ctx context.Context, messages []enrich.ChatMessage, tools []enrich.ChatTool, model string, onToken func(string)) (string, []enrich.ChatToolCall, enrich.Usage, error)
 }
 
 // FactSource yields the Go-owned fact sheet for a ticker (the api's research service).
@@ -215,6 +216,66 @@ func (s *Service) Answer(ctx context.Context, userID, anchorTicker, lang string,
 
 	// Iteration cap hit: ask once more with NO tools so the model must answer in prose.
 	content, _, usage, err := s.llm.Chat(ctx, msgs, nil, s.model)
+	addUsage(&total, usage)
+	if err != nil {
+		return Answer{}, err
+	}
+	return s.finish(content, widgets, total, lang), nil
+}
+
+// AnswerStream is the streaming variant of Answer: it runs the SAME bounded tool loop, but
+// each LLM call streams its content tokens to onToken as they arrive (a tool-only turn emits
+// nothing; the final answer streams live). The returned Answer is the SAME authoritative,
+// advice-filtered result as Answer — the caller sends it as the terminal "done" payload so
+// the client reconciles the streamed text with the filtered blocks. The anti-hallucination
+// contract is unchanged (Go owns every number; finish() runs the advice filter on the full
+// text). onToken may be nil (then it behaves like Answer over the streaming transport).
+func (s *Service) AnswerStream(ctx context.Context, userID, anchorTicker, lang string, history []enrich.ChatMessage, question string, allowUserData bool, onToken func(string)) (Answer, error) {
+	if !s.Enabled() {
+		return Answer{}, enrich.ErrDisabled
+	}
+	general := anchorTicker == ""
+	var fs research.FactSheet
+	material := ""
+	if !general {
+		fs = s.factSheet(ctx, anchorTicker, lang)
+		if len(fs.Sections) == 0 && fs.AsOf == "" {
+			return Answer{}, ErrNotFound
+		}
+		material = research.Material(fs, lang)
+	}
+	hasUserData := s.userData != nil && allowUserData
+	hasWeb := s.webSearch != nil
+
+	msgs := make([]enrich.ChatMessage, 0, len(history)+2)
+	msgs = append(msgs, enrich.ChatMessage{Role: "system", Content: systemPrompt(anchorTicker, lang, material, general, hasUserData, hasWeb)})
+	msgs = append(msgs, history...)
+	msgs = append(msgs, enrich.ChatMessage{Role: "user", Content: question})
+
+	tools := toolSpecs(lang, general, hasUserData, hasWeb)
+	var widgets []Block
+	var total enrich.Usage
+
+	for iter := 0; iter < maxToolIters; iter++ {
+		content, calls, usage, err := s.llm.ChatStream(ctx, msgs, tools, s.model, onToken)
+		addUsage(&total, usage)
+		if err != nil {
+			return Answer{}, err
+		}
+		if len(calls) == 0 {
+			return s.finish(content, widgets, total, lang), nil
+		}
+		msgs = append(msgs, enrich.ChatMessage{Role: "assistant", Content: content, ToolCalls: calls})
+		for _, c := range calls {
+			msgs = append(msgs, enrich.ChatMessage{
+				Role:       "tool",
+				ToolCallID: c.ID,
+				Content:    s.execTool(ctx, c, userID, anchorTicker, fs, lang, hasUserData, &widgets),
+			})
+		}
+	}
+
+	content, _, usage, err := s.llm.ChatStream(ctx, msgs, nil, s.model, onToken)
 	addUsage(&total, usage)
 	if err != nil {
 		return Answer{}, err

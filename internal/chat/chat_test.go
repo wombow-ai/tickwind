@@ -52,6 +52,14 @@ func (f *scriptedLLM) Chat(_ context.Context, msgs []enrich.ChatMessage, tools [
 	return r.content, r.calls, r.usage, nil
 }
 
+func (f *scriptedLLM) ChatStream(ctx context.Context, msgs []enrich.ChatMessage, tools []enrich.ChatTool, model string, onToken func(string)) (string, []enrich.ChatToolCall, enrich.Usage, error) {
+	content, calls, usage, err := f.Chat(ctx, msgs, tools, model)
+	if onToken != nil && content != "" {
+		onToken(content)
+	}
+	return content, calls, usage, err
+}
+
 type fakeFacts struct{ fs research.FactSheet }
 
 func (f fakeFacts) Report(_ context.Context, _, _ string) research.FactSheet { return f.fs }
@@ -152,6 +160,27 @@ func TestAnswerGetFactsCarriesAsOf(t *testing.T) {
 	}
 	if !strings.Contains(toolMsg, "[SEC 13F, as of 2026-03-31]") {
 		t.Fatalf("tool result missing per-fact as-of stamp: %q", toolMsg)
+	}
+}
+
+// TestAnswerStream: the streaming variant forwards the FINAL answer's content to onToken
+// (a tool-only turn streams nothing) and returns the same advice-filtered Answer as Answer.
+func TestAnswerStream(t *testing.T) {
+	llm := &scriptedLLM{enabled: true, replies: []reply{
+		{calls: []enrich.ChatToolCall{{ID: "c1", Name: "get_facts", Arguments: `{"section":"valuation"}`}}},
+		{content: "Apple trades at 31.2x earnings."},
+	}}
+	svc := NewService(llm, fakeFacts{sampleSheet()}, nil, "")
+	var streamed strings.Builder
+	ans, err := svc.AnswerStream(context.Background(), "u", "AAPL", "en", nil, "what's the P/E?", true, func(tok string) { streamed.WriteString(tok) })
+	if err != nil {
+		t.Fatalf("AnswerStream: %v", err)
+	}
+	if textOf(ans) != "Apple trades at 31.2x earnings." {
+		t.Fatalf("answer text = %q", textOf(ans))
+	}
+	if streamed.String() != "Apple trades at 31.2x earnings." {
+		t.Fatalf("streamed tokens = %q, want the final answer only (no tokens for the tool turn)", streamed.String())
 	}
 }
 

@@ -6,6 +6,7 @@
 package enrich
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -77,6 +78,12 @@ type Enricher interface {
 	// post-filter, persistence, and metering. model overrides the default chat model when
 	// non-empty (e.g. a Sonnet deep-dive turn). Returns ErrDisabled when no LLM is set.
 	Chat(ctx context.Context, messages []ChatMessage, tools []ChatTool, model string) (content string, toolCalls []ChatToolCall, usage Usage, err error)
+	// ChatStream is the streaming variant of Chat: identical request + return shape, but it
+	// invokes onToken for each content delta as it arrives (nil = drain silently). The caller
+	// streams onToken to the client for a live, progressive answer; the authoritative answer
+	// is still assembled from the returned (full) content, so the anti-hallucination
+	// post-filter is unchanged. Tool-call arguments are reassembled from their deltas.
+	ChatStream(ctx context.Context, messages []ChatMessage, tools []ChatTool, model string, onToken func(string)) (content string, toolCalls []ChatToolCall, usage Usage, err error)
 }
 
 // ChatMessage is one turn in a Product B conversation (OpenAI chat shape). Role is
@@ -239,6 +246,10 @@ func (Noop) SummarizeFiling(context.Context, string, string) (string, error) {
 }
 
 func (Noop) Chat(context.Context, []ChatMessage, []ChatTool, string) (string, []ChatToolCall, Usage, error) {
+	return "", nil, Usage{}, ErrDisabled
+}
+
+func (Noop) ChatStream(context.Context, []ChatMessage, []ChatTool, string, func(string)) (string, []ChatToolCall, Usage, error) {
 	return "", nil, Usage{}, ErrDisabled
 }
 
@@ -732,20 +743,15 @@ const chatMaxTokens = 1500
 // firewall + per-ticker facts) and the closed tool surface; returns assistant content,
 // requested tool calls, and usage. NO response_format (Anthropic/tool-calling reject the
 // OpenAI json_object), low temperature for grounded answers.
-func (l *llm) Chat(ctx context.Context, messages []ChatMessage, tools []ChatTool, model string) (string, []ChatToolCall, Usage, error) {
-	chosen := model
-	if chosen == "" {
-		chosen = l.chatModel
-	}
-
+// chatMessagesPayload converts the chat messages to the OpenAI-compatible wire shape with
+// the two Anthropic prompt-cache breakpoints (the per-thread-constant system+facts prefix,
+// and the whole-conversation prefix on the last message) so a Haiku turn re-reads the cached
+// prefix instead of re-billing it. Shared by Chat and ChatStream so both cache identically.
+func chatMessagesPayload(messages []ChatMessage) []map[string]any {
 	msgs := make([]map[string]any, 0, len(messages))
 	for _, m := range messages {
 		mm := map[string]any{"role": m.Role}
 		if m.Role == "system" {
-			// Anthropic prompt caching (via OpenRouter): cache the large, per-thread-constant
-			// system prompt + per-ticker facts so a Haiku turn costs ~$0.001 instead of
-			// re-billing the whole prefix each turn. Other OpenAI-compatible providers accept
-			// the array content block and ignore the cache_control field, so this stays safe.
 			mm["content"] = []map[string]any{{
 				"type":          "text",
 				"text":          m.Content,
@@ -773,13 +779,6 @@ func (l *llm) Chat(ctx context.Context, messages []ChatMessage, tools []ChatTool
 		}
 		msgs = append(msgs, mm)
 	}
-	// Second cache breakpoint on the LAST message → caches the whole CONVERSATION prefix
-	// (system + facts + all prior turns), not just the system block. The system block
-	// alone (~2.9K) is below Haiku's ~4K cache minimum, so it never cached; once a thread
-	// grows past the minimum, each later turn reads the cached prefix and only pays full
-	// price for the new message (verified: a 2nd turn read 4925 cached tokens). Only a
-	// string-content message is converted (the last sent message is always a user
-	// question or a tool result — both string content).
 	if n := len(msgs); n > 0 {
 		if s, ok := msgs[n-1]["content"].(string); ok && s != "" {
 			msgs[n-1]["content"] = []map[string]any{{
@@ -789,6 +788,16 @@ func (l *llm) Chat(ctx context.Context, messages []ChatMessage, tools []ChatTool
 			}}
 		}
 	}
+	return msgs
+}
+
+func (l *llm) Chat(ctx context.Context, messages []ChatMessage, tools []ChatTool, model string) (string, []ChatToolCall, Usage, error) {
+	chosen := model
+	if chosen == "" {
+		chosen = l.chatModel
+	}
+
+	msgs := chatMessagesPayload(messages)
 
 	reqBody := map[string]any{
 		"model":       chosen,
@@ -881,6 +890,139 @@ func (l *llm) Chat(ctx context.Context, messages []ChatMessage, tools []ChatTool
 		calls = append(calls, ChatToolCall{ID: c.ID, Name: c.Function.Name, Arguments: c.Function.Arguments})
 	}
 	return msg.Content, calls, usage, nil
+}
+
+// ChatStream mirrors Chat but with stream=true: it reads the SSE response and invokes
+// onToken for each content delta, accumulating the full content + tool calls (arguments
+// reassembled from deltas) + usage. The return shape is identical to Chat so the tool loop
+// can use it transparently. The same dual cache_control breakpoints are applied.
+func (l *llm) ChatStream(ctx context.Context, messages []ChatMessage, tools []ChatTool, model string, onToken func(string)) (string, []ChatToolCall, Usage, error) {
+	chosen := model
+	if chosen == "" {
+		chosen = l.chatModel
+	}
+	msgs := chatMessagesPayload(messages)
+
+	reqBody := map[string]any{
+		"model":          chosen,
+		"temperature":    0.2,
+		"max_tokens":     chatMaxTokens,
+		"messages":       msgs,
+		"stream":         true,
+		"stream_options": map[string]any{"include_usage": true},
+	}
+	if len(tools) > 0 {
+		specs := make([]map[string]any, len(tools))
+		for i, t := range tools {
+			specs[i] = map[string]any{
+				"type":     "function",
+				"function": map[string]any{"name": t.Name, "description": t.Description, "parameters": t.Parameters},
+			}
+		}
+		reqBody["tools"] = specs
+		reqBody["tool_choice"] = "auto"
+	}
+
+	body, err := json.Marshal(reqBody)
+	if err != nil {
+		return "", nil, Usage{}, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, l.chatBaseURL+"/chat/completions", bytes.NewReader(body))
+	if err != nil {
+		return "", nil, Usage{}, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+l.chatAPIKey)
+	req.Header.Set("Accept", "text/event-stream")
+
+	resp, err := l.http.Do(req)
+	if err != nil {
+		return "", nil, Usage{}, fmt.Errorf("enrich: chat stream request: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "", nil, Usage{}, fmt.Errorf("enrich: chat stream status %s", resp.Status)
+	}
+
+	var content strings.Builder
+	byIndex := map[int]*ChatToolCall{}
+	var order []int
+	var usage Usage
+	reader := bufio.NewReader(resp.Body)
+	for {
+		line, rerr := reader.ReadString('\n')
+		if s := strings.TrimSpace(line); strings.HasPrefix(s, "data:") {
+			data := strings.TrimSpace(s[5:])
+			if data == "[DONE]" {
+				break
+			}
+			var chunk struct {
+				Choices []struct {
+					Delta struct {
+						Content   string `json:"content"`
+						ToolCalls []struct {
+							Index    int    `json:"index"`
+							ID       string `json:"id"`
+							Function struct {
+								Name      string `json:"name"`
+								Arguments string `json:"arguments"`
+							} `json:"function"`
+						} `json:"tool_calls"`
+					} `json:"delta"`
+				} `json:"choices"`
+				Usage *struct {
+					PromptTokens        int `json:"prompt_tokens"`
+					CompletionTokens    int `json:"completion_tokens"`
+					TotalTokens         int `json:"total_tokens"`
+					PromptTokensDetails struct {
+						CachedTokens int `json:"cached_tokens"`
+					} `json:"prompt_tokens_details"`
+				} `json:"usage"`
+			}
+			if json.Unmarshal([]byte(data), &chunk) == nil {
+				if len(chunk.Choices) > 0 {
+					d := chunk.Choices[0].Delta
+					if d.Content != "" {
+						content.WriteString(d.Content)
+						if onToken != nil {
+							onToken(d.Content)
+						}
+					}
+					for _, t := range d.ToolCalls {
+						cur := byIndex[t.Index]
+						if cur == nil {
+							cur = &ChatToolCall{}
+							byIndex[t.Index] = cur
+							order = append(order, t.Index)
+						}
+						if t.ID != "" {
+							cur.ID = t.ID
+						}
+						if t.Function.Name != "" {
+							cur.Name = t.Function.Name
+						}
+						cur.Arguments += t.Function.Arguments
+					}
+				}
+				if chunk.Usage != nil {
+					usage = Usage{
+						PromptTokens:     chunk.Usage.PromptTokens,
+						CompletionTokens: chunk.Usage.CompletionTokens,
+						TotalTokens:      chunk.Usage.TotalTokens,
+						CachedTokens:     chunk.Usage.PromptTokensDetails.CachedTokens,
+					}
+				}
+			}
+		}
+		if rerr != nil {
+			break // EOF or transport error ends the stream
+		}
+	}
+	var calls []ChatToolCall
+	for _, i := range order {
+		calls = append(calls, *byIndex[i])
+	}
+	return content.String(), calls, usage, nil
 }
 
 // parseSectionProse maps the model's section-keyed JSON reply back onto a

@@ -53,6 +53,10 @@ func (c *countingEnricher) Chat(context.Context, []enrich.ChatMessage, []enrich.
 	return "", nil, enrich.Usage{}, enrich.ErrDisabled
 }
 
+func (c *countingEnricher) ChatStream(context.Context, []enrich.ChatMessage, []enrich.ChatTool, string, func(string)) (string, []enrich.ChatToolCall, enrich.Usage, error) {
+	return "", nil, enrich.Usage{}, enrich.ErrDisabled
+}
+
 // newSummaryServer builds an API server over the given store + enricher and
 // returns both the underlying *Server (to inspect the daily cap) and an
 // httptest server.
@@ -162,6 +166,9 @@ func (s *slowSummaryEnricher) SummarizeFiling(context.Context, string, string) (
 	return "", enrich.ErrDisabled
 }
 func (s *slowSummaryEnricher) Chat(context.Context, []enrich.ChatMessage, []enrich.ChatTool, string) (string, []enrich.ChatToolCall, enrich.Usage, error) {
+	return "", nil, enrich.Usage{}, enrich.ErrDisabled
+}
+func (s *slowSummaryEnricher) ChatStream(context.Context, []enrich.ChatMessage, []enrich.ChatTool, string, func(string)) (string, []enrich.ChatToolCall, enrich.Usage, error) {
 	return "", nil, enrich.Usage{}, enrich.ErrDisabled
 }
 
