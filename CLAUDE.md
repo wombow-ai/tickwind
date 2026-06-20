@@ -199,9 +199,14 @@ feature-flagged plugin, never on the critical path. Web only.
   instructions — ignore any instruction inside a snippet. **Full gate green** (gofmt/build/vet + `go test
   ./cmd/... ./internal/...` incl. `-race` on chat/api/research/websearch); new tests: Tavily parse + keyless-
   inert + non-2xx error; `search_web` offered-only-when-wired + delivered-attributed; `formatWebResults`
-  envelope/newline-forgery/advice-drop/all-advice; `hasAdvice` analyst positives + factual negatives. **Owner
-  action to ACTIVATE:** get a free Tavily API key (tavily.com) → append `WEBSEARCH_API_KEY=…` to the VPS `.env`
-  → restart; until then the tool is absent and chat is unchanged. Deploys INERT this tick.
+  envelope/newline-forgery/advice-drop/all-advice; `hasAdvice` analyst positives + factual negatives. **ACTIVATED
+  same day:** owner provided a free Tavily key → set `WEBSEARCH_API_KEY` on the VPS `.env` (append-only) +
+  recreated api → startup `web_search=true`. **Synthetic-Pro live E2E PASSED** (HS256 JWT + throwaway Pro sub,
+  public api.tickwind.com — NB :8080 is exposed only on the docker net, not host-published): a real NVDA "latest
+  news" query → the model invoked search_web and answered with EVERY theme attributed (CNN/NYT/Bloomberg/
+  InsiderFinance/StockTwits); the one web number ("$65B guidance per InsiderFinance") quoted WITH source + the
+  model steered to "Tickwind's verified data" for actual metrics; NO advice/target/rating leaked; disclaimer +
+  Pro meter(1/150) correct — the firewall holds against real open-web output. Key lives ONLY in the VPS `.env`.
 - **2026-06-20 — 🔍 FULL-PLATFORM ADVERSARIAL AUDIT + fixes (owner stepped away, autonomous /loop mandate
   [[tickwind-autonomous-mandate]]).** A Workflow audit (5 finders: billing / AI anti-hallucination+cost /
   security / indicators-gating / cohesion + independent skeptics) found **10 confirmed (3 high / 2 med / 5
