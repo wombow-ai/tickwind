@@ -2343,9 +2343,11 @@ export interface SignalMatch {
 export interface ScreenSignalsResponse {
   count: number;
   results: SignalMatch[];
+  /** Full match count — drives the "N more with Pro" CTA when the teaser is truncated. */
+  total_matches?: number;
   /** When the background scan was built (RFC3339); absent before the first scan. */
   as_of?: string;
-  /** True when the screener is Pro-gated and the viewer is not Pro (results hard-locked). */
+  /** True when the screener is Pro-gated and the viewer is not Pro (results are a teaser). */
   paywall_locked?: boolean;
 }
 

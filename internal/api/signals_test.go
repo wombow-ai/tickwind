@@ -44,6 +44,17 @@ func tripleSignalResult() indicators.StockIndicatorsResult {
 	}
 }
 
+// quadSignalResult is tripleSignalResult + a price-vs-SMA signal (4 total), enough to
+// exceed freeSignalTeaserLimit=3 and exercise the teaser truncation.
+func quadSignalResult() indicators.StockIndicatorsResult {
+	r := tripleSignalResult()
+	r.Price = fptr(100)
+	r.Indicators = append(r.Indicators, indicators.StockIndicator{
+		Indicator: indicators.Indicator{ID: "technical.sma-ma"}, Status: indicators.StatusOK, Value: fptr(90),
+	})
+	return r
+}
+
 // signalsTestServer builds a test server with a per-stock compute source and an
 // explicit signals-paywall flag, so both the flag-off and flag-on paths are testable.
 func signalsTestServer(t *testing.T, src IndicatorComputeSource, paywallOn bool) *httptest.Server {
@@ -143,7 +154,7 @@ func TestGetStockSignalsFlagOff(t *testing.T) {
 func TestGetStockSignalsFlagOnAnonTruncates(t *testing.T) {
 	// Paywall ON + anonymous (= free) → first freeSignalTeaserLimit signals + locked,
 	// but total_signals reports the full count for the "unlock N more" CTA.
-	srv := signalsTestServer(t, fakeIndicatorCompute{res: tripleSignalResult()}, true)
+	srv := signalsTestServer(t, fakeIndicatorCompute{res: quadSignalResult()}, true)
 	defer srv.Close()
 	code, body := getIndicatorSignals(t, srv, "AAPL")
 	if code != http.StatusOK {
@@ -152,8 +163,8 @@ func TestGetStockSignalsFlagOnAnonTruncates(t *testing.T) {
 	if len(body.Signals) != freeSignalTeaserLimit {
 		t.Fatalf("flag on free: got %d signals, want teaser %d", len(body.Signals), freeSignalTeaserLimit)
 	}
-	if body.TotalSignals != 3 {
-		t.Errorf("total_signals = %d, want 3 (full count even when truncated)", body.TotalSignals)
+	if body.TotalSignals != 4 {
+		t.Errorf("total_signals = %d, want 4 (full count even when truncated)", body.TotalSignals)
 	}
 	if !body.PaywallLocked {
 		t.Error("flag on free: paywall_locked must be true when signals exceed the teaser")
@@ -191,6 +202,7 @@ func screenSignalsServer(t *testing.T, scan SignalScanSource, paywallOn bool) *h
 type screenSignalsBody struct {
 	Count         int                      `json:"count"`
 	Results       []indicators.SignalMatch `json:"results"`
+	TotalMatches  int                      `json:"total_matches"`
 	AsOf          string                   `json:"as_of"`
 	PaywallLocked bool                     `json:"paywall_locked"`
 }
@@ -244,18 +256,40 @@ func TestGetScreenSignals(t *testing.T) {
 		}
 	})
 
-	t.Run("flag on + anon (free) → hard lock, empty", func(t *testing.T) {
-		srv := screenSignalsServer(t, fakeScan{matches}, true)
+	t.Run("flag on + anon (free) + many → teaser of freeScreenTeaserLimit + locked", func(t *testing.T) {
+		many := make([]indicators.SignalMatch, 7)
+		for i := range many {
+			many[i] = indicators.SignalMatch{
+				Ticker:  string(rune('A' + i)),
+				Signals: []indicators.Signal{{ID: "technical.rsi", Direction: indicators.DirBullish, Label: "RSI oversold"}},
+			}
+		}
+		srv := screenSignalsServer(t, fakeScan{many}, true)
 		defer srv.Close()
-		code, body := getScreenSignalsResp(t, srv, "?direction=bullish")
+		code, body := getScreenSignalsResp(t, srv, "")
 		if code != http.StatusOK {
 			t.Fatalf("status = %d, want 200", code)
 		}
-		if !body.PaywallLocked {
-			t.Error("flag on + non-Pro: paywall_locked must be true (screener is Pro-only)")
+		if len(body.Results) != freeScreenTeaserLimit {
+			t.Fatalf("flag on free: got %d results, want teaser %d", len(body.Results), freeScreenTeaserLimit)
 		}
-		if body.Count != 0 || len(body.Results) != 0 {
-			t.Errorf("hard lock must return no results, got %+v", body.Results)
+		if body.TotalMatches != 7 {
+			t.Errorf("total_matches = %d, want 7 (full count even when truncated)", body.TotalMatches)
+		}
+		if !body.PaywallLocked {
+			t.Error("flag on free + more than the teaser: paywall_locked must be true")
+		}
+	})
+
+	t.Run("flag on + anon + few (≤ teaser) → full, not locked", func(t *testing.T) {
+		srv := screenSignalsServer(t, fakeScan{matches}, true) // only 2 matches
+		defer srv.Close()
+		code, body := getScreenSignalsResp(t, srv, "")
+		if code != http.StatusOK {
+			t.Fatalf("status = %d, want 200", code)
+		}
+		if len(body.Results) != 2 || body.PaywallLocked {
+			t.Errorf("few matches must not lock, got %d results locked=%v", len(body.Results), body.PaywallLocked)
 		}
 	})
 }

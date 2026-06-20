@@ -13,7 +13,12 @@ import (
 // paywall is ON: the first N (deterministic order), with paywall_locked=true and the
 // full count so the UI can show an "unlock N more with Pro" CTA. Teaser depth is an
 // open owner decision (docs/indicators-monetization-plan.md §7) — change here.
-const freeSignalTeaserLimit = 2
+const freeSignalTeaserLimit = 3
+
+// freeScreenTeaserLimit is how many screener matches a non-Pro viewer sees when the
+// signals paywall is ON: a teaser (NOT a hard lock) so the pSEO landing pages stay
+// crawlable + the free tier funnels into Pro. The full screen is Pro.
+const freeScreenTeaserLimit = 5
 
 // SetIndicatorsPaywallEnabled turns the Pro paywall for the signals layer on/off.
 // Default off (full signal list for everyone); the owner flips it at go-live.
@@ -150,31 +155,28 @@ type SignalScanSource interface {
 // 404s until set.
 func (s *Server) SetSignalScan(src SignalScanSource) { s.signalScan = src }
 
-// screenSignalsResp is the wire shape of GET /v1/screen/signals.
+// screenSignalsResp is the wire shape of GET /v1/screen/signals. When paywall_locked,
+// Results is the free teaser (first freeScreenTeaserLimit) and TotalMatches is the full
+// count so the UI can show "N more with Pro".
 type screenSignalsResp struct {
 	Count         int                      `json:"count"`
 	Results       []indicators.SignalMatch `json:"results"`
+	TotalMatches  int                      `json:"total_matches"`
 	AsOf          string                   `json:"as_of,omitempty"` // when the scan was built
 	PaywallLocked bool                     `json:"paywall_locked,omitempty"`
 }
 
 // getScreenSignals screens the whole universe for stocks whose deterministic signals
 // match the query (`?direction=bullish|bearish|neutral` & `?signal=<indicator id>` &
-// `?limit=`). It reads the background scan cache — no per-request compute. The screener
-// is a Pro feature: when INDICATORS_PAYWALL_ENABLED and the viewer is not Pro it returns
-// an empty, paywall_locked result (a HARD lock, not a teaser — screening is Pro-only per
-// the plan). Flag off → available to everyone (current-behavior-safe).
+// `?limit=`). It reads the background scan cache — no per-request compute. The full
+// screen is Pro: when INDICATORS_PAYWALL_ENABLED and the viewer is not Pro, the result
+// is truncated to a TEASER (first freeScreenTeaserLimit + paywall_locked + TotalMatches),
+// so the pSEO landing pages stay crawlable and the free tier funnels into Pro. Flag off
+// → full results for everyone (current-behavior-safe).
 func (s *Server) getScreenSignals(w http.ResponseWriter, r *http.Request) {
 	if s.signalScan == nil {
 		writeJSON(w, http.StatusNotFound, errBody("screener unavailable"))
 		return
-	}
-	if s.indicatorsPaywallEnabled {
-		u, _ := auth.UserFrom(r.Context())
-		if s.tierOf(r.Context(), u.ID) != tierPro {
-			writeJSON(w, http.StatusOK, screenSignalsResp{Results: []indicators.SignalMatch{}, PaywallLocked: true})
-			return
-		}
 	}
 	q := r.URL.Query()
 	matches, at := s.signalScan.Screen(indicators.SignalScreen{
@@ -188,10 +190,20 @@ func (s *Server) getScreenSignals(w http.ResponseWriter, r *http.Request) {
 	if lim > 0 && len(matches) > lim {
 		matches = matches[:lim]
 	}
+	total := len(matches)
+	locked := false
+	// Pro-gate: a free viewer gets the first freeScreenTeaserLimit matches + a lock flag.
+	if s.indicatorsPaywallEnabled {
+		u, _ := auth.UserFrom(r.Context())
+		if s.tierOf(r.Context(), u.ID) != tierPro && total > freeScreenTeaserLimit {
+			matches = matches[:freeScreenTeaserLimit:freeScreenTeaserLimit]
+			locked = true
+		}
+	}
 	if matches == nil {
 		matches = []indicators.SignalMatch{}
 	}
-	out := screenSignalsResp{Count: len(matches), Results: matches}
+	out := screenSignalsResp{Count: len(matches), Results: matches, TotalMatches: total, PaywallLocked: locked}
 	if !at.IsZero() {
 		out.AsOf = at.UTC().Format(time.RFC3339)
 	}

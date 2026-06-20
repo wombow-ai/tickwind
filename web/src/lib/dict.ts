@@ -110,9 +110,10 @@ export const dict: Record<Lang, Record<string, string>> = {
     'sigscreen.count': '{n} matches',
     'sigscreen.empty': 'No stocks match this signal filter right now.',
     'sigscreen.trust': 'Signals are deterministic rules over public daily data. Not advice or a recommendation.',
-    'sigscreen.locked.title': 'The signal screener is a Pro feature',
+    'sigscreen.locked.title': 'See the full market scan with Pro',
     'sigscreen.locked.body':
       'Tickwind Pro unlocks screening the whole market by signal — golden crosses, RSI extremes, MACD crosses and more, each a transparent rule over a computed number.',
+    'sigscreen.locked.preview': 'Showing {shown} of {total} matches — Tickwind Pro unlocks the full market scan by signal.',
     'sigscreen.locked.cta': 'See Pro plans',
     // signal backtest (the BacktestWidget on the stock page)
     'backtest.title': 'Signal Backtest',
@@ -961,8 +962,9 @@ export const dict: Record<Lang, Record<string, string>> = {
     'sigscreen.count': '{n} 只匹配',
     'sigscreen.empty': '当前没有股票匹配该信号筛选。',
     'sigscreen.trust': '信号是对公开日线数据的确定性规则,不构成投资建议或推荐。',
-    'sigscreen.locked.title': '信号筛选器是 Pro 功能',
+    'sigscreen.locked.title': '用 Pro 查看完整市场扫描',
     'sigscreen.locked.body': 'Tickwind Pro 解锁按信号筛选全市场 —— 金叉、RSI 极值、MACD 交叉等,每条都是对已算出数字的透明规则。',
+    'sigscreen.locked.preview': '显示 {total} 只中的 {shown} 只 —— Tickwind Pro 解锁按信号扫描全市场。',
     'sigscreen.locked.cta': '查看 Pro 方案',
     // signal backtest (the BacktestWidget on the stock page)
     'backtest.title': '信号回测',

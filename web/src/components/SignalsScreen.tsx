@@ -109,6 +109,7 @@ export function SignalsScreen({
 
   const locked = data?.paywall_locked ?? false;
   const results = data?.results ?? [];
+  const total = data?.total_matches ?? results.length;
 
   const selectCx = cx(
     'rounded-lg border px-3 py-1.5 text-[12.5px] font-medium',
@@ -161,9 +162,7 @@ export function SignalsScreen({
         )}
       </div>
 
-      {locked ? (
-        <ProLock dark={dark} t={t} tr={tr} />
-      ) : status === 'loading' ? (
+      {status === 'loading' ? (
         <div className={cx('h-72 rounded-2xl', t.skel)} />
       ) : results.length === 0 ? (
         <p
@@ -216,22 +215,38 @@ export function SignalsScreen({
         </ul>
       )}
 
+      {locked && <ProLock dark={dark} t={t} tr={tr} shown={results.length} total={total} />}
+
       <p className={cx('mt-4 text-[11px] leading-snug', t.faint)}>{tr('sigscreen.trust')}</p>
     </div>
   );
 }
 
-/** Whole-screen Pro lock (the screener is Pro-only when the paywall is live). */
-function ProLock({dark, t, tr}: {dark: boolean; t: Tokens; tr: (k: string) => string}) {
+/** Teaser upsell shown below the free preview of matches (Pro unlocks the full screen). */
+function ProLock({
+  dark,
+  t,
+  tr,
+  shown,
+  total,
+}: {
+  dark: boolean;
+  t: Tokens;
+  tr: (k: string) => string;
+  shown: number;
+  total: number;
+}) {
   return (
     <section
       className={cx(
-        'rounded-2xl border p-6 text-center',
+        'mt-3 rounded-2xl border p-5 text-center',
         dark ? 'border-violet-500/30 bg-violet-500/[0.06]' : 'border-violet-200 bg-violet-50/60',
       )}
     >
-      <h2 className={cx('text-[16px] font-bold', t.text)}>{tr('sigscreen.locked.title')}</h2>
-      <p className={cx('mx-auto mt-1.5 max-w-md text-[12.5px]', t.sub)}>{tr('sigscreen.locked.body')}</p>
+      <h2 className={cx('text-[15px] font-bold', t.text)}>{tr('sigscreen.locked.title')}</h2>
+      <p className={cx('mx-auto mt-1.5 max-w-md text-[12.5px]', t.sub)}>
+        {tr('sigscreen.locked.preview').replace('{shown}', String(shown)).replace('{total}', String(total))}
+      </p>
       <Link
         href="/pro"
         className={cx(
