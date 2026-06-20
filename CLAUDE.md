@@ -178,7 +178,16 @@ feature-flagged plugin, never on the critical path. Web only.
 - **2026-06-20 — 🔍 FULL-PLATFORM ADVERSARIAL AUDIT + fixes (owner stepped away, autonomous /loop mandate
   [[tickwind-autonomous-mandate]]).** A Workflow audit (5 finders: billing / AI anti-hallucination+cost /
   security / indicators-gating / cohesion + independent skeptics) found **10 confirmed (3 high / 2 med / 5
-  low)**, 1 refuted. **Tick-1 fixed + deployed (`d3542a9`, DEPLOY_DONE 11:53Z):** ① (HIGH security) **IDOR** —
+  low)**, 1 refuted. **Tick-2 (`cba4d50`, DEPLOY_DONE 12:24Z) — BILLING BUNDLE (real money; hardened after a
+  2-lens adversarial review of the diff):** (HIGH) the Stripe webhook recorded an event seen BEFORE processing
+  → a transient store error 5xx'd but the retry skipped reprocessing → a Pro grant/revoke permanently lost.
+  Now read-only `StripeEventSeen` pre-check → `handleStripeEvent` → `MarkStripeEventSeen` only AFTER success
+  (mark-failure → 5xx to force re-record). (MED) an out-of-order `customer.subscription.*` before
+  `checkout.session.completed` stranded a paid user on free → checkout now re-pulls the authoritative sub via
+  new `billing.GetSubscription(cs.Subscription)` (best-effort + customer-matched; a recovery failure logs+binds
+  free, never blocks the bind — the review caught+fixed a regression where it did). New `store.StripeEventSeen`
+  + `billing.Config.APIBaseURL`; 3 tests. The deeper PRE-EXISTING live-out-of-order class → backstopped by a
+  planned **Stripe reconciliation job (task #32)**. **Tick-1 fixed + deployed (`d3542a9`, DEPLOY_DONE 11:53Z):** ① (HIGH security) **IDOR** —
   postgres `DeleteConversation` deleted chat_message rows with NO user_id scope → any authed user could wipe
   another's chat history; now both deletes `AND user_id=$2` in a tx (memory store was already safe). ② (HIGH
   ai) **report prose escaped the HasAdvice backstop** — only bull/bear points were filtered, the section prose
