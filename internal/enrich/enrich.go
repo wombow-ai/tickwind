@@ -779,6 +779,10 @@ func (l *llm) Chat(ctx context.Context, messages []ChatMessage, tools []ChatTool
 		"temperature": 0.2,
 		"max_tokens":  chatMaxTokens,
 		"messages":    msgs,
+		// OpenRouter only returns the detailed token breakdown (incl. prompt-cache reads)
+		// when usage accounting is opted into; without it cache_read can read as 0 even
+		// when caching fired. Other OpenAI-compatible providers ignore the field.
+		"usage": map[string]any{"include": true},
 	}
 	if len(tools) > 0 {
 		specs := make([]map[string]any, len(tools))

@@ -351,6 +351,16 @@ type Store interface {
 	SaveAISummary(ctx context.Context, ticker, day, lang string, payload []byte) error
 	GetAISummary(ctx context.Context, ticker, day, lang string) ([]byte, bool, error)
 
+	// DeepReport persists the prose'd AI Deep Research FactSheet (Product A) so a
+	// generated report SURVIVES a server restart — the in-memory cache is wiped on every
+	// redeploy, after which the next viewer would otherwise pay a fresh (costly) LLM
+	// generation. Keyed by (ticker, lang) only — the report is user-agnostic + shared;
+	// the caller enforces a freshness TTL using the returned generatedAt. Durable (Market
+	// store), one row per key. SaveDeepReport upserts (payload + generated_at=now());
+	// GetDeepReport returns ok=false when there's no row.
+	SaveDeepReport(ctx context.Context, ticker, lang string, payload []byte) error
+	GetDeepReport(ctx context.Context, ticker, lang string) (payload []byte, generatedAt time.Time, ok bool, err error)
+
 	// Watchlist is one user's tracked tickers, in insertion order.
 	Watchlist(ctx context.Context, userID string) ([]string, error)
 	AddToWatchlist(ctx context.Context, userID, ticker string) error

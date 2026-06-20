@@ -141,6 +141,12 @@ func (s Split) SaveAISummary(ctx context.Context, ticker, day, lang string, payl
 	return s.Market.SaveAISummary(ctx, ticker, day, lang, payload)
 }
 
+func (s Split) SaveDeepReport(ctx context.Context, ticker, lang string, payload []byte) error {
+	return s.Market.SaveDeepReport(ctx, ticker, lang, payload)
+}
+func (s Split) GetDeepReport(ctx context.Context, ticker, lang string) ([]byte, time.Time, bool, error) {
+	return s.Market.GetDeepReport(ctx, ticker, lang)
+}
 func (s Split) GetAISummary(ctx context.Context, ticker, day, lang string) ([]byte, bool, error) {
 	return s.Market.GetAISummary(ctx, ticker, day, lang)
 }

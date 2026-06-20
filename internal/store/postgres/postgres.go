@@ -679,6 +679,34 @@ func (s *Store) GetAISummary(ctx context.Context, ticker, day, lang string) ([]b
 	return payload, true, nil
 }
 
+// SaveDeepReport upserts the prose'd deep-research FactSheet for (ticker, lang),
+// idempotent on the key — a re-save replaces the payload and bumps generated_at.
+func (s *Store) SaveDeepReport(ctx context.Context, ticker, lang string, payload []byte) error {
+	const q = `INSERT INTO deep_report (ticker, lang, payload, generated_at) VALUES ($1, $2, $3, now())
+ON CONFLICT (ticker, lang) DO UPDATE SET payload = $3, generated_at = now()`
+	if _, err := s.pool.Exec(ctx, q, ticker, lang, payload); err != nil {
+		return fmt.Errorf("postgres: save deep_report: %w", err)
+	}
+	return nil
+}
+
+// GetDeepReport returns the persisted report payload + its generated_at for (ticker,
+// lang), or ok=false when there's no row (the caller then enforces the freshness TTL).
+func (s *Store) GetDeepReport(ctx context.Context, ticker, lang string) ([]byte, time.Time, bool, error) {
+	var payload []byte
+	var at time.Time
+	err := s.pool.QueryRow(ctx,
+		`SELECT payload, generated_at FROM deep_report WHERE ticker = $1 AND lang = $2`,
+		ticker, lang).Scan(&payload, &at)
+	switch {
+	case errors.Is(err, pgx.ErrNoRows):
+		return nil, time.Time{}, false, nil
+	case err != nil:
+		return nil, time.Time{}, false, fmt.Errorf("postgres: get deep_report: %w", err)
+	}
+	return payload, at, true, nil
+}
+
 // Watchlist returns one user's tracked tickers, in insertion order.
 func (s *Store) Watchlist(ctx context.Context, userID string) ([]string, error) {
 	rows, err := s.pool.Query(ctx, `SELECT ticker FROM watchlist WHERE user_id = $1 ORDER BY added_at`, userID)

@@ -173,6 +173,20 @@ CREATE TABLE IF NOT EXISTS ai_summary (
 
 CREATE INDEX IF NOT EXISTS ai_summary_day_idx ON ai_summary (day);
 
+-- AI Deep Research report (Product A): the prose'd FactSheet, persisted so a generated
+-- report survives a redeploy (the in-memory cache is wiped on restart → the next viewer
+-- would otherwise pay a fresh LLM generation). Keyed by (ticker, lang) — user-agnostic +
+-- shared; the API enforces a freshness TTL (~7 days) via generated_at. Durable (Market
+-- store). One row per key; a regeneration upserts.
+CREATE TABLE IF NOT EXISTS deep_report (
+    ticker       text NOT NULL,
+    lang         text NOT NULL,
+    payload      bytea NOT NULL,
+    generated_at timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (ticker, lang)
+);
+CREATE INDEX IF NOT EXISTS deep_report_generated_idx ON deep_report (generated_at);
+
 -- Migrate the legacy single-tenant watchlist (ticker PK, no user) to per-user.
 -- Runs at most once: the condition is false after user_id exists.
 DO $$

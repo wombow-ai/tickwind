@@ -2728,6 +2728,12 @@ var (
 // is cheap, no LLM) always serves, so over-cap requests still return a 200 report.
 const researchDailyCap = 80
 
+// deepReportTTL is how long a persisted deep report (the durable store cache) is served
+// without regenerating. It decouples cache freshness from the per-user MONTHLY generation
+// quota: a report stays "ready" for any viewer for a rolling week (surviving restarts),
+// while a user still only spends a quota slot on a genuinely-new generation.
+const deepReportTTL = 7 * 24 * time.Hour
+
 // prose_status values reported by GET /v1/stocks/{ticker}/research in the
 // "prose_status" response field. They tell a polling client exactly what the
 // report's qualitative prose is doing; the Go-owned numbers/facts/citations are
@@ -2943,6 +2949,23 @@ func (s *Server) getResearchDeep(w http.ResponseWriter, r *http.Request, ticker,
 	}
 	s.researchMu.Unlock()
 
+	// (1b) Persisted cache: a recently-generated report in the DURABLE store survives a
+	// restart (the in-memory cache is wiped on every redeploy — otherwise the next viewer
+	// re-pays an LLM generation). Repopulate the in-memory cache + serve when fresh
+	// (deepReportTTL). Best-effort: any store error / stale / prose-less row falls through
+	// to the normal (re)generate path.
+	if payload, genAt, ok, err := s.store.GetDeepReport(r.Context(), ticker, lang); err == nil && ok && time.Since(genAt) < deepReportTTL {
+		var pfs research.FactSheet
+		if json.Unmarshal(payload, &pfs) == nil && factSheetHasProse(pfs) {
+			e := researchEntry{fs: pfs, llm: true, model: deepModel, at: genAt}
+			s.researchMu.Lock()
+			s.researchCache[key] = e
+			s.researchMu.Unlock()
+			s.serveDeepReady(w, r, e)
+			return
+		}
+	}
+
 	// (2) Assemble the cheap data-only fact sheet (no LLM, never errors). This is the
 	// instant body we return in every non-cache-hit branch below.
 	fs := s.researchCalc.Report(r.Context(), ticker, lang)
@@ -3079,6 +3102,18 @@ func (s *Server) composeDeepBackground(ticker, lang, key, day, period, userID, d
 	delete(s.researchInflight, key)
 	close(ch)
 	s.researchMu.Unlock()
+
+	// Persist the prose'd report to the durable store (off the lock, best-effort) so it
+	// survives a restart — keyed by (ticker, lang), TTL-served for deepReportTTL.
+	if hasProse {
+		if payload, err := json.Marshal(composed); err == nil {
+			pctx, pcancel := context.WithTimeout(context.Background(), 5*time.Second)
+			if err := s.store.SaveDeepReport(pctx, ticker, lang, payload); err != nil {
+				s.log.Debug("deep-report persist failed (non-fatal)", "ticker", ticker, "err", err)
+			}
+			pcancel()
+		}
+	}
 }
 
 // sweepResearchDay rolls the global per-day prose-generation counter to `day` and

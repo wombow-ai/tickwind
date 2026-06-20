@@ -27,6 +27,7 @@ type Store struct {
 	seenF4    map[string]time.Time                // form-4 accession -> filed date
 	fearGreed map[string]int                      // "YYYY-MM-DD" -> headline F&G score
 	aiSum     map[string][]byte                   // "TICKER|DAY|LANG" -> serialized AI digest payload
+	deepRpts  map[string]deepRptRow               // "TICKER|LANG" -> persisted deep-research report (Product A)
 	watchlist map[string][]string                 // userID -> ordered tickers
 	clips     map[string]map[string]store.Clip    // userID -> clipID -> Clip
 	notes     map[string]map[string]store.Note    // userID -> noteID -> Note
@@ -56,6 +57,7 @@ func New() *Store {
 		seenF4:    make(map[string]time.Time),
 		fearGreed: make(map[string]int),
 		aiSum:     make(map[string][]byte),
+		deepRpts:  make(map[string]deepRptRow),
 		watchlist: make(map[string][]string),
 		clips:     make(map[string]map[string]store.Clip),
 		notes:     make(map[string]map[string]store.Note),
@@ -382,6 +384,37 @@ func (s *Store) FearGreedHistory(_ context.Context, limit int) ([]store.FearGree
 // aiSumKey builds the (ticker, day, lang) map key, mirroring the API's cache key.
 func aiSumKey(ticker, day, lang string) string {
 	return key(ticker) + "|" + day + "|" + lang
+}
+
+// deepRptRow is a persisted deep-research report payload + when it was generated.
+type deepRptRow struct {
+	payload []byte
+	at      time.Time
+}
+
+// SaveDeepReport upserts the prose'd deep-research FactSheet for (ticker, lang),
+// stamping generated_at now (a defensive copy of the payload is stored).
+func (s *Store) SaveDeepReport(_ context.Context, ticker, lang string, payload []byte) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	cp := make([]byte, len(payload))
+	copy(cp, payload)
+	s.deepRpts[key(ticker)+"|"+lang] = deepRptRow{payload: cp, at: time.Now().UTC()}
+	return nil
+}
+
+// GetDeepReport returns the persisted report payload + its generated_at for (ticker,
+// lang), or ok=false when there's none.
+func (s *Store) GetDeepReport(_ context.Context, ticker, lang string) ([]byte, time.Time, bool, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	row, ok := s.deepRpts[key(ticker)+"|"+lang]
+	if !ok {
+		return nil, time.Time{}, false, nil
+	}
+	cp := make([]byte, len(row.payload))
+	copy(cp, row.payload)
+	return cp, row.at, true, nil
 }
 
 // SaveAISummary upserts the serialized AI digest for (ticker, day, lang),
