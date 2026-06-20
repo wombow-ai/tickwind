@@ -393,12 +393,42 @@ const AI_SOFTWARE_ZONE: Zone = {
   ],
 };
 
+const MED_TECH_ZONE: Zone = {
+  key: 'med-tech',
+  kind: 'tenx-theme',
+  titleEn: 'Med-Tech & Surgical Robotics',
+  titleZh: '医疗科技与手术机器人专区',
+  taglineEn: 'Robotic surgery + the device majors riding it',
+  taglineZh: '手术机器人 + 顺势而上的器械龙头',
+  descEn:
+    'Medical-device leaders with a robotics + AI tailwind — razor-and-blade surgical platforms and diversified device majors. More fundamentally-grounded than the speculative themes: profitable, durable compounders. Curated structure; live delayed prices. Not investment advice.',
+  descZh:
+    '受机器人 + AI 顺风的医疗器械龙头 —— 「剃须刀 + 刀片」式手术平台与多元化器械大厂。比投机主题更有基本面:盈利、稳健的复利公司。层级为人工策展,价格为公开数据实时(延迟)行情。非投资建议。',
+  layers: [
+    {
+      key: 'surgical-robotics',
+      titleEn: 'Surgical Robotics & Device Majors',
+      titleZh: '手术机器人与器械大厂',
+      blurbEn:
+        'Robotic-surgery platforms with recurring consumable economics, plus the diversified device majors building robotics + AI into their portfolios.',
+      blurbZh: '带高粘性耗材经济的手术机器人平台,以及把机器人 + AI 纳入产品线的多元化器械大厂。',
+      tickers: [
+        {ticker: 'ISRG', company: 'Intuitive Surgical', rationale: 'da Vinci robotic-surgery franchise — razor-and-blade economics + an AI-assisted next-gen platform.'},
+        {ticker: 'SYK', company: 'Stryker', rationale: 'Orthopedic + surgical robotics (Mako) leader; a quality med-tech compounder with a robotics tailwind.'},
+        {ticker: 'MDT', company: 'Medtronic', rationale: 'Diversified med-tech major investing in surgical robotics (Hugo) + AI; a lower-beta diversified anchor.'},
+        {ticker: 'BSX', company: 'Boston Scientific', rationale: 'High-growth med-tech major (electrophysiology / structural heart) — among the fastest-growing large-caps in the space.'},
+      ],
+    },
+  ],
+};
+
 /** The zone catalog. AI is the flagship; 10x theme siblings reuse the same engine. */
 export const ZONES: readonly Zone[] = [
   AI_ZONE,
   SPACE_ZONE,
   AI_SOFTWARE_ZONE,
   GLP1_ZONE,
+  MED_TECH_ZONE,
   GENE_ZONE,
   QUANTUM_ZONE,
 ] as const;
