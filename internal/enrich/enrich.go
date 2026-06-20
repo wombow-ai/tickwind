@@ -69,6 +69,50 @@ type Enricher interface {
 	// NOT give any investment advice or price target. Returns ErrDisabled when no
 	// LLM is configured (the caller then serves the filing with item labels only).
 	SummarizeFiling(ctx context.Context, material, lang string) (string, error)
+	// Chat runs ONE round-trip of the Product B personalized chat: it sends the message
+	// history (system firewall + per-ticker Go facts + conversation + any tool results)
+	// plus the closed tool surface to the (cheap) chat model, and returns the assistant's
+	// prose content, any tool calls it requested, and token usage. It is a pure transport
+	// — the CALLER owns the bounded tool loop, tool execution, the anti-hallucination
+	// post-filter, persistence, and metering. model overrides the default chat model when
+	// non-empty (e.g. a Sonnet deep-dive turn). Returns ErrDisabled when no LLM is set.
+	Chat(ctx context.Context, messages []ChatMessage, tools []ChatTool, model string) (content string, toolCalls []ChatToolCall, usage Usage, err error)
+}
+
+// ChatMessage is one turn in a Product B conversation (OpenAI chat shape). Role is
+// "system" | "user" | "assistant" | "tool". For an assistant turn that requested tools,
+// ToolCalls is set (Content may be empty); for a tool result, Role=="tool", ToolCallID
+// references the originating call, and Content is the Go-formatted result string.
+type ChatMessage struct {
+	Role       string
+	Content    string
+	ToolCallID string         // role=="tool": the id of the call this answers
+	ToolCalls  []ChatToolCall // role=="assistant": the tool calls the model requested
+}
+
+// ChatToolCall is a function call the model requested. Arguments is the raw JSON string
+// the model produced (the caller unmarshals it against the tool's schema).
+type ChatToolCall struct {
+	ID        string
+	Name      string
+	Arguments string
+}
+
+// ChatTool is a function the model may call (OpenAI function-calling shape). Parameters
+// is a JSON-Schema object describing the arguments; keep the surface tight + closed.
+type ChatTool struct {
+	Name        string
+	Description string
+	Parameters  map[string]any
+}
+
+// Usage reports token accounting for a Chat round-trip, including prompt-cache reads
+// (CachedTokens) so the caller can verify caching actually fires and track cost.
+type Usage struct {
+	PromptTokens     int
+	CompletionTokens int
+	TotalTokens      int
+	CachedTokens     int
 }
 
 // Config configures the LLM enricher. An empty APIKey yields a disabled Noop.
@@ -87,6 +131,14 @@ type Config struct {
 	// BaseURL / APIKey, so a single-provider setup is unchanged.
 	DeepBaseURL string
 	DeepAPIKey  string
+	// ChatModel / ChatBaseURL / ChatAPIKey route the Product B personalized chat (the
+	// Chat method) to its own provider/model — a CHEAP, high-frequency conversational
+	// model (e.g. Claude Haiku) distinct from the flagship deep report. Each empty value
+	// falls back to the DEEP equivalent (which itself falls back to the default), so the
+	// chat path costs/behaves like the deep path until LLM_CHAT_MODEL is set.
+	ChatModel   string
+	ChatBaseURL string
+	ChatAPIKey  string
 }
 
 // New returns a real Enricher when cfg.APIKey is set, otherwise a Noop.
@@ -118,6 +170,21 @@ func New(cfg Config) Enricher {
 	if deepKey == "" {
 		deepKey = cfg.APIKey
 	}
+	// The personalized chat (Product B) uses its own (cheap) model/provider; each value
+	// falls back to the DEEP client (chat → deep → default), so it is unchanged until
+	// LLM_CHAT_* is configured.
+	chatModel := cfg.ChatModel
+	if chatModel == "" {
+		chatModel = deepModel
+	}
+	chatBase := cfg.ChatBaseURL
+	if chatBase == "" {
+		chatBase = deepBase
+	}
+	chatKey := cfg.ChatAPIKey
+	if chatKey == "" {
+		chatKey = deepKey
+	}
 	return &llm{
 		// Generous ceiling so it never caps a legitimate call: the deep-research
 		// compose (a premium Claude model, up to 6000 tokens) measured ~65s typical
@@ -132,6 +199,9 @@ func New(cfg Config) Enricher {
 		deepModel:   deepModel,
 		deepBaseURL: strings.TrimRight(deepBase, "/"),
 		deepAPIKey:  deepKey,
+		chatModel:   chatModel,
+		chatBaseURL: strings.TrimRight(chatBase, "/"),
+		chatAPIKey:  chatKey,
 	}
 }
 
@@ -168,6 +238,10 @@ func (Noop) SummarizeFiling(context.Context, string, string) (string, error) {
 	return "", ErrDisabled
 }
 
+func (Noop) Chat(context.Context, []ChatMessage, []ChatTool, string) (string, []ChatToolCall, Usage, error) {
+	return "", nil, Usage{}, ErrDisabled
+}
+
 // systemPrompt drives the per-stock digest. Chinese-first product → Chinese
 // output. Structural anti-hallucination guardrails: only restate the supplied
 // material, attribute the source type, and never produce advice/targets (also
@@ -199,6 +273,9 @@ type llm struct {
 	deepModel   string // model for ComposeDeepReport (falls back to model)
 	deepBaseURL string // base URL for ComposeDeepReport (falls back to baseURL)
 	deepAPIKey  string // API key for ComposeDeepReport (falls back to apiKey)
+	chatModel   string // default model for Chat / Product B (falls back to deepModel)
+	chatBaseURL string // base URL for Chat (falls back to deepBaseURL)
+	chatAPIKey  string // API key for Chat (falls back to deepAPIKey)
 }
 
 func (l *llm) Enabled() bool { return true }
@@ -644,6 +721,127 @@ func (l *llm) ComposeDeepReport(ctx context.Context, material, lang string) (map
 		return nil, errors.New("enrich: empty compose-deep response")
 	}
 	return parseSectionProse(out.Choices[0].Message.Content)
+}
+
+// chatMaxTokens caps a single conversational turn. A grounded answer over pre-formatted
+// facts is short; this bounds cost and latency (the meter + per-user cap bound the rest).
+const chatMaxTokens = 1500
+
+// Chat — see the interface doc. One round-trip to the chat client (chatBaseURL/chatAPIKey),
+// default chatModel unless model overrides. Sends messages (already including the system
+// firewall + per-ticker facts) and the closed tool surface; returns assistant content,
+// requested tool calls, and usage. NO response_format (Anthropic/tool-calling reject the
+// OpenAI json_object), low temperature for grounded answers.
+func (l *llm) Chat(ctx context.Context, messages []ChatMessage, tools []ChatTool, model string) (string, []ChatToolCall, Usage, error) {
+	chosen := model
+	if chosen == "" {
+		chosen = l.chatModel
+	}
+
+	msgs := make([]map[string]any, 0, len(messages))
+	for _, m := range messages {
+		mm := map[string]any{"role": m.Role, "content": m.Content}
+		if m.Role == "tool" {
+			mm["tool_call_id"] = m.ToolCallID
+		}
+		if len(m.ToolCalls) > 0 {
+			tc := make([]map[string]any, len(m.ToolCalls))
+			for i, c := range m.ToolCalls {
+				tc[i] = map[string]any{
+					"id":   c.ID,
+					"type": "function",
+					"function": map[string]any{
+						"name":      c.Name,
+						"arguments": c.Arguments,
+					},
+				}
+			}
+			mm["tool_calls"] = tc
+		}
+		msgs = append(msgs, mm)
+	}
+
+	reqBody := map[string]any{
+		"model":       chosen,
+		"temperature": 0.2,
+		"max_tokens":  chatMaxTokens,
+		"messages":    msgs,
+	}
+	if len(tools) > 0 {
+		specs := make([]map[string]any, len(tools))
+		for i, t := range tools {
+			specs[i] = map[string]any{
+				"type": "function",
+				"function": map[string]any{
+					"name":        t.Name,
+					"description": t.Description,
+					"parameters":  t.Parameters,
+				},
+			}
+		}
+		reqBody["tools"] = specs
+		reqBody["tool_choice"] = "auto"
+	}
+
+	body, err := json.Marshal(reqBody)
+	if err != nil {
+		return "", nil, Usage{}, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, l.chatBaseURL+"/chat/completions", bytes.NewReader(body))
+	if err != nil {
+		return "", nil, Usage{}, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+l.chatAPIKey)
+
+	resp, err := l.http.Do(req)
+	if err != nil {
+		return "", nil, Usage{}, fmt.Errorf("enrich: chat request: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "", nil, Usage{}, fmt.Errorf("enrich: chat status %s", resp.Status)
+	}
+	var out struct {
+		Choices []struct {
+			Message struct {
+				Content   string `json:"content"`
+				ToolCalls []struct {
+					ID       string `json:"id"`
+					Function struct {
+						Name      string `json:"name"`
+						Arguments string `json:"arguments"`
+					} `json:"function"`
+				} `json:"tool_calls"`
+			} `json:"message"`
+		} `json:"choices"`
+		Usage struct {
+			PromptTokens        int `json:"prompt_tokens"`
+			CompletionTokens    int `json:"completion_tokens"`
+			TotalTokens         int `json:"total_tokens"`
+			PromptTokensDetails struct {
+				CachedTokens int `json:"cached_tokens"`
+			} `json:"prompt_tokens_details"`
+		} `json:"usage"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return "", nil, Usage{}, fmt.Errorf("enrich: chat decode: %w", err)
+	}
+	if len(out.Choices) == 0 {
+		return "", nil, Usage{}, errors.New("enrich: empty chat response")
+	}
+	usage := Usage{
+		PromptTokens:     out.Usage.PromptTokens,
+		CompletionTokens: out.Usage.CompletionTokens,
+		TotalTokens:      out.Usage.TotalTokens,
+		CachedTokens:     out.Usage.PromptTokensDetails.CachedTokens,
+	}
+	msg := out.Choices[0].Message
+	var calls []ChatToolCall
+	for _, c := range msg.ToolCalls {
+		calls = append(calls, ChatToolCall{ID: c.ID, Name: c.Function.Name, Arguments: c.Function.Arguments})
+	}
+	return msg.Content, calls, usage, nil
 }
 
 // parseSectionProse maps the model's section-keyed JSON reply back onto a

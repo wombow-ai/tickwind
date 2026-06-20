@@ -49,6 +49,9 @@ func (c *countingEnricher) ExplainMove(context.Context, string, string) (string,
 func (c *countingEnricher) SummarizeFiling(context.Context, string, string) (string, error) {
 	return "", enrich.ErrDisabled
 }
+func (c *countingEnricher) Chat(context.Context, []enrich.ChatMessage, []enrich.ChatTool, string) (string, []enrich.ChatToolCall, enrich.Usage, error) {
+	return "", nil, enrich.Usage{}, enrich.ErrDisabled
+}
 
 // newSummaryServer builds an API server over the given store + enricher and
 // returns both the underlying *Server (to inspect the daily cap) and an
@@ -157,6 +160,9 @@ func (s *slowSummaryEnricher) ExplainMove(context.Context, string, string) (stri
 }
 func (s *slowSummaryEnricher) SummarizeFiling(context.Context, string, string) (string, error) {
 	return "", enrich.ErrDisabled
+}
+func (s *slowSummaryEnricher) Chat(context.Context, []enrich.ChatMessage, []enrich.ChatTool, string) (string, []enrich.ChatToolCall, enrich.Usage, error) {
+	return "", nil, enrich.Usage{}, enrich.ErrDisabled
 }
 
 // TestSummaryComposeTimeoutDegradesTo200 proves a slow LLM digest degrades to an

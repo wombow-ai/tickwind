@@ -170,7 +170,7 @@ func main() {
 	}
 
 	// Optional LLM enrichment (disabled without LLM_API_KEY).
-	enricher := enrich.New(enrich.Config{APIKey: cfg.LLMAPIKey, BaseURL: cfg.LLMBaseURL, Model: cfg.LLMModel, DeepModel: cfg.LLMDeepModel, DeepBaseURL: cfg.LLMDeepBaseURL, DeepAPIKey: cfg.LLMDeepAPIKey})
+	enricher := enrich.New(enrich.Config{APIKey: cfg.LLMAPIKey, BaseURL: cfg.LLMBaseURL, Model: cfg.LLMModel, DeepModel: cfg.LLMDeepModel, DeepBaseURL: cfg.LLMDeepBaseURL, DeepAPIKey: cfg.LLMDeepAPIKey, ChatModel: cfg.LLMChatModel, ChatBaseURL: cfg.LLMChatBaseURL, ChatAPIKey: cfg.LLMChatAPIKey})
 	if enricher.Enabled() {
 		log.Info("llm enrichment enabled", "model", cfg.LLMModel, "deep_base_set", cfg.LLMDeepBaseURL != "")
 		// Chinese headline translation: one small batch per sweep, newest news

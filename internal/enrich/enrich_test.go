@@ -317,6 +317,126 @@ func TestComposeDeepReportNoop(t *testing.T) {
 	}
 }
 
+// TestChatToolCallsAndUsage exercises the Product B chat round-trip: a tools array is
+// sent, a tool_calls response is parsed back, usage (incl. prompt-cache reads) is
+// surfaced, and the assistant/tool round-trip messages marshal correctly.
+func TestChatToolCallsAndUsage(t *testing.T) {
+	var gotModel string
+	var gotTools int
+	var gotRoles []string
+	var gotToolCallID string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Model    string `json:"model"`
+			Tools    []any  `json:"tools"`
+			Messages []struct {
+				Role       string `json:"role"`
+				ToolCallID string `json:"tool_call_id"`
+			} `json:"messages"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		gotModel = req.Model
+		gotTools = len(req.Tools)
+		for _, m := range req.Messages {
+			gotRoles = append(gotRoles, m.Role)
+			if m.Role == "tool" {
+				gotToolCallID = m.ToolCallID
+			}
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{{
+				"message": map[string]any{
+					"content": "",
+					"tool_calls": []map[string]any{{
+						"id": "call_1", "type": "function",
+						"function": map[string]any{"name": "get_facts", "arguments": `{"section":"valuation"}`},
+					}},
+				},
+			}},
+			"usage": map[string]any{
+				"prompt_tokens": 1200, "completion_tokens": 20, "total_tokens": 1220,
+				"prompt_tokens_details": map[string]any{"cached_tokens": 1000},
+			},
+		})
+	}))
+	defer srv.Close()
+
+	enr := New(Config{APIKey: "k", BaseURL: srv.URL, Model: "m", ChatModel: "chat-model"})
+	tools := []ChatTool{{Name: "get_facts", Description: "d", Parameters: map[string]any{"type": "object"}}}
+	history := []ChatMessage{
+		{Role: "system", Content: "sys"},
+		{Role: "user", Content: "walk me through valuation"},
+		{Role: "assistant", ToolCalls: []ChatToolCall{{ID: "call_0", Name: "get_facts", Arguments: `{"section":"flows"}`}}},
+		{Role: "tool", ToolCallID: "call_0", Content: "- Net flow: +$1.2M"},
+	}
+	content, calls, usage, err := enr.Chat(context.Background(), history, tools, "")
+	if err != nil {
+		t.Fatalf("Chat: %v", err)
+	}
+	if gotModel != "chat-model" {
+		t.Errorf("model = %q, want chat-model", gotModel)
+	}
+	if gotTools != 1 {
+		t.Errorf("tools sent = %d, want 1", gotTools)
+	}
+	if gotToolCallID != "call_0" {
+		t.Errorf("tool message tool_call_id = %q, want call_0 (round-trip marshaling)", gotToolCallID)
+	}
+	if content != "" || len(calls) != 1 {
+		t.Fatalf("want 1 tool call + empty content, got content=%q calls=%v", content, calls)
+	}
+	if calls[0].Name != "get_facts" || calls[0].Arguments != `{"section":"valuation"}` {
+		t.Errorf("tool call = %+v", calls[0])
+	}
+	if usage.PromptTokens != 1200 || usage.CompletionTokens != 20 || usage.CachedTokens != 1000 {
+		t.Errorf("usage = %+v, want prompt 1200 / completion 20 / cached 1000", usage)
+	}
+}
+
+// TestChatModelOverrideAndFallback: an explicit model arg wins; an empty ChatModel falls
+// back to the deep model (chat → deep → default).
+func TestChatModelOverrideAndFallback(t *testing.T) {
+	var gotModel string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Model string `json:"model"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		gotModel = req.Model
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{{"message": map[string]any{"content": "ok"}}},
+		})
+	}))
+	defer srv.Close()
+
+	// No ChatModel/ChatBaseURL → chat falls back to the deep client, which falls back to
+	// the default model + base URL.
+	enr := New(Config{APIKey: "k", BaseURL: srv.URL, Model: "default-model"})
+	if _, _, _, err := enr.Chat(context.Background(), []ChatMessage{{Role: "user", Content: "hi"}}, nil, ""); err != nil {
+		t.Fatalf("Chat: %v", err)
+	}
+	if gotModel != "default-model" {
+		t.Errorf("fallback model = %q, want default-model (chat→deep→default)", gotModel)
+	}
+	// An explicit model arg overrides the configured chat model.
+	if _, _, _, err := enr.Chat(context.Background(), []ChatMessage{{Role: "user", Content: "hi"}}, nil, "sonnet-deepdive"); err != nil {
+		t.Fatalf("Chat override: %v", err)
+	}
+	if gotModel != "sonnet-deepdive" {
+		t.Errorf("override model = %q, want sonnet-deepdive", gotModel)
+	}
+}
+
+func TestChatNoop(t *testing.T) {
+	content, calls, usage, err := Noop{}.Chat(context.Background(), nil, nil, "")
+	if !errors.Is(err, ErrDisabled) {
+		t.Fatalf("err = %v, want ErrDisabled", err)
+	}
+	if content != "" || calls != nil || (usage != Usage{}) {
+		t.Fatalf("Noop.Chat should return zero values, got %q %v %+v", content, calls, usage)
+	}
+}
+
 func TestComposeReportNoop(t *testing.T) {
 	got, err := Noop{}.ComposeReport(context.Background(), "anything", "zh")
 	if !errors.Is(err, ErrDisabled) {

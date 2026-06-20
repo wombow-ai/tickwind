@@ -182,38 +182,46 @@ func buildMaterial(fs FactSheet, lang string) string {
 	}
 
 	for _, sec := range fs.Sections {
-		title := sec.TitleEN
-		if lang != "en" && sec.TitleZH != "" {
-			title = sec.TitleZH
-		}
-		fmt.Fprintf(&sb, "\n[%s] (key=%s)\n", title, sec.Key)
-		var thin []string
-		for _, f := range sec.Facts {
-			label := f.LabelEN
-			if lang != "en" && f.LabelZH != "" {
-				label = f.LabelZH
-			}
-			if f.Status == StatusOK {
-				src := ""
-				if f.Source != "" {
-					src = " [" + f.Source + "]"
-				}
-				fmt.Fprintf(&sb, "- %s: %s%s\n", label, f.Value, src)
-			} else {
-				thin = append(thin, label)
-			}
-		}
-		if len(thin) > 0 {
-			fmt.Fprintf(&sb, "- (数据不足 / insufficient: %s)\n", strings.Join(thin, ", "))
-		}
-		// Attributed, NON-NUMERIC context (news/social) — quote with attribution,
-		// never restate as fact, never derive a number from it.
-		if len(sec.Context) > 0 {
-			fmt.Fprintf(&sb, "- (背景材料 / attributed context — quote with source, do NOT treat as fact or derive a number:)\n")
-			for _, c := range sec.Context {
-				fmt.Fprintf(&sb, "  · %s\n", c)
-			}
-		}
+		writeSection(&sb, sec, lang)
 	}
 	return sb.String()
+}
+
+// writeSection appends ONE section's pre-formatted block (header, "Label: Value [source]"
+// facts, an insufficient roll-up, and attributed non-numeric context) to sb. Extracted
+// from buildMaterial so the single-section get_facts tool (FactsForSection) produces a
+// byte-identical block. Output format is load-bearing for the anti-hallucination tests.
+func writeSection(sb *strings.Builder, sec SectionFacts, lang string) {
+	title := sec.TitleEN
+	if lang != "en" && sec.TitleZH != "" {
+		title = sec.TitleZH
+	}
+	fmt.Fprintf(sb, "\n[%s] (key=%s)\n", title, sec.Key)
+	var thin []string
+	for _, f := range sec.Facts {
+		label := f.LabelEN
+		if lang != "en" && f.LabelZH != "" {
+			label = f.LabelZH
+		}
+		if f.Status == StatusOK {
+			src := ""
+			if f.Source != "" {
+				src = " [" + f.Source + "]"
+			}
+			fmt.Fprintf(sb, "- %s: %s%s\n", label, f.Value, src)
+		} else {
+			thin = append(thin, label)
+		}
+	}
+	if len(thin) > 0 {
+		fmt.Fprintf(sb, "- (数据不足 / insufficient: %s)\n", strings.Join(thin, ", "))
+	}
+	// Attributed, NON-NUMERIC context (news/social) — quote with attribution,
+	// never restate as fact, never derive a number from it.
+	if len(sec.Context) > 0 {
+		fmt.Fprintf(sb, "- (背景材料 / attributed context — quote with source, do NOT treat as fact or derive a number:)\n")
+		for _, c := range sec.Context {
+			fmt.Fprintf(sb, "  · %s\n", c)
+		}
+	}
 }

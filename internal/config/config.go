@@ -112,6 +112,16 @@ type Config struct {
 	LLMDeepBaseURL string
 	LLMDeepAPIKey  string
 
+	// LLMChatModel / LLMChatBaseURL / LLMChatAPIKey route the Product B personalized
+	// chat to its OWN provider/model (cost-split, third tier): the conversational turn
+	// is high-frequency + uncacheable per user, so it wants a CHEAP model (e.g. Claude
+	// Haiku) distinct from the flagship deep report. Each empty → falls back to the
+	// DEEP client (then the default), matching the LLM_DEEP_* idiom — so a single- or
+	// two-provider deployment is unchanged until LLM_CHAT_MODEL is set.
+	LLMChatModel   string
+	LLMChatBaseURL string
+	LLMChatAPIKey  string
+
 	// DeepResearchMonthlyLimit is the per-user, per-ET-MONTH GENERATION quota for the
 	// AI Deep Research report (depth=deep): how many genuinely-new deep reports a
 	// logged-in user may generate per CALENDAR MONTH, site-wide (not per stock).
@@ -244,6 +254,9 @@ func Load() Config {
 		LLMDeepModel:            env("LLM_DEEP_MODEL", ""),
 		LLMDeepBaseURL:          env("LLM_DEEP_BASE_URL", ""),
 		LLMDeepAPIKey:           env("LLM_DEEP_API_KEY", ""),
+		LLMChatModel:            env("LLM_CHAT_MODEL", ""),
+		LLMChatBaseURL:          env("LLM_CHAT_BASE_URL", ""),
+		LLMChatAPIKey:           env("LLM_CHAT_API_KEY", ""),
 		// New env name first; fall back to the legacy DEEP_RESEARCH_DAILY_LIMIT (whose
 		// own default is 1) so an existing deployment keeps working unchanged.
 		DeepResearchMonthlyLimit:    envInt("DEEP_RESEARCH_MONTHLY_LIMIT", envInt("DEEP_RESEARCH_DAILY_LIMIT", 1)),
