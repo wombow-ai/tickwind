@@ -2,6 +2,8 @@ import type {Metadata} from 'next';
 import {langAlternates} from '@/lib/config';
 import {isLocale} from '@/lib/locale';
 import {ogImageMeta} from '@/lib/og';
+import Link from '@/components/LocalLink';
+import {SIGNAL_SCREEN_PRESETS} from '@/lib/signalPresets';
 import {SignalsScreen} from '@/components/SignalsScreen';
 
 // English browser-tab title is the default (crawlers + the English UI); Chinese
@@ -49,6 +51,36 @@ export async function generateMetadata({
   };
 }
 
-export default function SignalScreenPage() {
-  return <SignalsScreen />;
+export default async function SignalScreenPage({
+  params,
+}: {
+  params: Promise<{locale: string}>;
+}) {
+  const {locale} = await params;
+  const zh = (isLocale(locale) ? locale : 'en') === 'zh';
+  return (
+    <div className="mx-auto max-w-3xl">
+      <SignalsScreen />
+
+      {/* Curated signal-screen landing pages — pSEO internal links. */}
+      <section className="mt-8">
+        <h2 className="mb-2.5 text-[15px] font-bold text-slate-900 dark:text-slate-100">
+          {zh ? '热门信号筛选' : 'Popular signal screens'}
+        </h2>
+        <div className="grid gap-2 sm:grid-cols-2">
+          {SIGNAL_SCREEN_PRESETS.map(p => (
+            <Link
+              key={p.key}
+              href={`/screen/signals/${p.key}`}
+              className="block rounded-xl border border-slate-200 px-3 py-2.5 hover:border-violet-300 hover:bg-slate-50 dark:border-slate-800 dark:hover:border-violet-500/40 dark:hover:bg-slate-900"
+            >
+              <div className="text-[13px] font-semibold text-slate-800 dark:text-slate-100">
+                {zh ? p.titleZh : p.titleEn}
+              </div>
+            </Link>
+          ))}
+        </div>
+      </section>
+    </div>
+  );
 }

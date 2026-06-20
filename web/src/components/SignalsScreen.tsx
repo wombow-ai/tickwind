@@ -61,14 +61,22 @@ const SIGNAL_TYPES: {v: string; k: string}[] = [
  * signals match a direction / signal-type filter. Every match shows the signals that
  * triggered it, each with its traceable basis — never advice, never LLM-invented.
  */
-export function SignalsScreen() {
+export function SignalsScreen({
+  initialDirection = '',
+  initialSignal = '',
+  hideHeader = false,
+}: {
+  initialDirection?: string;
+  initialSignal?: string;
+  hideHeader?: boolean;
+} = {}) {
   const dark = useDark();
   const t = tok(dark);
   const tr = useT();
   const {getToken} = useAuth();
 
-  const [direction, setDirection] = useState('');
-  const [sigType, setSigType] = useState('');
+  const [direction, setDirection] = useState(initialDirection);
+  const [sigType, setSigType] = useState(initialSignal);
   const [data, setData] = useState<ScreenSignalsResponse | null>(null);
   const [status, setStatus] = useState<Status>('loading');
 
@@ -111,13 +119,15 @@ export function SignalsScreen() {
 
   return (
     <div className="mx-auto max-w-3xl">
-      <header className="mb-4">
-        <h1 className={cx('flex items-center gap-2 text-[22px] font-bold tracking-tight', t.text)}>
-          <ScanLine size={20} className={dark ? 'text-violet-300' : 'text-violet-500'} />
-          {tr('sigscreen.title')}
-        </h1>
-        <p className={cx('mt-1 text-[13px]', t.sub)}>{tr('sigscreen.subtitle')}</p>
-      </header>
+      {!hideHeader && (
+        <header className="mb-4">
+          <h1 className={cx('flex items-center gap-2 text-[22px] font-bold tracking-tight', t.text)}>
+            <ScanLine size={20} className={dark ? 'text-violet-300' : 'text-violet-500'} />
+            {tr('sigscreen.title')}
+          </h1>
+          <p className={cx('mt-1 text-[13px]', t.sub)}>{tr('sigscreen.subtitle')}</p>
+        </header>
+      )}
 
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <select
