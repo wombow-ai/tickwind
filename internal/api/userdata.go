@@ -96,9 +96,13 @@ func (d chatUserData) Holdings(ctx context.Context, userID, lang string) string 
 		if total > 0 {
 			weight = fmt.Sprintf(pick(lang, ",占组合 %.0f%%", ", %.0f%% of portfolio"), r.value/total*100)
 		}
-		b.WriteString(fmt.Sprintf("- %s: %g %s @ $%.2f → $%.2f, %s $%.0f (%+.1f%%)%s\n",
+		// Emit the absolute unrealized P&L ($) explicitly — without it the model has
+		// gain% + price but no gain-$, and (observed in the live E2E) mislabels the
+		// share price as the "unrealized $". Giving it the Go-computed figure removes
+		// the temptation; every number here stays Go-owned.
+		b.WriteString(fmt.Sprintf("- %s: %g %s @ $%.2f → $%.2f, %s $%.0f (%+.1f%%, %s $%+.0f)%s\n",
 			r.h.Ticker, r.h.Shares, pick(lang, "股,成本", "sh @ cost"), r.h.AvgCost, r.price,
-			pick(lang, "市值", "value"), r.value, r.gainPct, weight))
+			pick(lang, "市值", "value"), r.value, r.gainPct, pick(lang, "盈亏", "P&L"), r.gain, weight))
 	}
 	return strings.TrimRight(b.String(), "\n")
 }

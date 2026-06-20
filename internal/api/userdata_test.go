@@ -48,3 +48,29 @@ func TestChatUserDataPrivacyIsolation(t *testing.T) {
 		t.Fatalf("unknown user got data: %q", w)
 	}
 }
+
+// TestChatUserDataHoldingsEmitsAbsolutePnL guards the anti-hallucination fix: the
+// Holdings string fed to the chat model must carry the Go-computed absolute
+// unrealized P&L ($), not just gain% + price — otherwise the model mislabels the
+// share price as the unrealized $ (observed in the live E2E). Numbers stay Go-owned.
+func TestChatUserDataHoldingsEmitsAbsolutePnL(t *testing.T) {
+	ctx := context.Background()
+	st := memory.New()
+	if err := st.SaveHolding(ctx, store.Holding{ID: "h1", UserID: "u1", Ticker: "AAPL", Shares: 10, AvgCost: 150}); err != nil {
+		t.Fatalf("SaveHolding: %v", err)
+	}
+	if err := st.UpsertQuote(ctx, store.Quote{Ticker: "AAPL", Price: 300, PrevClose: 290}); err != nil {
+		t.Fatalf("UpsertQuote: %v", err)
+	}
+	out := NewChatUserData(st).Holdings(ctx, "u1", "en")
+	// gain = (300-150)*10 = 1500; gainPct = +100.0%; value = 3000.
+	if !strings.Contains(out, "P&L $+1500") {
+		t.Errorf("holdings missing Go-computed absolute P&L: %q", out)
+	}
+	if !strings.Contains(out, "+100.0%") {
+		t.Errorf("holdings missing gain%%: %q", out)
+	}
+	if !strings.Contains(out, "$300.00") {
+		t.Errorf("holdings missing current price: %q", out)
+	}
+}
