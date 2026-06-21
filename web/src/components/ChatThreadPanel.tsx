@@ -69,6 +69,10 @@ export function ChatThreadPanel({source, onActivity, onMeter, onCreated}: {sourc
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
+  // True while fetching an EXISTING (uncached) conversation's history, so the panel shows a
+  // skeleton instead of the new-chat welcome — otherwise switching to a history thread flashes
+  // the "New Chat" screen until the messages arrive.
+  const [threadLoading, setThreadLoading] = useState(false);
   const [streamStarted, setStreamStarted] = useState(false);
   const [err, setErr] = useState(false);
   const [meter, setMeter] = useState<{used: number; limit: number} | null>(null);
@@ -86,15 +90,19 @@ export function ChatThreadPanel({source, onActivity, onMeter, onCreated}: {sourc
     // A draft has no conversation yet — start empty (suggestions), create on first send.
     if (source.kind === 'draft') {
       draftConvId.current = null;
+      setThreadLoading(false);
       setMessages([]);
       return;
     }
     const cached = threadCache.get(key);
     if (cached) {
+      setThreadLoading(false);
       setMessages(cached);
       return;
     }
     let active = true;
+    // Show the skeleton (not the welcome screen) until the history resolves.
+    setThreadLoading(true);
     setMessages([]);
     const c = new AbortController();
     (async () => {
@@ -108,6 +116,8 @@ export function ChatThreadPanel({source, onActivity, onMeter, onCreated}: {sourc
         if (active) setMessages(loaded);
       } catch {
         /* empty thread is fine */
+      } finally {
+        if (active) setThreadLoading(false);
       }
     })();
     return () => {
@@ -164,10 +174,14 @@ export function ChatThreadPanel({source, onActivity, onMeter, onCreated}: {sourc
             setMessages(m => {
               const next = [...m];
               const last = next[next.length - 1];
-              if (last && last.role === 'assistant' && last.blocks === undefined) {
-                next[next.length - 1] = {...last, text: (last.text ?? '') + tok};
+              // Accumulate the live tokens into a single text BLOCK (not the `text` field) so the
+              // streaming render and the final render use the SAME path (BlockView → Markdown) —
+              // `done` then updates that block in place instead of remounting the prose (no flash).
+              if (last && last.role === 'assistant' && last.streaming) {
+                const prev = last.blocks?.[0]?.text ?? '';
+                next[next.length - 1] = {role: 'assistant', streaming: true, blocks: [{kind: 'text', text: prev + tok}]};
               } else {
-                next.push({role: 'assistant', text: tok});
+                next.push({role: 'assistant', streaming: true, blocks: [{kind: 'text', text: tok}]});
               }
               return next;
             });
@@ -177,8 +191,8 @@ export function ChatThreadPanel({source, onActivity, onMeter, onCreated}: {sourc
           const next = [...m];
           const last = next[next.length - 1];
           const finalMsg: Msg = {role: 'assistant', blocks: res.blocks};
-          if (last && last.role === 'assistant' && last.blocks === undefined) {
-            next[next.length - 1] = finalMsg; // replace the streamed placeholder
+          if (last && last.role === 'assistant' && last.streaming) {
+            next[next.length - 1] = finalMsg; // reconcile the streamed placeholder with the final blocks
           } else {
             next.push(finalMsg);
           }
@@ -198,7 +212,7 @@ export function ChatThreadPanel({source, onActivity, onMeter, onCreated}: {sourc
         setMessages(m => {
           const next = [...m];
           const last = next[next.length - 1];
-          if (last && last.role === 'assistant' && last.blocks === undefined) next.pop();
+          if (last && last.role === 'assistant' && last.streaming) next.pop();
           return next;
         });
       } finally {
@@ -224,7 +238,9 @@ export function ChatThreadPanel({source, onActivity, onMeter, onCreated}: {sourc
 
   const placeholder = source.kind === 'stock' ? tr('chat.placeholder') : tr('chat.hub.placeholder');
   const sendActive = input.trim().length > 0 && !sending;
-  const empty = messages.length === 0 && !sending;
+  // The welcome screen owns the space only when the thread is genuinely empty — NOT while a
+  // history fetch is still in flight (that window shows the skeleton instead).
+  const empty = messages.length === 0 && !sending && !threadLoading;
   const anchored = fallbackTicker !== '';
 
   // The composer (textarea + send + disclaimer row). Rendered in the centered welcome when
@@ -287,6 +303,8 @@ export function ChatThreadPanel({source, onActivity, onMeter, onCreated}: {sourc
       <div ref={listRef} style={{flex: 1, minHeight: 0, overflowY: 'auto', display: empty ? 'flex' : 'block'}}>
         {empty ? (
           <WelcomeScreen anchored={anchored} ticker={fallbackTicker} tr={tr} onPick={send} composer={composer} />
+        ) : threadLoading && messages.length === 0 ? (
+          <ThreadSkeleton />
         ) : (
           <div style={{maxWidth: 760, margin: '0 auto', padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: 22}}>
             {messages.map((m, i) => <MsgRow key={i} m={m} fallbackTicker={fallbackTicker} tr={tr} />)}
@@ -337,6 +355,33 @@ function WelcomeScreen({anchored, ticker, tr, onPick, composer}: {anchored: bool
         })}
       </div>
       <div style={{width: '100%', marginTop: 22}}>{composer}</div>
+    </div>
+  );
+}
+
+// ThreadSkeleton is the brief placeholder shown while an existing conversation's history loads
+// (switching threads from the sidebar) — a few shimmer bars in the assistant layout, so the
+// reader sees "this thread is loading" rather than the new-chat welcome flashing in first.
+function ThreadSkeleton() {
+  const bar = (w: string, delay: number): React.CSSProperties => ({
+    height: 12,
+    width: w,
+    borderRadius: 6,
+    background: 'var(--surface2)',
+    animation: `tw-skeleton-pulse 1.4s ease-in-out infinite ${delay}s`,
+  });
+  return (
+    <div style={{maxWidth: 760, margin: '0 auto', padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: 28}} aria-busy="true">
+      {[0, 1].map(row => (
+        <div key={row} style={{display: 'flex', gap: 12}}>
+          <div style={{flex: 'none', width: 28, height: 28, borderRadius: 8, background: 'var(--surface2)', animation: `tw-skeleton-pulse 1.4s ease-in-out infinite ${row * 0.2}s`}} />
+          <div style={{flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 9, paddingTop: 4}}>
+            <div style={bar('38%', row * 0.2)} />
+            <div style={bar('92%', row * 0.2 + 0.1)} />
+            <div style={bar('80%', row * 0.2 + 0.2)} />
+          </div>
+        </div>
+      ))}
     </div>
   );
 }

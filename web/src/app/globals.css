@@ -152,6 +152,16 @@ summary:focus-visible,
   }
 }
 
+/* Opacity-only shimmer for loading skeletons (no vertical bounce — bars must hold still). */
+@keyframes tw-skeleton-pulse {
+  0%, 100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 0.75;
+  }
+}
+
 /* ------------------------------ price flash ------------------------------ */
 .tw-flash-up {
   animation: tw-up 0.85s ease-out;

@@ -3,7 +3,7 @@
 import {ChevronDown, CreditCard, LogOut, Menu, Moon, Search, Settings, Star, StickyNote, Sun, Wallet, X} from 'lucide-react';
 import Link from '@/components/LocalLink';
 import {usePathname, useRouter} from 'next/navigation';
-import {useEffect, useRef, useState} from 'react';
+import {useCallback, useEffect, useRef, useState} from 'react';
 import {useAuth} from '@/lib/auth';
 import {useLang, useT} from '@/lib/i18n';
 import {localizedPath, stripLocale} from '@/lib/locale';
@@ -33,6 +33,28 @@ function initials(email: string | undefined): string {
 function navActive(href: string, pathname: string): boolean {
   if (href.startsWith('/calendar')) return pathname.startsWith('/calendar');
   return pathname === href;
+}
+
+/**
+ * Closes a popover on an outside click. Returns a ref to put on the popover's root
+ * (the element wrapping BOTH trigger and panel, so clicking the trigger doesn't count
+ * as "outside" and double-fire). NB this replaces the old `fixed inset-0` click-catcher
+ * overlay, which silently broke here: the sticky TopNav uses `backdrop-blur`, and a
+ * `backdrop-filter` makes the bar a containing block for fixed descendants — so the
+ * overlay only covered the ~56px navbar box, not the page, and clicks below it never
+ * closed the menu. A document listener has no such constraint.
+ */
+function useDismiss<T extends HTMLElement>(active: boolean, onDismiss: () => void) {
+  const ref = useRef<T>(null);
+  useEffect(() => {
+    if (!active) return;
+    function onDown(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) onDismiss();
+    }
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [active, onDismiss]);
+  return ref;
 }
 
 /** A single desktop nav pill. */
@@ -86,6 +108,13 @@ export function TopNav() {
     setSearchOpen(false);
   }, [pathname]);
 
+  // Close the mobile sheet on an outside tap. Its old `fixed` click-catcher had the same
+  // backdrop-blur containing-block bug as the desktop dropdowns (see useDismiss), so it never
+  // caught taps below the bar. The ref goes on the whole sticky bar (which wraps the toggle AND
+  // the sheet), so tapping the hamburger/sheet counts as inside while the page counts as outside.
+  const closeMobile = useCallback(() => setMobileOpen(false), []);
+  const navRootRef = useDismiss<HTMLDivElement>(mobileOpen, closeMobile);
+
   const go = (ticker: string) =>
     router.push(localizedPath(lang, `/stock/${encodeURIComponent(ticker)}`));
   const search = (q: string) =>
@@ -125,6 +154,7 @@ export function TopNav() {
 
   return (
     <div
+      ref={navRootRef}
       className={cx(
         'sticky top-0 z-30 border-b backdrop-blur',
         t.border,
@@ -272,29 +302,26 @@ export function TopNav() {
       )}
 
       {mobileOpen && (
-        <>
-          <div className="fixed inset-x-0 bottom-0 top-14 z-20 md:hidden" onClick={() => setMobileOpen(false)} />
-          <nav className={cx('relative z-30 border-t px-3 py-2 md:hidden', t.border)}>
-            {mobileItems.map(item => {
-              const active = navActive(item.href, pathname);
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  onClick={() => setMobileOpen(false)}
-                  aria-current={active ? 'page' : undefined}
-                  className={cx(
-                    'block rounded-xl px-3 py-2.5 text-[14px] font-medium',
-                    active ? t.accentText : t.text,
-                    t.ghost,
-                  )}
-                >
-                  {item.label}
-                </Link>
-              );
-            })}
-          </nav>
-        </>
+        <nav className={cx('relative z-30 border-t px-3 py-2 md:hidden', t.border)}>
+          {mobileItems.map(item => {
+            const active = navActive(item.href, pathname);
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                onClick={() => setMobileOpen(false)}
+                aria-current={active ? 'page' : undefined}
+                className={cx(
+                  'block rounded-xl px-3 py-2.5 text-[14px] font-medium',
+                  active ? t.accentText : t.text,
+                  t.ghost,
+                )}
+              >
+                {item.label}
+              </Link>
+            );
+          })}
+        </nav>
       )}
     </div>
   );
@@ -307,6 +334,8 @@ function MoreMenu({pathname, items}: {pathname: string; items: NavItem[]}) {
   const tr = useT();
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const close = useCallback(() => setOpen(false), []);
+  const rootRef = useDismiss<HTMLDivElement>(open, close);
   const active = items.some(i => navActive(i.href, pathname));
 
   // Escape closes the dropdown + restores focus to its trigger. The global TopNav
@@ -324,7 +353,7 @@ function MoreMenu({pathname, items}: {pathname: string; items: NavItem[]}) {
     return () => document.removeEventListener('keydown', onKey);
   }, [open]);
   return (
-    <div className="relative">
+    <div className="relative" ref={rootRef}>
       <button
         ref={triggerRef}
         onClick={() => setOpen(o => !o)}
@@ -339,8 +368,6 @@ function MoreMenu({pathname, items}: {pathname: string; items: NavItem[]}) {
         <ChevronDown size={13} />
       </button>
       {open && (
-        <>
-          <div className="fixed inset-0 z-30" onClick={() => setOpen(false)} />
           <div
             className={cx(
               'absolute left-0 z-40 mt-2 w-44 rounded-2xl border p-1.5',
@@ -368,7 +395,6 @@ function MoreMenu({pathname, items}: {pathname: string; items: NavItem[]}) {
               );
             })}
           </div>
-        </>
       )}
     </div>
   );
@@ -388,7 +414,8 @@ function AccountMenu({
   const {dark} = useTheme();
   const t = tok(dark);
   const tr = useT();
-  const ref = useRef<HTMLDivElement>(null);
+  const close = useCallback(() => setOpen(false), [setOpen]);
+  const ref = useDismiss<HTMLDivElement>(open, close);
 
   return (
     <div className="relative" ref={ref}>
@@ -412,8 +439,6 @@ function AccountMenu({
         <ChevronDown size={14} className={t.sub} />
       </button>
       {open && (
-        <>
-          <div className="fixed inset-0 z-30" onClick={() => setOpen(false)} />
           <div
             className={cx(
               'absolute right-0 z-40 mt-2 w-56 rounded-2xl border p-1.5',
@@ -497,7 +522,6 @@ function AccountMenu({
               <LogOut size={15} /> {tr('nav.signout')}
             </button>
           </div>
-        </>
       )}
     </div>
   );

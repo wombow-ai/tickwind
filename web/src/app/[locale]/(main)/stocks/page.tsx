@@ -9,6 +9,7 @@ import {
   quoteBearingTickers,
   STOCK_DIRECTORY_LETTERS,
 } from '@/lib/pseo';
+import {LetterCounts} from '@/components/StocksDirectory';
 
 // The directory tracks the quote-bearing universe (~6,700), which only shifts as
 // the price universe is swept — a long ISR window (hourly) keeps the counts
@@ -78,7 +79,9 @@ export default async function StocksHubRoute({
   // (ISR refills on the next revalidate). Never throws to the route.
   const tickers = await quoteBearingTickers();
   const buckets = bucketByFirstLetter(tickers);
-  const total = [...buckets.values()].reduce((n, arr) => n + arr.length, 0);
+  // Server-rendered per-letter counts; the client view heals them when an empty bake ships 0.
+  const initialCounts: Record<string, number> = {};
+  for (const [k, arr] of buckets) initialCounts[k] = arr.length;
 
   // JSON-LD: a CollectionPage wrapping an ItemList of the 26 letter pages (each a
   // locale-prefixed /stocks/{letter} URL) + a BreadcrumbList (Tickwind → All
@@ -139,39 +142,15 @@ export default async function StocksHubRoute({
             ? '按首字母浏览全部有实时报价的美股个股。点击任意字母查看该字母下的所有代码,每个代码链接到其实时价格、SEC 文件、基本面与讨论页面。'
             : 'Browse every US stock with a live quote by first letter. Pick a letter to see all its tickers — each links to its live price, SEC filings, fundamentals and discussion.'}
         </p>
-        {total > 0 && (
-          <p className="mt-2 text-[12.5px] text-slate-500 dark:text-slate-400">
-            {zh
-              ? `共收录 ${total.toLocaleString()} 只有报价的美股`
-              : `${total.toLocaleString()} quote-bearing US stocks indexed`}
-          </p>
-        )}
       </header>
 
-      {/* The crawlable A–Z index: 26 letter links, each into /stocks/{letter}. */}
+      {/* The crawlable A–Z index: 26 letter links, each into /stocks/{letter}. Self-healing —
+          server-rendered counts when the universe baked OK, client-filled on an empty bake. */}
       <section>
         <h2 className="mb-2.5 text-[12px] font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">
           {zh ? '按首字母浏览' : 'Browse by letter'}
         </h2>
-        <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-6">
-          {STOCK_DIRECTORY_LETTERS.map(letter => {
-            const count = buckets.get(letter)?.length ?? 0;
-            return (
-              <Link
-                key={letter}
-                href={`/stocks/${letter}`}
-                className="flex flex-col items-center justify-center gap-0.5 rounded-xl border border-slate-200 px-3 py-3 transition hover:border-sky-300 hover:bg-slate-50 dark:border-slate-800 dark:hover:border-sky-500/40 dark:hover:bg-slate-900"
-              >
-                <span className="text-[18px] font-bold uppercase text-slate-900 dark:text-slate-100">
-                  {letter}
-                </span>
-                <span className="text-[11px] tabular-nums text-slate-400 dark:text-slate-500">
-                  {count > 0 ? count.toLocaleString() : '—'}
-                </span>
-              </Link>
-            );
-          })}
-        </div>
+        <LetterCounts letters={STOCK_DIRECTORY_LETTERS} initialCounts={initialCounts} zh={zh} />
       </section>
 
       <p className="mt-6 text-center text-[11px] text-slate-400 dark:text-slate-500">

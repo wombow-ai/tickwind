@@ -27,6 +27,21 @@ interface AuthState {
 
 const AuthContext = createContext<AuthState | null>(null);
 
+/**
+ * Whether two user snapshots refer to the same signed-in identity. Supabase mints a
+ * FRESH `session.user` object on every token refresh — which fires on tab refocus
+ * (its visibility handler re-validates the session). Treating those as a new `user`
+ * would churn the reference and re-run every effect keyed on it (entitlement refetch,
+ * conversation re-fetch) → a visible "refresh" when you tab back into the chat. Compare
+ * by id + email so a routine token refresh keeps the SAME reference, while a real
+ * sign-in/out or email change still updates it.
+ */
+function sameUser(a: User | null, b: User | null): boolean {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  return a.id === b.id && a.email === b.email;
+}
+
 /** Tracks the Supabase session and exposes a token getter for API calls. */
 export function AuthProvider({children}: {children: React.ReactNode}) {
   // A single browser client instance for the app's lifetime.
@@ -36,13 +51,16 @@ export function AuthProvider({children}: {children: React.ReactNode}) {
 
   useEffect(() => {
     let active = true;
+    // Stable updater: keep the prior reference when only the token changed (same id+email),
+    // so token-refresh events (incl. tab refocus) don't ripple a re-render/refetch storm.
+    const apply = (next: User | null) => setUser(prev => (sameUser(prev, next) ? prev : next));
     supabase.auth.getSession().then(({data}) => {
       if (!active) return;
-      setUser(data.session?.user ?? null);
+      apply(data.session?.user ?? null);
       setLoading(false);
     });
     const {data: sub} = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
+      apply(session?.user ?? null);
       setLoading(false);
     });
     return () => {

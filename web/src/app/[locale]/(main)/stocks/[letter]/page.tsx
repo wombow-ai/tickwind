@@ -6,6 +6,7 @@ import {SITE_URL, langAlternates} from '@/lib/config';
 import {isLocale, LOCALES} from '@/lib/locale';
 import {ogImageMeta} from '@/lib/og';
 import {STOCK_DIRECTORY_LETTERS, tickersForLetter} from '@/lib/pseo';
+import {LetterGrid} from '@/components/StocksDirectory';
 
 // Mirrors the /stocks hub + sitemap cadence: the per-letter bucket only shifts as
 // the price universe is swept, so an hourly ISR window keeps it fresh deploy-free.
@@ -175,46 +176,11 @@ export default async function StocksLetterRoute({
             ? `所有以 ${up} 开头、有实时报价的美股代码。点击任意代码查看其实时价格、SEC 文件、基本面与讨论。`
             : `Every quote-bearing US stock ticker starting with ${up}. Pick a ticker for its live price, SEC filings, fundamentals and discussion.`}
         </p>
-        {tickers.length > 0 && (
-          <p className="mt-2 text-[12.5px] text-slate-500 dark:text-slate-400">
-            {zh ? `共 ${tickers.length.toLocaleString()} 只` : `${tickers.length.toLocaleString()} stocks`}
-          </p>
-        )}
       </header>
 
-      {tickers.length > 0 ? (
-        <section>
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4">
-            {tickers.map(tk => (
-              <Link
-                key={tk}
-                href={`/stock/${encodeURIComponent(tk)}`}
-                className="flex items-center justify-center rounded-xl border border-slate-200 px-3 py-2.5 text-[14px] font-bold text-slate-900 transition hover:border-sky-300 hover:bg-slate-50 dark:border-slate-800 dark:text-slate-100 dark:hover:border-sky-500/40 dark:hover:bg-slate-900"
-              >
-                {tk}
-              </Link>
-            ))}
-          </div>
-        </section>
-      ) : (
-        <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-10 text-center dark:border-slate-800 dark:bg-slate-900">
-          <LayoutGrid size={22} className="mx-auto mb-2 text-slate-300 dark:text-slate-600" />
-          <p className="text-[14px] font-semibold text-slate-700 dark:text-slate-200">
-            {zh ? `暂无以 ${up} 开头的股票` : `No stocks starting with ${up} right now`}
-          </p>
-          <p className="mt-1 text-[12.5px] text-slate-500 dark:text-slate-400">
-            {zh
-              ? '稍后再来查看,或浏览其他字母。'
-              : 'Check back shortly, or browse another letter.'}
-          </p>
-          <Link
-            href="/stocks"
-            className="mt-3 inline-block rounded-lg bg-sky-600 px-3 py-1.5 text-[12.5px] font-semibold text-white transition hover:bg-sky-700 dark:bg-sky-500 dark:hover:bg-sky-600"
-          >
-            {zh ? '返回 A–Z 目录 →' : 'Back to the A–Z directory →'}
-          </Link>
-        </div>
-      )}
+      {/* Self-healing grid: server-rendered when the universe baked OK (SEO), client-filled
+          from the live universe when an ill-timed build baked it empty. */}
+      <LetterGrid letter={lc} initial={tickers} zh={zh} />
 
       {/* Cross-link hub: the full A–Z strip, for internal linking. */}
       <section className="mt-8">

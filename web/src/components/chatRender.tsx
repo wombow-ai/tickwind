@@ -16,7 +16,11 @@ import {type ChatBlock} from '@/lib/api';
 
 const PORTFOLIO_WIDGETS = new Set(['watchlist_summary', 'holdings_pnl', 'portfolio_heatmap']);
 
-export type Msg = {role: 'user' | 'assistant'; blocks?: ChatBlock[]; text?: string};
+// `streaming` marks the live, still-being-typed assistant message. It carries its text as a
+// single text BLOCK (not the `text` field) so the live and final renders share ONE render
+// path (BlockView → Markdown): on `done` the block is updated in place rather than the prose
+// node being unmounted and re-parsed, which is what made the message visibly "re-flash".
+export type Msg = {role: 'user' | 'assistant'; blocks?: ChatBlock[]; text?: string; streaming?: boolean};
 
 const WIDGET_ANCHOR: Record<string, string> = {
   flows_summary: '#short',
