@@ -256,6 +256,17 @@ func (s *Server) chatTurn(w http.ResponseWriter, r *http.Request, u auth.User, c
 	})
 }
 
+// getChatUsage returns the signed-in user's current monthly chat token usage, so the hub
+// can show the quota bar immediately on load (the per-turn meter only arrives with a reply).
+func (s *Server) getChatUsage(w http.ResponseWriter, r *http.Request) {
+	u, ok := s.requireUser(w, r)
+	if !ok {
+		return
+	}
+	used, _ := s.store.GetChatTokensUsed(r.Context(), u.ID, researchMonth())
+	writeJSON(w, http.StatusOK, map[string]int{"used": used, "limit": s.chatMonthlyTokenLimit})
+}
+
 // chatTurnStream is the SSE (streaming) variant of chatTurn: it streams the final answer's
 // content tokens as they generate (a "token" event each), then sends a terminal "done" event
 // carrying the AUTHORITATIVE advice-filtered blocks + meter (the client reconciles the
