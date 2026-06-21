@@ -175,6 +175,16 @@ feature-flagged plugin, never on the critical path. Web only.
 - Full stack (server): `docker compose up -d --build`.
 
 ## Current state (update each iteration)
+- **2026-06-21 — 🎨 Chat hub logo/coherence polish.** Owner: deeply improve the logo application + overall
+  aesthetics/coherence of `/chat`. The new green `#00C08B` streams logo CLASHED with the chat's warm GOLD theme
+  (`--accent #cf9a33`), and the welcome center still had a mismatched gold "T" tile. Fix: `LogoMark` gained an
+  `accent` prop (default brand green) — the chat sidebar + the welcome-screen mark now pass `accent="var(--accent)"`
+  so the SAME streams graphic renders in the theme's GOLD (navy/text streams stay neutral) — coherent with the gold
+  AI badge / New-chat button / suggestion-card icons. Welcome center's gold "T" tile → the gold streams `LogoMark`
+  (size 48) for one consistent brand mark. Preview-verified via a temporary dev-only `?twpreview` gate-bypass (added
+  + fully reverted; gate re-confirmed: `?twpreview=1` shows the login gate). The AI-message avatar (small gold "T")
+  left as-is (coherent gold; optional future swap). tsc + next build green; frontend-only (Vercel).
+
 - **2026-06-21 — 🎨 New brand logo shipped (owner-designed "Tailwind Streams").** Owner picked their own optimized
   #1 design (3 rising streams — the wind — with a green `#00C08B` leader ending in a ringed price node — the tick;
   `currentColor` navy streams adapt light→dark). Wired as a shared **`LogoMark`** (glyph) + **`Logo`** (glyph +

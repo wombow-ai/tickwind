@@ -11,7 +11,7 @@ import {cx, fmtDelta, fmtPrice, SESSIONS, sessionStyle, tok} from '@/lib/ui';
  * (deep navy on light, soft slate on dark); the green leader + node stay constant. Transparent
  * (no tile) so the SAME graphic reads on the main site and the warm chat surface.
  */
-export function LogoMark({size = 30}: {size?: number}) {
+export function LogoMark({size = 30, accent = '#00C08B'}: {size?: number; accent?: string}) {
   const dark = useDark();
   return (
     <svg
@@ -26,9 +26,9 @@ export function LogoMark({size = 30}: {size?: number}) {
         <path d="M18 67 C42 67 54 60 67 46" />
         <path d="M18 76 C38 76 48 71 58 60" />
       </g>
-      <path d="M18 58 C44 58 57 50 76 32" stroke="#00C08B" strokeWidth="6" strokeLinecap="round" />
-      <circle cx="76" cy="32" r="4.4" fill="#00C08B" />
-      <circle cx="76" cy="32" r="8.4" stroke="#00C08B" strokeWidth="1.5" />
+      <path d="M18 58 C44 58 57 50 76 32" stroke={accent} strokeWidth="6" strokeLinecap="round" />
+      <circle cx="76" cy="32" r="4.4" fill={accent} />
+      <circle cx="76" cy="32" r="8.4" stroke={accent} strokeWidth="1.5" />
     </svg>
   );
 }

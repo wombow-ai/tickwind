@@ -3,6 +3,7 @@
 import {Activity, BarChart3, Eye, type LucideIcon, Plus, Scale, Send, TrendingDown, TrendingUp, Wallet} from 'lucide-react';
 import {useCallback, useEffect, useRef, useState} from 'react';
 import {MsgRow, type Msg} from '@/components/chatRender';
+import {LogoMark} from '@/components/ui/atoms';
 import {type ChatResponse, clearChat, createConversation, getChatHistory, getConvHistory, postChat, postConvChatStream} from '@/lib/api';
 import {useAuth} from '@/lib/auth';
 import {chatVars, CHAT_MONO} from '@/lib/chatTheme';
@@ -315,7 +316,7 @@ function WelcomeScreen({anchored, ticker, tr, onPick, composer}: {anchored: bool
   const sub = (anchored ? tr('chat.welcome.subStock') : tr('chat.welcome.sub')).replace('{t}', ticker);
   return (
     <div style={{margin: 'auto', width: '100%', maxWidth: 680, padding: '32px 24px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0}}>
-      <div style={{width: 34, height: 34, borderRadius: 10, background: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 15, color: '#1c1404', marginBottom: 16}}>T</div>
+      <div style={{marginBottom: 14}}><LogoMark size={48} accent="var(--accent)" /></div>
       <h2 style={{fontSize: 27, fontWeight: 600, letterSpacing: '-.01em', color: 'var(--text)', textAlign: 'center', margin: 0}}>{tr(greetingKey())}</h2>
       <p style={{fontSize: 14, color: 'var(--text2)', textAlign: 'center', margin: '8px 0 0', maxWidth: 460, lineHeight: 1.5}}>{sub}</p>
       <div className="grid grid-cols-1 sm:grid-cols-2" style={{gap: 10, width: '100%', marginTop: 26}}>

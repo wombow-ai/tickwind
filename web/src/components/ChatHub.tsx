@@ -238,7 +238,7 @@ export function ChatHub() {
             <div style={{display: 'flex', alignItems: 'center', gap: 9, marginBottom: 14}}>
               {/* Brand → back to the main Tickwind site (the chat is a chrome-free full-screen app). */}
               <Link href="/" title={tr('chat.hub.home')} style={{display: 'flex', alignItems: 'center', gap: 9, textDecoration: 'none', minWidth: 0}}>
-                <LogoMark size={26} />
+                <LogoMark size={26} accent="var(--accent)" />
                 <div style={{display: 'flex', alignItems: 'baseline', gap: 7}}>
                   <span style={{fontWeight: 600, fontSize: 15, letterSpacing: '-.01em', color: 'var(--text)'}}>Tickwind</span>
                   <span style={{fontSize: 9, fontWeight: 600, letterSpacing: '.1em', padding: '2px 5px', borderRadius: 5, background: 'var(--accent-soft)', color: 'var(--accent2)', fontFamily: CHAT_MONO}}>AI</span>
