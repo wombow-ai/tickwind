@@ -235,7 +235,7 @@ export function ChatHub() {
         {/* MAIN */}
         <div className="flex flex-1 min-w-0 flex-col" style={{background: 'var(--bg)'}}>
           <div style={{flex: 'none', display: 'flex', alignItems: 'center', gap: 10, padding: '12px 18px', borderBottom: '1px solid var(--border)'}}>
-            <button type="button" onClick={() => setSidebarOpen(true)} className="lg:hidden" style={{width: 32, height: 32, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text2)', background: 'transparent', border: 'none', cursor: 'pointer'}}><Menu size={16} /></button>
+            <button type="button" onClick={() => setSidebarOpen(true)} className="flex items-center justify-center lg:hidden" style={{width: 32, height: 32, borderRadius: 8, color: 'var(--text2)', background: 'transparent', border: 'none', cursor: 'pointer'}}><Menu size={16} /></button>
             <div style={{flex: 1, minWidth: 0}}>
               <div style={{fontSize: 14, fontWeight: 600, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'}}>{activeTitle}</div>
               {activeSub && <div style={{fontSize: 11, color: 'var(--text3)'}}>{activeSub}</div>}
