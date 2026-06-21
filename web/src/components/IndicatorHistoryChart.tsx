@@ -15,9 +15,30 @@ import {useDark} from '@/lib/theme';
 import {cx, tok} from '@/lib/ui';
 
 type Status = 'loading' | 'ready' | 'empty';
+type Range = '3M' | '1Y' | 'Max';
 
 const UP = '#16a34a';
 const DOWN = '#dc2626';
+const RANGES: Range[] = ['3M', '1Y', 'Max'];
+
+/** Maps an external range hint (incl. the chat's 3M/1Y/5Y) to a chart range; defaults to 1Y. */
+function normalizeRange(r?: string): Range {
+  if (r === '3M') return '3M';
+  if (r === 'Max' || r === '5Y' || r === 'ALL') return 'Max';
+  return '1Y';
+}
+
+/** Slices an ascending dated series to the trailing window (Max = the full series). */
+function windowByRange(pts: IndicatorHistoryPoint[], range: Range): IndicatorHistoryPoint[] {
+  if (range === 'Max' || pts.length === 0) return pts;
+  const days = range === '3M' ? 92 : 366;
+  const last = new Date(pts[pts.length - 1].date + 'T00:00:00Z');
+  last.setUTCDate(last.getUTCDate() - days);
+  const cutoff = last.toISOString().slice(0, 10);
+  let i = 0;
+  while (i < pts.length && pts[i].date < cutoff) i++;
+  return pts.slice(i);
+}
 
 /** {time,value}[] for lightweight-charts from a dated indicator series. */
 function toSeries(pts: IndicatorHistoryPoint[]): {time: Time; value: number}[] {
@@ -33,13 +54,16 @@ function toSeries(pts: IndicatorHistoryPoint[]): {time: Time; value: number}[] {
  * the rest as a single accent line. lightweight-charts is imperative/canvas, so the chart is
  * built in an effect and torn down on cleanup (mirrors KLineChart).
  */
-export function IndicatorHistoryChart({ticker, id, period}: {ticker: string; id: string; period?: number}) {
+export function IndicatorHistoryChart({ticker, id, period, range: rangeProp}: {ticker: string; id: string; period?: number; range?: string}) {
   const dark = useDark();
   const t = tok(dark);
   const tr = useT();
   const containerRef = useRef<HTMLDivElement>(null);
   const [data, setData] = useState<IndicatorHistory | null>(null);
   const [status, setStatus] = useState<Status>('loading');
+  // Visible window — defaults to the caller's hint (the chat passes 1Y/3M/5Y), else 1Y, so a
+  // 5-year series isn't crammed into the small pane. Re-windows in place (no refetch).
+  const [range, setRange] = useState<Range>(() => normalizeRange(rangeProp));
 
   useEffect(() => {
     const c = new AbortController();
@@ -77,20 +101,20 @@ export function IndicatorHistoryChart({ticker, id, period}: {ticker: string; id:
       handleScroll: false,
     });
 
+    // Window every series to the selected range (same cutoff → all lines stay aligned).
+    const pts = windowByRange(data.points, range);
+    const win = (k: string) => (data.lines?.[k] ? windowByRange(data.lines[k], range) : undefined);
+
     if (id === 'technical.macd') {
-      if (data.lines?.histogram) {
+      const hist = win('histogram');
+      if (hist) {
         const h = chart.addSeries(HistogramSeries, {priceLineVisible: false, lastValueVisible: false});
-        h.setData(
-          data.lines.histogram.map(p => ({
-            time: p.date as unknown as Time,
-            value: p.value,
-            color: p.value >= 0 ? UP : DOWN,
-          })),
-        );
+        h.setData(hist.map(p => ({time: p.date as unknown as Time, value: p.value, color: p.value >= 0 ? UP : DOWN})));
       }
       const line = chart.addSeries(LineSeries, {color: '#3b82f6', lineWidth: 1, priceLineVisible: false});
-      line.setData(toSeries(data.points));
-      if (data.lines?.signal) {
+      line.setData(toSeries(pts));
+      const signal = win('signal');
+      if (signal) {
         const s = chart.addSeries(LineSeries, {
           color: '#f59e0b',
           lineWidth: 1,
@@ -98,14 +122,14 @@ export function IndicatorHistoryChart({ticker, id, period}: {ticker: string; id:
           lastValueVisible: false,
           crosshairMarkerVisible: false,
         });
-        s.setData(toSeries(data.lines.signal));
+        s.setData(toSeries(signal));
       }
     } else {
       const primary = chart.addSeries(LineSeries, {color: accent, lineWidth: 2, priceLineVisible: false});
-      primary.setData(toSeries(data.points));
+      primary.setData(toSeries(pts));
       // Bollinger bands (dashed envelope around the middle line).
       for (const k of ['upper', 'lower'] as const) {
-        const band = data.lines?.[k];
+        const band = win(k);
         if (band) {
           const s = chart.addSeries(LineSeries, {
             color: '#6366f1',
@@ -121,18 +145,40 @@ export function IndicatorHistoryChart({ticker, id, period}: {ticker: string; id:
     }
     chart.timeScale().fitContent();
     return () => chart.remove();
-  }, [data, status, dark, id]);
+  }, [data, status, dark, id, range]);
 
   if (status === 'empty') {
     return <p className={cx('px-3 py-3 text-[11.5px]', t.faint)}>{tr('ind2.chart.empty')}</p>;
   }
 
   return (
-    <div className="relative" style={{height: 168}}>
-      <div ref={containerRef} className="h-full w-full" />
-      {status === 'loading' && (
-        <div className={cx('absolute inset-0 m-2 animate-pulse rounded-lg', t.skel)} />
-      )}
+    <div>
+      <div className="mb-1.5 flex justify-end gap-1">
+        {RANGES.map(r => (
+          <button
+            key={r}
+            type="button"
+            onClick={() => setRange(r)}
+            aria-pressed={range === r}
+            className={cx(
+              'rounded-md px-2 py-0.5 text-[10.5px] font-semibold transition',
+              range === r
+                ? dark
+                  ? 'bg-teal-500/15 text-teal-300'
+                  : 'bg-teal-50 text-teal-600'
+                : cx(t.faint, 'hover:opacity-80'),
+            )}
+          >
+            {r}
+          </button>
+        ))}
+      </div>
+      <div className="relative" style={{height: 168}}>
+        <div ref={containerRef} className="h-full w-full" />
+        {status === 'loading' && (
+          <div className={cx('absolute inset-0 m-2 animate-pulse rounded-lg', t.skel)} />
+        )}
+      </div>
     </div>
   );
 }

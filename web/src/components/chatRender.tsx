@@ -106,12 +106,12 @@ function BlockView({block, fallbackTicker, tr}: {block: ChatBlock; fallbackTicke
     );
   }
   const ticker = block.params?.ticker || fallbackTicker;
-  return <ChatWidget widget={block.widget ?? ''} ticker={ticker} indicatorId={block.params?.indicator} tr={tr} />;
+  return <ChatWidget widget={block.widget ?? ''} ticker={ticker} indicatorId={block.params?.indicator} range={block.params?.range} tr={tr} />;
 }
 
 // Widgets render the real Go-owned data via their own components (each already a card),
 // so they're placed directly — no extra wrapper (a double card left dead space below).
-function ChatWidget({widget, ticker, indicatorId, tr}: {widget: string; ticker: string; indicatorId?: string; tr: (k: string) => string}) {
+function ChatWidget({widget, ticker, indicatorId, range, tr}: {widget: string; ticker: string; indicatorId?: string; range?: string; tr: (k: string) => string}) {
   if (PORTFOLIO_WIDGETS.has(widget)) {
     return <ChatPortfolioWidget type={widget} />;
   }
@@ -126,7 +126,7 @@ function ChatWidget({widget, ticker, indicatorId, tr}: {widget: string; ticker: 
   // model). The id is the catalog id the server validated (e.g. technical.rsi).
   if (widget === 'indicator_history') {
     if (!indicatorId) return null;
-    return <IndicatorHistoryChart ticker={ticker} id={indicatorId} />;
+    return <IndicatorHistoryChart ticker={ticker} id={indicatorId} range={range} />;
   }
   if (widget === 'fundamentals_table' || widget === 'valuation_table') {
     return <FundamentalsCard ticker={ticker} />;
