@@ -152,17 +152,16 @@ func seedAAPL(t *testing.T, st store.Store) {
 func TestDigestWithWatchlistAndLLM(t *testing.T) {
 	st := memory.New()
 	seedAAPL(t, st)
+	// The AI overview is a Pro feature — make user-1 Pro so it composes.
+	_ = st.UpsertSubscription(context.Background(), store.Subscription{UserID: "user-1", Status: "active", Tier: tierPro})
 	enr := &fakeEnricher{summary: "今夜自选股整体走高,苹果领涨。"}
 	srv := newDigestServer(st, enr)
 	defer srv.Close()
 
-	resp := authed(t, http.MethodGet, srv.URL+"/v1/me/digest", "")
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("status = %d; want 200", resp.StatusCode)
-	}
-	p := decodeDigest(t, resp)
+	// First request: the data rows serve INSTANTLY; the overview composes in the background.
+	p := decodeDigest(t, authed(t, http.MethodGet, srv.URL+"/v1/me/digest", ""))
 	if len(p.Stocks) != 1 {
-		t.Fatalf("stocks count = %d; want 1", len(p.Stocks))
+		t.Fatalf("stocks count = %d; want 1 (rows must serve instantly)", len(p.Stocks))
 	}
 	row := p.Stocks[0]
 	if row.Ticker != "AAPL" {
@@ -183,11 +182,52 @@ func TestDigestWithWatchlistAndLLM(t *testing.T) {
 	if row.NextEvent == "" {
 		t.Error("next_event should be set from the upcoming earnings row")
 	}
-	if p.Summary != enr.summary {
-		t.Errorf("summary = %q; want canned LLM text", p.Summary)
+	if p.SummaryStatus != digestSummaryGenerating && p.SummaryStatus != digestSummaryReady {
+		t.Fatalf("first summary_status = %q; want generating or ready", p.SummaryStatus)
+	}
+
+	// Poll until the background overview is ready.
+	var got digestPayload
+	for i := 0; i < 100; i++ {
+		got = decodeDigest(t, authed(t, http.MethodGet, srv.URL+"/v1/me/digest", ""))
+		if got.SummaryStatus == digestSummaryReady {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if got.SummaryStatus != digestSummaryReady {
+		t.Fatalf("overview never became ready: status=%q", got.SummaryStatus)
+	}
+	if got.Summary != enr.summary {
+		t.Errorf("summary = %q; want canned LLM text", got.Summary)
 	}
 	if enr.gotLang != "zh" {
 		t.Errorf("enricher lang = %q; want zh (default)", enr.gotLang)
+	}
+}
+
+// TestDigestOverviewProGated: a non-Pro user gets the data rows + summary_status=pro_required
+// and NO LLM call — the overview is a Pro feature, but the rows must still serve fast.
+func TestDigestOverviewProGated(t *testing.T) {
+	st := memory.New()
+	seedAAPL(t, st) // user-1 has NO subscription → free tier
+	enr := &fakeEnricher{summary: "must not compose for a free user"}
+	srv := newDigestServer(st, enr)
+	defer srv.Close()
+
+	p := decodeDigest(t, authed(t, http.MethodGet, srv.URL+"/v1/me/digest", ""))
+	if len(p.Stocks) != 1 {
+		t.Fatalf("data rows must serve for a free user: %+v", p.Stocks)
+	}
+	if p.SummaryStatus != digestSummaryProRequired {
+		t.Fatalf("summary_status = %q; want pro_required for a non-Pro user", p.SummaryStatus)
+	}
+	if p.Summary != "" {
+		t.Errorf("summary = %q; want empty (no LLM for a free user)", p.Summary)
+	}
+	// pro_required returns before any goroutine spawns, so the LLM is never invoked.
+	if enr.gotLang != "" {
+		t.Errorf("LLM was called for a free user (lang=%q) — the overview must be Pro-gated", enr.gotLang)
 	}
 }
 

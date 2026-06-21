@@ -3,6 +3,7 @@ package api
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -45,5 +46,13 @@ func TestCORSMiddleware_PreflightShortCircuits(t *testing.T) {
 	}
 	if got := rec.Header().Get("Access-Control-Allow-Methods"); got == "" {
 		t.Fatal("preflight missing Access-Control-Allow-Methods")
+	}
+	// Every method the API routes must be allowed, or its browser preflight fails with a
+	// CORS error (the PUT /v1/me/prefs settings-toggle bug: PUT was missing from the list).
+	allow := rec.Header().Get("Access-Control-Allow-Methods")
+	for _, m := range []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"} {
+		if !strings.Contains(allow, m) {
+			t.Errorf("Access-Control-Allow-Methods %q is missing %s (its preflight would CORS-fail)", allow, m)
+		}
 	}
 }

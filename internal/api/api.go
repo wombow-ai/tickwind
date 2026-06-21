@@ -498,8 +498,14 @@ type Server struct {
 	// userID|day|lang. Old days are swept lazily on the first hit of a new ET day.
 	digestMu    sync.Mutex
 	digestCache map[string]digestEntry
-	log         *slog.Logger
-	handler     http.Handler // the assembled mux + middleware chain (set in New)
+	// digestInflight dedupes the background AI-overview compose so concurrent first
+	// visits / polls spawn exactly one generation per (userID, day, lang). Guarded by
+	// digestMu. The data rows are served INSTANTLY; only Pro users' AI summary is
+	// composed in the background (and polled), so the My/Overview tab never blocks on
+	// the LLM (the slow part) — see getMyDigest.
+	digestInflight map[string]chan struct{}
+	log            *slog.Logger
+	handler        http.Handler // the assembled mux + middleware chain (set in New)
 }
 
 // ServeHTTP dispatches to the assembled mux + middleware chain, so *Server is an
@@ -519,7 +525,7 @@ func New(st store.Store, hub QuoteStream, enricher enrich.Enricher, verifier *au
 			admins[id] = true
 		}
 	}
-	s := &Server{store: st, hub: hub, clip: clip.NewFetcher(), enrich: enricher, auth: verifier, bars: bars, topics: topicSrc, opps: oppSrc, universe: universeSrc, gurus: guruSrc, ingestor: ingestor, symbols: symbolSrc, events: eventSrc, fundamentals: fundSrc, earnings: earningsSrc, congress: congressSrc, institutional: institutionalSrc, live: liveSub, indices: indicesSrc, short: shortSrc, briefing: briefingSrc, options: optionsSrc, thirteenf: thirteenfSrc, admins: admins, commentRL: newRateLimiter(10, 10*time.Minute), chatMonthlyLimit: 150, chatRL: newRateLimiter(20, 10*time.Minute), sumCache: map[string]summaryEntry{}, sumInflight: map[string]chan struct{}{}, researchCache: map[string]researchEntry{}, researchInflight: map[string]chan struct{}{}, deepResearchLimit: 1, deepResearchLimitPro: 100, moveCache: map[string]movementEntry{}, moveInflight: map[string]chan struct{}{}, meCache: map[string]materialEventsEntry{}, meInflight: map[string]chan struct{}{}, iaCache: map[string]insiderActivityEntry{}, iaInflight: map[string]chan struct{}{}, btCache: map[string]backtestEntry{}, digestCache: map[string]digestEntry{}, log: log}
+	s := &Server{store: st, hub: hub, clip: clip.NewFetcher(), enrich: enricher, auth: verifier, bars: bars, topics: topicSrc, opps: oppSrc, universe: universeSrc, gurus: guruSrc, ingestor: ingestor, symbols: symbolSrc, events: eventSrc, fundamentals: fundSrc, earnings: earningsSrc, congress: congressSrc, institutional: institutionalSrc, live: liveSub, indices: indicesSrc, short: shortSrc, briefing: briefingSrc, options: optionsSrc, thirteenf: thirteenfSrc, admins: admins, commentRL: newRateLimiter(10, 10*time.Minute), chatMonthlyLimit: 150, chatRL: newRateLimiter(20, 10*time.Minute), sumCache: map[string]summaryEntry{}, sumInflight: map[string]chan struct{}{}, researchCache: map[string]researchEntry{}, researchInflight: map[string]chan struct{}{}, deepResearchLimit: 1, deepResearchLimitPro: 100, moveCache: map[string]movementEntry{}, moveInflight: map[string]chan struct{}{}, meCache: map[string]materialEventsEntry{}, meInflight: map[string]chan struct{}{}, iaCache: map[string]insiderActivityEntry{}, iaInflight: map[string]chan struct{}{}, btCache: map[string]backtestEntry{}, digestCache: map[string]digestEntry{}, digestInflight: map[string]chan struct{}{}, log: log}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", s.health)
 
@@ -648,7 +654,7 @@ func New(st store.Store, hub QuoteStream, enricher enrich.Enricher, verifier *au
 func CORSMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
@@ -4249,7 +4255,21 @@ type digestPayload struct {
 	Date    string        `json:"date"` // ET day, YYYY-MM-DD
 	Summary string        `json:"summary"`
 	Stocks  []digestStock `json:"stocks"`
+	// SummaryStatus tells the client how to treat the AI overview ("Tonight's overview"),
+	// which is composed off the request path so the data rows never block on the LLM:
+	//   ready        — Summary is final (present, or empty when there was nothing to summarize)
+	//   generating   — Pro: the bg compose is running; poll until ready
+	//   pro_required — non-Pro: the overview is a Pro feature (show an upgrade card)
+	//   unavailable  — the LLM is disabled (hide the overview)
+	SummaryStatus string `json:"summary_status"`
 }
+
+const (
+	digestSummaryReady       = "ready"
+	digestSummaryGenerating  = "generating"
+	digestSummaryProRequired = "pro_required"
+	digestSummaryUnavailable = "unavailable"
+)
 
 // digestEntry is one cached digest (per user per ET day per language).
 type digestEntry struct {
@@ -4262,11 +4282,12 @@ type digestEntry struct {
 // out without limit).
 const digestMaxTickers = 25
 
-// getMyDigest returns the signed-in user's personalized overnight report over
-// their watchlist. Generated at most once per (user, ET day, language) and served
-// from memory after; an empty watchlist yields {stocks:[]} with 200; the LLM
-// overview is best-effort (empty summary when the LLM is off / fails) and the
-// data rows always populate regardless.
+// getMyDigest returns the signed-in user's personalized overnight report over their
+// watchlist. The DATA ROWS are assembled + served INSTANTLY (never blocked on the LLM —
+// the old slow path composed the AI overview synchronously, stalling the whole My/Overview
+// tab ~12s). The AI overview ("Tonight's overview") is a PRO feature composed off the request
+// path: non-Pro → summary_status="pro_required" (no LLM call); Pro → "generating" + a single
+// background compose the client polls for, then "ready" from the per-(user,day,lang) cache.
 func (s *Server) getMyDigest(w http.ResponseWriter, r *http.Request) {
 	u, ok := s.requireUser(w, r)
 	if !ok {
@@ -4279,8 +4300,9 @@ func (s *Server) getMyDigest(w http.ResponseWriter, r *http.Request) {
 	day := summaryDay() // ET trading day, shared with the per-stock digest
 	key := u.ID + "|" + day + "|" + lang
 
+	// Fast path: a ready (LLM-composed) payload for today is cached → serve it.
 	s.digestMu.Lock()
-	if e, ok := s.digestCache[key]; ok {
+	if e, ok := s.digestCache[key]; ok && e.payload.SummaryStatus == digestSummaryReady {
 		s.digestMu.Unlock()
 		writeJSON(w, http.StatusOK, e.payload)
 		return
@@ -4301,30 +4323,70 @@ func (s *Server) getMyDigest(w http.ResponseWriter, r *http.Request) {
 	if len(tickers) > digestMaxTickers {
 		tickers = tickers[:digestMaxTickers]
 	}
-
 	stocks := s.buildDigestStocks(r.Context(), tickers, lang)
-	payload := digestPayload{Date: day, Summary: "", Stocks: stocks}
 
-	// AI overview is best-effort: when the LLM is enabled and there's material,
-	// distill a short zh/en综述 from the assembled rows. A failure (or disabled
-	// LLM) leaves Summary empty — the data rows still serve.
-	if len(stocks) > 0 && s.enrich != nil && s.enrich.Enabled() {
-		if material := digestMaterial(stocks, lang); material != "" {
-			ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
-			if text, err := s.enrich.Summarize(ctx, material, lang); err != nil {
-				s.log.Debug("digest summary failed", "user", u.ID, "err", err)
-			} else {
-				payload.Summary = strings.TrimSpace(text)
-			}
-			cancel()
-		}
+	// Decide the AI-overview status WITHOUT calling the LLM on the request path.
+	llmOff := s.enrich == nil || !s.enrich.Enabled()
+	material := ""
+	if len(stocks) > 0 && !llmOff {
+		material = digestMaterial(stocks, lang)
+	}
+	switch {
+	case llmOff || material == "":
+		// Nothing to summarize (or LLM off) → terminal, no Pro gate needed.
+		writeJSON(w, http.StatusOK, digestPayload{Date: day, Summary: "", Stocks: stocks, SummaryStatus: digestSummaryUnavailable})
+		return
+	case s.tierOf(r.Context(), u.ID) != tierPro:
+		// The AI overview is a Pro feature — non-Pro gets the rows + an upgrade nudge.
+		writeJSON(w, http.StatusOK, digestPayload{Date: day, Summary: "", Stocks: stocks, SummaryStatus: digestSummaryProRequired})
+		return
 	}
 
-	e := digestEntry{payload: payload, at: time.Now().UTC()}
+	// Pro + material: serve the rows now, compose the overview in the background (single-flight).
 	s.digestMu.Lock()
-	s.digestCache[key] = e
+	if e, ok := s.digestCache[key]; ok && e.payload.SummaryStatus == digestSummaryReady {
+		s.digestMu.Unlock()
+		writeJSON(w, http.StatusOK, e.payload)
+		return
+	}
+	if _, gen := s.digestInflight[key]; !gen {
+		ch := make(chan struct{})
+		s.digestInflight[key] = ch
+		go s.composeDigestBackground(u.ID, lang, day, key, material, stocks, ch)
+	}
 	s.digestMu.Unlock()
-	writeJSON(w, http.StatusOK, payload)
+	writeJSON(w, http.StatusOK, digestPayload{Date: day, Summary: "", Stocks: stocks, SummaryStatus: digestSummaryGenerating})
+}
+
+// composeDigestBackground composes the AI overview off the request path and caches the
+// ready payload (rows + summary) for the day. A failure leaves NO cache entry, so the next
+// visit/poll simply retries; single-flight via digestInflight (cleared here). The stocks
+// snapshot is captured at request time (the frontend overlays live quotes anyway).
+func (s *Server) composeDigestBackground(userID, lang, day, key, material string, stocks []digestStock, ch chan struct{}) {
+	defer func() {
+		if rec := recover(); rec != nil {
+			s.log.Error("digest overview bg compose panicked", "user", userID, "rec", rec)
+			s.digestMu.Lock()
+			delete(s.digestInflight, key)
+			close(ch)
+			s.digestMu.Unlock()
+		}
+	}()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	text, err := s.enrich.Summarize(ctx, material, lang)
+	cancel()
+
+	s.digestMu.Lock()
+	defer s.digestMu.Unlock()
+	if err == nil {
+		payload := digestPayload{Date: day, Summary: strings.TrimSpace(text), Stocks: stocks, SummaryStatus: digestSummaryReady}
+		s.digestCache[key] = digestEntry{payload: payload, at: time.Now().UTC()}
+	} else {
+		s.log.Debug("digest summary failed", "user", userID, "err", err) // no cache → next poll retries
+	}
+	delete(s.digestInflight, key)
+	close(ch)
 }
 
 // buildDigestStocks assembles one row per watchlist ticker: overnight change %
