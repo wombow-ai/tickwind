@@ -691,7 +691,8 @@ func main() {
 		apiServer.SetChat(chatSvc)
 		apiServer.SetChatLimit(cfg.ChatMonthlyLimit)
 		apiServer.SetChatTokenLimit(cfg.ChatMonthlyTokenLimit)
-		log.Info("personalized chat enabled", "chat_model", cfg.LLMChatModel, "chat_monthly_limit", cfg.ChatMonthlyLimit, "chat_monthly_token_limit", cfg.ChatMonthlyTokenLimit, "web_search", webClient.Enabled())
+		apiServer.SetChatFreeLimit(cfg.ChatFreeLimit)
+		log.Info("personalized chat enabled", "chat_model", cfg.LLMChatModel, "chat_monthly_limit", cfg.ChatMonthlyLimit, "chat_monthly_token_limit", cfg.ChatMonthlyTokenLimit, "chat_free_limit", cfg.ChatFreeLimit, "web_search", webClient.Enabled())
 	} else {
 		log.Warn("per-stock indicator compute disabled — no price feed (Alpaca) for daily candles")
 	}

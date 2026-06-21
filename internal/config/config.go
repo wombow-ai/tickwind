@@ -151,6 +151,12 @@ type Config struct {
 	// per-thread token cap + global daily cap remain the hard backstops).
 	ChatMonthlyTokenLimit int
 
+	// ChatFreeLimit is the per-FREE-user, per-ET-MONTH MESSAGE soft-cap — a small taste of
+	// the AI chat for signed-in non-Pro users to drive conversion. Over it the chat returns
+	// a friendly "upgrade to Pro" note (the free meter is hidden in the UI). Env
+	// CHAT_FREE_LIMIT, default 5.
+	ChatFreeLimit int
+
 	// Stripe billing (Pro entitlement). ALL OPTIONAL — every field defaults empty,
 	// and the billing surface stays INERT (webhook + checkout/portal endpoints are
 	// not registered, no rows ever written) until StripeSecretKey is set, exactly
@@ -289,6 +295,7 @@ func Load() Config {
 		DeepResearchMonthlyLimitPro: envInt("DEEP_RESEARCH_MONTHLY_LIMIT_PRO", 100),
 		ChatMonthlyLimit:            envInt("CHAT_MONTHLY_LIMIT", 150),
 		ChatMonthlyTokenLimit:       envInt("CHAT_MONTHLY_TOKEN_LIMIT", 1_000_000),
+		ChatFreeLimit:               envInt("CHAT_FREE_LIMIT", 5),
 		StripeSecretKey:             env("STRIPE_SECRET_KEY", ""),
 		StripeWebhookSecret:         env("STRIPE_WEBHOOK_SECRET", ""),
 		StripePriceMonthly:          env("STRIPE_PRICE_MONTHLY", ""),

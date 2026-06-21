@@ -64,17 +64,45 @@ func (s *Server) SetChatTokenLimit(n int) {
 	}
 }
 
-// chatReady checks the chat is enabled, the user is Pro, and within the burst throttle;
-// it writes the appropriate response + returns false on any failure.
+// SetChatFreeLimit sets the per-FREE-user monthly MESSAGE soft-cap (<=0 ignored).
+func (s *Server) SetChatFreeLimit(n int) {
+	if n > 0 {
+		s.chatFreeLimit = n
+	}
+}
+
+// chatQuotaGate enforces the per-user, per-month chat quota — TIER-AWARE. Pro users are
+// gated on the cost-true TOKEN limit (and get the sidebar meter); signed-in FREE users get
+// a small MESSAGE-count taste (chatFreeLimit) and NO meter (the UI hides it for them). It
+// returns the friendly note to send when over, whether to block, whether the user is Pro,
+// and (for Pro) the pre-turn token count so the caller can report the post-turn meter.
+func (s *Server) chatQuotaGate(ctx context.Context, userID, lang string) (note string, blocked, pro bool, usedTokens int) {
+	period := researchMonth()
+	pro = s.tierOf(ctx, userID) == tierPro
+	if pro {
+		usedTokens, _ = s.store.GetChatTokensUsed(ctx, userID, period)
+		if usedTokens >= s.chatMonthlyTokenLimit {
+			return chatLimitNote(lang), true, true, usedTokens
+		}
+		return "", false, true, usedTokens
+	}
+	msgUsed, _ := s.store.GetChatMsgUsed(ctx, userID, period)
+	if msgUsed >= s.chatFreeLimit {
+		return chatFreeLimitNote(lang), true, false, 0
+	}
+	return "", false, false, 0
+}
+
+// chatReady checks the chat is enabled and the user is within the burst throttle (NOT a
+// Pro gate — free users may chat with a small per-month quota, enforced per-turn). It
+// writes the appropriate response + returns false on any failure.
 func (s *Server) chatReady(w http.ResponseWriter, r *http.Request, u auth.User) bool {
 	if s.chatSvc == nil || !s.chatSvc.Enabled() {
 		writeJSON(w, http.StatusServiceUnavailable, errBody("chat unavailable"))
 		return false
 	}
-	if s.tierOf(r.Context(), u.ID) != tierPro {
-		writeJSON(w, http.StatusPaymentRequired, map[string]any{"error": "Tickwind Pro required", "upgrade": true})
-		return false
-	}
+	// NB: NO Pro gate here — signed-in FREE users may chat with a small per-month quota
+	// (enforced per-turn by chatQuotaGate). requireUser still gates anonymous visitors.
 	if !s.chatRL.allow(u.ID) {
 		writeJSON(w, http.StatusTooManyRequests, errBody("too many messages — give it a moment"))
 		return false
@@ -175,14 +203,18 @@ func (s *Server) chatTurn(w http.ResponseWriter, r *http.Request, u auth.User, c
 	}
 
 	period := researchMonth()
-	used, _ := s.store.GetChatTokensUsed(r.Context(), u.ID, period)
-	if used >= s.chatMonthlyTokenLimit {
-		writeJSON(w, http.StatusOK, map[string]any{
-			"blocks":        []chat.Block{{Kind: "text", Text: chatLimitNote(lang)}},
+	note, blocked, pro, usedTokens := s.chatQuotaGate(r.Context(), u.ID, lang)
+	if blocked {
+		resp := map[string]any{
+			"blocks":        []chat.Block{{Kind: "text", Text: note}},
 			"limit_reached": true,
-			"meter":         map[string]int{"used": used, "limit": s.chatMonthlyTokenLimit},
+			"upgrade":       !pro,
 			"disclaimer":    chatDisclaimer(lang),
-		})
+		}
+		if pro { // free users get NO meter (the UI hides their quota)
+			resp["meter"] = map[string]int{"used": usedTokens, "limit": s.chatMonthlyTokenLimit}
+		}
+		writeJSON(w, http.StatusOK, resp)
 		return
 	}
 	day := summaryDay()
@@ -249,11 +281,11 @@ func (s *Server) chatTurn(w http.ResponseWriter, r *http.Request, u auth.User, c
 	s.log.Info("chat", "ticker", anchorTicker, "conv", convID, "user", u.ID,
 		"prompt_tokens", ans.Usage.PromptTokens, "cached_tokens", ans.Usage.CachedTokens, "completion_tokens", ans.Usage.CompletionTokens)
 
-	writeJSON(w, http.StatusOK, map[string]any{
-		"blocks":     ans.Blocks,
-		"disclaimer": chatDisclaimer(lang),
-		"meter":      map[string]int{"used": used + ans.Usage.TotalTokens, "limit": s.chatMonthlyTokenLimit},
-	})
+	resp := map[string]any{"blocks": ans.Blocks, "disclaimer": chatDisclaimer(lang)}
+	if pro { // Pro sees the token meter; free users' quota is hidden in the UI
+		resp["meter"] = map[string]int{"used": usedTokens + ans.Usage.TotalTokens, "limit": s.chatMonthlyTokenLimit}
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 // getChatUsage returns the signed-in user's current monthly chat token usage, so the hub
@@ -310,9 +342,13 @@ func (s *Server) chatTurnStream(w http.ResponseWriter, r *http.Request, u auth.U
 	}
 
 	period := researchMonth()
-	used, _ := s.store.GetChatTokensUsed(r.Context(), u.ID, period)
-	if used >= s.chatMonthlyTokenLimit {
-		send(map[string]any{"type": "done", "blocks": []chat.Block{{Kind: "text", Text: chatLimitNote(lang)}}, "limit_reached": true, "meter": map[string]int{"used": used, "limit": s.chatMonthlyTokenLimit}, "disclaimer": chatDisclaimer(lang)})
+	note, blocked, pro, usedTokens := s.chatQuotaGate(r.Context(), u.ID, lang)
+	if blocked {
+		done := map[string]any{"type": "done", "blocks": []chat.Block{{Kind: "text", Text: note}}, "limit_reached": true, "upgrade": !pro, "disclaimer": chatDisclaimer(lang)}
+		if pro {
+			done["meter"] = map[string]int{"used": usedTokens, "limit": s.chatMonthlyTokenLimit}
+		}
+		send(done)
 		return
 	}
 	day := summaryDay()
@@ -365,7 +401,11 @@ func (s *Server) chatTurnStream(w http.ResponseWriter, r *http.Request, u auth.U
 	s.log.Info("chat", "ticker", anchorTicker, "conv", convID, "user", u.ID, "stream", true,
 		"prompt_tokens", ans.Usage.PromptTokens, "cached_tokens", ans.Usage.CachedTokens, "completion_tokens", ans.Usage.CompletionTokens)
 
-	send(map[string]any{"type": "done", "blocks": ans.Blocks, "disclaimer": chatDisclaimer(lang), "meter": map[string]int{"used": used + ans.Usage.TotalTokens, "limit": s.chatMonthlyTokenLimit}})
+	done := map[string]any{"type": "done", "blocks": ans.Blocks, "disclaimer": chatDisclaimer(lang)}
+	if pro {
+		done["meter"] = map[string]int{"used": usedTokens + ans.Usage.TotalTokens, "limit": s.chatMonthlyTokenLimit}
+	}
+	send(done)
 }
 
 // deriveChatTitle makes a short conversation title from the first user message: the
@@ -643,6 +683,15 @@ func chatLimitNote(lang string) string {
 		return "本月对话额度已用完,下月初重置。完整深度研报仍可查看。"
 	}
 	return "You've reached this month's chat limit — it resets next month. Your full deep reports are still available."
+}
+
+// chatFreeLimitNote is shown to a signed-in FREE user who has used up their small monthly
+// taste of the chat — a friendly nudge to upgrade (the meter itself is hidden for free users).
+func chatFreeLimitNote(lang string) string {
+	if lang == "zh" {
+		return "你已用完本月的免费 AI 对话额度。升级 Tickwind Pro 即可畅聊,并解锁完整 AI 深度研报、指标与提醒。"
+	}
+	return "You've used up this month's free AI chat. Upgrade to Tickwind Pro for unlimited chat — plus the full AI deep-research reports, indicators, and alerts."
 }
 
 func chatBusyNote(lang string) string {
