@@ -2,7 +2,7 @@
 
 import {ArrowRight, Lock, Menu, Pencil, Plus, Search, Settings as SettingsIcon, Sparkles, Trash2, X} from 'lucide-react';
 import {usePathname, useRouter, useSearchParams} from 'next/navigation';
-import {useCallback, useEffect, useMemo, useRef, useState} from 'react';
+import {useCallback, useEffect, useMemo, useState} from 'react';
 import {ChatThreadPanel} from '@/components/ChatThreadPanel';
 import Link from '@/components/LocalLink';
 import {
@@ -40,14 +40,13 @@ export function ChatHub() {
     const seg = pathname.slice(1).split('/', 1)[0];
     return isLocale(seg) ? seg : DEFAULT_LOCALE;
   })();
-  // The open conversation lives in the URL (?c=<id>) so leaving + returning (or a hard
-  // reload) restores it — NOT just React state, which a remount wipes. ?ticker= is the
-  // per-stock warm-start (?c= wins when both are present). Captured ONCE at mount so our
-  // own soft URL writes don't re-trigger the heavy init fetch.
-  const bootRef = useRef<{c: string; ticker: string} | null>(null);
-  if (bootRef.current === null) {
-    bootRef.current = {c: sp.get('c') || '', ticker: (sp.get('ticker') || '').toUpperCase()};
-  }
+  // The open conversation lives in the URL (?c=<id>) so leaving + returning (or a hard reload)
+  // restores it — NOT just React state, which a remount wipes. ?ticker= is the per-stock
+  // warm-start (?c= wins when both are present). These are read REACTIVELY (not frozen at first
+  // render): useSearchParams() is empty during the SSR/pre-hydration pass inside the Suspense
+  // boundary, so a once-captured value would miss the real ?c= and strand the user on a draft.
+  const cParam = sp.get('c') || '';
+  const tickerParam = (sp.get('ticker') || '').toUpperCase();
 
   // writeUrl soft-syncs the URL to the open conversation WITHOUT remounting ChatHub (same
   // /chat pathname, query-only change → Next does a client-side update, so selectedId state,
@@ -62,6 +61,7 @@ export function ChatHub() {
   );
 
   const [convs, setConvs] = useState<Conversation[]>([]);
+  const [convsFetched, setConvsFetched] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -77,6 +77,8 @@ export function ChatHub() {
     return list;
   }, [getToken]);
 
+  // Heavy fetch — conversations + usage, ONCE when auth resolves (NOT on ?c= changes; those are
+  // handled by the cheap restore effect below, so a selection never re-fetches the list).
   useEffect(() => {
     if (!user || !isPro) {
       setLoading(false);
@@ -95,31 +97,43 @@ export function ChatHub() {
         }
         if (active) {
           setConvs(list);
-          // Restore the conversation named in the URL (?c=) if it's a real, owned thread;
-          // otherwise land on a NEW-chat draft (anchored to ?ticker= when present, per the
-          // round-3 "default to new chat"). A stale/not-owned ?c= is normalized off the URL.
-          const boot = bootRef.current!;
-          if (boot.c && list.some(c => c.id === boot.c)) {
-            setSelectedId(boot.c);
-            setDraftAnchor('');
-          } else {
-            setSelectedId(null);
-            setDraftAnchor(boot.ticker);
-            if (boot.c) writeUrl(null, 'replace'); // drop a broken ?c= so a reload doesn't re-show it
-          }
           if (usage) setMeter(usage);
+          setConvsFetched(true);
+          // NB: loading stays true here — the restore effect clears it AFTER it sets the
+          // initial selection, so the hub never flashes a draft before the URL's ?c= resolves.
         }
-      } finally {
-        if (active) setLoading(false);
+      } catch {
+        if (active) setLoading(false); // error → drop the loader, show the (empty) hub
       }
     })();
     return () => {
       active = false;
     };
-    // bootRef/writeUrl are stable across the soft URL writes this effect's restore drives, so
-    // we deliberately run this heavy fetch ONCE per auth state (not on every ?c= change).
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, isPro, getToken]);
+
+  // Restore the open conversation FROM THE URL (?c=) — reactively, so a fresh mount, a hard
+  // reload, and back/forward all reopen the right thread. Gated on convsFetched so the
+  // stale-id cleanup only fires AFTER a real fetch confirms the id isn't owned (else a
+  // pre-fetch [] would wrongly drop a valid ?c=). Sets state only — never re-fetches.
+  useEffect(() => {
+    if (!convsFetched) return;
+    if (cParam) {
+      if (convs.some(c => c.id === cParam)) {
+        setSelectedId(cParam);
+        setDraftAnchor('');
+      } else {
+        // Unknown / not-owned / deleted id → land on a draft and drop the broken ?c=.
+        setSelectedId(null);
+        setDraftAnchor('');
+        writeUrl(null, 'replace');
+      }
+    } else {
+      // No ?c= → NEW-chat draft (anchored to ?ticker= when arriving from a stock page).
+      setSelectedId(null);
+      setDraftAnchor(tickerParam);
+    }
+    setLoading(false); // selection resolved → safe to render the hub (no draft flash)
+  }, [cParam, tickerParam, convs, convsFetched, writeUrl]);
 
   // New chat → a fresh GENERAL draft (no conversation created until the first message). Push
   // (clears ?c=) so Back returns to the conversation you left.
