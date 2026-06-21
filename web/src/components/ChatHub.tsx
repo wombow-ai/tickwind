@@ -24,6 +24,8 @@ import {cx} from '@/lib/ui';
  * "Claude style" design. A sidebar of the user's conversations + the active thread (the shared
  * ChatThreadPanel). Pro-gated. A ?ticker= query opens (or creates) that stock's conversation.
  * Lives in the (fullscreen) route group so it has no TopNav/Footer — it feels like its own app.
+ * The sidebar brand links home (back to the main site); the "Use my data" privacy control lives
+ * in /settings (reached via the sidebar Settings gear), not in the chat chrome.
  */
 export function ChatHub() {
   const dark = useDark();
