@@ -38,6 +38,7 @@ type Store struct {
 	chatMsgs  map[string][]store.ChatMessage      // "userID|TICKER" -> ordered chat thread (Product B)
 	convs     map[string]store.Conversation       // conversationID -> Conversation (Product C hub)
 	chatQuota map[string]int                      // "userID|PERIOD" (ET month) -> Product B chat messages used
+	chatTok   map[string]int                      // "userID|PERIOD" (ET month) -> Product B chat tokens used
 	comments  map[string]store.Comment            // commentID -> Comment (public)
 	cmtLikes  map[string]map[string]bool          // commentID -> set of userIDs who liked
 	subs      map[string]store.Subscription       // userID -> Stripe-synced entitlement
@@ -69,6 +70,7 @@ func New() *Store {
 		chatMsgs:  make(map[string][]store.ChatMessage),
 		convs:     make(map[string]store.Conversation),
 		chatQuota: make(map[string]int),
+		chatTok:   make(map[string]int),
 		comments:  make(map[string]store.Comment),
 		cmtLikes:  make(map[string]map[string]bool),
 		subs:      make(map[string]store.Subscription),
@@ -851,6 +853,24 @@ func (s *Store) IncrChatMsgUsed(_ context.Context, userID, period string) error 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.chatQuota[deepQuotaKey(userID, period)]++
+	return nil
+}
+
+// GetChatTokensUsed returns the user's Product B chat tokens used in the period (0 when none).
+func (s *Store) GetChatTokensUsed(_ context.Context, userID, period string) (int, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.chatTok[deepQuotaKey(userID, period)], nil
+}
+
+// IncrChatTokensUsed adds the turn's total token cost to the user's period total.
+func (s *Store) IncrChatTokensUsed(_ context.Context, userID, period string, tokens int) error {
+	if tokens <= 0 {
+		return nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.chatTok[deepQuotaKey(userID, period)] += tokens
 	return nil
 }
 

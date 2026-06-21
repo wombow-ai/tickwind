@@ -271,6 +271,12 @@ func (s Split) GetChatMsgUsed(ctx context.Context, userID, period string) (int, 
 func (s Split) IncrChatMsgUsed(ctx context.Context, userID, period string) error {
 	return s.User.IncrChatMsgUsed(ctx, userID, period)
 }
+func (s Split) GetChatTokensUsed(ctx context.Context, userID, period string) (int, error) {
+	return s.User.GetChatTokensUsed(ctx, userID, period)
+}
+func (s Split) IncrChatTokensUsed(ctx context.Context, userID, period string, tokens int) error {
+	return s.User.IncrChatTokensUsed(ctx, userID, period, tokens)
+}
 
 // Subscriptions / Stripe billing → the DURABLE Market store (billing is not cheap
 // to rebuild, unlike the per-user quota above).

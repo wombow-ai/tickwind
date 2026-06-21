@@ -144,6 +144,13 @@ type Config struct {
 	// with a cached Haiku turn; the global daily backstop bounds total spend).
 	ChatMonthlyLimit int
 
+	// ChatMonthlyTokenLimit is the per-Pro-user, per-ET-MONTH TOKEN soft-cap — the cost-true
+	// quota the chat hub gates + displays as a percentage (a long thread costs more than a
+	// short one, so tokens bound real spend better than a message count). Env
+	// CHAT_MONTHLY_TOKEN_LIMIT, default 1,000,000 (generous for a cached Haiku turn; the
+	// per-thread token cap + global daily cap remain the hard backstops).
+	ChatMonthlyTokenLimit int
+
 	// Stripe billing (Pro entitlement). ALL OPTIONAL — every field defaults empty,
 	// and the billing surface stays INERT (webhook + checkout/portal endpoints are
 	// not registered, no rows ever written) until StripeSecretKey is set, exactly
@@ -281,6 +288,7 @@ func Load() Config {
 		DeepResearchMonthlyLimit:    envInt("DEEP_RESEARCH_MONTHLY_LIMIT", envInt("DEEP_RESEARCH_DAILY_LIMIT", 1)),
 		DeepResearchMonthlyLimitPro: envInt("DEEP_RESEARCH_MONTHLY_LIMIT_PRO", 100),
 		ChatMonthlyLimit:            envInt("CHAT_MONTHLY_LIMIT", 150),
+		ChatMonthlyTokenLimit:       envInt("CHAT_MONTHLY_TOKEN_LIMIT", 1_000_000),
 		StripeSecretKey:             env("STRIPE_SECRET_KEY", ""),
 		StripeWebhookSecret:         env("STRIPE_WEBHOOK_SECRET", ""),
 		StripePriceMonthly:          env("STRIPE_PRICE_MONTHLY", ""),

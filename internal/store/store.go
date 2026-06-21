@@ -472,6 +472,12 @@ type Store interface {
 	GetChatMsgUsed(ctx context.Context, userID, period string) (int, error)
 	IncrChatMsgUsed(ctx context.Context, userID, period string) error
 
+	// Per-(user, ET month) chat TOKEN usage — the cost-true monthly quota. GetChatTokensUsed
+	// returns the tokens used in the period (0 when none); IncrChatTokensUsed adds the turn's
+	// total token cost. Same best-effort semantics (read fails OPEN), routed to the User store.
+	GetChatTokensUsed(ctx context.Context, userID, period string) (int, error)
+	IncrChatTokensUsed(ctx context.Context, userID, period string, tokens int) error
+
 	// Comments are PUBLIC user posts on a stock (Ticker) or the global board
 	// (Ticker == ""). Durable (Market store). List excludes soft-deleted rows;
 	// Delete is author-or-admin (admin=true skips the author check); Report flags

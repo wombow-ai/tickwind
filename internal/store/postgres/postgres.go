@@ -1262,6 +1262,34 @@ ON CONFLICT (user_id, period) DO UPDATE SET used = chat_msg_quota.used + 1, upda
 	return nil
 }
 
+// GetChatTokensUsed returns the user's Product B chat tokens used in the period (0 when none).
+func (s *Store) GetChatTokensUsed(ctx context.Context, userID, period string) (int, error) {
+	var tokens int64
+	err := s.pool.QueryRow(ctx, `SELECT tokens FROM chat_token_quota WHERE user_id = $1 AND period = $2`, userID, period).Scan(&tokens)
+	switch {
+	case errors.Is(err, pgx.ErrNoRows):
+		return 0, nil
+	case err != nil:
+		return 0, fmt.Errorf("postgres: get chat-token quota: %w", err)
+	}
+	return int(tokens), nil
+}
+
+// IncrChatTokensUsed adds the turn's total token cost to the user's period total.
+func (s *Store) IncrChatTokensUsed(ctx context.Context, userID, period string, tokens int) error {
+	if tokens <= 0 {
+		return nil
+	}
+	const query = `
+INSERT INTO chat_token_quota (user_id, period, tokens, updated_at)
+VALUES ($1, $2, $3, now())
+ON CONFLICT (user_id, period) DO UPDATE SET tokens = chat_token_quota.tokens + $3, updated_at = now()`
+	if _, err := s.pool.Exec(ctx, query, userID, period, tokens); err != nil {
+		return fmt.Errorf("postgres: incr chat-token quota: %w", err)
+	}
+	return nil
+}
+
 // GetSubscription returns the user's Stripe-synced entitlement (found=false when
 // the user has no row → the caller treats them as free).
 func (s *Store) GetSubscription(ctx context.Context, userID string) (store.Subscription, bool, error) {

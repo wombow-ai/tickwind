@@ -57,6 +57,13 @@ func (s *Server) SetChatLimit(n int) {
 	}
 }
 
+// SetChatTokenLimit sets the per-Pro-user monthly TOKEN soft-cap (<=0 ignored).
+func (s *Server) SetChatTokenLimit(n int) {
+	if n > 0 {
+		s.chatMonthlyTokenLimit = n
+	}
+}
+
 // chatReady checks the chat is enabled, the user is Pro, and within the burst throttle;
 // it writes the appropriate response + returns false on any failure.
 func (s *Server) chatReady(w http.ResponseWriter, r *http.Request, u auth.User) bool {
@@ -168,12 +175,12 @@ func (s *Server) chatTurn(w http.ResponseWriter, r *http.Request, u auth.User, c
 	}
 
 	period := researchMonth()
-	used, _ := s.store.GetChatMsgUsed(r.Context(), u.ID, period)
-	if used >= s.chatMonthlyLimit {
+	used, _ := s.store.GetChatTokensUsed(r.Context(), u.ID, period)
+	if used >= s.chatMonthlyTokenLimit {
 		writeJSON(w, http.StatusOK, map[string]any{
 			"blocks":        []chat.Block{{Kind: "text", Text: chatLimitNote(lang)}},
 			"limit_reached": true,
-			"meter":         map[string]int{"used": used, "limit": s.chatMonthlyLimit},
+			"meter":         map[string]int{"used": used, "limit": s.chatMonthlyTokenLimit},
 			"disclaimer":    chatDisclaimer(lang),
 		})
 		return
@@ -233,6 +240,9 @@ func (s *Server) chatTurn(w http.ResponseWriter, r *http.Request, u auth.User, c
 	if err := s.store.IncrChatMsgUsed(r.Context(), u.ID, period); err != nil {
 		s.log.Debug("chat meter incr failed (non-fatal)", "user", u.ID, "err", err)
 	}
+	if err := s.store.IncrChatTokensUsed(r.Context(), u.ID, period, ans.Usage.TotalTokens); err != nil {
+		s.log.Debug("chat token meter incr failed (non-fatal)", "user", u.ID, "err", err)
+	}
 	s.chatMu.Lock()
 	s.chatDayCount++
 	s.chatMu.Unlock()
@@ -242,7 +252,7 @@ func (s *Server) chatTurn(w http.ResponseWriter, r *http.Request, u auth.User, c
 	writeJSON(w, http.StatusOK, map[string]any{
 		"blocks":     ans.Blocks,
 		"disclaimer": chatDisclaimer(lang),
-		"meter":      map[string]int{"used": used + 1, "limit": s.chatMonthlyLimit},
+		"meter":      map[string]int{"used": used + ans.Usage.TotalTokens, "limit": s.chatMonthlyTokenLimit},
 	})
 }
 
@@ -289,9 +299,9 @@ func (s *Server) chatTurnStream(w http.ResponseWriter, r *http.Request, u auth.U
 	}
 
 	period := researchMonth()
-	used, _ := s.store.GetChatMsgUsed(r.Context(), u.ID, period)
-	if used >= s.chatMonthlyLimit {
-		send(map[string]any{"type": "done", "blocks": []chat.Block{{Kind: "text", Text: chatLimitNote(lang)}}, "limit_reached": true, "meter": map[string]int{"used": used, "limit": s.chatMonthlyLimit}, "disclaimer": chatDisclaimer(lang)})
+	used, _ := s.store.GetChatTokensUsed(r.Context(), u.ID, period)
+	if used >= s.chatMonthlyTokenLimit {
+		send(map[string]any{"type": "done", "blocks": []chat.Block{{Kind: "text", Text: chatLimitNote(lang)}}, "limit_reached": true, "meter": map[string]int{"used": used, "limit": s.chatMonthlyTokenLimit}, "disclaimer": chatDisclaimer(lang)})
 		return
 	}
 	day := summaryDay()
@@ -335,13 +345,16 @@ func (s *Server) chatTurnStream(w http.ResponseWriter, r *http.Request, u auth.U
 	if err := s.store.IncrChatMsgUsed(r.Context(), u.ID, period); err != nil {
 		s.log.Debug("chat meter incr failed (non-fatal)", "user", u.ID, "err", err)
 	}
+	if err := s.store.IncrChatTokensUsed(r.Context(), u.ID, period, ans.Usage.TotalTokens); err != nil {
+		s.log.Debug("chat token meter incr failed (non-fatal)", "user", u.ID, "err", err)
+	}
 	s.chatMu.Lock()
 	s.chatDayCount++
 	s.chatMu.Unlock()
 	s.log.Info("chat", "ticker", anchorTicker, "conv", convID, "user", u.ID, "stream", true,
 		"prompt_tokens", ans.Usage.PromptTokens, "cached_tokens", ans.Usage.CachedTokens, "completion_tokens", ans.Usage.CompletionTokens)
 
-	send(map[string]any{"type": "done", "blocks": ans.Blocks, "disclaimer": chatDisclaimer(lang), "meter": map[string]int{"used": used + 1, "limit": s.chatMonthlyLimit}})
+	send(map[string]any{"type": "done", "blocks": ans.Blocks, "disclaimer": chatDisclaimer(lang), "meter": map[string]int{"used": used + ans.Usage.TotalTokens, "limit": s.chatMonthlyTokenLimit}})
 }
 
 // deriveChatTitle makes a short conversation title from the first user message: the

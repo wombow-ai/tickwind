@@ -442,6 +442,9 @@ type Server struct {
 	// chatMonthlyLimit is the per-Pro-user, per-ET-month MESSAGE soft-cap (SetChatLimit,
 	// default 150). Over it the chat endpoint soft-degrades (a note, not an error).
 	chatMonthlyLimit int
+	// chatMonthlyTokenLimit is the per-Pro-user, per-ET-month TOKEN soft-cap — the cost-true
+	// quota the hub gates + shows as a percentage (SetChatTokenLimit, default 1,000,000).
+	chatMonthlyTokenLimit int
 	// chatRL throttles chat posts per user (burst control atop the monthly meter).
 	chatRL *rateLimiter
 	// Global per-ET-day chat-generation backstop (catastrophic LLM-cost guard), guarded

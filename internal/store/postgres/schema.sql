@@ -390,6 +390,16 @@ CREATE TABLE IF NOT EXISTS chat_msg_quota (
     PRIMARY KEY (user_id, period)
 );
 
+-- Per-(user, ET month) chat TOKEN usage — the cost-true monthly quota (a long thread costs
+-- more than a short one). Tokens = total tokens billed across the turn's tool loop.
+CREATE TABLE IF NOT EXISTS chat_token_quota (
+    user_id    text NOT NULL,
+    period     text NOT NULL,            -- ET month, e.g. "2026-06"
+    tokens     bigint NOT NULL DEFAULT 0,
+    updated_at timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (user_id, period)
+);
+
 -- Product C: the unified chat hub. A conversation is a named thread owned by a user,
 -- optionally anchored to a stock (anchor_ticker) or general/cross-stock (empty). Cheap
 -- to lose (User store). Messages reference conversation_id (added additively below; the
