@@ -203,8 +203,14 @@ feature-flagged plugin, never on the critical path. Web only.
   -race`; web tsc+next build). **Deployed** (backend tarball-pull DEPLOY_DONE 09:32Z — `/v1/search?q=DRAM` now
   returns `"etf":true`; frontend Vercel). **Synthetic-Pro live E2E PASSED:** DRAM fundamentals → grounded ETF reply,
   NO invented year, no empty fundamentals widget; AAPL fundamentals → `fundamentals_table` widget surfaced with
-  Go-owned numbers. ⚠️ owner visual check: /chat new-chat welcome + URL `?c=` restore (reload/back) with the Pro acct.
-  [[tickwind-product-b-chat]]
+  Go-owned numbers. **Restore RE-FIX (`62dce37`):** owner reported `?c=` restore STILL showed New Chat (URL had the
+  id). Root cause: ChatHub captured `useSearchParams()` into a ref on the FIRST render, but inside the Suspense
+  boundary that render (static SSR / pre-hydration) sees EMPTY params → the ref froze `c=''` + never saw the real
+  `?c=` arriving post-hydration (and the empty captured-c meant the stale-id cleanup ALSO didn't fire → URL kept
+  `?c=` while the UI sat on a draft = the exact symptom). Fixed: read `?c=`/`?ticker=` REACTIVELY each render +
+  restore in a dedicated effect gated on a `convsFetched` flag (stale-id cleanup only after a real fetch; conv list
+  has no limit so any owned id resolves; loader held until selection resolves → no draft flash). Also fixes
+  back/forward + hard reload. ⚠️ owner visual: /chat welcome + `?c=` restore (switch away/back, reload). [[tickwind-product-b-chat]]
 - **2026-06-21 — 💬 AI chat hub UX rounds 1–3 shipped (streaming + token metering backend + 3 rounds of owner UX
   feedback).** Backend increments already live + E2E-verified earlier this session: **real SSE streaming**
   (`enrich.ChatStream`/`chat.AnswerStream`/`POST /v1/conversations/{id}/chat/stream`; `token` events then a `done`
