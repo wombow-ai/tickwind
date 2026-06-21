@@ -175,6 +175,16 @@ feature-flagged plugin, never on the critical path. Web only.
 - Full stack (server): `docker compose up -d --build`.
 
 ## Current state (update each iteration)
+- **2026-06-21 — 🎨 New brand logo shipped (owner-designed "Tailwind Streams").** Owner picked their own optimized
+  #1 design (3 rising streams — the wind — with a green `#00C08B` leader ending in a ringed price node — the tick;
+  `currentColor` navy streams adapt light→dark). Wired as a shared **`LogoMark`** (glyph) + **`Logo`** (glyph +
+  wordmark) in `web/src/components/ui/atoms.tsx` (replaced the old teal-gradient ↗ tile) → flows to TopNav / Footer
+  / auth layout automatically + the **chat sidebar** (ChatHub, replacing the gold "T" tile via `LogoMark`).
+  **Favicon set** regenerated from the mark on a navy `#0E1B2E` tile: `app/icon.svg` (modern) + `app/apple-icon.png`
+  (180, iOS) + `app/favicon.ico` (32 PNG-in-ICO, via a one-off `sharp` script; replaced the old teal-arrow .ico).
+  Transparent mark (no tile) so the SAME graphic reads on the main site AND the warm gold chat. Preview-verified
+  light+dark (streams go light on dark, green node constant; no console errors). Frontend-only (Vercel).
+
 - **2026-06-21 — 🧩 Owner batch (4 reqs): CORS PUT fix + async Pro digest + AI-zone funnel shipped; icon concepts pending pick.**
   (1) **Settings 'Use my data' toggle CORS error — FIXED + LIVE (`a68baf6`):** the CORS `Access-Control-Allow-Methods`
   listed GET/POST/PATCH/DELETE/OPTIONS but was MISSING **PUT** → the browser preflight for `PUT /v1/me/prefs`

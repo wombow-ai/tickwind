@@ -5,38 +5,40 @@ import {useT} from '@/lib/i18n';
 import {useDark} from '@/lib/theme';
 import {cx, fmtDelta, fmtPrice, SESSIONS, sessionStyle, tok} from '@/lib/ui';
 
-/** The Tickwind wordmark + breeze-arrow glyph. */
+/**
+ * The Tickwind "streams" mark — three rising streams (the wind) with the green leader ending
+ * in a ringed price node (the tick). The two streams adapt to light/dark via currentColor
+ * (deep navy on light, soft slate on dark); the green leader + node stay constant. Transparent
+ * (no tile) so the SAME graphic reads on the main site and the warm chat surface.
+ */
+export function LogoMark({size = 30}: {size?: number}) {
+  const dark = useDark();
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="12 13 76 76"
+      fill="none"
+      aria-hidden
+      style={{color: dark ? '#E2E8F0' : '#0E1B2E'}}
+    >
+      <g stroke="currentColor" strokeWidth="6" strokeLinecap="round">
+        <path d="M18 67 C42 67 54 60 67 46" />
+        <path d="M18 76 C38 76 48 71 58 60" />
+      </g>
+      <path d="M18 58 C44 58 57 50 76 32" stroke="#00C08B" strokeWidth="6" strokeLinecap="round" />
+      <circle cx="76" cy="32" r="4.4" fill="#00C08B" />
+      <circle cx="76" cy="32" r="8.4" stroke="#00C08B" strokeWidth="1.5" />
+    </svg>
+  );
+}
+
+/** The Tickwind wordmark + streams mark. */
 export function Logo({size = 30}: {size?: number}) {
   const dark = useDark();
-  const gid = useId();
   return (
     <div className="flex select-none items-center gap-2">
-      <svg width={size} height={size} viewBox="0 0 32 32" aria-hidden>
-        <defs>
-          <linearGradient id={gid} x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0" stopColor="#2DD4BF" />
-            <stop offset="1" stopColor="#0EA5E9" />
-          </linearGradient>
-        </defs>
-        <rect x="0.5" y="0.5" width="31" height="31" rx="9" fill={`url(#${gid})`} />
-        <path d="M11 21 L21 11" stroke="#fff" strokeWidth="2.4" strokeLinecap="round" />
-        <path
-          d="M14.2 11 H21 V17.8"
-          fill="none"
-          stroke="#fff"
-          strokeWidth="2.4"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-        <path
-          d="M8 14.5 q4.5 -2.4 8 -1.4"
-          fill="none"
-          stroke="#fff"
-          strokeOpacity=".7"
-          strokeWidth="1.5"
-          strokeLinecap="round"
-        />
-      </svg>
+      <LogoMark size={size} />
       <span
         className={cx(
           'text-[17px] font-semibold tracking-tight',

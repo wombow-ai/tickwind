@@ -5,6 +5,7 @@ import {usePathname, useRouter, useSearchParams} from 'next/navigation';
 import {useCallback, useEffect, useMemo, useState} from 'react';
 import {ChatThreadPanel} from '@/components/ChatThreadPanel';
 import Link from '@/components/LocalLink';
+import {LogoMark} from '@/components/ui/atoms';
 import {
   type Conversation,
   deleteConversation,
@@ -237,7 +238,7 @@ export function ChatHub() {
             <div style={{display: 'flex', alignItems: 'center', gap: 9, marginBottom: 14}}>
               {/* Brand → back to the main Tickwind site (the chat is a chrome-free full-screen app). */}
               <Link href="/" title={tr('chat.hub.home')} style={{display: 'flex', alignItems: 'center', gap: 9, textDecoration: 'none', minWidth: 0}}>
-                <div style={{width: 26, height: 26, borderRadius: 7, background: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 13, color: '#1c1404'}}>T</div>
+                <LogoMark size={26} />
                 <div style={{display: 'flex', alignItems: 'baseline', gap: 7}}>
                   <span style={{fontWeight: 600, fontSize: 15, letterSpacing: '-.01em', color: 'var(--text)'}}>Tickwind</span>
                   <span style={{fontSize: 9, fontWeight: 600, letterSpacing: '.1em', padding: '2px 5px', borderRadius: 5, background: 'var(--accent-soft)', color: 'var(--accent2)', fontFamily: CHAT_MONO}}>AI</span>
