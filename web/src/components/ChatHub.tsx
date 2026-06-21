@@ -1,6 +1,6 @@
 'use client';
 
-import {ArrowRight, Lock, Menu, Pencil, Plus, Search, Sparkles, Trash2, X} from 'lucide-react';
+import {ArrowRight, Lock, Menu, Pencil, Plus, Search, Settings as SettingsIcon, Sparkles, Trash2, X} from 'lucide-react';
 import {useSearchParams} from 'next/navigation';
 import {useCallback, useEffect, useMemo, useState} from 'react';
 import {ChatThreadPanel} from '@/components/ChatThreadPanel';
@@ -8,9 +8,8 @@ import Link from '@/components/LocalLink';
 import {
   type Conversation,
   deleteConversation,
-  getMyPrefs,
+  getChatUsage,
   listConversations,
-  putMyPrefs,
   renameConversation,
 } from '@/lib/api';
 import {useAuth} from '@/lib/auth';
@@ -39,7 +38,6 @@ export function ChatHub() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [meter, setMeter] = useState<{used: number; limit: number} | null>(null);
-  const [personalData, setPersonalData] = useState(true);
   // selectedId === null → a NEW-chat DRAFT (the default landing). draftAnchor anchors it to a
   // stock when arriving from a stock page (?ticker=); the conversation is created on first send.
   const [draftAnchor, setDraftAnchor] = useState('');
@@ -60,12 +58,11 @@ export function ChatHub() {
       try {
         const token = await getToken();
         const list = await listConversations(token);
-        let pd = true;
+        let usage: {used: number; limit: number} | null = null;
         try {
-          const prefs = await getMyPrefs(token);
-          if (typeof prefs.chat_personal_data === 'boolean') pd = prefs.chat_personal_data;
+          usage = await getChatUsage(token);
         } catch {
-          /* default on */
+          /* the per-turn meter will fill it in */
         }
         if (active) {
           setConvs(list);
@@ -73,7 +70,7 @@ export function ChatHub() {
           // anchored to the stock when arriving via ?ticker=.
           setSelectedId(null);
           setDraftAnchor(initialTicker);
-          setPersonalData(pd);
+          if (usage) setMeter(usage);
         }
       } finally {
         if (active) setLoading(false);
@@ -111,15 +108,6 @@ export function ChatHub() {
     [getToken, refresh],
   );
 
-  const togglePersonalData = useCallback(async () => {
-    const next = !personalData;
-    setPersonalData(next);
-    try {
-      await putMyPrefs(await getToken(), {chat_personal_data: next});
-    } catch {
-      setPersonalData(!next);
-    }
-  }, [personalData, getToken]);
 
   const rename = useCallback(
     async (c: Conversation) => {
@@ -171,11 +159,14 @@ export function ChatHub() {
         >
           <div style={{padding: '14px 14px 10px'}}>
             <div style={{display: 'flex', alignItems: 'center', gap: 9, marginBottom: 14}}>
-              <div style={{width: 26, height: 26, borderRadius: 7, background: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 13, color: '#1c1404'}}>T</div>
-              <div style={{display: 'flex', alignItems: 'baseline', gap: 7}}>
-                <span style={{fontWeight: 600, fontSize: 15, letterSpacing: '-.01em', color: 'var(--text)'}}>Tickwind</span>
-                <span style={{fontSize: 9, fontWeight: 600, letterSpacing: '.1em', padding: '2px 5px', borderRadius: 5, background: 'var(--accent-soft)', color: 'var(--accent2)', fontFamily: CHAT_MONO}}>AI</span>
-              </div>
+              {/* Brand → back to the main Tickwind site (the chat is a chrome-free full-screen app). */}
+              <Link href="/" title={tr('chat.hub.home')} style={{display: 'flex', alignItems: 'center', gap: 9, textDecoration: 'none', minWidth: 0}}>
+                <div style={{width: 26, height: 26, borderRadius: 7, background: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 13, color: '#1c1404'}}>T</div>
+                <div style={{display: 'flex', alignItems: 'baseline', gap: 7}}>
+                  <span style={{fontWeight: 600, fontSize: 15, letterSpacing: '-.01em', color: 'var(--text)'}}>Tickwind</span>
+                  <span style={{fontSize: 9, fontWeight: 600, letterSpacing: '.1em', padding: '2px 5px', borderRadius: 5, background: 'var(--accent-soft)', color: 'var(--accent2)', fontFamily: CHAT_MONO}}>AI</span>
+                </div>
+              </Link>
               <button type="button" onClick={() => setSidebarOpen(false)} className="lg:hidden" style={{marginLeft: 'auto', color: 'var(--text3)', background: 'transparent', border: 'none', cursor: 'pointer'}}><X size={16} /></button>
             </div>
             <button type="button" onClick={newChat} style={{width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: 9, borderRadius: 10, background: 'var(--accent-fill)', border: '1px solid var(--accent-line)', color: 'var(--accent2)', fontWeight: 600, fontSize: 13, cursor: 'pointer'}}>
@@ -223,21 +214,15 @@ export function ChatHub() {
                 </div>
               );
             })()}
-            <div style={{display: 'flex', alignItems: 'flex-start', gap: 10}}>
-              <div style={{flex: 1, minWidth: 0}}>
-                <div style={{fontSize: 12.5, fontWeight: 500, color: 'var(--text)'}}>{tr('chat.hub.privacy')}</div>
-                <div style={{fontSize: 11, color: 'var(--text3)', marginTop: 2, lineHeight: 1.4}}>{tr(personalData ? 'chat.hub.privacyOn' : 'chat.hub.privacyOff')}</div>
-              </div>
-              <button type="button" onClick={togglePersonalData} aria-pressed={personalData} style={{width: 38, height: 22, borderRadius: 12, padding: 2, cursor: 'pointer', flex: 'none', border: personalData ? 'none' : '1px solid var(--border2)', background: personalData ? 'var(--accent)' : 'var(--surface2)', display: 'flex', justifyContent: personalData ? 'flex-end' : 'flex-start'}}>
-                <span style={{width: 18, height: 18, borderRadius: '50%', background: '#fff'}} />
-              </button>
-            </div>
-            <div style={{display: 'flex', alignItems: 'center', gap: 9, paddingTop: 2}}>
+            <div style={{display: 'flex', alignItems: 'center', gap: 9}}>
               <div style={{width: 28, height: 28, borderRadius: '50%', background: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 600, color: '#1c1404'}}>{(user.email ?? 'TW').slice(0, 2).toUpperCase()}</div>
               <div style={{flex: 1, minWidth: 0}}>
                 <div style={{fontSize: 12.5, fontWeight: 500, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'}}>{user.email}</div>
                 <div style={{fontSize: 10.5, color: 'var(--text3)'}}>{tr('settings.planPro')}</div>
               </div>
+              <Link href="/settings" aria-label={tr('nav.settings')} onClick={() => setSidebarOpen(false)} style={{flex: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 5, borderRadius: 7, color: 'var(--text3)'}}>
+                <SettingsIcon size={16} />
+              </Link>
             </div>
           </div>
         </aside>

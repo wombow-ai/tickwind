@@ -1580,6 +1580,11 @@ export async function postConvChatStream(
   return done;
 }
 
+/** Current monthly chat TOKEN usage (GET /v1/chat/usage) for the hub quota bar on load. */
+export async function getChatUsage(token: string | null, signal?: AbortSignal): Promise<{used: number; limit: number}> {
+  return getJson<{used: number; limit: number}>('/v1/chat/usage', signal, token);
+}
+
 /** A conversation's persisted messages (GET /v1/conversations/{id}/chat). */
 export async function getConvHistory(id: string, token: string | null, signal?: AbortSignal): Promise<ChatHistoryMessage[]> {
   const {messages} = await getJson<{messages: ChatHistoryMessage[]}>(
@@ -2654,6 +2659,8 @@ export async function getBacktest(
 /** The opaque per-user prefs blob. The indicators client owns the `indicators` key. */
 export interface PrefsBlob {
   indicators?: {ids?: string[]};
+  /** AI chat "Use my data" toggle. Absent → default ON; false → chat won't read the user's watchlist/holdings/notes. */
+  chat_personal_data?: boolean;
   // Future sibling pref keys slot in here without a migration.
   [key: string]: unknown;
 }

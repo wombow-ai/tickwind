@@ -1,9 +1,9 @@
 'use client';
 
-import {ArrowRight, Crown, Loader2, LogOut, Moon, Sun} from 'lucide-react';
-import {useState} from 'react';
+import {ArrowRight, Crown, Loader2, LogOut, Moon, ShieldCheck, Sun} from 'lucide-react';
+import {useEffect, useState} from 'react';
 import Link from '@/components/LocalLink';
-import {createPortal} from '@/lib/api';
+import {createPortal, getMyPrefs, putMyPrefs} from '@/lib/api';
 import {useAuth} from '@/lib/auth';
 import {useEntitlement} from '@/lib/entitlement';
 import {useT} from '@/lib/i18n';
@@ -18,6 +18,42 @@ export default function SettingsPage() {
   const tr = useT();
   const {isPro, loading: entLoading} = useEntitlement();
   const [portalBusy, setPortalBusy] = useState(false);
+
+  // "Use my data" privacy pref (absent → default ON). Read once from the server
+  // (the single source of truth the AI chat also reads), then persisted on toggle.
+  const [useMyData, setUseMyData] = useState(true);
+  const [prefsLoaded, setPrefsLoaded] = useState(false);
+
+  useEffect(() => {
+    if (!user) return;
+    let alive = true;
+    (async () => {
+      try {
+        const token = await getToken();
+        const prefs = await getMyPrefs(token);
+        if (!alive) return;
+        setUseMyData(prefs.chat_personal_data !== false);
+      } catch {
+        // Keep the default (ON) on a read failure.
+      } finally {
+        if (alive) setPrefsLoaded(true);
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [user, getToken]);
+
+  const onToggleUseMyData = async () => {
+    const next = !useMyData;
+    setUseMyData(next); // optimistic
+    try {
+      const token = await getToken();
+      await putMyPrefs(token, {chat_personal_data: next});
+    } catch {
+      setUseMyData(!next); // revert on failure
+    }
+  };
 
   const onManage = async () => {
     setPortalBusy(true);
@@ -147,6 +183,45 @@ export default function SettingsPage() {
           >
             {dark ? <Sun size={15} /> : <Moon size={15} />}
             {dark ? tr('settings.themeLight') : tr('settings.themeDark')}
+          </button>
+        </div>
+      </section>
+
+      <section className={cx('mt-5 rounded-3xl border p-6', t.card, t.border, t.soft)}>
+        <h2 className={cx('flex items-center gap-1.5 text-[13px] font-semibold uppercase tracking-wide', t.faint)}>
+          <ShieldCheck size={14} /> {tr('settings.privacy')}
+        </h2>
+        <div className="mt-3 flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <p className={cx('text-[14px] font-semibold', t.text)}>{tr('settings.privacyData')}</p>
+            <p className={cx('text-[12.5px]', t.sub)}>
+              {useMyData ? tr('settings.privacyDataOn') : tr('settings.privacyDataOff')}
+            </p>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={useMyData}
+            aria-label={tr('settings.privacyData')}
+            disabled={!prefsLoaded}
+            onClick={onToggleUseMyData}
+            className={cx(
+              'relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors disabled:opacity-50',
+              useMyData
+                ? dark
+                  ? 'bg-teal-400'
+                  : 'bg-teal-500'
+                : dark
+                  ? 'bg-slate-700'
+                  : 'bg-slate-300',
+            )}
+          >
+            <span
+              className={cx(
+                'inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform',
+                useMyData ? 'translate-x-6' : 'translate-x-1',
+              )}
+            />
           </button>
         </div>
       </section>
