@@ -7,7 +7,6 @@ import {ChatThreadPanel} from '@/components/ChatThreadPanel';
 import Link from '@/components/LocalLink';
 import {
   type Conversation,
-  createConversation,
   deleteConversation,
   getMyPrefs,
   listConversations,
@@ -41,6 +40,9 @@ export function ChatHub() {
   const [query, setQuery] = useState('');
   const [meter, setMeter] = useState<{used: number; limit: number} | null>(null);
   const [personalData, setPersonalData] = useState(true);
+  // selectedId === null → a NEW-chat DRAFT (the default landing). draftAnchor anchors it to a
+  // stock when arriving from a stock page (?ticker=); the conversation is created on first send.
+  const [draftAnchor, setDraftAnchor] = useState('');
 
   const refresh = useCallback(async () => {
     const list = await listConversations(await getToken());
@@ -57,13 +59,7 @@ export function ChatHub() {
     (async () => {
       try {
         const token = await getToken();
-        let list = await listConversations(token);
-        let sel: string | null = list[0]?.id ?? null;
-        if (initialTicker) {
-          const conv = await createConversation({anchorTicker: initialTicker}, token);
-          sel = conv.id;
-          list = await listConversations(token);
-        }
+        const list = await listConversations(token);
         let pd = true;
         try {
           const prefs = await getMyPrefs(token);
@@ -73,7 +69,10 @@ export function ChatHub() {
         }
         if (active) {
           setConvs(list);
-          setSelectedId(sel);
+          // Default to a NEW-chat draft (suggestions + composer), NOT the latest thread —
+          // anchored to the stock when arriving via ?ticker=.
+          setSelectedId(null);
+          setDraftAnchor(initialTicker);
           setPersonalData(pd);
         }
       } finally {
@@ -85,12 +84,23 @@ export function ChatHub() {
     };
   }, [user, isPro, initialTicker, getToken]);
 
-  const newChat = useCallback(async () => {
-    const conv = await createConversation({title: tr('chat.hub.newTitle')}, await getToken());
-    await refresh();
-    setSelectedId(conv.id);
+  // New chat → a fresh GENERAL draft (no conversation created until the first message).
+  const newChat = useCallback(() => {
+    setSelectedId(null);
+    setDraftAnchor('');
+    setQuery('');
     setSidebarOpen(false);
-  }, [getToken, refresh, tr]);
+  }, []);
+
+  // The draft created its conversation on first send → adopt it + refresh the sidebar.
+  const onDraftCreated = useCallback(
+    async (convId: string) => {
+      await refresh();
+      setSelectedId(convId);
+      setDraftAnchor('');
+    },
+    [refresh],
+  );
 
   const remove = useCallback(
     async (id: string) => {
@@ -146,7 +156,7 @@ export function ChatHub() {
   }
 
   const selected = convs.find(c => c.id === selectedId) || null;
-  const activeTitle = selected ? (selected.title || selected.anchor_ticker || tr('chat.hub.untitled')) : tr('chat.hub.newTitle');
+  const activeTitle = selected ? (selected.title || selected.anchor_ticker || tr('chat.hub.untitled')) : (draftAnchor || tr('chat.hub.newTitle'));
   const activeSub = selected?.anchor_ticker || '';
 
   return (
@@ -243,20 +253,15 @@ export function ChatHub() {
           </div>
 
           <div style={{flex: 1, minHeight: 0, overflow: 'hidden'}}>
-            {selected ? (
-              <div style={{height: '100%'}}>
+            <div style={{height: '100%'}}>
+              {selected ? (
                 <ChatThreadPanel source={{kind: 'conversation', id: selected.id, anchorTicker: selected.anchor_ticker}} onActivity={refresh} onMeter={setMeter} />
-              </div>
-            ) : (
-              <div style={{height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: 32, gap: 8}}>
-                <div style={{width: 46, height: 46, borderRadius: 13, background: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 22, color: '#1c1404', marginBottom: 6}}>T</div>
-                <div style={{fontSize: 21, fontWeight: 600, letterSpacing: '-.02em', color: 'var(--text)'}}>{tr('chat.hub.startTitle')}</div>
-                <div style={{fontSize: 13.5, color: 'var(--text2)', maxWidth: 420, lineHeight: 1.55}}>{tr('chat.hub.startBody')}</div>
-                <button type="button" onClick={newChat} style={{marginTop: 10, display: 'inline-flex', alignItems: 'center', gap: 8, padding: '9px 16px', borderRadius: 10, background: 'var(--accent-fill)', border: '1px solid var(--accent-line)', color: 'var(--accent2)', fontWeight: 600, fontSize: 13, cursor: 'pointer'}}>
-                  <Plus size={15} /> {tr('chat.hub.new')}
-                </button>
-              </div>
-            )}
+              ) : (
+                // NEW-chat draft: shows the suggestion chips + composer (no auto-asked question,
+                // no auto-opened thread); the conversation is created on the first send.
+                <ChatThreadPanel source={{kind: 'draft', anchorTicker: draftAnchor || undefined}} onMeter={setMeter} onCreated={onDraftCreated} />
+              )}
+            </div>
           </div>
         </div>
       </div>

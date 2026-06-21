@@ -111,7 +111,10 @@ function ChatWidget({widget, ticker, tr}: {widget: string; ticker: string; tr: (
     return <ChatPortfolioWidget type={widget} />;
   }
   if (!ticker) return null;
-  if (widget === 'kline') {
+  // kline (price) and indicators (技术指标叠加图) both render the overlay chart inline —
+  // KLineChart draws candles + the MA overlays + MACD/RSI panes, which IS the indicators
+  // overlay the model says it surfaced (was falling through to a bare deep-link before).
+  if (widget === 'kline' || widget === 'indicators') {
     return <KLineChart ticker={ticker} />;
   }
   if (widget === 'fundamentals_table' || widget === 'valuation_table') {

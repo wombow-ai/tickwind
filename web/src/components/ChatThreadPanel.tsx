@@ -3,7 +3,7 @@
 import {Plus, Send} from 'lucide-react';
 import {useCallback, useEffect, useRef, useState} from 'react';
 import {MsgRow, type Msg} from '@/components/chatRender';
-import {type ChatResponse, clearChat, getChatHistory, getConvHistory, postChat, postConvChatStream} from '@/lib/api';
+import {type ChatResponse, clearChat, createConversation, getChatHistory, getConvHistory, postChat, postConvChatStream} from '@/lib/api';
 import {useAuth} from '@/lib/auth';
 import {chatVars, CHAT_MONO} from '@/lib/chatTheme';
 import {useLang, useT} from '@/lib/i18n';
@@ -16,7 +16,11 @@ import {useDark} from '@/lib/theme';
 
 export type ChatSource =
   | {kind: 'stock'; ticker: string}
-  | {kind: 'conversation'; id: string; anchorTicker?: string};
+  | {kind: 'conversation'; id: string; anchorTicker?: string}
+  // A NEW-chat draft: no conversation exists yet (so the hub lands on suggestions, never an
+  // auto-asked question or an old thread). The conversation is created lazily on first send,
+  // anchored to anchorTicker when arriving from a stock page (?ticker=).
+  | {kind: 'draft'; anchorTicker?: string};
 
 const SUGGESTIONS = ['chat.suggest.valuation', 'chat.suggest.bear', 'chat.suggest.flows'];
 
@@ -25,10 +29,12 @@ const SUGGESTIONS = ['chat.suggest.valuation', 'chat.suggest.bear', 'chat.sugges
 const threadCache = new Map<string, Msg[]>();
 
 function sourceKey(s: ChatSource): string {
-  return s.kind === 'stock' ? 'stock:' + s.ticker.toUpperCase() : 'conv:' + s.id;
+  if (s.kind === 'stock') return 'stock:' + s.ticker.toUpperCase();
+  if (s.kind === 'draft') return 'draft:' + (s.anchorTicker ?? '');
+  return 'conv:' + s.id;
 }
 
-export function ChatThreadPanel({source, onActivity, onMeter}: {source: ChatSource; onActivity?: () => void; onMeter?: (m: {used: number; limit: number}) => void}) {
+export function ChatThreadPanel({source, onActivity, onMeter, onCreated}: {source: ChatSource; onActivity?: () => void; onMeter?: (m: {used: number; limit: number}) => void; onCreated?: (convId: string) => void}) {
   const dark = useDark();
   const tr = useT();
   const {lang} = useLang();
@@ -41,6 +47,8 @@ export function ChatThreadPanel({source, onActivity, onMeter}: {source: ChatSour
   const [err, setErr] = useState(false);
   const [meter, setMeter] = useState<{used: number; limit: number} | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
+  // For a draft source: the conversation id created on first send (then reused for the turn).
+  const draftConvId = useRef<string | null>(null);
 
   const fallbackTicker = source.kind === 'stock' ? source.ticker.toUpperCase() : (source.anchorTicker ?? '').toUpperCase();
   const key = sourceKey(source);
@@ -49,6 +57,12 @@ export function ChatThreadPanel({source, onActivity, onMeter}: {source: ChatSour
   // otherwise fetch once and cache it.
   useEffect(() => {
     setMeter(null);
+    // A draft has no conversation yet — start empty (suggestions), create on first send.
+    if (source.kind === 'draft') {
+      draftConvId.current = null;
+      setMessages([]);
+      return;
+    }
     const cached = threadCache.get(key);
     if (cached) {
       setMessages(cached);
@@ -99,10 +113,27 @@ export function ChatThreadPanel({source, onActivity, onMeter}: {source: ChatSour
       try {
         const token = await getToken();
         let res: ChatResponse;
-        if (source.kind === 'conversation') {
+        let createdConvId: string | null = null;
+        if (source.kind === 'stock') {
+          res = await postChat(source.ticker, msg, token, lang);
+        } else {
+          // conversation OR draft → stream to a conversation. A draft creates the
+          // conversation lazily on this first send (anchored to its ticker when present),
+          // so the hub never auto-asks a question or auto-opens an old thread.
+          let convId: string;
+          if (source.kind === 'draft') {
+            if (!draftConvId.current) {
+              const conv = await createConversation(source.anchorTicker ? {anchorTicker: source.anchorTicker} : {title: tr('chat.hub.newTitle')}, token);
+              draftConvId.current = conv.id;
+              createdConvId = conv.id;
+            }
+            convId = draftConvId.current;
+          } else {
+            convId = source.id;
+          }
           // Stream: append tokens to a live assistant message; `done` reconciles with the
           // authoritative advice-filtered blocks (so the anti-hallucination filter wins).
-          res = await postConvChatStream(source.id, msg, token, lang, tok => {
+          res = await postConvChatStream(convId, msg, token, lang, tok => {
             setStreamStarted(true);
             setMessages(m => {
               const next = [...m];
@@ -115,8 +146,6 @@ export function ChatThreadPanel({source, onActivity, onMeter}: {source: ChatSour
               return next;
             });
           });
-        } else {
-          res = await postChat(source.ticker, msg, token, lang);
         }
         setMessages(m => {
           const next = [...m];
@@ -128,6 +157,8 @@ export function ChatThreadPanel({source, onActivity, onMeter}: {source: ChatSour
             next.push(finalMsg);
           }
           threadCache.set(key, next);
+          // Seed the new conversation's cache so the hub loads it instantly on the switch.
+          if (createdConvId) threadCache.set('conv:' + createdConvId, next);
           return next;
         });
         if (res.meter) {
@@ -135,6 +166,7 @@ export function ChatThreadPanel({source, onActivity, onMeter}: {source: ChatSour
           onMeter?.(res.meter);
         }
         onActivity?.();
+        if (createdConvId) onCreated?.(createdConvId); // hub: select the new conversation + refresh
       } catch {
         setErr(true);
         setMessages(m => {
@@ -148,7 +180,7 @@ export function ChatThreadPanel({source, onActivity, onMeter}: {source: ChatSour
         setStreamStarted(false);
       }
     },
-    [key, lang, sending, getToken, onActivity, onMeter], // eslint-disable-line react-hooks/exhaustive-deps
+    [key, lang, sending, getToken, onActivity, onMeter, onCreated], // eslint-disable-line react-hooks/exhaustive-deps
   );
 
   const resetStockThread = useCallback(async () => {

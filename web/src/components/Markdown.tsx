@@ -2,6 +2,7 @@
 
 import Link from '@/components/LocalLink';
 import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import {useDark} from '@/lib/theme';
 import {cx, tok} from '@/lib/ui';
 
@@ -43,6 +44,7 @@ export function Markdown({children, className}: {children: string; className?: s
   return (
     <div className={cx('tw-md break-words text-[13.5px] leading-relaxed', t.text, className)}>
       <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
         disallowedElements={['img']}
         unwrapDisallowed
         components={{
