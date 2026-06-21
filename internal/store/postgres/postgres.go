@@ -1290,6 +1290,31 @@ ON CONFLICT (user_id, period) DO UPDATE SET tokens = chat_token_quota.tokens + $
 	return nil
 }
 
+// GetBacktestFreeUsed returns the user's lifetime free-backtest runs (0 when none).
+func (s *Store) GetBacktestFreeUsed(ctx context.Context, userID string) (int, error) {
+	var used int
+	err := s.pool.QueryRow(ctx, `SELECT used FROM backtest_free_quota WHERE user_id = $1`, userID).Scan(&used)
+	switch {
+	case errors.Is(err, pgx.ErrNoRows):
+		return 0, nil
+	case err != nil:
+		return 0, fmt.Errorf("postgres: get backtest-free quota: %w", err)
+	}
+	return used, nil
+}
+
+// IncrBacktestFreeUsed records one free backtest run for the user (lifetime, no period).
+func (s *Store) IncrBacktestFreeUsed(ctx context.Context, userID string) error {
+	const query = `
+INSERT INTO backtest_free_quota (user_id, used, updated_at)
+VALUES ($1, 1, now())
+ON CONFLICT (user_id) DO UPDATE SET used = backtest_free_quota.used + 1, updated_at = now()`
+	if _, err := s.pool.Exec(ctx, query, userID); err != nil {
+		return fmt.Errorf("postgres: incr backtest-free quota: %w", err)
+	}
+	return nil
+}
+
 // GetSubscription returns the user's Stripe-synced entitlement (found=false when
 // the user has no row → the caller treats them as free).
 func (s *Store) GetSubscription(ctx context.Context, userID string) (store.Subscription, bool, error) {

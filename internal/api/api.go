@@ -445,10 +445,10 @@ type Server struct {
 	// chatMonthlyTokenLimit is the per-Pro-user, per-ET-month TOKEN soft-cap — the cost-true
 	// quota the hub gates + shows as a percentage (SetChatTokenLimit, default 1,000,000).
 	chatMonthlyTokenLimit int
-	// chatFreeLimit is the per-FREE-user, per-ET-month MESSAGE soft-cap (SetChatFreeLimit,
-	// default 5) — a small taste of the chat for signed-in non-Pro users; over it the chat
-	// returns an upgrade note and the UI hides the free meter.
-	chatFreeLimit int
+	// chatFreeWeeklyTokens is the per-FREE-user, per-ET-WEEK TOKEN soft-cap (SetChatFreeWeeklyTokens,
+	// default 50,000) — a small weekly token taste of the chat for signed-in non-Pro users
+	// (token-based like Pro); over it the chat returns an upgrade note and the UI hides the meter.
+	chatFreeWeeklyTokens int
 	// chatRL throttles chat posts per user (burst control atop the monthly meter).
 	chatRL *rateLimiter
 	// Global per-ET-day chat-generation backstop (catastrophic LLM-cost guard), guarded
@@ -529,7 +529,7 @@ func New(st store.Store, hub QuoteStream, enricher enrich.Enricher, verifier *au
 			admins[id] = true
 		}
 	}
-	s := &Server{store: st, hub: hub, clip: clip.NewFetcher(), enrich: enricher, auth: verifier, bars: bars, topics: topicSrc, opps: oppSrc, universe: universeSrc, gurus: guruSrc, ingestor: ingestor, symbols: symbolSrc, events: eventSrc, fundamentals: fundSrc, earnings: earningsSrc, congress: congressSrc, institutional: institutionalSrc, live: liveSub, indices: indicesSrc, short: shortSrc, briefing: briefingSrc, options: optionsSrc, thirteenf: thirteenfSrc, admins: admins, commentRL: newRateLimiter(10, 10*time.Minute), chatMonthlyLimit: 150, chatFreeLimit: 5, chatRL: newRateLimiter(20, 10*time.Minute), sumCache: map[string]summaryEntry{}, sumInflight: map[string]chan struct{}{}, researchCache: map[string]researchEntry{}, researchInflight: map[string]chan struct{}{}, deepResearchLimit: 1, deepResearchLimitPro: 100, moveCache: map[string]movementEntry{}, moveInflight: map[string]chan struct{}{}, meCache: map[string]materialEventsEntry{}, meInflight: map[string]chan struct{}{}, iaCache: map[string]insiderActivityEntry{}, iaInflight: map[string]chan struct{}{}, btCache: map[string]backtestEntry{}, digestCache: map[string]digestEntry{}, digestInflight: map[string]chan struct{}{}, log: log}
+	s := &Server{store: st, hub: hub, clip: clip.NewFetcher(), enrich: enricher, auth: verifier, bars: bars, topics: topicSrc, opps: oppSrc, universe: universeSrc, gurus: guruSrc, ingestor: ingestor, symbols: symbolSrc, events: eventSrc, fundamentals: fundSrc, earnings: earningsSrc, congress: congressSrc, institutional: institutionalSrc, live: liveSub, indices: indicesSrc, short: shortSrc, briefing: briefingSrc, options: optionsSrc, thirteenf: thirteenfSrc, admins: admins, commentRL: newRateLimiter(10, 10*time.Minute), chatMonthlyLimit: 150, chatFreeWeeklyTokens: 50_000, chatRL: newRateLimiter(20, 10*time.Minute), sumCache: map[string]summaryEntry{}, sumInflight: map[string]chan struct{}{}, researchCache: map[string]researchEntry{}, researchInflight: map[string]chan struct{}{}, deepResearchLimit: 1, deepResearchLimitPro: 100, moveCache: map[string]movementEntry{}, moveInflight: map[string]chan struct{}{}, meCache: map[string]materialEventsEntry{}, meInflight: map[string]chan struct{}{}, iaCache: map[string]insiderActivityEntry{}, iaInflight: map[string]chan struct{}{}, btCache: map[string]backtestEntry{}, digestCache: map[string]digestEntry{}, digestInflight: map[string]chan struct{}{}, log: log}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", s.health)
 
@@ -4033,6 +4033,16 @@ func researchMonth() string {
 		loc = time.UTC
 	}
 	return time.Now().In(loc).Format("2006-01")
+}
+
+// researchWeek is the ET ISO-week key ("YYYY-Www") for the per-week free-chat token bucket.
+func researchWeek() string {
+	loc, err := time.LoadLocation("America/New_York")
+	if err != nil {
+		loc = time.UTC
+	}
+	y, w := time.Now().In(loc).ISOWeek()
+	return fmt.Sprintf("%04d-W%02d", y, w)
 }
 
 // getSummary returns the ticker's AI digest in the requested language. The digest is

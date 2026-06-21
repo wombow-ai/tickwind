@@ -98,6 +98,10 @@ const (
 	maxBacktestHorizon     = 60
 )
 
+// freeBacktestRuns is the LIFETIME free backtest allowance for a signed-in non-Pro user — a
+// one-time conversion taste of the Pro-locked backtester.
+const freeBacktestRuns = 1
+
 // getBacktest replays a signal rule over a ticker's daily candles and returns the
 // historical win rate / avg forward return / trade count / buy-and-hold baseline (see
 // indicators.BacktestSignal). It is a disclosed historical statistic, never advice.
@@ -125,9 +129,16 @@ func (s *Server) getBacktest(w http.ResponseWriter, r *http.Request) {
 	if horizon > maxBacktestHorizon {
 		horizon = maxBacktestHorizon
 	}
-	if s.indicatorsPaywallEnabled {
-		u, _ := auth.UserFrom(r.Context())
-		if s.tierOf(r.Context(), u.ID) != tierPro {
+	u, _ := auth.UserFrom(r.Context())
+	freeRun := false // true when THIS run consumes the signed-in non-Pro user's one free backtest
+	if s.indicatorsPaywallEnabled && s.tierOf(r.Context(), u.ID) != tierPro {
+		// Signed-in non-Pro users get ONE free backtest (lifetime, no reset); anon must sign in.
+		if u.ID != "" {
+			if used, _ := s.store.GetBacktestFreeUsed(r.Context(), u.ID); used < freeBacktestRuns {
+				freeRun = true
+			}
+		}
+		if !freeRun {
 			writeJSON(w, http.StatusOK, backtestResp{Ticker: ticker, PaywallLocked: true})
 			return
 		}
@@ -141,6 +152,12 @@ func (s *Server) getBacktest(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		writeJSON(w, http.StatusUnprocessableEntity, errBody("insufficient history to backtest "+rule))
 		return
+	}
+	// Charge the free allowance only on a SUCCESSFUL run (not on a bad rule / no history).
+	if freeRun {
+		if err := s.store.IncrBacktestFreeUsed(r.Context(), u.ID); err != nil {
+			s.log.Debug("backtest free-use incr failed (non-fatal)", "user", u.ID, "err", err)
+		}
 	}
 	writeJSON(w, http.StatusOK, backtestResp{Ticker: ticker, Result: &res})
 }

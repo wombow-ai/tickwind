@@ -39,6 +39,7 @@ type Store struct {
 	convs     map[string]store.Conversation       // conversationID -> Conversation (Product C hub)
 	chatQuota map[string]int                      // "userID|PERIOD" (ET month) -> Product B chat messages used
 	chatTok   map[string]int                      // "userID|PERIOD" (ET month) -> Product B chat tokens used
+	btFree    map[string]int                      // "userID" -> lifetime free backtest runs used
 	comments  map[string]store.Comment            // commentID -> Comment (public)
 	cmtLikes  map[string]map[string]bool          // commentID -> set of userIDs who liked
 	subs      map[string]store.Subscription       // userID -> Stripe-synced entitlement
@@ -71,6 +72,7 @@ func New() *Store {
 		convs:     make(map[string]store.Conversation),
 		chatQuota: make(map[string]int),
 		chatTok:   make(map[string]int),
+		btFree:    make(map[string]int),
 		comments:  make(map[string]store.Comment),
 		cmtLikes:  make(map[string]map[string]bool),
 		subs:      make(map[string]store.Subscription),
@@ -871,6 +873,19 @@ func (s *Store) IncrChatTokensUsed(_ context.Context, userID, period string, tok
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.chatTok[deepQuotaKey(userID, period)] += tokens
+	return nil
+}
+
+func (s *Store) GetBacktestFreeUsed(_ context.Context, userID string) (int, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.btFree[userID], nil
+}
+
+func (s *Store) IncrBacktestFreeUsed(_ context.Context, userID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.btFree[userID]++
 	return nil
 }
 

@@ -277,6 +277,12 @@ func (s Split) GetChatTokensUsed(ctx context.Context, userID, period string) (in
 func (s Split) IncrChatTokensUsed(ctx context.Context, userID, period string, tokens int) error {
 	return s.User.IncrChatTokensUsed(ctx, userID, period, tokens)
 }
+func (s Split) GetBacktestFreeUsed(ctx context.Context, userID string) (int, error) {
+	return s.User.GetBacktestFreeUsed(ctx, userID)
+}
+func (s Split) IncrBacktestFreeUsed(ctx context.Context, userID string) error {
+	return s.User.IncrBacktestFreeUsed(ctx, userID)
+}
 
 // Subscriptions / Stripe billing → the DURABLE Market store (billing is not cheap
 // to rebuild, unlike the per-user quota above).

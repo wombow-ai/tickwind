@@ -11,45 +11,37 @@ import (
 	"github.com/wombow-ai/tickwind/internal/store/memory"
 )
 
-// TestChatQuotaGate_FreeAndPro: signed-in FREE users get a small message-count taste then an
-// upgrade nudge (no meter); Pro users are gated on the cost-true TOKEN quota instead.
+// TestChatQuotaGate_FreeAndPro: both tiers are TOKEN-based — Pro on a per-MONTH budget (with
+// the sidebar meter), signed-in FREE users on a small per-WEEK token taste (no meter), then
+// an upgrade nudge. Verifies the period + limit each tier is gated on.
 func TestChatQuotaGate_FreeAndPro(t *testing.T) {
 	st := memory.New()
 	ctx := context.Background()
-	s := &Server{store: st, chatFreeLimit: 3, chatMonthlyTokenLimit: 1000, log: slog.New(slog.NewTextHandler(io.Discard, nil))}
-	period := researchMonth()
+	s := &Server{store: st, chatFreeWeeklyTokens: 3000, chatMonthlyTokenLimit: 1000, log: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	week, month := researchWeek(), researchMonth()
 
-	// FREE user (no subscription): allowed up to the small message cap, then blocked + upgrade note.
-	for i := 0; i < 3; i++ {
-		note, blocked, pro, _ := s.chatQuotaGate(ctx, "free", "en")
-		if pro || blocked || note != "" {
-			t.Fatalf("free turn %d: pro=%v blocked=%v note=%q; want free + not blocked", i, pro, blocked, note)
-		}
-		_ = st.IncrChatMsgUsed(ctx, "free", period)
+	// FREE user (no subscription): gated on the WEEKLY token bucket.
+	note, blocked, pro, period, _, limit := s.chatQuotaGate(ctx, "free", "en")
+	if pro || blocked || period != week || limit != 3000 {
+		t.Fatalf("free under cap: pro=%v blocked=%v period=%q limit=%d; want free, weekly, 3000", pro, blocked, period, limit)
 	}
-	note, blocked, pro, _ := s.chatQuotaGate(ctx, "free", "en")
+	_ = st.IncrChatTokensUsed(ctx, "free", week, 3000) // hit the weekly cap
+	note, blocked, pro, _, _, _ = s.chatQuotaGate(ctx, "free", "en")
 	if pro || !blocked {
-		t.Fatalf("free over-cap: pro=%v blocked=%v; want free + blocked", pro, blocked)
+		t.Fatalf("free over weekly cap: pro=%v blocked=%v; want free + blocked", pro, blocked)
 	}
 	if !strings.Contains(strings.ToLower(note), "upgrade") {
 		t.Fatalf("free block note should nudge upgrade: %q", note)
 	}
 
-	// PRO user: gated on TOKENS, not the small free message cap.
+	// PRO user: gated on the MONTHLY token budget — the free user's weekly bucket is separate.
 	_ = st.UpsertSubscription(ctx, store.Subscription{UserID: "pro", Status: "active", Tier: tierPro})
-	for i := 0; i < 10; i++ { // many messages must NOT block a Pro user
-		_ = st.IncrChatMsgUsed(ctx, "pro", period)
+	_, blocked, pro, period, used, limit := s.chatQuotaGate(ctx, "pro", "en")
+	if !pro || blocked || period != month || limit != 1000 || used != 0 {
+		t.Fatalf("pro under cap: pro=%v blocked=%v period=%q limit=%d used=%d; want pro, monthly, 1000, 0", pro, blocked, period, limit, used)
 	}
-	_, blocked, pro, used := s.chatQuotaGate(ctx, "pro", "en")
-	if !pro || blocked {
-		t.Fatalf("pro under token cap: pro=%v blocked=%v; want pro + not blocked", pro, blocked)
-	}
-	if used != 0 {
-		t.Fatalf("pro pre-turn tokens = %d; want 0", used)
-	}
-	// Over the token cap → blocked, with the token count surfaced for the meter.
-	_ = st.IncrChatTokensUsed(ctx, "pro", period, 1000)
-	_, blocked, pro, used = s.chatQuotaGate(ctx, "pro", "en")
+	_ = st.IncrChatTokensUsed(ctx, "pro", month, 1000) // hit the monthly cap
+	_, blocked, pro, _, used, _ = s.chatQuotaGate(ctx, "pro", "en")
 	if !pro || !blocked || used < 1000 {
 		t.Fatalf("pro over token cap: pro=%v blocked=%v used=%d; want pro + blocked + used>=1000", pro, blocked, used)
 	}

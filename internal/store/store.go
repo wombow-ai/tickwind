@@ -478,6 +478,12 @@ type Store interface {
 	GetChatTokensUsed(ctx context.Context, userID, period string) (int, error)
 	IncrChatTokensUsed(ctx context.Context, userID, period string, tokens int) error
 
+	// Per-user LIFETIME free-backtest counter (no period — a one-time taste for signed-in
+	// non-Pro users). GetBacktestFreeUsed returns the runs consumed (0 when none);
+	// IncrBacktestFreeUsed records one. Best-effort (read fails OPEN), routed to the User store.
+	GetBacktestFreeUsed(ctx context.Context, userID string) (int, error)
+	IncrBacktestFreeUsed(ctx context.Context, userID string) error
+
 	// Comments are PUBLIC user posts on a stock (Ticker) or the global board
 	// (Ticker == ""). Durable (Market store). List excludes soft-deleted rows;
 	// Delete is author-or-admin (admin=true skips the author check); Report flags
