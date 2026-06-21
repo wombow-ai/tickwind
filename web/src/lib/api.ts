@@ -3072,6 +3072,13 @@ export interface DigestStock {
 }
 
 /** The signed-in user's personalized overnight report from `GET /v1/me/digest`. */
+/** How to treat the AI overview ("Tonight's overview"), composed off the request path. */
+export type DigestSummaryStatus =
+  | 'ready' // summary is final (present, or empty when nothing to summarize)
+  | 'generating' // Pro: the overview is composing in the background — poll until ready
+  | 'pro_required' // non-Pro: the overview is a Pro feature (show an upgrade card)
+  | 'unavailable'; // the LLM is disabled (hide the overview)
+
 export interface MyDigest {
   /** ET day, YYYY-MM-DD. */
   date: string;
@@ -3079,6 +3086,8 @@ export interface MyDigest {
    *  is off or there's no material. */
   summary: string;
   stocks: DigestStock[];
+  /** State of the AI overview — the data rows always serve instantly regardless. */
+  summary_status?: DigestSummaryStatus;
 }
 
 /**

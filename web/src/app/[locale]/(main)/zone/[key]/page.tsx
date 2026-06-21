@@ -3,6 +3,7 @@ import {AlertTriangle, Layers} from 'lucide-react';
 import {notFound} from 'next/navigation';
 import Link from '@/components/LocalLink';
 import {ZoneLayers} from '@/components/ZoneLayers';
+import {ZoneStack} from '@/components/ZoneStack';
 import {SITE_URL, langAlternates} from '@/lib/config';
 import {isLocale, LOCALES} from '@/lib/locale';
 import {ogImageMeta} from '@/lib/og';
@@ -137,6 +138,11 @@ export default async function ZoneRoute({
           </span>
         </div>
       )}
+
+      {/* AI flagship: a funnel/"cake" diagram of the ordered layers (simple, intuitive
+          overview) above the detailed per-layer cards. tenx-theme zones are sibling
+          sub-themes (no hierarchy), so the funnel is gated to the flagship. */}
+      {z.kind === 'ai-flagship' && <ZoneStack zone={z} zh={zh} />}
 
       <ZoneLayers zone={z} zh={zh} />
 

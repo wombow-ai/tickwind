@@ -1,6 +1,6 @@
 'use client';
 
-import {Bell, ExternalLink, PieChart, Sparkles, Star, StickyNote, Sunrise, User} from 'lucide-react';
+import {Bell, Crown, ExternalLink, Loader2, PieChart, Sparkles, Star, StickyNote, Sunrise, User} from 'lucide-react';
 import type {LucideIcon} from 'lucide-react';
 import Link from '@/components/LocalLink';
 import {usePathname, useRouter, useSearchParams} from 'next/navigation';
@@ -134,18 +134,31 @@ function OverviewTab() {
 
   useEffect(() => {
     const c = new AbortController();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let polls = 0;
     setStatus('loading');
-    (async () => {
+    const load = async () => {
       try {
         const token = await getToken();
         const d = await getMyDigest(token, lang, c.signal);
+        if (c.signal.aborted) return;
         setDigest(d);
         setStatus('ready');
+        // The data rows serve instantly; the Pro AI overview composes in the background —
+        // poll a few times until it's ready (then stop).
+        if (d.summary_status === 'generating' && polls < 8) {
+          polls++;
+          timer = setTimeout(load, 4000);
+        }
       } catch {
         if (!c.signal.aborted) setStatus('error');
       }
-    })();
-    return () => c.abort();
+    };
+    void load();
+    return () => {
+      c.abort();
+      if (timer) clearTimeout(timer);
+    };
   }, [getToken, lang]);
 
   // Live prices: overlay the SSE quote stream on the digest rows so each stock's
@@ -186,28 +199,55 @@ function OverviewTab() {
     );
   }
 
+  const overviewHeader = (
+    <div className="mb-2 flex flex-wrap items-center gap-2">
+      <h2 className={cx('flex items-center gap-1.5 text-[14px] font-bold', t.text)}>
+        <Sparkles size={15} className={dark ? 'text-violet-300' : 'text-violet-500'} />
+        {tr('digest.aiTitle')}
+      </h2>
+      <span
+        className={cx(
+          'rounded-md px-1.5 py-0.5 text-[10px] font-bold',
+          dark ? 'bg-violet-500/15 text-violet-300' : 'bg-violet-50 text-violet-600',
+        )}
+      >
+        {tr('ai.badge')}
+      </span>
+    </div>
+  );
+  const ss = digest?.summary_status;
+
   return (
     <div className="space-y-4">
-      {digest?.summary && (
+      {/* "Tonight's overview" — a Pro AI feature composed off the request path so the rows
+          below never wait on the LLM. Pro+ready → render; Pro+generating → loading; non-Pro
+          → upgrade card; LLM-off → hidden. */}
+      {ss === 'pro_required' ? (
         <section className={cx('rounded-2xl border p-4', t.card, t.border, t.soft)}>
-          <div className="mb-2 flex flex-wrap items-center gap-2">
-            <h2 className={cx('flex items-center gap-1.5 text-[14px] font-bold', t.text)}>
-              <Sparkles size={15} className={dark ? 'text-violet-300' : 'text-violet-500'} />
-              {tr('digest.aiTitle')}
-            </h2>
-            <span
-              className={cx(
-                'rounded-md px-1.5 py-0.5 text-[10px] font-bold',
-                dark ? 'bg-violet-500/15 text-violet-300' : 'bg-violet-50 text-violet-600',
-              )}
-            >
-              {tr('ai.badge')}
-            </span>
+          {overviewHeader}
+          <p className={cx('text-[13px]', t.sub)}>{tr('digest.proBody')}</p>
+          <Link
+            href="/pro"
+            className={cx('mt-3 inline-flex items-center gap-1.5 rounded-full px-3.5 py-2 text-[13px] font-semibold', btnPrimary(dark))}
+          >
+            <Crown size={14} /> {tr('settings.upgrade')}
+          </Link>
+        </section>
+      ) : ss === 'generating' ? (
+        <section className={cx('rounded-2xl border p-4', t.card, t.border, t.soft)}>
+          {overviewHeader}
+          <div className="flex items-center gap-2">
+            <Loader2 size={14} className={cx('animate-spin', t.faint)} />
+            <span className={cx('text-[13px]', t.sub)}>{tr('digest.generating')}</span>
           </div>
+        </section>
+      ) : digest?.summary ? (
+        <section className={cx('rounded-2xl border p-4', t.card, t.border, t.soft)}>
+          {overviewHeader}
           <Markdown>{digest.summary}</Markdown>
           <p className={cx('mt-2 text-[10.5px]', t.faint)}>{tr('ai.disclaimer')}</p>
         </section>
-      )}
+      ) : null}
       <section className={cx('overflow-hidden rounded-2xl border', t.card, t.border)}>
         <div className={cx('border-b px-4 py-2.5 text-[12.5px] font-semibold', t.border, t.sub)}>
           {tr('digest.stocksTitle')}

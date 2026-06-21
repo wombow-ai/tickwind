@@ -893,6 +893,8 @@ export const dict: Record<Lang, Record<string, string>> = {
     'me.alerts': 'Alerts',
     // overnight digest (Overview tab)
     'digest.aiTitle': "Tonight's overview",
+    'digest.proBody': 'A personalized AI overview of your whole watchlist, every session — unlock with Tickwind Pro.',
+    'digest.generating': 'Composing tonight’s overview…',
     'digest.stocksTitle': 'Your watchlist overnight',
     'digest.emptyTitle': 'No stocks yet',
     'digest.emptySub': 'Add stocks to your watchlist to get a personalized overnight report each morning.',
@@ -1816,6 +1818,8 @@ export const dict: Record<Lang, Record<string, string>> = {
     'me.alerts': '提醒',
     // overnight digest (Overview tab)
     'digest.aiTitle': '今夜综述',
+    'digest.proBody': '为你的整个自选股生成个性化 AI 综述,每次进来都有 —— 升级 Tickwind Pro 解锁。',
+    'digest.generating': '正在生成今夜综述…',
     'digest.stocksTitle': '自选股隔夜',
     'digest.emptyTitle': '还没有自选股',
     'digest.emptySub': '添加自选股,每天早晨即可收到一份个性化的隔夜报告。',

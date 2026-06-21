@@ -26,7 +26,7 @@ export function ZoneLayers({zone, zh}: {zone: Zone; zh: boolean}) {
   return (
     <div className="space-y-7">
       {zone.layers.map((layer, i) => (
-        <section key={layer.key} className="tw-fade">
+        <section key={layer.key} id={`layer-${layer.key}`} className="tw-fade scroll-mt-20">
           <div className="mb-1.5 flex items-center gap-2">
             <span className={cx('flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-bold', dark ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600')}>
               {i + 1}
