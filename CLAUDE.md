@@ -175,6 +175,27 @@ feature-flagged plugin, never on the critical path. Web only.
 - Full stack (server): `docker compose up -d --build`.
 
 ## Current state (update each iteration)
+- **2026-06-21 — 💬 AI chat hub UX rounds 1–3 shipped (streaming + token metering backend + 3 rounds of owner UX
+  feedback).** Backend increments already live + E2E-verified earlier this session: **real SSE streaming**
+  (`enrich.ChatStream`/`chat.AnswerStream`/`POST /v1/conversations/{id}/chat/stream`; `token` events then a `done`
+  event carrying the AUTHORITATIVE advice-filtered blocks so the client reconciles streamed prose with the
+  anti-hallucination contract) + **token-based monthly metering** (`chat_token_quota` store table,
+  `Get/IncrChatTokensUsed`, gating on `chatMonthlyTokenLimit`=1M tokens, `GET /v1/chat/usage`→`{used,limit}` for the
+  sidebar bar). **Round-3 frontend polish (commit `9c97b9d`, web-only, Vercel):** ① the "Use my data" toggle moved
+  OUT of the prominent chat sidebar → into `/settings` (new "AI privacy" section, reads once via `getMyPrefs`,
+  persists via `putMyPrefs` `chat_personal_data`); the chat sidebar now just has a Settings gear (→/settings). This
+  also fixed the toggle's apparent auto-revert — it now reads SERVER state on mount (the single source the chat
+  backend also reads), so the old frontend-only revert is gone. ② sidebar AI-quota bar restored (ChatHub fetches
+  `GET /v1/chat/usage` on load, was only populated after the first turn). ③ the sidebar Tickwind brand is now a
+  `Link href="/"` (a tasteful "back to the main site" from the chrome-free full-screen chat). Earlier rounds (also
+  live): per-stock "Ask your own question" → `/chat?ticker=` (3 suggestion chips, no auto-asked question); `/chat`
+  defaults to a NEW-chat draft (not the latest thread); GFM tables render (remark-gfm); the `indicators` chat widget
+  renders an inline `KLineChart` (was a deep-link); fixed the ≡ mobile-hamburger leaking onto desktop. **Gates:**
+  web tsc + next build green; **synthetic-user live E2E PASSED** (minted HS256 JWT, public api.tickwind.com w/
+  browser UA): `GET /v1/chat/usage`→`200 {limit:1000000,used:0}`; prefs round-trip default `true`→PUT `false`
+  (204)→GET `false`→PUT `true`→GET `true` (persistence confirmed server-side; test row cleaned up). ⚠️ owner verify:
+  real Pro session at /chat (streaming reply, usage bar, brand→home, Settings gear) + /settings AI-privacy toggle.
+  [[tickwind-product-b-chat]]
 - **2026-06-21 — 💳 Billing: owner reported 2 issues, both DIAGNOSED (1 not-a-bug, 1 frontend fix `23c441b`).**
   ① "99% comp coupon → card not charged / no Stripe income" is **EXPECTED**: 99% off $12.99 ≈ $0.13 < Stripe's
   **$0.50 min card charge** → can't collect, but the sub still activates (owner allalphaplus@gmail.com = active/pro,
