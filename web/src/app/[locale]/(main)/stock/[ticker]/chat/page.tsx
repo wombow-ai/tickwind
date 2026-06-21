@@ -31,8 +31,8 @@ export async function generateMetadata({params}: Params): Promise<Metadata> {
     title,
     description:
       loc === 'zh'
-        ? `就 ${t} 向 AI 提问 —— 答案基于公开数据,数字均有出处。Pro 功能。非投资建议。`
-        : `Ask an AI anything about ${t} — answers grounded in public data, every figure sourced. Pro feature. Not investment advice.`,
+        ? `就 ${t} 向 AI 提问 —— 答案基于公开数据,数字均有出处。登录即可试用,Pro 畅聊。非投资建议。`
+        : `Ask an AI anything about ${t} — answers grounded in public data, every figure sourced. Free to try when signed in; Pro for more. Not investment advice.`,
     alternates: langAlternates(`/stock/${encodeURIComponent(t)}/chat`, loc),
     // Gated, per-user content — keep it out of the index but let crawlers follow back.
     robots: {index: false, follow: true},
