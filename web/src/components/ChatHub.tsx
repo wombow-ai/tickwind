@@ -5,6 +5,7 @@ import {usePathname, useRouter, useSearchParams} from 'next/navigation';
 import {useCallback, useEffect, useMemo, useState} from 'react';
 import {ChatThreadPanel} from '@/components/ChatThreadPanel';
 import Link from '@/components/LocalLink';
+import {BrandLoader} from '@/components/ui/BrandLoader';
 import {LogoMark} from '@/components/ui/atoms';
 import {
   type Conversation,
@@ -216,7 +217,7 @@ export function ChatHub() {
   }, [convs, query]);
 
   if (authLoading || entLoading || loading) {
-    return <Shell dark={dark}><Center><span style={{fontSize: 13, color: 'var(--text3)'}}>{tr('chat.thinking')}</span></Center></Shell>;
+    return <Shell dark={dark}><Center><BrandLoader size={60} accent="var(--accent)" color="var(--text2)" label={tr('chat.thinking')} /></Center></Shell>;
   }
   // Anonymous → must sign in. Signed-in FREE users may chat on a small monthly taste (the
   // backend enforces the quota + nudges upgrade when used up), so there's no Pro gate here.

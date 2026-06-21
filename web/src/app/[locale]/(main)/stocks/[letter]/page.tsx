@@ -166,7 +166,7 @@ export default async function StocksLetterRoute({
         </Link>
       </nav>
 
-      <header className="mb-5">
+      <header className="mb-4">
         <h1 className="flex items-center gap-2 text-[24px] font-bold tracking-tight text-slate-900 dark:text-slate-100">
           <LayoutGrid size={20} className="text-sky-600 dark:text-sky-300" />
           {zh ? `以 ${up} 开头的美股` : `US stocks starting with ${up}`}
@@ -178,34 +178,35 @@ export default async function StocksLetterRoute({
         </p>
       </header>
 
-      {/* Self-healing grid: server-rendered when the universe baked OK (SEO), client-filled
-          from the live universe when an ill-timed build baked it empty. */}
-      <LetterGrid letter={lc} initial={tickers} zh={zh} />
-
-      {/* Cross-link hub: the full A–Z strip, for internal linking. */}
-      <section className="mt-8">
-        <h2 className="mb-2.5 text-[12px] font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">
-          {zh ? '浏览其他字母' : 'Browse other letters'}
-        </h2>
-        <div className="flex flex-wrap gap-1.5">
+      {/* A–Z jump bar — at the TOP and sticky under the TopNav, so you can switch letters
+          without scrolling past a long ticker grid (it used to sit at the very bottom). */}
+      <nav
+        aria-label={zh ? '按字母跳转' : 'Jump to letter'}
+        className="sticky top-14 z-10 mb-5 rounded-xl border border-slate-200 bg-white/85 px-2.5 py-2.5 backdrop-blur dark:border-slate-800 dark:bg-slate-950/80"
+      >
+        <div className="flex flex-wrap justify-center gap-1.5 sm:justify-start">
           {STOCK_DIRECTORY_LETTERS.map(other => (
             <Link
               key={other}
               href={`/stocks/${other}`}
               aria-current={other === lc ? 'page' : undefined}
-              className={`flex h-9 w-9 items-center justify-center rounded-lg border text-[13px] font-semibold uppercase transition ${
+              className={`flex h-8 w-8 items-center justify-center rounded-lg text-[13px] font-semibold uppercase transition ${
                 other === lc
-                  ? 'border-sky-300 bg-sky-50 text-sky-700 dark:border-sky-500/40 dark:bg-sky-500/15 dark:text-sky-300'
-                  : 'border-slate-200 text-slate-600 hover:border-sky-300 hover:bg-slate-50 dark:border-slate-800 dark:text-slate-300 dark:hover:border-sky-500/40 dark:hover:bg-slate-900'
+                  ? 'bg-sky-600 text-white shadow-sm dark:bg-sky-500'
+                  : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800'
               }`}
             >
               {other}
             </Link>
           ))}
         </div>
-      </section>
+      </nav>
 
-      <p className="mt-6 text-center text-[11px] text-slate-400 dark:text-slate-500">
+      {/* Self-healing grid: server-rendered when the universe baked OK (SEO), client-filled
+          from the live universe when an ill-timed build baked it empty. */}
+      <LetterGrid letter={lc} initial={tickers} zh={zh} />
+
+      <p className="mt-8 text-center text-[11px] text-slate-400 dark:text-slate-500">
         {zh
           ? '数据延迟 · 仅供参考 · 非投资建议'
           : 'Delayed data · For reference only · Not investment advice'}

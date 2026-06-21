@@ -1,0 +1,44 @@
+<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" fill="none" role="img" aria-label="tickwind loading">
+  <style>
+    svg{ --dur:1.5s; color:#0E1B2E }
+    @media (prefers-color-scheme: dark){ svg{ color:#E8EEF4 } }
+    .trk{ stroke-width:6; stroke-linecap:round; fill:none }
+    .trk.ink{ stroke:currentColor; opacity:.16 }
+    .trk.acc{ stroke:#00C08B; opacity:.22 }
+    .flow{ stroke-width:6; stroke-linecap:round; fill:none;
+           stroke-dasharray:34 66; animation:flow var(--dur) linear infinite }
+    .flow.ink{ stroke:currentColor }
+    .flow.acc{ stroke:#00C08B }
+    .flow.d1{ animation-delay:-.195s }
+    .flow.d2{ animation-delay:-.39s }
+    @keyframes flow{ to{ stroke-dashoffset:-100 } }
+    .ping{ stroke:#00C08B; stroke-width:1.6; fill:none;
+           transform-box:fill-box; transform-origin:center;
+           animation:ping var(--dur) ease-out infinite }
+    .ping.p2{ animation-delay:calc(var(--dur) / -2) }
+    @keyframes ping{
+      0%{ transform:scale(1); opacity:.7 }
+      58%{ transform:scale(2.8); opacity:0 }
+      100%{ transform:scale(2.8); opacity:0 }
+    }
+    @media (prefers-reduced-motion: reduce){
+      .flow{ animation:none; stroke-dasharray:none }
+      .ping{ display:none }
+    }
+  </style>
+
+  <!-- faint tracks (always visible) -->
+  <path class="trk ink" d="M18 67 C42 67 54 60 67 46"/>
+  <path class="trk ink" d="M18 76 C38 76 48 71 58 60"/>
+  <path class="trk acc" d="M18 58 C44 58 57 50 76 32"/>
+
+  <!-- flowing gusts -->
+  <path class="flow ink d1" pathLength="100" d="M18 67 C42 67 54 60 67 46"/>
+  <path class="flow ink d2" pathLength="100" d="M18 76 C38 76 48 71 58 60"/>
+  <path class="flow acc"    pathLength="100" d="M18 58 C44 58 57 50 76 32"/>
+
+  <!-- live data point + sonar ping -->
+  <circle class="ping"    cx="76" cy="32" r="5"/>
+  <circle class="ping p2" cx="76" cy="32" r="5"/>
+  <circle cx="76" cy="32" r="4.4" fill="#00C08B"/>
+</svg>

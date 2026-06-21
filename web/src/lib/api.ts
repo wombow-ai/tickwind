@@ -349,12 +349,14 @@ async function getJsonWithRetry<T>(
   path: string,
   signal?: AbortSignal,
   token?: string | null,
+  init?: RequestInit,
 ): Promise<T> {
   let res: Response;
   try {
     res = await fetchWithRetryOnce(`${API_BASE}${path}`, {
       headers: authHeaders({Accept: 'application/json'}, token),
       signal,
+      ...(init ?? {}),
     });
   } catch (e) {
     // Re-throw a deliberate cancel so callers can ignore it; only a real
@@ -2330,7 +2332,14 @@ export interface UniverseSymbolsResponse {
  * `/stock/{t}` page per name (unlike `/v1/screen`, it is not capped at 200).
  */
 export async function getUniverseSymbols(signal?: AbortSignal): Promise<string[]> {
-  const r = await getJson<UniverseSymbolsResponse>('/v1/universe/symbols', signal);
+  // The A–Z directory builds ~53 routes (26 letters × 2 locales + the hub) in one run, and
+  // each needs this SAME ~8.7k-symbol universe. Route it through Next's Data Cache
+  // (`revalidate` 1h) so those builds DEDUPE to a single network call — otherwise each fires
+  // a cold ~59 KB request through the Cloudflare tunnel, the concurrent storm times out, and
+  // the pages bake EMPTY (the bug behind the empty directory). `next` is ignored in the
+  // browser, where the self-heal passes its own short-timeout signal (uncached, fine).
+  const init = {next: {revalidate: 3600}} as RequestInit;
+  const r = await getJsonWithRetry<UniverseSymbolsResponse>('/v1/universe/symbols', signal, null, init);
   return r.symbols ?? [];
 }
 

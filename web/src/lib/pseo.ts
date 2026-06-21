@@ -52,7 +52,10 @@ export async function popularTickers(): Promise<string[]> {
  */
 export async function quoteBearingTickers(): Promise<string[]> {
   try {
-    return await getUniverseSymbols(AbortSignal.timeout(8000));
+    // 15s (was 8s): the universe is ~59 KB and the FIRST (uncached) fetch goes through a
+    // cold Cloudflare-tunnel hop — too tight a timeout was a cause of empty directory bakes.
+    // Subsequent directory pages in the same build hit Next's Data Cache instantly.
+    return await getUniverseSymbols(AbortSignal.timeout(15000));
   } catch {
     // API hiccup → no expansion this build; the popular set still ships.
     return [];

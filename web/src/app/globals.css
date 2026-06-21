@@ -162,6 +162,95 @@ summary:focus-visible,
   }
 }
 
+/* ---------------- brand loader (Tickwind streams) ----------------
+ * The owner-designed loading mark: three wind streams flowing toward a live data point
+ * with a sonar ping. Ink tracks ride `currentColor` (navy on light, near-white on dark);
+ * the accent (green by default) is a CSS var so a host theme can override it (the gold
+ * chat). Pure CSS so <BrandLoader> ships as a server component (no JS). Respects reduced
+ * motion. See components/ui/BrandLoader.tsx. */
+.tw-load {
+  color: #0e1b2e;
+  --tw-load-accent: #00c08b;
+  display: block;
+}
+html.dark .tw-load {
+  color: #e8eef4;
+}
+.tw-load .trk {
+  stroke-width: 6;
+  stroke-linecap: round;
+  fill: none;
+}
+.tw-load .trk.ink {
+  stroke: currentColor;
+  opacity: 0.16;
+}
+.tw-load .trk.acc {
+  stroke: var(--tw-load-accent);
+  opacity: 0.22;
+}
+.tw-load .flow {
+  stroke-width: 6;
+  stroke-linecap: round;
+  fill: none;
+  stroke-dasharray: 34 66;
+  animation: tw-load-flow 1.5s linear infinite;
+}
+.tw-load .flow.ink {
+  stroke: currentColor;
+}
+.tw-load .flow.acc {
+  stroke: var(--tw-load-accent);
+}
+.tw-load .flow.d1 {
+  animation-delay: -0.195s;
+}
+.tw-load .flow.d2 {
+  animation-delay: -0.39s;
+}
+@keyframes tw-load-flow {
+  to {
+    stroke-dashoffset: -100;
+  }
+}
+.tw-load .ping {
+  stroke: var(--tw-load-accent);
+  stroke-width: 1.6;
+  fill: none;
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: tw-load-ping 1.5s ease-out infinite;
+}
+.tw-load .ping.p2 {
+  animation-delay: -0.75s;
+}
+.tw-load .dot {
+  fill: var(--tw-load-accent);
+}
+@keyframes tw-load-ping {
+  0% {
+    transform: scale(1);
+    opacity: 0.7;
+  }
+  58% {
+    transform: scale(2.8);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(2.8);
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tw-load .flow {
+    animation: none;
+    stroke-dasharray: none;
+  }
+  .tw-load .ping {
+    display: none;
+  }
+}
+
 /* ------------------------------ price flash ------------------------------ */
 .tw-flash-up {
   animation: tw-up 0.85s ease-out;
