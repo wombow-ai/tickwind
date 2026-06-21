@@ -50,16 +50,25 @@ export async function popularTickers(): Promise<string[]> {
  * NOTE: this universe (the Alpaca snapshot) currently excludes S&P mega-caps
  * (AAPL/MSFT/…); they are covered in the sitemap via {@link popularTickers}.
  */
-export async function quoteBearingTickers(): Promise<string[]> {
-  try {
-    // 15s (was 8s): the universe is ~59 KB and the FIRST (uncached) fetch goes through a
-    // cold Cloudflare-tunnel hop — too tight a timeout was a cause of empty directory bakes.
-    // Subsequent directory pages in the same build hit Next's Data Cache instantly.
-    return await getUniverseSymbols(AbortSignal.timeout(15000));
-  } catch {
-    // API hiccup → no expansion this build; the popular set still ships.
-    return [];
-  }
+// In-flight coalescing for the universe fetch. The ~53 directory routes (26 letters × 2
+// locales + hub) are built CONCURRENTLY by Vercel's parallel workers, so they ALL miss the
+// cold Next Data Cache at the same instant and each fire a ~59 KB fetch through the Cloudflare
+// tunnel — that storm times out and the pages bake EMPTY (the directory bug). Next's Data
+// Cache only dedupes SEQUENTIAL renders, not a concurrent cold burst. A shared in-flight
+// promise collapses the burst within one worker to a SINGLE fetch. It's cleared once settled,
+// so it only coalesces concurrent calls — long-term freshness still belongs to the Data Cache
+// (`getUniverseSymbols` uses `next:{revalidate:3600}`), not this memo.
+let universeInFlight: Promise<string[]> | null = null;
+
+export function quoteBearingTickers(): Promise<string[]> {
+  if (universeInFlight) return universeInFlight;
+  // 15s (was 8s): the first uncached fetch is a cold Cloudflare-tunnel hop on a 59 KB body.
+  const p = getUniverseSymbols(AbortSignal.timeout(15000)).catch(() => [] as string[]);
+  universeInFlight = p;
+  void p.finally(() => {
+    if (universeInFlight === p) universeInFlight = null;
+  });
+  return p;
 }
 
 /** The A–Z bucket letters of the `/stocks` directory, in display order. */

@@ -3,6 +3,7 @@
 import {Activity, BarChart3, Eye, type LucideIcon, Plus, Scale, Send, TrendingDown, TrendingUp, Wallet} from 'lucide-react';
 import {useCallback, useEffect, useRef, useState} from 'react';
 import {MsgRow, type Msg} from '@/components/chatRender';
+import {BrandLoader} from '@/components/ui/BrandLoader';
 import {LogoMark} from '@/components/ui/atoms';
 import {type ChatResponse, clearChat, createConversation, getChatHistory, getConvHistory, postChat, postConvChatStream} from '@/lib/api';
 import {useAuth} from '@/lib/auth';
@@ -304,7 +305,11 @@ export function ChatThreadPanel({source, onActivity, onMeter, onCreated}: {sourc
         {empty ? (
           <WelcomeScreen anchored={anchored} ticker={fallbackTicker} tr={tr} onPick={send} composer={composer} />
         ) : threadLoading && messages.length === 0 ? (
-          <ThreadSkeleton />
+          // Loading a history thread → the brand loader (gold, to match the chat theme),
+          // centered in the thread area. Coherent with the route + chat-init loaders.
+          <div style={{display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', minHeight: 240}}>
+            <BrandLoader size={46} accent="var(--accent)" color="var(--text2)" label={tr('chat.thinking')} />
+          </div>
         ) : (
           <div style={{maxWidth: 760, margin: '0 auto', padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: 22}}>
             {messages.map((m, i) => <MsgRow key={i} m={m} fallbackTicker={fallbackTicker} tr={tr} />)}
@@ -355,33 +360,6 @@ function WelcomeScreen({anchored, ticker, tr, onPick, composer}: {anchored: bool
         })}
       </div>
       <div style={{width: '100%', marginTop: 22}}>{composer}</div>
-    </div>
-  );
-}
-
-// ThreadSkeleton is the brief placeholder shown while an existing conversation's history loads
-// (switching threads from the sidebar) — a few shimmer bars in the assistant layout, so the
-// reader sees "this thread is loading" rather than the new-chat welcome flashing in first.
-function ThreadSkeleton() {
-  const bar = (w: string, delay: number): React.CSSProperties => ({
-    height: 12,
-    width: w,
-    borderRadius: 6,
-    background: 'var(--surface2)',
-    animation: `tw-skeleton-pulse 1.4s ease-in-out infinite ${delay}s`,
-  });
-  return (
-    <div style={{maxWidth: 760, margin: '0 auto', padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: 28}} aria-busy="true">
-      {[0, 1].map(row => (
-        <div key={row} style={{display: 'flex', gap: 12}}>
-          <div style={{flex: 'none', width: 28, height: 28, borderRadius: 8, background: 'var(--surface2)', animation: `tw-skeleton-pulse 1.4s ease-in-out infinite ${row * 0.2}s`}} />
-          <div style={{flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 9, paddingTop: 4}}>
-            <div style={bar('38%', row * 0.2)} />
-            <div style={bar('92%', row * 0.2 + 0.1)} />
-            <div style={bar('80%', row * 0.2 + 0.2)} />
-          </div>
-        </div>
-      ))}
     </div>
   );
 }
