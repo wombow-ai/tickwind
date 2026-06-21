@@ -175,6 +175,22 @@ feature-flagged plugin, never on the critical path. Web only.
 - Full stack (server): `docker compose up -d --build`.
 
 ## Current state (update each iteration)
+- **2026-06-21 — 💸 Two monetization tweaks (owner) + nav + tier audit.** (a) **Free chat → weekly TOKEN budget**
+  (`b94f492` backend): was a 5-msg/MONTH count; now a per-WEEK TOKEN budget (`CHAT_FREE_WEEKLY_TOKENS` default
+  50,000 ≈ ~10 msgs/wk) — BOTH tiers token-based now (Pro per-month, free per-week). `chatQuotaGate` returns the
+  tier's period+limit (free=`researchWeek()` ET-ISO-week, Pro=`researchMonth()`); free meter stays hidden; note
+  says "this week (resets Monday)". The vestigial 150-msg Pro cap (`chatMonthlyLimit`) is now fully dead (left for
+  cleanup). (b) **One free backtest for signed-in non-Pro** (`b94f492` backend + frontend): new store
+  `BacktestFreeUsed`/`IncrBacktestFreeUsed` (`backtest_free_quota` table, User store, split-routed, LIFETIME no
+  period); `getBacktest` allows a free run for `u.ID!=""` under `freeBacktestRuns`(1), charged only on a SUCCESSFUL
+  run; anon must sign in. **BacktestWidget**: no longer auto-runs for non-Pro (would consume the free run
+  passively) — shows a deliberate "Run a free backtest" CTA (logged-in) / "Sign in to run a free backtest" (anon);
+  Pro auto-runs + keeps the rule/horizon selectors; after a free run a "→ upgrade for all rules" note shows.
+  (c) **Nav** (`99f910c`): "Chat" now shows for everyone (anon→login gate), "My" stays login-only. (d) **Access-tier
+  audit** (Workflow): tiering coherent, NO paywall leaks (backend `tierOf` + 2 flags fail-open to free); fixed
+  stale "Pro feature" chat copy (`f5049c1`). Gates: Go gofmt/build/vet/`-race` + web tsc/build green. Backend
+  deployed; backtest free CTA preview-verified (anon "sign in" variant). [[tickwind-product-b-chat]]
+
 - **2026-06-21 — 💬 AI chat opened to FREE users (small taste) — was Pro-only.** Owner: let signed-in non-Pro users
   use the chat too, tiny quota (~5 msgs), hide the AI-quota bar for them; anon still must sign in. **Backend
   (`2011173`):** `chatReady` drops the Pro gate (402) — `requireUser` still gates anon, burst throttle stays;

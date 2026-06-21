@@ -141,6 +141,10 @@ export const dict: Record<Lang, Record<string, string>> = {
     'backtest.locked.body':
       'Tickwind Pro unlocks backtesting any signal rule on any stock — win rate, average forward return, and a buy-and-hold baseline, all computed from public price data.',
     'backtest.locked.cta': 'See Pro plans',
+    'backtest.free.cta': 'Run a free backtest',
+    'backtest.free.signin': 'Sign in to run a free backtest',
+    'backtest.free.hint': 'Try one backtest free — see how the golden-cross signal performed on this stock.',
+    'backtest.free.note': 'That was your free backtest. Upgrade to Pro for every rule, horizon, and unlimited runs.',
     // earnings
     'quote.lastTrade': 'Last trade {t} ago · {src}',
     'quote.lastTradeNow': 'Last trade just now · {src}',
@@ -1082,6 +1086,10 @@ export const dict: Record<Lang, Record<string, string>> = {
     'backtest.locked.body':
       'Tickwind Pro 解锁对任意股票回测任意信号规则 —— 胜率、平均前向收益、买入持有基准,全部基于公开价格数据计算。',
     'backtest.locked.cta': '查看 Pro 方案',
+    'backtest.free.cta': '免费跑一次回测',
+    'backtest.free.signin': '登录后免费跑一次回测',
+    'backtest.free.hint': '免费试跑一次回测 —— 看看金叉信号在这只股票上的历史表现。',
+    'backtest.free.note': '这是你的免费回测。升级 Pro 即可使用全部规则、周期,无限次回测。',
     // earnings
     'quote.lastTrade': '最后成交 {t}前 · {src}',
     'quote.lastTradeNow': '最后成交 刚刚 · {src}',

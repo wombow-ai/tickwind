@@ -5,6 +5,7 @@ import Link from '@/components/LocalLink';
 import {useEffect, useState} from 'react';
 import {getBacktest, type SignalBacktestResponse} from '@/lib/api';
 import {useAuth} from '@/lib/auth';
+import {useEntitlement} from '@/lib/entitlement';
 import {useT} from '@/lib/i18n';
 import {useDark} from '@/lib/theme';
 import {cx, tok} from '@/lib/ui';
@@ -39,15 +40,25 @@ export function BacktestWidget({ticker}: {ticker: string}) {
   const dark = useDark();
   const t = tok(dark);
   const tr = useT();
-  const {getToken} = useAuth();
+  const {user, getToken} = useAuth();
+  const {isPro, loading: entLoading} = useEntitlement();
 
   const [rule, setRule] = useState('golden_cross');
   const [horizon, setHorizon] = useState(20);
   const [data, setData] = useState<SignalBacktestResponse | null>(null);
   const [status, setStatus] = useState<Status>('loading');
   const [hidden, setHidden] = useState(false);
+  // Non-Pro users get ONE free backtest — run only on a deliberate click, so the free run
+  // isn't consumed just by scrolling past the section. Pro auto-runs (+ re-runs on config).
+  const [ran, setRan] = useState(false);
 
   useEffect(() => {
+    if (entLoading) return;
+    if (!isPro && !ran) {
+      setData(null);
+      setStatus('ready'); // show the "run a free backtest" CTA instead of auto-running
+      return;
+    }
     const c = new AbortController();
     let cancelled = false;
     setStatus('loading');
@@ -78,7 +89,7 @@ export function BacktestWidget({ticker}: {ticker: string}) {
       cancelled = true;
       c.abort();
     };
-  }, [ticker, rule, horizon, getToken]);
+  }, [ticker, rule, horizon, getToken, isPro, ran, entLoading]);
 
   if (hidden) return null;
 
@@ -101,7 +112,7 @@ export function BacktestWidget({ticker}: {ticker: string}) {
         </h2>
       </div>
 
-      {!locked && (
+      {!locked && isPro && (
         <div className="mb-3 flex flex-wrap items-center gap-2">
           <select
             aria-label={tr('backtest.rule')}
@@ -132,27 +143,36 @@ export function BacktestWidget({ticker}: {ticker: string}) {
 
       {locked ? (
         <ProLock dark={dark} t={t} tr={tr} />
+      ) : !isPro && !ran ? (
+        <FreeCta dark={dark} t={t} tr={tr} loggedIn={!!user} onRun={() => setRan(true)} />
       ) : status === 'loading' ? (
         <div className={cx('h-24 rounded-xl', t.skel)} />
       ) : !result || result.trades === 0 ? (
         <p className={cx('text-[12.5px]', t.sub)}>{tr('backtest.empty')}</p>
       ) : (
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-          <Stat t={t} label={tr('backtest.winRate')} value={`${Math.round(result.win_rate * 100)}%`} />
-          <Stat
-            t={t}
-            label={tr('backtest.avgReturn').replace('{n}', String(result.horizon))}
-            value={`${result.avg_return > 0 ? '+' : ''}${result.avg_return.toFixed(2)}%`}
-            valueClass={signColor(dark, result.avg_return)}
-          />
-          <Stat t={t} label={tr('backtest.trades')} value={String(result.trades)} />
-          <Stat
-            t={t}
-            label={tr('backtest.baseline')}
-            value={`${result.baseline > 0 ? '+' : ''}${result.baseline.toFixed(2)}%`}
-            valueClass={signColor(dark, result.baseline)}
-          />
-        </div>
+        <>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            <Stat t={t} label={tr('backtest.winRate')} value={`${Math.round(result.win_rate * 100)}%`} />
+            <Stat
+              t={t}
+              label={tr('backtest.avgReturn').replace('{n}', String(result.horizon))}
+              value={`${result.avg_return > 0 ? '+' : ''}${result.avg_return.toFixed(2)}%`}
+              valueClass={signColor(dark, result.avg_return)}
+            />
+            <Stat t={t} label={tr('backtest.trades')} value={String(result.trades)} />
+            <Stat
+              t={t}
+              label={tr('backtest.baseline')}
+              value={`${result.baseline > 0 ? '+' : ''}${result.baseline.toFixed(2)}%`}
+              valueClass={signColor(dark, result.baseline)}
+            />
+          </div>
+          {!isPro && (
+            <Link href="/pro" className={cx('mt-2.5 flex items-center gap-1.5 text-[11.5px] font-semibold', dark ? 'text-violet-300' : 'text-violet-600')}>
+              {tr('backtest.free.note')} <ArrowRight size={12} />
+            </Link>
+          )}
+        </>
       )}
 
       <p className={cx('mt-3 text-[11px] leading-snug', t.faint)}>{tr('backtest.disclaimer')}</p>
@@ -175,6 +195,32 @@ function Stat({
     <div className={cx('rounded-xl border p-2.5', t.border)}>
       <div className={cx('text-[10.5px] uppercase tracking-wide', t.faint)}>{label}</div>
       <div className={cx('mt-0.5 text-[17px] font-bold tabular-nums', valueClass || t.text)}>{value}</div>
+    </div>
+  );
+}
+
+function FreeCta({dark, t, tr, loggedIn, onRun}: {dark: boolean; t: Tokens; tr: (k: string) => string; loggedIn: boolean; onRun: () => void}) {
+  const btnCx = cx(
+    'mt-2.5 inline-flex items-center gap-1.5 rounded-full px-4 py-1.5 text-[12.5px] font-semibold text-white',
+    dark ? 'bg-violet-500 hover:bg-violet-400' : 'bg-violet-600 hover:bg-violet-500',
+  );
+  return (
+    <div
+      className={cx(
+        'rounded-xl border p-3.5 text-center',
+        dark ? 'border-violet-500/30 bg-violet-500/[0.06]' : 'border-violet-200 bg-violet-50/60',
+      )}
+    >
+      <p className={cx('text-[12.5px]', t.sub)}>{tr('backtest.free.hint')}</p>
+      {loggedIn ? (
+        <button type="button" onClick={onRun} className={btnCx}>
+          <FlaskConical size={13} /> {tr('backtest.free.cta')}
+        </button>
+      ) : (
+        <Link href="/login" className={btnCx}>
+          <FlaskConical size={13} /> {tr('backtest.free.signin')}
+        </Link>
+      )}
     </div>
   );
 }
