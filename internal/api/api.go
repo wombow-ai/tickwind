@@ -619,6 +619,7 @@ func New(st store.Store, hub QuoteStream, enricher enrich.Enricher, verifier *au
 	mux.HandleFunc("GET /v1/stocks/{ticker}/whales", s.getWhales)
 	mux.HandleFunc("GET /v1/stocks/{ticker}/indicators", s.getStockIndicators)
 	mux.HandleFunc("GET /v1/stocks/{ticker}/indicator-signals", s.getStockSignals)
+	mux.HandleFunc("GET /v1/stocks/{ticker}/indicator-history", s.getIndicatorHistory)
 	mux.HandleFunc("GET /v1/stocks/{ticker}/backtest", s.getBacktest)
 	mux.HandleFunc("GET /v1/stocks/{ticker}/research", s.getResearch)
 	mux.HandleFunc("POST /v1/stocks/{ticker}/chat", s.postChat)

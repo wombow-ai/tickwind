@@ -162,6 +162,56 @@ func (s *Server) getBacktest(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, backtestResp{Ticker: ticker, Result: &res})
 }
 
+// indicatorHistoryResp is the wire shape of GET /v1/stocks/{ticker}/indicator-history: the
+// ticker + one indicator's date-aligned time series (nil when there is nothing to chart).
+type indicatorHistoryResp struct {
+	Ticker  string                    `json:"ticker"`
+	History *indicators.HistorySeries `json:"history,omitempty"`
+}
+
+// getIndicatorHistory serves the TIME SERIES for one technical indicator over a ticker's daily
+// candles (see indicators.IndicatorHistory) — the date-aligned line a chart draws (the
+// time-series counterpart to the single-point /indicators value). It is pure Go math over the
+// public daily candles (reuses the same series the point value is taken from), so it is
+// anti-hallucination-safe — never an LLM-invented number. Query: ?id=<catalog id, e.g.
+// technical.rsi>&period=<n optional>. 400 on an unsupported/missing id, 404 when there is no
+// price history, 422 when history is too short to compute even one point. Currently free
+// (mirrors the free single-point indicators); gating is an open owner decision.
+func (s *Server) getIndicatorHistory(w http.ResponseWriter, r *http.Request) {
+	if s.bars == nil {
+		writeJSON(w, http.StatusNotFound, errBody("indicator history unavailable"))
+		return
+	}
+	ticker := strings.ToUpper(strings.TrimSpace(r.PathValue("ticker")))
+	if ticker == "" {
+		writeJSON(w, http.StatusNotFound, errBody("no ticker"))
+		return
+	}
+	id := strings.TrimSpace(r.URL.Query().Get("id"))
+	if !indicators.HistoryableID(id) {
+		writeJSON(w, http.StatusBadRequest, errBody("unsupported or missing indicator id"))
+		return
+	}
+	period := 0 // 0 → the indicator's catalog default
+	if v, ok := parseFloat(r.URL.Query().Get("period")); ok && v >= 1 {
+		period = int(v)
+		if period > 250 {
+			period = 250
+		}
+	}
+	candles, err := s.bars.DailyCandles(r.Context(), ticker)
+	if err != nil || len(candles) == 0 {
+		writeJSON(w, http.StatusNotFound, errBody("no price history for "+ticker))
+		return
+	}
+	hs, ok := indicators.IndicatorHistory(candles, id, period)
+	if !ok {
+		writeJSON(w, http.StatusUnprocessableEntity, errBody("insufficient history to chart "+id))
+		return
+	}
+	writeJSON(w, http.StatusOK, indicatorHistoryResp{Ticker: ticker, History: &hs})
+}
+
 // SignalScanSource is the whole-universe signals SCREENER (a background cache that
 // precomputes ticker→signals so the endpoint never recomputes on the request path).
 type SignalScanSource interface {

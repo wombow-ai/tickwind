@@ -424,3 +424,64 @@ func TestTeaserSignals(t *testing.T) {
 		t.Error("teaser append leaked into the original backing array")
 	}
 }
+
+func TestGetIndicatorHistory(t *testing.T) {
+	t.Run("nil bars → 404", func(t *testing.T) {
+		srv := backtestServer(t, nil, false)
+		defer srv.Close()
+		resp := mustGet(t, srv.URL+"/v1/stocks/AAPL/indicator-history?id=technical.rsi")
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusNotFound {
+			t.Fatalf("status = %d, want 404", resp.StatusCode)
+		}
+	})
+
+	t.Run("unsupported id → 400", func(t *testing.T) {
+		srv := backtestServer(t, fakeBars{rampCandles(300)}, false)
+		defer srv.Close()
+		resp := mustGet(t, srv.URL+"/v1/stocks/AAPL/indicator-history?id=technical.atr")
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Fatalf("status = %d, want 400", resp.StatusCode)
+		}
+	})
+
+	t.Run("insufficient history → 422", func(t *testing.T) {
+		srv := backtestServer(t, fakeBars{rampCandles(5)}, false)
+		defer srv.Close()
+		resp := mustGet(t, srv.URL+"/v1/stocks/AAPL/indicator-history?id=technical.boll")
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusUnprocessableEntity {
+			t.Fatalf("status = %d, want 422", resp.StatusCode)
+		}
+	})
+
+	t.Run("valid → 200 with dated points", func(t *testing.T) {
+		srv := backtestServer(t, fakeBars{rampCandles(300)}, false)
+		defer srv.Close()
+		resp := mustGet(t, srv.URL+"/v1/stocks/aapl/indicator-history?id=technical.rsi&period=14")
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("status = %d, want 200", resp.StatusCode)
+		}
+		var body struct {
+			Ticker  string `json:"ticker"`
+			History *struct {
+				Indicator string `json:"indicator"`
+				Points    []struct {
+					Date  string  `json:"date"`
+					Value float64 `json:"value"`
+				} `json:"points"`
+			} `json:"history"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if body.Ticker != "AAPL" || body.History == nil || len(body.History.Points) == 0 {
+			t.Fatalf("unexpected body: %+v", body)
+		}
+		if body.History.Indicator != "technical.rsi" {
+			t.Errorf("indicator = %q, want technical.rsi", body.History.Indicator)
+		}
+	})
+}
