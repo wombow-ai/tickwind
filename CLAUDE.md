@@ -175,6 +175,24 @@ feature-flagged plugin, never on the critical path. Web only.
 - Full stack (server): `docker compose up -d --build`.
 
 ## Current state (update each iteration)
+- **2026-06-21 — 🧩 Owner batch (4 reqs): CORS PUT fix + async Pro digest + AI-zone funnel shipped; icon concepts pending pick.**
+  (1) **Settings 'Use my data' toggle CORS error — FIXED + LIVE (`a68baf6`):** the CORS `Access-Control-Allow-Methods`
+  listed GET/POST/PATCH/DELETE/OPTIONS but was MISSING **PUT** → the browser preflight for `PUT /v1/me/prefs`
+  blocked it (server-side E2E passes because it skips the preflight). Added PUT + a regression test asserting every
+  routed method is present. Live preflight now returns `…PUT…`. (2) **My→Overview slow + Pro-gate 'Tonight's
+  overview' (`a68baf6` backend + `54a7756` frontend):** `getMyDigest` composed the AI overview SYNCHRONOUSLY
+  (~12s LLM) → stalled the whole tab. Now rows serve INSTANTLY; the overview is Pro-gated + async — `summary_status`
+  ∈ ready|generating|pro_required|unavailable; non-Pro → no LLM + an upgrade card; Pro → background compose
+  (digestInflight single-flight, per-(user,day,lang) cache, 60s timeout, fail→no-cache→retry) the page polls (~4s,
+  capped). (4) **Theme Zones AI 'cake' funnel (`54a7756`):** new `ZoneStack` funnel/pyramid atop the ai-flagship
+  zone (Energy widest base → Applications narrowest top, chokepoint flagged, bands tap-to-scroll via new
+  `#layer-<key>` anchors on ZoneLayers); gated to ai-flagship (tenx-theme zones are sibling sub-themes). Pure
+  editorial structure (no numbers). Preview-verified /en/zone/ai (5-band violet pyramid, no console errors).
+  (3) **Icon design — 3 concepts presented via a visualization widget for the owner to PICK** (A wind-tick /
+  B breeze-bars / C chart-W; one white mark, teal=main + gold=chat bg). NOTHING committed for the icon — awaiting
+  the owner's pick, then refine + wire as favicon + main/chat brand marks. Gates: Go gofmt/build/vet/`-race`
+  green; web tsc+build green; backend deployed (DEPLOY_DONE 10:08Z, CORS live-verified). [[tickwind-product-b-chat]]
+
 - **2026-06-21 — 💬 AI chat hub round-4 shipped (3 owner UX reqs; research+impl+adversarial-review via Workflow).**
   Owner asked: (1) the new-chat center was barren; (2) support more widgets (Fundamentals) + a DRAM reply looked
   wrong; (3) leaving /chat + returning reset to a new draft (lost the open conversation). A research Workflow (4
