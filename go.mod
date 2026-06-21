@@ -3,7 +3,7 @@ module github.com/wombow-ai/tickwind
 go 1.26
 
 require (
-	github.com/coder/websocket v1.8.14
+	github.com/coder/websocket v1.8.15
 	github.com/jackc/pgx/v5 v5.10.0
 )
 
