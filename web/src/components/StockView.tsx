@@ -699,7 +699,7 @@ export function StockView({ticker}: {ticker: string}) {
             beside the fixed deep report (the report is the same for everyone; the chat
             interrogates it). */}
         <Link
-          href={`/stock/${encodeURIComponent(norm)}/chat`}
+          href={`/chat?ticker=${encodeURIComponent(norm)}`}
           className={cx(
             'mb-4 flex items-center gap-3 rounded-2xl border p-4 transition',
             t.card,
