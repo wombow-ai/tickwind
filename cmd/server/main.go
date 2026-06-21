@@ -677,6 +677,10 @@ func main() {
 		// Product B — personalized chat (Pro-gated, metered). Grounds on the SAME research
 		// fact sheet; uses the cheap chat client (LLM_CHAT_MODEL → falls back to deep).
 		chatSvc := chat.NewService(enricher, researchSvc, api.NewChatUserData(st), cfg.LLMChatModel)
+		// Ground a "no fundamentals here" answer in the ticker's real asset type (e.g.
+		// "DRAM is an ETF") from the symbol directory, so the model can't invent a launch
+		// year / coverage reason. *symbols.Cache satisfies chat.SymbolDescriber via ByTicker.
+		chatSvc.SetSymbols(symbolCache)
 		// Optional attributed web-context tool — INERT without WEBSEARCH_API_KEY (the
 		// chat stays grounded-only). When keyed, the model may quote attributed web
 		// snippets but never derive a number from them (the systemPrompt firewall).

@@ -42,6 +42,12 @@ type Symbol struct {
 	// Aliases are alternate search terms (notably Chinese names, e.g. "英伟达"
 	// for NVDA) so zh-first users can find a stock by its native name.
 	Aliases []string `json:"aliases,omitempty"`
+	// ETF is true when the Nasdaq-Trader feed flags this symbol as an ETF — a basket
+	// of securities, NOT an operating company, so it has no company-level fundamentals
+	// (revenue / EPS / P/E). Lets the chat ground a "no fundamentals" answer in a real
+	// fact instead of improvising. Zero-value false for SEC-filer stocks and the curated
+	// seeds (which never set it), so it's strictly additive / back-compatible.
+	ETF bool `json:"etf,omitempty"`
 }
 
 // Index is an immutable, searchable snapshot of the directory.
@@ -69,7 +75,15 @@ func Build(syms []Symbol) *Index {
 		if t == "" {
 			continue
 		}
-		if _, dup := idx.byTicker[t]; dup {
+		if j, dup := idx.byTicker[t]; dup {
+			// SEC listings are appended first and win on a ticker collision (cleaner
+			// name/exchange), but only the Nasdaq-Trader feed carries the ETF flag —
+			// so OR it onto the kept entry. This flags SEC-listed ETFs (SPY/QQQ) too,
+			// not just SEC-absent ones (DRAM). Same ticker = same US security, so the
+			// merge is safe.
+			if s.ETF && !idx.all[j].ETF {
+				idx.all[j].ETF = true
+			}
 			continue
 		}
 		s.Ticker = t
@@ -115,6 +129,21 @@ func (idx *Index) Len() int {
 		return 0
 	}
 	return len(idx.all)
+}
+
+// ByTicker returns the symbol for an exact (case-insensitive) ticker, if indexed.
+// Unlike Search it never returns a different symbol — used where a precise lookup
+// is needed (e.g. the chat grounding a ticker's asset type). nil Index / unknown
+// ticker → ok=false.
+func (idx *Index) ByTicker(t string) (Symbol, bool) {
+	if idx == nil {
+		return Symbol{}, false
+	}
+	i, ok := idx.byTicker[strings.ToUpper(strings.TrimSpace(t))]
+	if !ok {
+		return Symbol{}, false
+	}
+	return idx.all[i], true
 }
 
 // ByCIK returns the symbol for a SEC Central Index Key, if indexed. Lets

@@ -7,7 +7,16 @@ import (
 
 	"github.com/wombow-ai/tickwind/internal/enrich"
 	"github.com/wombow-ai/tickwind/internal/research"
+	"github.com/wombow-ai/tickwind/internal/symbols"
 )
+
+// fakeSymbols is a controllable chat.SymbolDescriber.
+type fakeSymbols struct{ m map[string]symbols.Symbol }
+
+func (f fakeSymbols) ByTicker(t string) (symbols.Symbol, bool) {
+	s, ok := f.m[strings.ToUpper(strings.TrimSpace(t))]
+	return s, ok
+}
 
 // scriptedLLM returns queued replies and captures the messages it was sent, so a test can
 // assert the tool round-trip (what the model saw on the follow-up call).
@@ -381,6 +390,127 @@ func TestAnswerKeepsLegitInsiderFact(t *testing.T) {
 	ans, _ := svc.Answer(context.Background(), "u", "AAPL", "en", nil, "q", true)
 	if !strings.Contains(textOf(ans), "Insiders bought") {
 		t.Fatalf("legit insider fact was wrongly stripped: %q", textOf(ans))
+	}
+}
+
+// TestAnswerETFGroundsNoFundamentals: in a GENERAL conversation, asking an ETF (empty fact
+// sheet) for fundamentals must return a Go-OWNED descriptor ("… is an ETF … no company-level
+// fundamentals") instead of a bare "No data." — so the model grounds its answer rather than
+// inventing a launch year / coverage reason. The descriptor carries NO number and NO date.
+func TestAnswerETFGroundsNoFundamentals(t *testing.T) {
+	llm := &scriptedLLM{enabled: true, replies: []reply{
+		{calls: []enrich.ChatToolCall{{ID: "c1", Name: "get_stock_facts", Arguments: `{"ticker":"DRAM","section":"fundamentals"}`}}},
+		{content: "DRAM is an ETF, so it has no company fundamentals."},
+	}}
+	svc := NewService(llm, fakeFacts{research.FactSheet{}}, nil, "") // empty sheet for any ticker
+	svc.SetSymbols(fakeSymbols{m: map[string]symbols.Symbol{"DRAM": {Ticker: "DRAM", Name: "Roundhill Memory ETF", ETF: true}}})
+	if _, err := svc.Answer(context.Background(), "u", "", "en", nil, "show DRAM fundamentals", true); err != nil {
+		t.Fatalf("Answer: %v", err)
+	}
+	var toolMsg string
+	for _, m := range llm.gotMessages[1] {
+		if m.Role == "tool" {
+			toolMsg = m.Content
+		}
+	}
+	if !strings.Contains(toolMsg, "is an ETF") || !strings.Contains(toolMsg, "Roundhill Memory ETF") {
+		t.Fatalf("ETF grounding missing from tool result: %q", toolMsg)
+	}
+	if strings.Contains(toolMsg, "No data") {
+		t.Fatalf("bare 'No data' should have been replaced by the grounded descriptor: %q", toolMsg)
+	}
+	// The Go-owned descriptor must carry NO ungrounded year (the exact bug we're fixing).
+	for _, yr := range []string{"2024", "2025", "2026", "newly", "launched", "coverage"} {
+		if strings.Contains(strings.ToLower(toolMsg), yr) {
+			t.Fatalf("descriptor leaked an ungrounded claim %q: %q", yr, toolMsg)
+		}
+	}
+}
+
+// TestAnswerETFEmptySectionGrounded: an ANCHORED ETF whose fact sheet has a technical section
+// but no fundamentals section — get_facts("fundamentals") hits the empty-SECTION path, which
+// must also ground in the ETF descriptor rather than the generic "no such section" line.
+func TestAnswerETFEmptySectionGrounded(t *testing.T) {
+	etfSheet := research.FactSheet{
+		Ticker: "DRAM", Name: "Roundhill Memory ETF", AsOf: "2026-06-20", PriceLabel: "$77",
+		Sections: []research.SectionFacts{{Key: "technical", TitleEN: "Technical", TitleZH: "技术面"}},
+	}
+	llm := &scriptedLLM{enabled: true, replies: []reply{
+		{calls: []enrich.ChatToolCall{{ID: "c1", Name: "get_facts", Arguments: `{"section":"fundamentals"}`}}},
+		{content: "DRAM is an ETF — no company fundamentals; here's the technical picture."},
+	}}
+	svc := NewService(llm, fakeFacts{etfSheet}, nil, "")
+	svc.SetSymbols(fakeSymbols{m: map[string]symbols.Symbol{"DRAM": {Ticker: "DRAM", Name: "Roundhill Memory ETF", ETF: true}}})
+	if _, err := svc.Answer(context.Background(), "u", "DRAM", "en", nil, "what are DRAM's fundamentals?", true); err != nil {
+		t.Fatalf("Answer: %v", err)
+	}
+	var toolMsg string
+	for _, m := range llm.gotMessages[1] {
+		if m.Role == "tool" {
+			toolMsg = m.Content
+		}
+	}
+	if !strings.Contains(toolMsg, "is an ETF") {
+		t.Fatalf("empty-section ETF grounding missing: %q", toolMsg)
+	}
+	if strings.Contains(toolMsg, "no such section") {
+		t.Fatalf("generic 'no such section' should have been replaced by the ETF descriptor: %q", toolMsg)
+	}
+}
+
+// TestAnswerNonETFEmptySectionStaysGeneric: a NON-ETF stock missing a section must NOT be
+// mislabeled an ETF — the empty-section path keeps the generic "no such section" line.
+func TestAnswerNonETFEmptySectionStaysGeneric(t *testing.T) {
+	llm := &scriptedLLM{enabled: true, replies: []reply{
+		{calls: []enrich.ChatToolCall{{ID: "c1", Name: "get_stock_facts", Arguments: `{"ticker":"AAPL","section":"fundamentals"}`}}},
+		{content: "ok"},
+	}}
+	// Sheet has only a valuation section (no fundamentals), AAPL is NOT an ETF.
+	sheet := research.FactSheet{Ticker: "AAPL", Name: "Apple", AsOf: "2026-06-20", Sections: []research.SectionFacts{{Key: "valuation", TitleEN: "Valuation"}}}
+	svc := NewService(llm, fakeFacts{sheet}, nil, "")
+	svc.SetSymbols(fakeSymbols{m: map[string]symbols.Symbol{"AAPL": {Ticker: "AAPL", Name: "Apple Inc.", ETF: false}}})
+	if _, err := svc.Answer(context.Background(), "u", "", "en", nil, "AAPL fundamentals?", true); err != nil {
+		t.Fatalf("Answer: %v", err)
+	}
+	var toolMsg string
+	for _, m := range llm.gotMessages[1] {
+		if m.Role == "tool" {
+			toolMsg = m.Content
+		}
+	}
+	if !strings.Contains(toolMsg, "no such section") || strings.Contains(toolMsg, "is an ETF") {
+		t.Fatalf("non-ETF empty section should stay generic, got: %q", toolMsg)
+	}
+}
+
+// TestAnswerETFRefusesFundamentalsWidget: defense-in-depth — if the model tries to surface a
+// fundamentals_table/valuation_table for an ETF, execTool must REFUSE it (an ETF has no
+// company fundamentals → the table would render empty) and return the grounded descriptor
+// instead of recording a widget block.
+func TestAnswerETFRefusesFundamentalsWidget(t *testing.T) {
+	llm := &scriptedLLM{enabled: true, replies: []reply{
+		{calls: []enrich.ChatToolCall{{ID: "c1", Name: "surface_widget", Arguments: `{"type":"fundamentals_table","ticker":"DRAM"}`}}},
+		{content: "DRAM is an ETF; here's its price chart instead."},
+	}}
+	svc := NewService(llm, fakeFacts{sampleSheet()}, nil, "") // anchor AAPL sheet non-empty
+	svc.SetSymbols(fakeSymbols{m: map[string]symbols.Symbol{"DRAM": {Ticker: "DRAM", Name: "Roundhill Memory ETF", ETF: true}}})
+	ans, err := svc.Answer(context.Background(), "u", "AAPL", "en", nil, "show DRAM's fundamentals table", true)
+	if err != nil {
+		t.Fatalf("Answer: %v", err)
+	}
+	for _, b := range ans.Blocks {
+		if b.Kind == "widget" {
+			t.Fatalf("ETF fundamentals_table must be refused, not rendered: %+v", b)
+		}
+	}
+	var toolMsg string
+	for _, m := range llm.gotMessages[1] {
+		if m.Role == "tool" {
+			toolMsg = m.Content
+		}
+	}
+	if !strings.Contains(toolMsg, "is an ETF") {
+		t.Fatalf("ETF widget refusal should return the grounded descriptor: %q", toolMsg)
 	}
 }
 

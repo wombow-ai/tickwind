@@ -144,6 +144,30 @@ func TestBuildMergesClassShareKeepingCIK(t *testing.T) {
 	}
 }
 
+// TestBuildMergesETFFlag: a SEC-listed ETF (SPY) appears first WITHOUT the ETF flag (SEC's
+// feed doesn't carry it), then again from Nasdaq-Trader WITH ETF=true. The flag must be OR'd
+// onto the kept entry so SEC-listed ETFs are flagged too, not just SEC-absent ones (DRAM).
+func TestBuildMergesETFFlag(t *testing.T) {
+	idx := Build([]Symbol{
+		{Ticker: "SPY", Name: "SPDR S&P 500 ETF Trust", Exchange: "NYSE Arca", Country: "US", CIK: 884394}, // SEC first, ETF unset
+		{Ticker: "SPY", Name: "SPDR S&P 500", Exchange: "NYSE Arca", Country: "US", ETF: true},             // Nasdaq-Trader, ETF=Y
+		{Ticker: "DRAM", Name: "Roundhill Memory ETF", Exchange: "Cboe BZX", Country: "US", ETF: true},     // SEC-absent ETF
+		{Ticker: "AAPL", Name: "Apple Inc.", Exchange: "Nasdaq", Country: "US", CIK: 320193},               // not an ETF
+	})
+	if s, ok := idx.ByTicker("SPY"); !ok || !s.ETF {
+		t.Fatalf("ByTicker(SPY).ETF = %v,%v; want the flag OR'd on from the Nasdaq-Trader entry", s.ETF, ok)
+	}
+	if s, ok := idx.ByTicker("DRAM"); !ok || !s.ETF {
+		t.Fatalf("ByTicker(DRAM).ETF = %v,%v; want true", s.ETF, ok)
+	}
+	if s, ok := idx.ByTicker("AAPL"); !ok || s.ETF {
+		t.Fatalf("ByTicker(AAPL).ETF = %v,%v; want false", s.ETF, ok)
+	}
+	if _, ok := idx.ByTicker("ZZZZ"); ok {
+		t.Error("ByTicker(unknown) should be ok=false")
+	}
+}
+
 func TestByCIK(t *testing.T) {
 	idx := Build([]Symbol{
 		{Ticker: "NVDA", Name: "NVIDIA Corp", Exchange: "Nasdaq", Country: "US", CIK: 1045810},

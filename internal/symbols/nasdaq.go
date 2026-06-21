@@ -80,7 +80,8 @@ func parseNasdaqListed(data []byte) []Symbol {
 		if t == "" || n == "" {
 			return
 		}
-		out = append(out, Symbol{Ticker: t, Name: n, Exchange: "Nasdaq", Country: "US"})
+		// Column 6 (0-indexed) is the ETF flag ("Y"/"N").
+		out = append(out, Symbol{Ticker: t, Name: n, Exchange: "Nasdaq", Country: "US", ETF: strings.EqualFold(strings.TrimSpace(c[6]), "Y")})
 	})
 	return out
 }
@@ -100,7 +101,8 @@ func parseOtherListed(data []byte) []Symbol {
 		if t == "" || n == "" {
 			return
 		}
-		out = append(out, Symbol{Ticker: t, Name: n, Exchange: otherExch(strings.TrimSpace(c[2])), Country: "US"})
+		// Column 4 (0-indexed) is the ETF flag ("Y"/"N"); column 6 is Test Issue (above).
+		out = append(out, Symbol{Ticker: t, Name: n, Exchange: otherExch(strings.TrimSpace(c[2])), Country: "US", ETF: strings.EqualFold(strings.TrimSpace(c[4]), "Y")})
 	})
 	return out
 }

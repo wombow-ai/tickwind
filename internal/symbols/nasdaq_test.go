@@ -18,6 +18,13 @@ File Creation Time: 0608202610:01|||||||`)
 	if got[1].Ticker != "TQQQ" {
 		t.Errorf("want TQQQ second, got %+v", got[1])
 	}
+	// The ETF column (index 6) must be parsed: TQQQ is an ETF, AAPL is not.
+	if got[0].ETF { // AAPL
+		t.Errorf("AAPL should not be flagged ETF: %+v", got[0])
+	}
+	if !got[1].ETF { // TQQQ
+		t.Errorf("TQQQ should be flagged ETF: %+v", got[1])
+	}
 	for _, s := range got {
 		if s.Ticker == "ZTEST" {
 			t.Error("test issue ZTEST should be dropped")
@@ -46,6 +53,13 @@ File Creation Time: 0608202610:01|||||||`)
 	}
 	if dram.Name != "Roundhill Memory ETF" || dram.Exchange != "Cboe BZX" || dram.Country != "US" {
 		t.Errorf("DRAM mapped wrong: %+v", dram)
+	}
+	// The ETF column (index 4) must be parsed: DRAM is an ETF, BRK.A is not.
+	if !dram.ETF {
+		t.Errorf("DRAM should be flagged ETF: %+v", dram)
+	}
+	if byT["BRK.A"].ETF {
+		t.Errorf("BRK.A should not be flagged ETF: %+v", byT["BRK.A"])
 	}
 	if byT["BRK.A"].Exchange != "NYSE" { // N -> NYSE; comma in name preserved
 		t.Errorf("BRK.A exchange want NYSE, got %q (name %q)", byT["BRK.A"].Exchange, byT["BRK.A"].Name)
