@@ -2658,6 +2658,60 @@ export async function getBacktest(
   }
 }
 
+/** One dated point of an indicator's time series. */
+export interface IndicatorHistoryPoint {
+  date: string; // YYYY-MM-DD
+  value: number;
+}
+
+/**
+ * One technical indicator computed across a ticker's full daily history — the
+ * date-aligned line a chart draws (GET /v1/stocks/{ticker}/indicator-history).
+ * `points` is the primary line; `lines` carries the extra aligned bands
+ * (MACD signal/histogram, Bollinger upper/lower). Every value is Go-computed —
+ * the chart's latest point equals the single-point indicator value.
+ */
+export interface IndicatorHistory {
+  indicator: string;
+  period?: number;
+  unit: string; // % | price | ratio | x | usd | ""
+  points: IndicatorHistoryPoint[];
+  lines?: Record<string, IndicatorHistoryPoint[]>;
+}
+
+/** Indicator ids that have a server-side time-series history (mirrors indicators.HistoryableID). */
+export const HISTORYABLE_INDICATOR_IDS = [
+  'technical.sma-ma',
+  'technical.ema',
+  'technical.rsi',
+  'technical.macd',
+  'technical.boll',
+] as const;
+
+/**
+ * Fetches one indicator's time series for charting. Resolves to `null` on any
+ * 4xx/network error (unsupported id / no history / too short) so the chart can
+ * degrade gracefully. Public, no auth (mirrors the free single-point indicators).
+ */
+export async function getIndicatorHistory(
+  ticker: string,
+  id: string,
+  period?: number,
+  signal?: AbortSignal,
+): Promise<IndicatorHistory | null> {
+  const q = new URLSearchParams({id});
+  if (period && period > 0) q.set('period', String(period));
+  try {
+    const r = await getJson<{ticker: string; history?: IndicatorHistory}>(
+      `/v1/stocks/${encodeURIComponent(normalizeTicker(ticker))}/indicator-history?${q.toString()}`,
+      signal,
+    );
+    return r.history ?? null;
+  } catch {
+    return null;
+  }
+}
+
 // ── Per-user prefs (generic JSON UI-state blob) ──────────────────────────
 //
 // A small, generic per-user JSON-prefs surface. The blob is namespaced by

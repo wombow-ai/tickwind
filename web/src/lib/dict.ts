@@ -61,6 +61,8 @@ export const dict: Record<Lang, Record<string, string>> = {
     // per-stock indicators panel
     'ind2.title': 'Indicators',
     'ind2.asOf': 'as of {d}',
+    'ind2.chart.toggle': 'Show history chart',
+    'ind2.chart.empty': 'Not enough history to chart.',
     'ind2.domain.technical': 'Technical',
     'ind2.domain.fundamental': 'Fundamental',
     'ind2.domain.sentiment': 'Sentiment',
@@ -1010,6 +1012,8 @@ export const dict: Record<Lang, Record<string, string>> = {
     // per-stock indicators panel
     'ind2.title': '指标',
     'ind2.asOf': '数据截至 {d}',
+    'ind2.chart.toggle': '显示历史走势图',
+    'ind2.chart.empty': '历史数据不足，无法绘图。',
     'ind2.domain.technical': '技术指标',
     'ind2.domain.fundamental': '基本面',
     'ind2.domain.sentiment': '情绪',

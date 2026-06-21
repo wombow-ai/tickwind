@@ -1,16 +1,18 @@
 'use client';
 
-import {Activity, ArrowRight, Gauge, Lock, SlidersHorizontal} from 'lucide-react';
+import {Activity, ArrowRight, Gauge, LineChart, Lock, SlidersHorizontal} from 'lucide-react';
 import Link from '@/components/LocalLink';
 import {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {
   getMyPrefs,
   getStockIndicators,
+  HISTORYABLE_INDICATOR_IDS,
   indicatorSlug,
   putMyPrefs,
   type StockIndicator,
   type StockIndicatorsResponse,
 } from '@/lib/api';
+import {IndicatorHistoryChart} from './IndicatorHistoryChart';
 import {useAuth} from '@/lib/auth';
 import {useLang, useT} from '@/lib/i18n';
 import {useDark} from '@/lib/theme';
@@ -272,7 +274,7 @@ export function IndicatorsPanel({ticker}: {ticker: string}) {
 
       <div className={cx('space-y-4', gated && 'relative')}>
         {previewGroups.map(([domain, items]) => (
-          <DomainGroup key={domain} domain={domain} items={items} dark={dark} t={t} tr={tr} />
+          <DomainGroup key={domain} domain={domain} items={items} ticker={ticker} dark={dark} t={t} tr={tr} />
         ))}
         {/* Soft fade over the bottom of the last preview row → signals "more below"
             without hiding any real data (the rows above stay fully readable). */}
@@ -404,12 +406,14 @@ function MarketContextStrip({
 function DomainGroup({
   domain,
   items,
+  ticker,
   dark,
   t,
   tr,
 }: {
   domain: string;
   items: StockIndicator[];
+  ticker: string;
   dark: boolean;
   t: Tokens;
   tr: (key: string) => string;
@@ -423,57 +427,94 @@ function DomainGroup({
       </h3>
       <div className={cx('divide-y rounded-xl border', t.hair, t.border)}>
         {items.map(ind => (
-          <IndicatorRow key={ind.id} ind={ind} dark={dark} t={t} />
+          <IndicatorRow key={ind.id} ind={ind} ticker={ticker} dark={dark} t={t} />
         ))}
       </div>
     </div>
   );
 }
 
-/** One indicator row: name (deep-linked) + value/extra + interpretation hint. */
-function IndicatorRow({ind, dark, t}: {ind: StockIndicator; dark: boolean; t: Tokens}) {
+const HISTORYABLE = new Set<string>(HISTORYABLE_INDICATOR_IDS);
+
+/**
+ * One indicator row: name (deep-linked) + value/extra + interpretation hint. For indicators
+ * that have a server-side time series (SMA/EMA/RSI/MACD/BOLL), a chart toggle reveals the
+ * indicator's history line below the row — drawn on demand from the Go-computed series, so the
+ * chart's latest point equals the value shown here.
+ */
+function IndicatorRow({ind, ticker, dark, t}: {ind: StockIndicator; ticker: string; dark: boolean; t: Tokens}) {
   const tr = useT();
   const {lang} = useLang();
   // English-default name; the Chinese name leads only in the Chinese UI.
   const name = lang === 'zh' && ind.name_zh ? ind.name_zh : ind.name_en;
   const ok = ind.status === 'ok';
+  const canChart = ok && HISTORYABLE.has(ind.id);
+  const [open, setOpen] = useState(false);
 
   return (
-    <div className="flex items-start justify-between gap-3 px-3 py-2.5">
-      <div className="min-w-0 flex-1">
-        <Link
-          href={`/indicators/${indicatorSlug(ind.id)}`}
-          className={cx('text-[13px] font-semibold hover:underline', t.text)}
-        >
-          {name}
-          {ind.abbr && <span className={cx('ml-1.5 text-[11px] font-medium', t.sub)}>{ind.abbr}</span>}
-        </Link>
-        {ok && ind.interpretation && (
-          <p className={cx('mt-0.5 truncate text-[11.5px]', t.faint)}>{ind.interpretation}</p>
-        )}
-      </div>
-      <div className="shrink-0 text-right">
-        {ok && ind.value != null ? (
-          <>
-            <div className={cx('text-[14px] font-bold tabular-nums', t.text)}>
-              {fmtValue(ind.value, ind.unit)}
-            </div>
-            {ind.extra && Object.keys(ind.extra).length > 0 && (
-              <div className={cx('mt-0.5 flex flex-wrap justify-end gap-x-2 text-[10.5px] tabular-nums', t.faint)}>
-                {Object.entries(ind.extra).map(([key, v]) => (
-                  <span key={key}>
-                    {key} {fmtValue(v, ind.unit)}
-                  </span>
-                ))}
+    <div>
+      <div className="flex items-start justify-between gap-3 px-3 py-2.5">
+        <div className="min-w-0 flex-1">
+          <Link
+            href={`/indicators/${indicatorSlug(ind.id)}`}
+            className={cx('text-[13px] font-semibold hover:underline', t.text)}
+          >
+            {name}
+            {ind.abbr && <span className={cx('ml-1.5 text-[11px] font-medium', t.sub)}>{ind.abbr}</span>}
+          </Link>
+          {ok && ind.interpretation && (
+            <p className={cx('mt-0.5 truncate text-[11.5px]', t.faint)}>{ind.interpretation}</p>
+          )}
+        </div>
+        <div className="flex shrink-0 items-center gap-2.5">
+          <div className="text-right">
+            {ok && ind.value != null ? (
+              <>
+                <div className={cx('text-[14px] font-bold tabular-nums', t.text)}>
+                  {fmtValue(ind.value, ind.unit)}
+                </div>
+                {ind.extra && Object.keys(ind.extra).length > 0 && (
+                  <div className={cx('mt-0.5 flex flex-wrap justify-end gap-x-2 text-[10.5px] tabular-nums', t.faint)}>
+                    {Object.entries(ind.extra).map(([key, v]) => (
+                      <span key={key}>
+                        {key} {fmtValue(v, ind.unit)}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </>
+            ) : (
+              <div className={cx('text-[14px] font-bold tabular-nums', dark ? 'text-slate-600' : 'text-slate-300')}>
+                {tr('ind2.empty')}
               </div>
             )}
-          </>
-        ) : (
-          <div className={cx('text-[14px] font-bold tabular-nums', dark ? 'text-slate-600' : 'text-slate-300')}>
-            {tr('ind2.empty')}
           </div>
-        )}
+          {canChart && (
+            <button
+              type="button"
+              onClick={() => setOpen(o => !o)}
+              aria-expanded={open}
+              aria-label={tr('ind2.chart.toggle')}
+              title={tr('ind2.chart.toggle')}
+              className={cx(
+                'inline-flex h-7 w-7 items-center justify-center rounded-lg transition',
+                open
+                  ? dark
+                    ? 'bg-teal-500/15 text-teal-300'
+                    : 'bg-teal-50 text-teal-600'
+                  : cx(t.sub, 'hover:opacity-80'),
+              )}
+            >
+              <LineChart size={14} />
+            </button>
+          )}
+        </div>
       </div>
+      {open && canChart && (
+        <div className={cx('px-2 pb-2 pt-1', dark ? 'bg-slate-900/30' : 'bg-slate-50/60')}>
+          <IndicatorHistoryChart ticker={ticker} id={ind.id} />
+        </div>
+      )}
     </div>
   );
 }
