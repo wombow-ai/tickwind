@@ -3,6 +3,7 @@
 import {ArrowRight, Check, Copy} from 'lucide-react';
 import {useState} from 'react';
 import {FundamentalsCard} from '@/components/FundamentalsCard';
+import {IndicatorHistoryChart} from '@/components/IndicatorHistoryChart';
 import {KLineChart} from '@/components/KLineChart';
 import Link from '@/components/LocalLink';
 import {Markdown} from '@/components/Markdown';
@@ -105,12 +106,12 @@ function BlockView({block, fallbackTicker, tr}: {block: ChatBlock; fallbackTicke
     );
   }
   const ticker = block.params?.ticker || fallbackTicker;
-  return <ChatWidget widget={block.widget ?? ''} ticker={ticker} tr={tr} />;
+  return <ChatWidget widget={block.widget ?? ''} ticker={ticker} indicatorId={block.params?.indicator} tr={tr} />;
 }
 
 // Widgets render the real Go-owned data via their own components (each already a card),
 // so they're placed directly — no extra wrapper (a double card left dead space below).
-function ChatWidget({widget, ticker, tr}: {widget: string; ticker: string; tr: (k: string) => string}) {
+function ChatWidget({widget, ticker, indicatorId, tr}: {widget: string; ticker: string; indicatorId?: string; tr: (k: string) => string}) {
   if (PORTFOLIO_WIDGETS.has(widget)) {
     return <ChatPortfolioWidget type={widget} />;
   }
@@ -120,6 +121,12 @@ function ChatWidget({widget, ticker, tr}: {widget: string; ticker: string; tr: (
   // overlay the model says it surfaced (was falling through to a bare deep-link before).
   if (widget === 'kline' || widget === 'indicators') {
     return <KLineChart ticker={ticker} />;
+  }
+  // indicator_history charts ONE indicator's time series (Go-computed; numbers never enter the
+  // model). The id is the catalog id the server validated (e.g. technical.rsi).
+  if (widget === 'indicator_history') {
+    if (!indicatorId) return null;
+    return <IndicatorHistoryChart ticker={ticker} id={indicatorId} />;
   }
   if (widget === 'fundamentals_table' || widget === 'valuation_table') {
     return <FundamentalsCard ticker={ticker} />;

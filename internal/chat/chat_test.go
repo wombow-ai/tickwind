@@ -263,6 +263,58 @@ func TestAnswerSurfaceWidget(t *testing.T) {
 	}
 }
 
+func TestAnswerIndicatorHistoryWidget(t *testing.T) {
+	llm := &scriptedLLM{enabled: true, replies: []reply{
+		{calls: []enrich.ChatToolCall{{ID: "c1", Name: "surface_widget", Arguments: `{"type":"indicator_history","indicator":"rsi"}`}}},
+		{content: "Here is the RSI history."},
+	}}
+	svc := NewService(llm, fakeFacts{sampleSheet()}, nil, "")
+	ans, err := svc.Answer(context.Background(), "u", "AAPL", "en", nil, "show me RSI over the last year", true)
+	if err != nil {
+		t.Fatalf("Answer: %v", err)
+	}
+	var w *Block
+	for i := range ans.Blocks {
+		if ans.Blocks[i].Kind == "widget" {
+			w = &ans.Blocks[i]
+		}
+	}
+	if w == nil || w.Widget != "indicator_history" {
+		t.Fatalf("no indicator_history widget: %+v", ans.Blocks)
+	}
+	// The friendly name must be mapped to the catalog id, anchored to the conversation ticker.
+	if w.Params["indicator"] != "technical.rsi" || w.Params["ticker"] != "AAPL" {
+		t.Fatalf("widget params wrong: %+v", w.Params)
+	}
+	// Anti-hallucination: the tool result is a confirmation only — no series numbers.
+	tool := ""
+	for _, m := range llm.gotMessages[1] {
+		if m.Role == "tool" {
+			tool = m.Content
+		}
+	}
+	if tool != "rendered: indicator_history AAPL " {
+		t.Fatalf("widget tool result leaked data / wrong: %q", tool)
+	}
+}
+
+func TestAnswerIndicatorHistoryRejectsUnknownIndicator(t *testing.T) {
+	llm := &scriptedLLM{enabled: true, replies: []reply{
+		{calls: []enrich.ChatToolCall{{ID: "c1", Name: "surface_widget", Arguments: `{"type":"indicator_history","indicator":"made_up"}`}}},
+		{content: "ok"},
+	}}
+	svc := NewService(llm, fakeFacts{sampleSheet()}, nil, "")
+	ans, err := svc.Answer(context.Background(), "u", "AAPL", "en", nil, "chart the foobar indicator", true)
+	if err != nil {
+		t.Fatalf("Answer: %v", err)
+	}
+	for _, b := range ans.Blocks {
+		if b.Kind == "widget" {
+			t.Fatalf("an unknown indicator must NOT render a widget: %+v", b)
+		}
+	}
+}
+
 func TestAnswerUnknownWidgetAndSectionGraceful(t *testing.T) {
 	llm := &scriptedLLM{enabled: true, replies: []reply{
 		{calls: []enrich.ChatToolCall{
