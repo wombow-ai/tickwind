@@ -115,7 +115,10 @@ export function TopNav() {
   // The full ordered list for the mobile sheet.
   const mobileItems: NavItem[] = [
     ...primary,
-    ...(authed ? [chat, my] : []),
+    // Chat is shown to everyone now (free users get a taste; anon lands on the login gate);
+    // My is the personal hub, so it stays signed-in only.
+    chat,
+    ...(authed ? [my] : []),
     ...secondary,
     whatsnew,
   ];
@@ -160,7 +163,7 @@ export function TopNav() {
           {primary.map(item => (
             <NavPill key={item.href} item={item} pathname={pathname} t={t} />
           ))}
-          {authed && <NavPill item={chat} pathname={pathname} t={t} />}
+          <NavPill item={chat} pathname={pathname} t={t} />
           {authed && <NavPill item={my} pathname={pathname} t={t} />}
           <MoreMenu pathname={pathname} items={secondary} />
         </nav>
