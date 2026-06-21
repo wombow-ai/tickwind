@@ -1,8 +1,8 @@
 'use client';
 
 import {ArrowRight, Lock, Menu, Pencil, Plus, Search, Settings as SettingsIcon, Sparkles, Trash2, X} from 'lucide-react';
-import {useSearchParams} from 'next/navigation';
-import {useCallback, useEffect, useMemo, useState} from 'react';
+import {usePathname, useRouter, useSearchParams} from 'next/navigation';
+import {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {ChatThreadPanel} from '@/components/ChatThreadPanel';
 import Link from '@/components/LocalLink';
 import {
@@ -15,7 +15,8 @@ import {
 import {useAuth} from '@/lib/auth';
 import {chatVars, CHAT_MONO} from '@/lib/chatTheme';
 import {useEntitlement} from '@/lib/entitlement';
-import {useT} from '@/lib/i18n';
+import {type Lang, useT} from '@/lib/i18n';
+import {DEFAULT_LOCALE, isLocale, localizedPath} from '@/lib/locale';
 import {useDark} from '@/lib/theme';
 import {cx} from '@/lib/ui';
 
@@ -32,7 +33,33 @@ export function ChatHub() {
   const tr = useT();
   const {user, loading: authLoading, getToken} = useAuth();
   const {isPro, loading: entLoading} = useEntitlement();
-  const initialTicker = (useSearchParams().get('ticker') || '').toUpperCase();
+  const sp = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
+  const locale: Lang = (() => {
+    const seg = pathname.slice(1).split('/', 1)[0];
+    return isLocale(seg) ? seg : DEFAULT_LOCALE;
+  })();
+  // The open conversation lives in the URL (?c=<id>) so leaving + returning (or a hard
+  // reload) restores it — NOT just React state, which a remount wipes. ?ticker= is the
+  // per-stock warm-start (?c= wins when both are present). Captured ONCE at mount so our
+  // own soft URL writes don't re-trigger the heavy init fetch.
+  const bootRef = useRef<{c: string; ticker: string} | null>(null);
+  if (bootRef.current === null) {
+    bootRef.current = {c: sp.get('c') || '', ticker: (sp.get('ticker') || '').toUpperCase()};
+  }
+
+  // writeUrl soft-syncs the URL to the open conversation WITHOUT remounting ChatHub (same
+  // /chat pathname, query-only change → Next does a client-side update, so selectedId state,
+  // the thread cache, and the draft ref all survive). 'replace' for draft-adoption/deletion
+  // (one continuous view — no history entry); 'push' for an explicit selection (Back reverses).
+  const writeUrl = useCallback(
+    (convId: string | null, mode: 'push' | 'replace') => {
+      const href = localizedPath(locale, convId ? `/chat?c=${convId}` : '/chat');
+      router[mode](href, {scroll: false});
+    },
+    [router, locale],
+  );
 
   const [convs, setConvs] = useState<Conversation[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -68,10 +95,18 @@ export function ChatHub() {
         }
         if (active) {
           setConvs(list);
-          // Default to a NEW-chat draft (suggestions + composer), NOT the latest thread —
-          // anchored to the stock when arriving via ?ticker=.
-          setSelectedId(null);
-          setDraftAnchor(initialTicker);
+          // Restore the conversation named in the URL (?c=) if it's a real, owned thread;
+          // otherwise land on a NEW-chat draft (anchored to ?ticker= when present, per the
+          // round-3 "default to new chat"). A stale/not-owned ?c= is normalized off the URL.
+          const boot = bootRef.current!;
+          if (boot.c && list.some(c => c.id === boot.c)) {
+            setSelectedId(boot.c);
+            setDraftAnchor('');
+          } else {
+            setSelectedId(null);
+            setDraftAnchor(boot.ticker);
+            if (boot.c) writeUrl(null, 'replace'); // drop a broken ?c= so a reload doesn't re-show it
+          }
           if (usage) setMeter(usage);
         }
       } finally {
@@ -81,33 +116,58 @@ export function ChatHub() {
     return () => {
       active = false;
     };
-  }, [user, isPro, initialTicker, getToken]);
+    // bootRef/writeUrl are stable across the soft URL writes this effect's restore drives, so
+    // we deliberately run this heavy fetch ONCE per auth state (not on every ?c= change).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, isPro, getToken]);
 
-  // New chat → a fresh GENERAL draft (no conversation created until the first message).
+  // New chat → a fresh GENERAL draft (no conversation created until the first message). Push
+  // (clears ?c=) so Back returns to the conversation you left.
   const newChat = useCallback(() => {
     setSelectedId(null);
     setDraftAnchor('');
     setQuery('');
     setSidebarOpen(false);
-  }, []);
+    writeUrl(null, 'push');
+  }, [writeUrl]);
 
-  // The draft created its conversation on first send → adopt it + refresh the sidebar.
+  // Select an existing conversation from the sidebar → push (a deliberate navigation; Back reverses).
+  const openConv = useCallback(
+    (id: string) => {
+      setSelectedId(id);
+      setSidebarOpen(false);
+      writeUrl(id, 'push');
+    },
+    [writeUrl],
+  );
+
+  // The draft created its conversation on first send → adopt it + refresh the sidebar. Replace
+  // (NOT push): the draft and its new conversation are one continuous view, so Back must not
+  // land on the same conversation rendered as an empty draft. Also drops a consumed ?ticker=.
   const onDraftCreated = useCallback(
     async (convId: string) => {
       await refresh();
       setSelectedId(convId);
       setDraftAnchor('');
+      writeUrl(convId, 'replace');
     },
-    [refresh],
+    [refresh, writeUrl],
   );
 
   const remove = useCallback(
     async (id: string) => {
       await deleteConversation(id, await getToken());
       const list = await refresh();
-      setSelectedId(prev => (prev === id ? list[0]?.id ?? null : prev));
+      setSelectedId(prev => {
+        if (prev !== id) return prev;
+        // The open conversation was deleted → fall to the next one (or a draft) and mirror
+        // the URL (replace — a deletion shouldn't add a history entry).
+        const next = list[0]?.id ?? null;
+        writeUrl(next, 'replace');
+        return next;
+      });
     },
-    [getToken, refresh],
+    [getToken, refresh, writeUrl],
   );
 
 
@@ -194,9 +254,9 @@ export function ChatHub() {
             ) : (
               <>
                 {today.length > 0 && <Group label={tr('chat.hub.today')} />}
-                {today.map(c => <ConvRow key={c.id} c={c} active={c.id === selectedId} onSelect={() => { setSelectedId(c.id); setSidebarOpen(false); }} onRename={() => rename(c)} onDelete={() => remove(c.id)} tr={tr} />)}
+                {today.map(c => <ConvRow key={c.id} c={c} active={c.id === selectedId} onSelect={() => openConv(c.id)} onRename={() => rename(c)} onDelete={() => remove(c.id)} tr={tr} />)}
                 {earlier.length > 0 && <Group label={tr('chat.hub.earlier')} />}
-                {earlier.map(c => <ConvRow key={c.id} c={c} active={c.id === selectedId} onSelect={() => { setSelectedId(c.id); setSidebarOpen(false); }} onRename={() => rename(c)} onDelete={() => remove(c.id)} tr={tr} />)}
+                {earlier.map(c => <ConvRow key={c.id} c={c} active={c.id === selectedId} onSelect={() => openConv(c.id)} onRename={() => rename(c)} onDelete={() => remove(c.id)} tr={tr} />)}
               </>
             )}
           </div>

@@ -126,6 +126,20 @@ summary:focus-visible,
   }
 }
 
+/* New-chat welcome suggestion cards (AI hub) — subtle warm hover lift. The accent CSS vars
+   resolve from the chat root (chatVars), so this stays theme-aware in light & dark. */
+.tw-chat-suggest {
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease,
+    transform 0.15s ease;
+}
+.tw-chat-suggest:hover {
+  border-color: var(--accent-line) !important;
+  background: var(--accent-fill) !important;
+  transform: translateY(-1px);
+}
+
 /* Chat "thinking" dots (AI hub). */
 @keyframes tw-chat-pulse {
   0%, 80%, 100% {
