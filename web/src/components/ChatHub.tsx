@@ -1,6 +1,6 @@
 'use client';
 
-import {ArrowRight, Lock, Menu, Pencil, Plus, Search, Settings as SettingsIcon, Sparkles, Trash2, X} from 'lucide-react';
+import {ArrowRight, Lock, Menu, Pencil, Plus, Search, Settings as SettingsIcon, Trash2, X} from 'lucide-react';
 import {usePathname, useRouter, useSearchParams} from 'next/navigation';
 import {useCallback, useEffect, useMemo, useState} from 'react';
 import {ChatThreadPanel} from '@/components/ChatThreadPanel';
@@ -24,7 +24,8 @@ import {cx} from '@/lib/ui';
 /**
  * ChatHub — the full-screen, ChatGPT/Claude-style AI chat hub (/chat), in the owner's warm
  * "Claude style" design. A sidebar of the user's conversations + the active thread (the shared
- * ChatThreadPanel). Pro-gated. A ?ticker= query opens (or creates) that stock's conversation.
+ * ChatThreadPanel). Signed-in users only (free users get a small monthly taste; Pro is
+ * unlimited + shows the quota bar). A ?ticker= query opens (or creates) that stock's conversation.
  * Lives in the (fullscreen) route group so it has no TopNav/Footer — it feels like its own app.
  * The sidebar brand links home (back to the main site); the "Use my data" privacy control lives
  * in /settings (reached via the sidebar Settings gear), not in the chat chrome.
@@ -81,7 +82,7 @@ export function ChatHub() {
   // Heavy fetch — conversations + usage, ONCE when auth resolves (NOT on ?c= changes; those are
   // handled by the cheap restore effect below, so a selection never re-fetches the list).
   useEffect(() => {
-    if (!user || !isPro) {
+    if (!user) {
       setLoading(false);
       return;
     }
@@ -90,11 +91,15 @@ export function ChatHub() {
       try {
         const token = await getToken();
         const list = await listConversations(token);
+        // The AI-quota bar is a Pro-only affordance — free users chat on a small hidden
+        // taste, so skip the usage fetch entirely for them.
         let usage: {used: number; limit: number} | null = null;
-        try {
-          usage = await getChatUsage(token);
-        } catch {
-          /* the per-turn meter will fill it in */
+        if (isPro) {
+          try {
+            usage = await getChatUsage(token);
+          } catch {
+            /* the per-turn meter will fill it in */
+          }
         }
         if (active) {
           setConvs(list);
@@ -213,11 +218,10 @@ export function ChatHub() {
   if (authLoading || entLoading || loading) {
     return <Shell dark={dark}><Center><span style={{fontSize: 13, color: 'var(--text3)'}}>{tr('chat.thinking')}</span></Center></Shell>;
   }
+  // Anonymous → must sign in. Signed-in FREE users may chat on a small monthly taste (the
+  // backend enforces the quota + nudges upgrade when used up), so there's no Pro gate here.
   if (!user) {
     return <Shell dark={dark}><Center><Gate icon={<Lock size={20} />} title={tr('chat.gate.login.title')} body={tr('chat.gate.login.body')} cta={tr('chat.login')} href="/login" /></Center></Shell>;
-  }
-  if (!isPro) {
-    return <Shell dark={dark}><Center><Gate icon={<Sparkles size={20} />} title={tr('chat.gate.pro.title')} body={tr('chat.gate.pro.body').replace('{t}', tr('chat.hub.yourPortfolio'))} cta={tr('chat.gate.cta')} href="/pro" /></Center></Shell>;
   }
 
   const selected = convs.find(c => c.id === selectedId) || null;
@@ -277,7 +281,8 @@ export function ChatHub() {
           </div>
 
           <div style={{flex: 'none', borderTop: '1px solid var(--border)', padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 12}}>
-            {meter && (() => {
+            {/* AI-quota bar is Pro-only — free users chat on a small hidden taste. */}
+            {isPro && meter && (() => {
               const pct = Math.min(100, Math.round((meter.used / Math.max(1, meter.limit)) * 100));
               return (
                 <div title={`${meter.used} / ${meter.limit}`}>
@@ -295,7 +300,11 @@ export function ChatHub() {
               <div style={{width: 28, height: 28, borderRadius: '50%', background: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 600, color: '#1c1404'}}>{(user.email ?? 'TW').slice(0, 2).toUpperCase()}</div>
               <div style={{flex: 1, minWidth: 0}}>
                 <div style={{fontSize: 12.5, fontWeight: 500, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'}}>{user.email}</div>
-                <div style={{fontSize: 10.5, color: 'var(--text3)'}}>{tr('settings.planPro')}</div>
+                {isPro ? (
+                  <div style={{fontSize: 10.5, color: 'var(--text3)'}}>{tr('settings.planPro')}</div>
+                ) : (
+                  <Link href="/pro" onClick={() => setSidebarOpen(false)} style={{fontSize: 10.5, fontWeight: 600, color: 'var(--accent2)', textDecoration: 'none'}}>{tr('settings.upgrade')} →</Link>
+                )}
               </div>
               <Link href="/settings" aria-label={tr('nav.settings')} onClick={() => setSidebarOpen(false)} style={{flex: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 5, borderRadius: 7, color: 'var(--text3)'}}>
                 <SettingsIcon size={16} />

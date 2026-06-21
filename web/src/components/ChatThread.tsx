@@ -20,7 +20,7 @@ export function ChatThread({ticker}: {ticker: string}) {
   const t = tok(dark);
   const tr = useT();
   const {user, loading: authLoading} = useAuth();
-  const {isPro, loading: entLoading} = useEntitlement();
+  const {loading: entLoading} = useEntitlement();
 
   if (authLoading || entLoading) {
     return (
@@ -31,17 +31,12 @@ export function ChatThread({ticker}: {ticker: string}) {
       </Wrap>
     );
   }
+  // Anonymous → must sign in. Signed-in FREE users may chat on a small monthly taste (the
+  // backend enforces the quota + nudges upgrade when used up), so there's no Pro gate here.
   if (!user) {
     return (
       <Wrap dark={dark} t={t} tr={tr} norm={norm}>
         <Gate dark={dark} t={t} icon={<Lock size={20} />} title={tr('chat.gate.login.title')} body={tr('chat.gate.login.body')} cta={tr('chat.login')} href="/login" />
-      </Wrap>
-    );
-  }
-  if (!isPro) {
-    return (
-      <Wrap dark={dark} t={t} tr={tr} norm={norm}>
-        <Gate dark={dark} t={t} icon={<Sparkles size={20} />} title={tr('chat.gate.pro.title')} body={tr('chat.gate.pro.body').replace('{t}', norm)} cta={tr('chat.gate.cta')} href="/pro" />
       </Wrap>
     );
   }

@@ -175,6 +175,19 @@ feature-flagged plugin, never on the critical path. Web only.
 - Full stack (server): `docker compose up -d --build`.
 
 ## Current state (update each iteration)
+- **2026-06-21 — 💬 AI chat opened to FREE users (small taste) — was Pro-only.** Owner: let signed-in non-Pro users
+  use the chat too, tiny quota (~5 msgs), hide the AI-quota bar for them; anon still must sign in. **Backend
+  (`2011173`):** `chatReady` drops the Pro gate (402) — `requireUser` still gates anon, burst throttle stays;
+  `chatTurn`/`chatTurnStream` use a new tier-aware `chatQuotaGate` — Pro gated on the cost-true TOKEN limit (+ the
+  sidebar meter), FREE users get a small MESSAGE-count taste (`chatFreeLimit`, env `CHAT_FREE_LIMIT` default 5/ET-
+  month) with NO meter, then a friendly "upgrade to Pro" note (`chatFreeLimitNote`). Reuses the existing
+  msg/token meters; unit test `TestChatQuotaGate_FreeAndPro`. Cost: free ≈ 5 Haiku turns/mo ≈ $0.025/user; per-
+  thread token cap + 500/day global cap remain the hard backstops. **Frontend:** ChatHub + ChatThread drop the
+  `!isPro` Pro gate (free users see the hub); the **AI-quota bar is hidden for non-Pro** (skip getChatUsage +
+  `isPro && meter` guard); the account row shows "Upgrade to Pro →" for free users instead of "Tickwind Pro".
+  Preview-verified the free hub (no quota bar, upgrade link) via a temp `?twpreview` bypass (added + fully
+  reverted, gate re-confirmed). Deployed BACKEND-FIRST (frontend removes the gate). [[tickwind-product-b-chat]]
+
 - **2026-06-21 — 🎨 Chat hub logo/coherence polish.** Owner: deeply improve the logo application + overall
   aesthetics/coherence of `/chat`. The new green `#00C08B` streams logo CLASHED with the chat's warm GOLD theme
   (`--accent #cf9a33`), and the welcome center still had a mismatched gold "T" tile. Fix: `LogoMark` gained an
