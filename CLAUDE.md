@@ -175,6 +175,36 @@ feature-flagged plugin, never on the critical path. Web only.
 - Full stack (server): `docker compose up -d --build`.
 
 ## Current state (update each iteration)
+- **2026-06-21 — 💬 AI chat hub round-4 shipped (3 owner UX reqs; research+impl+adversarial-review via Workflow).**
+  Owner asked: (1) the new-chat center was barren; (2) support more widgets (Fundamentals) + a DRAM reply looked
+  wrong; (3) leaving /chat + returning reset to a new draft (lost the open conversation). A research Workflow (4
+  agents: GPT/Claude/Gemini empty-state UX + conversation-URL patterns + a routing impl plan + an anti-hallucination
+  plan) drove the design. **Req1 (frontend `2b1b790`):** `ChatThreadPanel` empty state is now a CENTERED Claude-style
+  welcome — time-aware greeting + subline + a 2-col grid of one-click starter cards (stock-specific when anchored,
+  hub-wide otherwise) + the composer lifted to center; collapses to the normal top-thread + pinned composer on first
+  message. EN+zh, warm hover via a globals.css class. **Req2 (backend `205d241`) — confirmed DOUBLE
+  anti-hallucination violation:** DRAM = "Roundhill Memory ETF" (an ETF → structurally no company fundamentals); the
+  model had invented a "2025 newly-launched ETF / limited Go coverage" reason from memory because the tool returned a
+  bare "No data." Fix: parse the Nasdaq-Trader **ETF column** (was parsed-and-discarded) into `symbols.Symbol.ETF`
+  (+OR'd on a ticker collision so SEC-listed ETFs like SPY are flagged too; +`Index/Cache.ByTicker`); a **Go-owned
+  `describeTicker`** (name from the directory + ETF structural fact, ZERO numbers/dates) now grounds the empty-sheet
+  and empty-fundamentals/valuation tool results; rule-1 forbids inventing a launch year / "newly-launched" /
+  "limited coverage"; a SHOWING-WIDGETS prompt block + the surface_widget description nudge the model to surface
+  `fundamentals_table`/`valuation_table` for stocks that HAVE them, and **execTool deterministically refuses** a
+  fundamentals/valuation widget for an ETF (would render empty). Wired via `chatSvc.SetSymbols(symbolCache)`;
+  nil-safe + back-compat. **Req3 (frontend `2b1b790`):** the open conversation now lives in the URL as a **query
+  param `/chat?c=<id>`** (NOT a path segment — a same-pathname query change is a soft client update that never
+  remounts ChatHub, so state/threadCache/draftConvId survive); restores on reload/back, locale-correct, composes
+  with `?ticker=` (?c= wins; draft-adoption drops the consumed ticker); push for explicit selection/new-chat,
+  replace for draft-adoption+deletion; the heavy init fetch captured once (bootRef) so soft URL writes don't
+  re-trigger it. **Adversarial Workflow review** (3 lenses + skeptics, 4 raised / 3 confirmed all low) hardened the
+  backend: softened an unprovable "price/technical data IS available" claim → hedged, mirrored the ETF widget caveat
+  into the tool description, gave zh rule-1 `<facts>`-block parity. **Gates green** (Go gofmt/build/vet + `go test
+  -race`; web tsc+next build). **Deployed** (backend tarball-pull DEPLOY_DONE 09:32Z — `/v1/search?q=DRAM` now
+  returns `"etf":true`; frontend Vercel). **Synthetic-Pro live E2E PASSED:** DRAM fundamentals → grounded ETF reply,
+  NO invented year, no empty fundamentals widget; AAPL fundamentals → `fundamentals_table` widget surfaced with
+  Go-owned numbers. ⚠️ owner visual check: /chat new-chat welcome + URL `?c=` restore (reload/back) with the Pro acct.
+  [[tickwind-product-b-chat]]
 - **2026-06-21 — 💬 AI chat hub UX rounds 1–3 shipped (streaming + token metering backend + 3 rounds of owner UX
   feedback).** Backend increments already live + E2E-verified earlier this session: **real SSE streaming**
   (`enrich.ChatStream`/`chat.AnswerStream`/`POST /v1/conversations/{id}/chat/stream`; `token` events then a `done`
