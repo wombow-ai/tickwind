@@ -21,7 +21,7 @@ export const revalidate = 1800;
  *  `dynamicParams` defaults true → new/unknown-but-fetchable keys ISR-generate. */
 export async function generateStaticParams(): Promise<{locale: string; key: string}[]> {
   try {
-    const data = await getTopics(AbortSignal.timeout(5000));
+    const data = await getTopics(AbortSignal.timeout(12000));
     return LOCALES.flatMap(locale =>
       (data.topics ?? []).map(t => ({locale, key: t.key})),
     );
@@ -34,7 +34,7 @@ export async function generateStaticParams(): Promise<{locale: string; key: stri
 /** Fetches the topics snapshot (best-effort) and resolves the topic for a key. */
 async function lookup(key: string): Promise<HotTopic | null> {
   try {
-    const data = await getTopics(AbortSignal.timeout(5000));
+    const data = await getTopics(AbortSignal.timeout(12000));
     return (data.topics ?? []).find(t => t.key === key) ?? null;
   } catch {
     return null;

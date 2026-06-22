@@ -778,9 +778,22 @@ export interface TopicsResponse {
   topics: HotTopic[];
 }
 
-/** Fetches the trending-topics snapshot for the Hot Topics strip. */
+// In-flight coalescing + Data Cache + retry for the trending-topics snapshot. The /topic/[key]
+// pSEO pages (16 = 8 topics × 2 locales, each calling this in generateMetadata AND the body)
+// prerender at build; a single cold-tunnel hiccup on this fetch baked them ALL as the loading
+// fallback ("Topic · Tickwind", no content) — confirmed live (renders fine locally, blank on
+// Vercel). Retry survives the transient cold reply; the shared promise collapses the build
+// burst to one fetch; the short Data Cache window keeps the trending data fresh but reliable.
+let topicsInFlight: Promise<TopicsResponse> | null = null;
 export function getTopics(signal?: AbortSignal): Promise<TopicsResponse> {
-  return getJson<TopicsResponse>('/v1/topics', signal);
+  if (topicsInFlight) return topicsInFlight;
+  const init = {next: {revalidate: 600}} as RequestInit;
+  const promise = getJsonWithRetry<TopicsResponse>('/v1/topics', signal, null, init);
+  topicsInFlight = promise;
+  void promise.finally(() => {
+    if (topicsInFlight === promise) topicsInFlight = null;
+  });
+  return promise;
 }
 
 /** One insider's open-market buy, for the Opportunity card's evidence. */
