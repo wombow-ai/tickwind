@@ -12,6 +12,7 @@ import {GUIDES} from '@/lib/guides';
 import {SCREEN_PRESETS} from '@/lib/presets';
 import {SIGNAL_SCREEN_PRESETS} from '@/lib/signalPresets';
 import {FACTOR_PRESETS} from '@/lib/factors';
+import {RS_WINDOWS} from '@/lib/rsWindows';
 import {localTopicKeys} from '@/lib/topics';
 import {COMPARE_PAIRS, pairSlug} from '@/lib/compare';
 import {ZONES} from '@/lib/zones';
@@ -202,6 +203,12 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     changeFrequency: 'daily',
     priority: 0.6,
   }));
+  // Relative-strength leaderboards (`/screen/relative-strength/{window}`) — rebuilt every 45 min.
+  const rsPages: Page[] = RS_WINDOWS.map(w => ({
+    path: `/screen/relative-strength/${w.key}`,
+    changeFrequency: 'daily',
+    priority: 0.6,
+  }));
   // Curated theme zones (`/zone/{key}`) — the AI flagship + 10x theme siblings.
   const zonePages: Page[] = ZONES.map(z => ({
     path: `/zone/${z.key}`,
@@ -252,6 +259,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     ...presetPages,
     ...signalPresetPages,
     ...factorPages,
+    ...rsPages,
     ...zonePages,
     ...comparePages,
     ...stockDirectoryPages,

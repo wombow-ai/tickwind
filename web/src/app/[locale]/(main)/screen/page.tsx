@@ -4,6 +4,7 @@ import {langAlternates} from '@/lib/config';
 import {isLocale} from '@/lib/locale';
 import {SCREEN_PRESETS} from '@/lib/presets';
 import {FACTOR_PRESETS} from '@/lib/factors';
+import {RS_WINDOWS} from '@/lib/rsWindows';
 import {Screener} from '@/components/Screener';
 
 export async function generateMetadata({
@@ -90,6 +91,31 @@ export default async function ScreenPage({
             >
               <div className="text-[13px] font-semibold text-slate-800 dark:text-slate-100">
                 {zh ? p.titleZh : p.titleEn}
+              </div>
+            </Link>
+          ))}
+        </div>
+      </section>
+
+      {/* Relative-strength leaderboards — strongest stocks vs the market over each window. */}
+      <section className="mt-8">
+        <h2 className="mb-1 text-[15px] font-bold text-slate-900 dark:text-slate-100">
+          {zh ? '相对强弱榜' : 'Relative-strength leaders'}
+        </h2>
+        <p className="mb-2.5 text-[12px] text-slate-500 dark:text-slate-400">
+          {zh
+            ? '按相对标普 500(SPY)的超额收益排名,跑赢大盘最多的美股 —— 描述性,非建议。'
+            : 'Ranked by excess return vs the S&P 500 (SPY) — who is outpacing the market. Descriptive, not advice.'}
+        </p>
+        <div className="grid gap-2 sm:grid-cols-2">
+          {RS_WINDOWS.map(w => (
+            <Link
+              key={w.key}
+              href={`/screen/relative-strength/${w.key}`}
+              className="block rounded-xl border border-slate-200 px-3 py-2.5 hover:border-teal-300 hover:bg-slate-50 dark:border-slate-800 dark:hover:border-teal-500/40 dark:hover:bg-slate-900"
+            >
+              <div className="text-[13px] font-semibold text-slate-800 dark:text-slate-100">
+                {zh ? w.titleZh : w.titleEn}
               </div>
             </Link>
           ))}

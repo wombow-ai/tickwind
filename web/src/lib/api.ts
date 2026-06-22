@@ -2949,6 +2949,35 @@ export function getFactorScreen(
   return getJson<FactorScreenResponse>(`/v1/screen/factors?${p.toString()}`, signal);
 }
 
+/** One stock's standing on the relative-strength leaderboard: excess return vs SPY + the two legs. */
+export interface RSRank {
+  ticker: string;
+  relative: number; // excess return (stock − benchmark), percentage points
+  stock_return: number; // %
+  benchmark_return: number; // %
+}
+
+/** Envelope returned by `GET /v1/screen/relative-strength`. */
+export interface RSScreenResponse {
+  window: string; // "1M" | "3M" | "6M" | "1Y"
+  count: number;
+  results: RSRank[];
+  total: number; // how many tracked stocks had a computable excess return for this window
+  as_of?: string;
+}
+
+/**
+ * The market-wide RELATIVE-STRENGTH leaderboard: every tracked stock ranked by its trailing excess
+ * return vs SPY over the window (1M | 3M | 6M | 1Y). Go-computed historical excess returns —
+ * descriptive, no advice. Public, no auth. Throws on a non-2xx/network error (callers client-fetch
+ * with a try/catch → empty/loading state).
+ */
+export function getRSScreen(window: string, limit?: number, signal?: AbortSignal): Promise<RSScreenResponse> {
+  const p = new URLSearchParams({window});
+  if (limit != null) p.set('limit', String(limit));
+  return getJson<RSScreenResponse>(`/v1/screen/relative-strength?${p.toString()}`, signal);
+}
+
 /**
  * Fetches a ticker's multi-factor scorecard (percentiles vs the tracked universe). Resolves to
  * `null` on any 4xx/network error (no fundamentals / population not ready) so the card can hide
