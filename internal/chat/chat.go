@@ -44,14 +44,14 @@ var portfolioWidgets = map[string]bool{"watchlist_summary": true, "holdings_pnl"
 // catalog id the chart endpoint expects. CLOSED set — the model can't invent an indicator;
 // an unknown name is rejected (no widget rendered) so the chart never points at nothing.
 var historyIndicatorIDs = map[string]string{
-	"rsi":       "technical.rsi",
-	"macd":      "technical.macd",
-	"sma":       "technical.sma-ma",
-	"ema":       "technical.ema",
-	"bollinger": "technical.boll",
-	"boll":      "technical.boll",
-	"atr":       "technical.atr",
-	"kdj":       "technical.stochastic-kdj",
+	"rsi":        "technical.rsi",
+	"macd":       "technical.macd",
+	"sma":        "technical.sma-ma",
+	"ema":        "technical.ema",
+	"bollinger":  "technical.boll",
+	"boll":       "technical.boll",
+	"atr":        "technical.atr",
+	"kdj":        "technical.stochastic-kdj",
 	"stochastic": "technical.stochastic-kdj",
 }
 

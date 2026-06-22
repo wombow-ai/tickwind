@@ -15,7 +15,7 @@ import (
 // fabricated. Lines carries the extra aligned bands (MACD signal/histogram, Bollinger
 // upper/lower) so a multi-line indicator renders as one chart.
 type HistorySeries struct {
-	Indicator string             `json:"indicator"`       // catalog id, e.g. technical.rsi
+	Indicator string             `json:"indicator"` // catalog id, e.g. technical.rsi
 	Period    int                `json:"period,omitempty"`
 	Unit      string             `json:"unit"`            // % | price | ratio | x | usd | ""
 	Points    []Point            `json:"points"`          // the primary line, oldest→newest
@@ -223,7 +223,7 @@ func macdSeriesPadded(closes []float64, fast, slow, signal int) (line, sig, hist
 	line = nanPadded(n)
 	sig = nanPadded(n)
 	hist = nanPadded(n)
-	idx := make([]int, 0, n)    // closes indices where the MACD line is defined, in order
+	idx := make([]int, 0, n) // closes indices where the MACD line is defined, in order
 	defined := make([]float64, 0, n)
 	for i := 0; i < n; i++ {
 		f, s := emaFast[i], emaSlow[i]
