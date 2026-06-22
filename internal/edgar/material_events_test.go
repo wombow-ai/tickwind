@@ -281,3 +281,56 @@ func TestTruncateRunes(t *testing.T) {
 		t.Errorf("truncateRunes returned %d runes, want 3: %q", len(r), got)
 	}
 }
+
+func TestExtractEarningsDates(t *testing.T) {
+	today := time.Now().UTC().Format("2006-01-02")
+	d10 := time.Now().UTC().AddDate(0, 0, -10).Format("2006-01-02") // within earningsMinSpacing of today
+	d90 := time.Now().UTC().AddDate(0, 0, -90).Format("2006-01-02") // a separate quarter
+	d180 := time.Now().UTC().AddDate(0, 0, -180).Format("2006-01-02")
+	tooOld := time.Now().UTC().AddDate(-4, 0, 0).Format("2006-01-02") // outside earningsDatesLookback
+
+	var sub submissions8KResp
+	r := &sub.Filings.Recent
+	// Index-aligned parallel arrays mixing forms + item codes.
+	r.Form = []string{"8-K", "8-K", "10-Q", "8-K/A", "8-K", "8-K", "8-K", "8-K"}
+	r.FilingDate = []string{today, d90, today, d180, d180, tooOld, today, d10}
+	r.Items = []string{
+		"2.02,9.01", // earnings — keep
+		"2.02",      // earnings (separate quarter) — keep
+		"2.02",      // a 10-Q (not 8-K) — drop
+		"2.02",      // 8-K/A amendment — drop
+		"5.02",      // not earnings — drop
+		"2.02",      // earnings but too old — drop
+		"2.02",      // earnings, SAME date as index 0 (today) — dedupe
+		"2.02",      // earnings 10 days ago — within 45d of today → COLLAPSED (intra-quarter)
+	}
+	// Pad the other arrays so at() never indexes out of range.
+	r.AccessionNumber = make([]string, len(r.Form))
+	r.ReportDate = make([]string, len(r.Form))
+	r.PrimaryDocument = make([]string, len(r.Form))
+
+	got := extractEarningsDates(sub)
+	// Expect 2 distinct quarterly dates: today (the SAME-date filing deduped + the d10 intra-quarter
+	// filing collapsed into it) + d90. d180/index4 is 5.02; the 10-Q + 8-K/A drop; tooOld is out of window.
+	if len(got) != 2 {
+		t.Fatalf("extractEarningsDates kept %d dates, want 2: %v", len(got), got)
+	}
+	if !got[0].After(got[1]) {
+		t.Fatalf("not newest-first: %v", got)
+	}
+	if got[0].Format("2006-01-02") != today || got[1].Format("2006-01-02") != d90 {
+		t.Fatalf("wrong dates: %v (want %s, %s)", got, today, d90)
+	}
+}
+
+func TestHasItem(t *testing.T) {
+	if !hasItem("2.02,9.01", "2.02") {
+		t.Fatal("hasItem missed 2.02 in '2.02,9.01'")
+	}
+	if hasItem("5.02,9.01", "2.02") {
+		t.Fatal("hasItem false-positive on '5.02,9.01'")
+	}
+	if hasItem("", "2.02") {
+		t.Fatal("hasItem false-positive on empty")
+	}
+}

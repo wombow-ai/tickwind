@@ -728,6 +728,8 @@ func main() {
 	// access when stale, never by an external operator.
 	apiServer.SetMaterialEvents(materialevents.NewService(edgarClient, enricher, cfg.LLMModel))
 	log.Info("material-events (8-K) enabled", "llm", enricher.Enabled())
+	// Earnings-reaction uses the same EDGAR client for past earnings (8-K item 2.02) dates.
+	apiServer.SetEarningsDates(edgarClient)
 
 	// Per-ticker insider-activity timeline: a company's recent Form 4 open-market
 	// buys AND sells (newest first) with shares/price/value/date, the insider's

@@ -334,6 +334,15 @@ type MaterialEventsSource interface {
 	Model() string
 }
 
+// EarningsDatesSource provides a company's past earnings-announcement dates (the filing dates of
+// its 8-K item 2.02 reports), newest-first — the dated anchors for the deterministic
+// earnings-reaction statistic. Every date is a real SEC filing date (anti-hallucination-safe).
+// nil-safe — a nil source makes /v1/stocks/{ticker}/earnings-reaction 404. Satisfied by
+// *edgar.Client (its EarningsDates method).
+type EarningsDatesSource interface {
+	EarningsDates(ctx context.Context, ticker string) ([]time.Time, error)
+}
+
 // InsiderActivitySource produces a company's recent insider-activity timeline —
 // open-market Form 4 buys AND sells, newest first, each with the Go-owned facts
 // (shares/price/value/date, insider name + role, buy/sell, the best-effort
@@ -383,6 +392,7 @@ type Server struct {
 	researchCalc  ResearchSource         // injected post-New via SetResearch (deep-research report)
 	movementCalc  MovementSource         // injected post-New via SetMovement (move-explainer)
 	materialCalc  MaterialEventsSource   // injected post-New via SetMaterialEvents (8-K material events + AI summary)
+	earningsDates EarningsDatesSource    // injected post-New via SetEarningsDates (8-K 2.02 dates for earnings-reaction)
 	billing       *billing.Service       // injected post-New via SetBilling (Stripe; nil/disabled until keys are set)
 	insiderCalc   InsiderActivitySource  // injected post-New via SetInsiderActivity (Form 4 buy/sell timeline; no LLM)
 	admins        map[string]bool        // user UUIDs and/or emails (lowercased) allowed to delete any comment
@@ -622,6 +632,7 @@ func New(st store.Store, hub QuoteStream, enricher enrich.Enricher, verifier *au
 	mux.HandleFunc("GET /v1/stocks/{ticker}/indicator-history", s.getIndicatorHistory)
 	mux.HandleFunc("GET /v1/stocks/{ticker}/seasonality", s.getSeasonality)
 	mux.HandleFunc("GET /v1/stocks/{ticker}/relative-strength", s.getRelativeStrength)
+	mux.HandleFunc("GET /v1/stocks/{ticker}/earnings-reaction", s.getEarningsReaction)
 	mux.HandleFunc("GET /v1/stocks/{ticker}/backtest", s.getBacktest)
 	mux.HandleFunc("GET /v1/stocks/{ticker}/research", s.getResearch)
 	mux.HandleFunc("POST /v1/stocks/{ticker}/chat", s.postChat)
@@ -3424,6 +3435,10 @@ func (s *Server) writeMovement(w http.ResponseWriter, e movementEntry, status st
 // SetMaterialEvents injects the 8-K material-events source after New (keeps
 // api.New's positional signature stable). nil-safe: the endpoint 404s until set.
 func (s *Server) SetMaterialEvents(src MaterialEventsSource) { s.materialCalc = src }
+
+// SetEarningsDates injects the earnings-dates source (8-K item 2.02 filing dates) after New —
+// the dated anchors for the earnings-reaction statistic. Keeps it out of the New() signature.
+func (s *Server) SetEarningsDates(src EarningsDatesSource) { s.earningsDates = src }
 
 // materialEventsDailyCap bounds material-events LLM-summary REPORTS per day across
 // ALL tickers — a hard token-budget backstop. The cap gates the LLM-summary path

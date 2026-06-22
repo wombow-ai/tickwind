@@ -297,6 +297,48 @@ func (s *Server) getRelativeStrength(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, relStrengthResp{Ticker: ticker, RelativeStrength: &rs})
 }
 
+// earningsReactionResp is the wire shape of GET /v1/stocks/{ticker}/earnings-reaction: the ticker
+// + how it has historically moved around past earnings (nil when there is too little history).
+type earningsReactionResp struct {
+	Ticker           string                       `json:"ticker"`
+	EarningsReaction *indicators.EarningsReaction `json:"earnings_reaction,omitempty"`
+}
+
+// getEarningsReaction serves how a ticker has historically MOVED AROUND its earnings announcements
+// (indicators.ComputeEarningsReaction): for each past 8-K item 2.02 (earnings) filing date, the
+// close-to-close move spanning the announcement, plus aggregates (avg / avg-magnitude move,
+// up-rate, sample size). Dates come from SEC 8-K filings, the move from the public daily candles —
+// every number is Go-computed, a disclosed HISTORICAL statistic, NEVER a forecast or advice, so it
+// is anti-hallucination-safe. 404 when the price/earnings-date source is unset or there is no price
+// history; 422 when earnings dates can't be fetched or there is too little overlap to measure. Free.
+func (s *Server) getEarningsReaction(w http.ResponseWriter, r *http.Request) {
+	if s.bars == nil || s.earningsDates == nil {
+		writeJSON(w, http.StatusNotFound, errBody("earnings reaction unavailable"))
+		return
+	}
+	ticker := strings.ToUpper(strings.TrimSpace(r.PathValue("ticker")))
+	if ticker == "" {
+		writeJSON(w, http.StatusNotFound, errBody("no ticker"))
+		return
+	}
+	candles, err := s.bars.DailyCandles(r.Context(), ticker)
+	if err != nil || len(candles) == 0 {
+		writeJSON(w, http.StatusNotFound, errBody("no price history for "+ticker))
+		return
+	}
+	dates, err := s.earningsDates.EarningsDates(r.Context(), ticker)
+	if err != nil {
+		writeJSON(w, http.StatusUnprocessableEntity, errBody("earnings dates unavailable for "+ticker))
+		return
+	}
+	er, ok := indicators.ComputeEarningsReaction(dates, candles)
+	if !ok {
+		writeJSON(w, http.StatusUnprocessableEntity, errBody("insufficient earnings history for "+ticker))
+		return
+	}
+	writeJSON(w, http.StatusOK, earningsReactionResp{Ticker: ticker, EarningsReaction: &er})
+}
+
 // SignalScanSource is the whole-universe signals SCREENER (a background cache that
 // precomputes ticker→signals so the endpoint never recomputes on the request path).
 type SignalScanSource interface {

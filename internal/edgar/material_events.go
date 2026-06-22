@@ -215,6 +215,84 @@ func (c *Client) MaterialEvents(ctx context.Context, ticker string) ([]MaterialE
 	return extractMaterialEvents(sub, info.CIK), nil
 }
 
+// earningsDatesLookback bounds how far back EarningsDates collects earnings announcements
+// (~3.25 years → comfortably holds ~13 quarterly reports). Sourced from the SEC `recent`
+// submissions feed only (one request); older history in `filings.files` is not paginated.
+const earningsDatesLookback = 3*365*24*time.Hour + 90*24*time.Hour
+
+// EarningsDates returns a US ticker's earnings-announcement dates — the filing dates of its
+// 8-K filings reporting item 2.02 (Results of Operations and Financial Condition) — newest
+// first, within earningsDatesLookback, deduped by date. It REUSES the CIK lookup + the
+// submissions feed (so it is anti-hallucination-safe: every date is a real SEC filing date).
+// Returns an empty slice + nil error for a company with no recent 2.02 8-Ks; an error only when
+// the ticker/CIK can't be resolved or the feed fetch fails. 8-K/A amendments are excluded (they
+// restate, not re-announce). This feeds the deterministic earnings-reaction statistic.
+func (c *Client) EarningsDates(ctx context.Context, ticker string) ([]time.Time, error) {
+	info, err := c.lookup(ctx, ticker)
+	if err != nil {
+		return nil, err
+	}
+	var sub submissions8KResp
+	if err := c.get(ctx, fmt.Sprintf(submissionsURL, info.CIK), &sub); err != nil {
+		return nil, err
+	}
+	return extractEarningsDates(sub), nil
+}
+
+// extractEarningsDates filters the submissions feed to original 8-K filings carrying item 2.02
+// and returns their filing dates, newest-first, within earningsDatesLookback, deduped by date.
+// Pure (no I/O) so it is unit-testable.
+func extractEarningsDates(sub submissions8KResp) []time.Time {
+	r := sub.Filings.Recent
+	cutoff := time.Now().UTC().Add(-earningsDatesLookback)
+	seen := map[string]bool{}
+	out := make([]time.Time, 0, 16)
+	for i := 0; i < len(r.Form); i++ {
+		if strings.TrimSpace(r.Form[i]) != "8-K" { // exclude 8-K/A amendments
+			continue
+		}
+		if !hasItem(at(r.Items, i), "2.02") {
+			continue
+		}
+		ds := at(r.FilingDate, i)
+		t, err := time.Parse("2006-01-02", ds)
+		if err != nil || t.Before(cutoff) || seen[ds] {
+			continue
+		}
+		seen[ds] = true
+		out = append(out, t)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].After(out[j]) }) // newest first
+
+	// Item 2.02 covers ANY "Results of Operations" disclosure, not only the quarterly release — a
+	// company can file a preliminary/flash-results 8-K and then the formal release in the SAME
+	// quarter. Collapse 2.02 dates closer than earningsMinSpacing to a newer kept one so the set
+	// is ~one event per quarter (keeps the newer/formal date), keeping the earnings-reaction stat
+	// from being polluted + over-counted by intra-quarter results filings.
+	kept := make([]time.Time, 0, len(out))
+	for _, d := range out {
+		if len(kept) > 0 && kept[len(kept)-1].Sub(d) < earningsMinSpacing {
+			continue // within the spacing window of the last (newer) kept date → same quarter
+		}
+		kept = append(kept, d)
+	}
+	return kept
+}
+
+// earningsMinSpacing collapses 2.02 filings landing in the same quarter (a pre-announcement +
+// the formal release) to one event — comfortably under a ~91-day quarter, over a ~2-week gap.
+const earningsMinSpacing = 45 * 24 * time.Hour
+
+// hasItem reports whether a raw 8-K items string carries the given (normalized) item code.
+func hasItem(raw, code string) bool {
+	for _, it := range parseItems(raw) {
+		if it.Code == code {
+			return true
+		}
+	}
+	return false
+}
+
 // extractMaterialEvents filters the submissions feed's parallel arrays down to
 // recent 8-K / 8-K/A filings and builds the MaterialEvent list. It is pure (no
 // I/O) so it is unit-testable. Filtering: form[i] is "8-K" or "8-K/A", filed

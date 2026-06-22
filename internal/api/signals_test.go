@@ -316,9 +316,9 @@ func rampCandles(n int) []store.Candle {
 	return out
 }
 
-func backtestServer(t *testing.T, bars BarSource, paywallOn bool) *httptest.Server {
+func barsTestServer(t *testing.T, bars BarSource) *Server {
 	t.Helper()
-	h := New(
+	return New(
 		memory.New(), stream.NewHub(), enrich.Noop{},
 		auth.NewVerifier(testSecret, ""),
 		bars,
@@ -329,8 +329,23 @@ func backtestServer(t *testing.T, bars BarSource, paywallOn bool) *httptest.Serv
 		nil, // admin user ids
 		slog.New(slog.NewTextHandler(io.Discard, nil)),
 	)
+}
+
+func backtestServer(t *testing.T, bars BarSource, paywallOn bool) *httptest.Server {
+	t.Helper()
+	h := barsTestServer(t, bars)
 	h.SetIndicatorsPaywallEnabled(paywallOn)
 	return httptest.NewServer(h)
+}
+
+// fakeEarnings implements EarningsDatesSource with a fixed date list (err when set).
+type fakeEarnings struct {
+	dates []time.Time
+	err   error
+}
+
+func (f fakeEarnings) EarningsDates(context.Context, string) ([]time.Time, error) {
+	return f.dates, f.err
 }
 
 func TestGetBacktest(t *testing.T) {
@@ -602,3 +617,81 @@ func TestGetRelativeStrength(t *testing.T) {
 		}
 	})
 }
+
+func TestGetEarningsReaction(t *testing.T) {
+	t.Run("nil earnings source → 404", func(t *testing.T) {
+		srv := backtestServer(t, fakeBars{monthSpanCandles(30)}, false) // SetEarningsDates not called
+		defer srv.Close()
+		resp := mustGet(t, srv.URL+"/v1/stocks/AAPL/earnings-reaction")
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusNotFound {
+			t.Fatalf("status = %d, want 404", resp.StatusCode)
+		}
+	})
+
+	t.Run("earnings-dates fetch error → 422", func(t *testing.T) {
+		h := barsTestServer(t, fakeBars{monthSpanCandles(30)})
+		h.SetEarningsDates(fakeEarnings{err: errFake})
+		srv := httptest.NewServer(h)
+		defer srv.Close()
+		resp := mustGet(t, srv.URL+"/v1/stocks/AAPL/earnings-reaction")
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusUnprocessableEntity {
+			t.Fatalf("status = %d, want 422", resp.StatusCode)
+		}
+	})
+
+	t.Run("valid → 200 with reaction", func(t *testing.T) {
+		// DAILY candles (no gaps) so each event's ~2-session window stays tight; 4 dates meet the
+		// minEarningsSamples floor.
+		h := barsTestServer(t, fakeBars{dailyCandles("2024-01-01", 180)})
+		h.SetEarningsDates(fakeEarnings{dates: []time.Time{
+			time.Date(2024, 5, 1, 0, 0, 0, 0, time.UTC),
+			time.Date(2024, 4, 1, 0, 0, 0, 0, time.UTC),
+			time.Date(2024, 3, 1, 0, 0, 0, 0, time.UTC),
+			time.Date(2024, 2, 1, 0, 0, 0, 0, time.UTC),
+		}})
+		srv := httptest.NewServer(h)
+		defer srv.Close()
+		resp := mustGet(t, srv.URL+"/v1/stocks/aapl/earnings-reaction")
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("status = %d, want 200", resp.StatusCode)
+		}
+		var body struct {
+			Ticker           string `json:"ticker"`
+			EarningsReaction *struct {
+				Samples int `json:"samples"`
+				Events  []struct {
+					Date string `json:"date"`
+				} `json:"events"`
+			} `json:"earnings_reaction"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if body.Ticker != "AAPL" || body.EarningsReaction == nil ||
+			body.EarningsReaction.Samples != 4 || len(body.EarningsReaction.Events) != 4 {
+			t.Fatalf("unexpected body: %+v", body)
+		}
+	})
+}
+
+// dailyCandles builds n consecutive-calendar-day candles from start, flat close 100.
+func dailyCandles(start string, n int) []store.Candle {
+	t0, _ := time.Parse("2006-01-02", start)
+	out := make([]store.Candle, n)
+	for i := range out {
+		d := t0.AddDate(0, 0, i)
+		out[i] = store.Candle{Time: d, Open: 100, High: 100, Low: 100, Close: 100, Volume: 1}
+	}
+	return out
+}
+
+var errFake = fmtErrorf("boom")
+
+func fmtErrorf(s string) error { return &simpleErr{s} }
+
+type simpleErr struct{ s string }
+
+func (e *simpleErr) Error() string { return e.s }
