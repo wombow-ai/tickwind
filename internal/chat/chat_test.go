@@ -298,6 +298,37 @@ func TestAnswerIndicatorHistoryWidget(t *testing.T) {
 	}
 }
 
+func TestAnswerSeasonalityWidget(t *testing.T) {
+	llm := &scriptedLLM{enabled: true, replies: []reply{
+		{calls: []enrich.ChatToolCall{{ID: "c1", Name: "surface_widget", Arguments: `{"type":"seasonality"}`}}},
+		{content: "Here is AAPL's seasonality."},
+	}}
+	svc := NewService(llm, fakeFacts{sampleSheet()}, nil, "")
+	ans, err := svc.Answer(context.Background(), "u", "AAPL", "en", nil, "what's AAPL's seasonality", true)
+	if err != nil {
+		t.Fatalf("Answer: %v", err)
+	}
+	var w *Block
+	for i := range ans.Blocks {
+		if ans.Blocks[i].Kind == "widget" {
+			w = &ans.Blocks[i]
+		}
+	}
+	if w == nil || w.Widget != "seasonality" || w.Params["ticker"] != "AAPL" {
+		t.Fatalf("seasonality widget wrong: %+v", ans.Blocks)
+	}
+	// Anti-hallucination: the tool result is a confirmation only — no monthly numbers.
+	tool := ""
+	for _, m := range llm.gotMessages[1] {
+		if m.Role == "tool" {
+			tool = m.Content
+		}
+	}
+	if tool != "rendered: seasonality AAPL " {
+		t.Fatalf("widget tool result leaked data / wrong: %q", tool)
+	}
+}
+
 func TestAnswerIndicatorHistoryRejectsUnknownIndicator(t *testing.T) {
 	llm := &scriptedLLM{enabled: true, replies: []reply{
 		{calls: []enrich.ChatToolCall{{ID: "c1", Name: "surface_widget", Arguments: `{"type":"indicator_history","indicator":"made_up"}`}}},
