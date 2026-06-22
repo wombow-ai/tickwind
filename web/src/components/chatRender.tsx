@@ -6,6 +6,7 @@ import {FundamentalsCard} from '@/components/FundamentalsCard';
 import {IndicatorHistoryChart} from '@/components/IndicatorHistoryChart';
 import {KLineChart} from '@/components/KLineChart';
 import {SeasonalityCard} from '@/components/SeasonalityCard';
+import {RelativeStrengthCard} from '@/components/RelativeStrengthCard';
 import Link from '@/components/LocalLink';
 import {Markdown} from '@/components/Markdown';
 import {ChatPortfolioWidget} from '@/components/PortfolioWidgets';
@@ -132,6 +133,11 @@ function ChatWidget({widget, ticker, indicatorId, range, tr}: {widget: string; t
   // seasonality: the month-of-year return card (Go-computed; numbers never enter the model).
   if (widget === 'seasonality') {
     return <SeasonalityCard ticker={ticker} />;
+  }
+  // relative_strength: trailing 1M/3M/6M/1Y excess return vs SPY (Go-computed; numbers never
+  // enter the model — the widget carries only the ticker).
+  if (widget === 'relative_strength') {
+    return <RelativeStrengthCard ticker={ticker} />;
   }
   if (widget === 'fundamentals_table' || widget === 'valuation_table') {
     return <FundamentalsCard ticker={ticker} />;
