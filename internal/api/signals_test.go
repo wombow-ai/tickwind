@@ -485,3 +485,62 @@ func TestGetIndicatorHistory(t *testing.T) {
 		}
 	})
 }
+
+// monthSpanCandles builds `months` monthly candles (one per month) so ComputeSeasonality has
+// multiple calendar months to aggregate.
+func monthSpanCandles(months int) []store.Candle {
+	base := time.Date(2021, 1, 1, 0, 0, 0, 0, time.UTC)
+	cs := make([]store.Candle, months)
+	for i := range cs {
+		v := 100 + float64(i) // gently rising
+		cs[i] = store.Candle{Time: base.AddDate(0, i, 0), Open: v, High: v, Low: v, Close: v, Volume: 1000}
+	}
+	return cs
+}
+
+func TestGetSeasonality(t *testing.T) {
+	t.Run("nil bars → 404", func(t *testing.T) {
+		srv := backtestServer(t, nil, false)
+		defer srv.Close()
+		resp := mustGet(t, srv.URL+"/v1/stocks/AAPL/seasonality")
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusNotFound {
+			t.Fatalf("status = %d, want 404", resp.StatusCode)
+		}
+	})
+
+	t.Run("single month → 422", func(t *testing.T) {
+		srv := backtestServer(t, fakeBars{monthSpanCandles(1)}, false)
+		defer srv.Close()
+		resp := mustGet(t, srv.URL+"/v1/stocks/AAPL/seasonality")
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusUnprocessableEntity {
+			t.Fatalf("status = %d, want 422", resp.StatusCode)
+		}
+	})
+
+	t.Run("valid → 200 with months", func(t *testing.T) {
+		srv := backtestServer(t, fakeBars{monthSpanCandles(30)}, false)
+		defer srv.Close()
+		resp := mustGet(t, srv.URL+"/v1/stocks/aapl/seasonality")
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("status = %d, want 200", resp.StatusCode)
+		}
+		var body struct {
+			Ticker      string `json:"ticker"`
+			Seasonality *struct {
+				Months []struct {
+					Month int `json:"month"`
+				} `json:"months"`
+				FromYear int `json:"from_year"`
+			} `json:"seasonality"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if body.Ticker != "AAPL" || body.Seasonality == nil || len(body.Seasonality.Months) == 0 {
+			t.Fatalf("unexpected body: %+v", body)
+		}
+	})
+}

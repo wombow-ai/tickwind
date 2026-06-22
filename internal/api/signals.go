@@ -212,6 +212,41 @@ func (s *Server) getIndicatorHistory(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, indicatorHistoryResp{Ticker: ticker, History: &hs})
 }
 
+// seasonalityResp is the wire shape of GET /v1/stocks/{ticker}/seasonality: the ticker + its
+// month-of-year return seasonality (nil when there is too little history).
+type seasonalityResp struct {
+	Ticker      string                  `json:"ticker"`
+	Seasonality *indicators.Seasonality `json:"seasonality,omitempty"`
+}
+
+// getSeasonality serves a ticker's month-of-year return SEASONALITY (indicators.ComputeSeasonality)
+// — the historical average/median return + win-rate per calendar month over the available years.
+// Pure Go math over the public daily candles (a disclosed HISTORICAL statistic, like the backtest;
+// NEVER a forecast, target, or advice), so it is anti-hallucination-safe. 404 when there is no
+// price source/history, 422 when history is too short. Currently free.
+func (s *Server) getSeasonality(w http.ResponseWriter, r *http.Request) {
+	if s.bars == nil {
+		writeJSON(w, http.StatusNotFound, errBody("seasonality unavailable"))
+		return
+	}
+	ticker := strings.ToUpper(strings.TrimSpace(r.PathValue("ticker")))
+	if ticker == "" {
+		writeJSON(w, http.StatusNotFound, errBody("no ticker"))
+		return
+	}
+	candles, err := s.bars.DailyCandles(r.Context(), ticker)
+	if err != nil || len(candles) == 0 {
+		writeJSON(w, http.StatusNotFound, errBody("no price history for "+ticker))
+		return
+	}
+	se, ok := indicators.ComputeSeasonality(candles)
+	if !ok {
+		writeJSON(w, http.StatusUnprocessableEntity, errBody("insufficient history for seasonality"))
+		return
+	}
+	writeJSON(w, http.StatusOK, seasonalityResp{Ticker: ticker, Seasonality: &se})
+}
+
 // SignalScanSource is the whole-universe signals SCREENER (a background cache that
 // precomputes ticker→signals so the endpoint never recomputes on the request path).
 type SignalScanSource interface {
