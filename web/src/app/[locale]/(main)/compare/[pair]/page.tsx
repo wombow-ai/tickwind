@@ -2,43 +2,25 @@ import type {Metadata} from 'next';
 import Link from '@/components/LocalLink';
 import {notFound} from 'next/navigation';
 import {Scale} from 'lucide-react';
-import {getFundamentals, getQuote, type Fundamentals, type Quote} from '@/lib/api';
+import {CompareTable} from '@/components/CompareTable';
 import {COMPARE_PAIRS, pairSlug, parsePair} from '@/lib/compare';
 import {SITE_URL, langAlternates} from '@/lib/config';
 import {isLocale} from '@/lib/locale';
-import {fmtCompactUSD} from '@/lib/ui';
 import {ogImageMeta} from '@/lib/og';
 
-// Fundamentals are quarterly + the quote snapshot is for the crawlable view; a 30-min ISR window
-// keeps the page fresh enough without hammering the API on every hit.
-export const revalidate = 1800;
+// The crawlable chrome (heading/links/meta) is static per slug; ISR keeps it cheap. The metric
+// table is fetched CLIENT-SIDE (CompareTable) — the SSR fetch of those endpoints through the
+// Cloudflare tunnel is unreliable at Vercel build time (it baked the page as the route loader),
+// so we render no API call server-side and self-heal the numbers in the browser.
+export const revalidate = 86400;
 
-/** Prerender the curated rivalries (both locales); any other fetchable pair renders on-demand. */
+/** Prerender the curated rivalries (both locales); any other parseable pair renders on-demand. */
 export function generateStaticParams(): {locale: string; pair: string}[] {
   const out: {locale: string; pair: string}[] = [];
   for (const loc of ['en', 'zh']) {
     for (const [a, b] of COMPARE_PAIRS) out.push({locale: loc, pair: pairSlug(a, b)});
   }
   return out;
-}
-
-type Loaded = {ticker: string; f: Fundamentals | null; q: Quote | null};
-
-/** Best-effort fetch of one ticker's fundamentals + quote (a failure → null, never throws). */
-async function load(ticker: string): Promise<Loaded> {
-  const [fR, qR] = await Promise.allSettled([
-    getFundamentals(ticker, AbortSignal.timeout(8000)),
-    getQuote(ticker, AbortSignal.timeout(8000)),
-  ]);
-  return {
-    ticker,
-    f: fR.status === 'fulfilled' ? fR.value : null,
-    q: qR.status === 'fulfilled' ? qR.value : null,
-  };
-}
-
-function hasData(l: Loaded): boolean {
-  return l.f !== null || (l.q !== null && l.q.price > 0);
 }
 
 export async function generateMetadata({
@@ -81,12 +63,11 @@ export async function generateMetadata({
 }
 
 /**
- * Side-by-side stock comparison (pSEO): two stocks' price + Go-computed fundamentals (market cap,
- * P/E, P/B, revenue, net income, EPS) in one crawlable table, for high-intent "X vs Y" queries.
- * Every number is sourced from the public quote + SEC-XBRL fundamentals endpoints — NOTHING is a
- * recommendation and the page never declares a "winner" (just the figures, side by side). An
- * unparseable slug 404s; a pair where NEITHER ticker resolves to data → notFound() (kept out of
- * the index). The crawlable core is server-rendered per the active locale.
+ * Side-by-side stock comparison (pSEO): two stocks' price + Go-computed fundamentals in one table,
+ * for high-intent "X vs Y" queries. The crawlable core (h1 / breadcrumb / intro / related links /
+ * metadata) is server-rendered per the active locale FROM THE SLUG (no API fetch, so it never
+ * blanks); the metric table self-heals client-side. NOTHING is a recommendation — the page declares
+ * no "winner". An unparseable slug 404s.
  */
 export default async function CompareRoute({
   params,
@@ -99,36 +80,7 @@ export default async function CompareRoute({
   const parsed = parsePair(pair);
   if (!parsed) notFound();
   const [a, b] = parsed;
-
-  const [la, lb] = await Promise.all([load(a), load(b)]);
-  if (!hasData(la) && !hasData(lb)) notFound(); // neither side has anything → keep out of the index
-
   const path = `/compare/${pairSlug(a, b)}`;
-  const nameA = la.f?.name || a;
-  const nameB = lb.f?.name || b;
-
-  const dash = '—';
-  const num = (v: number | null | undefined, digits = 2) =>
-    v === null || v === undefined || !isFinite(v) ? dash : v.toFixed(digits);
-  const usd = (v: number | null | undefined) =>
-    v === null || v === undefined || !isFinite(v) || v === 0 ? dash : fmtCompactUSD(v);
-  const dayChange = (q: Quote | null): string => {
-    if (!q || !q.prev_close || q.prev_close <= 0 || !q.price) return dash;
-    const pct = (q.price / q.prev_close - 1) * 100;
-    return `${pct > 0 ? '+' : ''}${pct.toFixed(2)}%`;
-  };
-
-  type Row = {label: string; a: string; b: string};
-  const rows: Row[] = [
-    {label: zh ? '股价' : 'Price', a: la.q?.price ? `$${num(la.q.price)}` : dash, b: lb.q?.price ? `$${num(lb.q.price)}` : dash},
-    {label: zh ? '当日涨跌' : 'Day change', a: dayChange(la.q), b: dayChange(lb.q)},
-    {label: zh ? '市值' : 'Market cap', a: usd(la.f?.market_cap), b: usd(lb.f?.market_cap)},
-    {label: zh ? '市盈率 (P/E)' : 'P/E', a: la.f && la.f.pe === null ? (zh ? '亏损' : 'loss') : num(la.f?.pe), b: lb.f && lb.f.pe === null ? (zh ? '亏损' : 'loss') : num(lb.f?.pe)},
-    {label: zh ? '市净率 (P/B)' : 'P/B', a: num(la.f?.pb), b: num(lb.f?.pb)},
-    {label: zh ? '营收' : 'Revenue', a: usd(la.f?.revenue), b: usd(lb.f?.revenue)},
-    {label: zh ? '净利润' : 'Net income', a: usd(la.f?.net_income), b: usd(lb.f?.net_income)},
-    {label: zh ? '摊薄每股收益' : 'Diluted EPS', a: la.f ? `$${num(la.f.eps_diluted)}` : dash, b: lb.f ? `$${num(lb.f.eps_diluted)}` : dash},
-  ];
 
   const ld = {
     '@context': 'https://schema.org',
@@ -144,7 +96,6 @@ export default async function CompareRoute({
     ],
   };
 
-  // Related rivalries (excluding this pair) for crawl discovery + browse utility.
   const related = COMPARE_PAIRS.filter(([x, y]) => pairSlug(x, y) !== pairSlug(a, b)).slice(0, 6);
 
   return (
@@ -173,38 +124,8 @@ export default async function CompareRoute({
         </p>
       </header>
 
-      <section className="mb-7 overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-800">
-        <table className="w-full text-[13.5px]">
-          <thead>
-            <tr className="bg-slate-50 dark:bg-slate-900/50">
-              <th className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">
-                {zh ? '指标' : 'Metric'}
-              </th>
-              {[
-                {t: a, n: nameA},
-                {t: b, n: nameB},
-              ].map(s => (
-                <th key={s.t} className="px-3 py-2.5 text-right">
-                  <Link href={`/stock/${encodeURIComponent(s.t)}`} className="font-bold text-slate-900 hover:underline dark:text-slate-100">
-                    {s.t}
-                  </Link>
-                  <span className="block max-w-[140px] truncate text-[10.5px] font-normal text-slate-400 dark:text-slate-500" title={s.n}>
-                    {s.n}
-                  </span>
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((r, i) => (
-              <tr key={r.label} className={i % 2 ? 'bg-slate-50/40 dark:bg-slate-900/20' : ''}>
-                <td className="px-3 py-2.5 text-slate-500 dark:text-slate-400">{r.label}</td>
-                <td className="px-3 py-2.5 text-right font-semibold tabular-nums text-slate-900 dark:text-slate-100">{r.a}</td>
-                <td className="px-3 py-2.5 text-right font-semibold tabular-nums text-slate-900 dark:text-slate-100">{r.b}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      <section className="mb-7">
+        <CompareTable a={a} b={b} />
       </section>
 
       {related.length > 0 && (
