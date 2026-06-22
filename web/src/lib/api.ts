@@ -3013,6 +3013,45 @@ export function getEarningsReactionScreen(
   return getJson<ERScreenResponse>(`/v1/screen/earnings-reaction?${p.toString()}`, signal);
 }
 
+/** One stock's standing on the dividend leaderboard: its full Go-computed dividend profile (so the UI
+ * can show the ranked metric + context regardless of which view ranked it). Metrics are absent when
+ * not computable. */
+export interface DividendRank {
+  ticker: string;
+  yield?: number; // %
+  payout_ratio?: number; // %
+  dps?: number; // $ per share
+  fcf_coverage?: number; // x (free cash flow / dividends)
+  yoy_growth?: number; // % YoY change in dividends paid
+  period?: string; // fiscal year of the annual figures
+}
+
+/** Envelope returned by `GET /v1/screen/dividends`. */
+export interface DividendScreenResponse {
+  view: string; // "highest-yield" | "fastest-growing" | "best-covered" | "lowest-payout"
+  count: number;
+  results: DividendRank[];
+  total: number; // how many tracked payers had a computable metric for this view
+  as_of?: string;
+}
+
+/**
+ * The market-wide DIVIDEND leaderboard: every tracked payer ranked by one dividend metric (view =
+ * highest-yield | fastest-growing | best-covered | lowest-payout). Go-computed descriptive figures
+ * (yield/payout/coverage/growth) from SEC-filed annual figures + the live price — no "dividend-safety
+ * grade"/rating/advice. Public, no auth. Throws on a non-2xx/network error (callers client-fetch with a
+ * try/catch → empty/loading state).
+ */
+export function getDividendScreen(
+  view: string,
+  limit?: number,
+  signal?: AbortSignal,
+): Promise<DividendScreenResponse> {
+  const p = new URLSearchParams({view});
+  if (limit != null) p.set('limit', String(limit));
+  return getJson<DividendScreenResponse>(`/v1/screen/dividends?${p.toString()}`, signal);
+}
+
 /**
  * Fetches a ticker's multi-factor scorecard (percentiles vs the tracked universe). Resolves to
  * `null` on any 4xx/network error (no fundamentals / population not ready) so the card can hide

@@ -14,6 +14,7 @@ import {SIGNAL_SCREEN_PRESETS} from '@/lib/signalPresets';
 import {FACTOR_PRESETS} from '@/lib/factors';
 import {RS_WINDOWS} from '@/lib/rsWindows';
 import {REACTION_VIEWS} from '@/lib/reactionViews';
+import {DIVIDEND_VIEWS} from '@/lib/dividendViews';
 import {localTopicKeys} from '@/lib/topics';
 import {COMPARE_PAIRS, pairSlug} from '@/lib/compare';
 import {ZONES} from '@/lib/zones';
@@ -217,6 +218,13 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     changeFrequency: 'daily',
     priority: 0.6,
   }));
+  // Dividend leaderboards (`/screen/dividends/{view}`) — yield/growth/coverage/payout; the population
+  // rebuilds hourly (yield drifts with price), so a daily change frequency is apt.
+  const dividendPages: Page[] = DIVIDEND_VIEWS.map(v => ({
+    path: `/screen/dividends/${v.key}`,
+    changeFrequency: 'daily',
+    priority: 0.6,
+  }));
   // Curated theme zones (`/zone/{key}`) — the AI flagship + 10x theme siblings.
   const zonePages: Page[] = ZONES.map(z => ({
     path: `/zone/${z.key}`,
@@ -269,6 +277,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     ...factorPages,
     ...rsPages,
     ...reactionPages,
+    ...dividendPages,
     ...zonePages,
     ...comparePages,
     ...stockDirectoryPages,

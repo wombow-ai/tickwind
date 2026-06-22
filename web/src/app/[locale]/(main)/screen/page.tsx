@@ -6,6 +6,7 @@ import {SCREEN_PRESETS} from '@/lib/presets';
 import {FACTOR_PRESETS} from '@/lib/factors';
 import {RS_WINDOWS} from '@/lib/rsWindows';
 import {REACTION_VIEWS} from '@/lib/reactionViews';
+import {DIVIDEND_VIEWS} from '@/lib/dividendViews';
 import {Screener} from '@/components/Screener';
 
 export async function generateMetadata({
@@ -138,6 +139,31 @@ export default async function ScreenPage({
             <Link
               key={v.key}
               href={`/screen/earnings-reaction/${v.key}`}
+              className="block rounded-xl border border-slate-200 px-3 py-2.5 hover:border-amber-300 hover:bg-slate-50 dark:border-slate-800 dark:hover:border-amber-500/40 dark:hover:bg-slate-900"
+            >
+              <div className="text-[13px] font-semibold text-slate-800 dark:text-slate-100">
+                {zh ? v.titleZh : v.titleEn}
+              </div>
+            </Link>
+          ))}
+        </div>
+      </section>
+
+      {/* Dividend leaderboards — the income-investor lens over the tracked universe of payers. */}
+      <section className="mt-8">
+        <h2 className="mb-1 text-[15px] font-bold text-slate-900 dark:text-slate-100">
+          {zh ? '分红榜' : 'Dividend leaders'}
+        </h2>
+        <p className="mb-2.5 text-[12px] text-slate-500 dark:text-slate-400">
+          {zh
+            ? '按股息率 / 分红增长 / 现金流覆盖 / 派息率排名的美股分红股 —— 描述性在档统计,非建议。'
+            : 'US payers ranked by yield / dividend growth / FCF coverage / payout ratio — descriptive as-filed figures, not advice.'}
+        </p>
+        <div className="grid gap-2 sm:grid-cols-2">
+          {DIVIDEND_VIEWS.map(v => (
+            <Link
+              key={v.key}
+              href={`/screen/dividends/${v.key}`}
               className="block rounded-xl border border-slate-200 px-3 py-2.5 hover:border-amber-300 hover:bg-slate-50 dark:border-slate-800 dark:hover:border-amber-500/40 dark:hover:bg-slate-900"
             >
               <div className="text-[13px] font-semibold text-slate-800 dark:text-slate-100">
