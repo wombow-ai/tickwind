@@ -705,7 +705,7 @@ func main() {
 		// (FundamentalsCache-served) + the polled quote price, so GET /v1/screen/dividends ranks the
 		// market-wide dividend leaders without per-request compute. Descriptive figures only — never a
 		// "dividend-safety grade"/rating.
-		dividendScan := ingest.NewDividendCache(fundCache, st, analyticTickers, log)
+		dividendScan := ingest.NewDividendCache(fundCache, st, bars, analyticTickers, log)
 		go dividendScan.Run(ctx)
 		apiServer.SetDividendScan(dividendScan)
 

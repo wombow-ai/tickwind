@@ -22,13 +22,20 @@ const (
 )
 
 // DividendFundamentalsSource yields a ticker's SEC fundamentals (satisfied by *FundamentalsCache).
-// DividendQuoteSource yields a ticker's latest cached quote (satisfied by store.Store) — for the
-// yield's price leg. Declared here so this package needn't import api.
+// DividendQuoteSource yields a ticker's latest POLLED quote (satisfied by store.Store) — the cheap
+// price leg of the yield. DividendPriceFallback fetches a fresh quote on demand (satisfied by
+// *BarCache) for a name the poller hasn't populated yet — without it, a cold-start scan (which races
+// the poller) would omit the yield for not-yet-polled names until the next scan, leaving the
+// highest-yield leaderboard thin. It mirrors the per-stock /dividend handler's price resolution
+// (store quote → bars). Declared here so this package needn't import api.
 type DividendFundamentalsSource interface {
 	Fundamentals(ctx context.Context, ticker string) (edgar.Fundamentals, error)
 }
 type DividendQuoteSource interface {
 	GetQuote(ctx context.Context, ticker string) (store.Quote, bool, error)
+}
+type DividendPriceFallback interface {
+	LatestQuote(ctx context.Context, ticker string) (store.Quote, bool, error)
 }
 
 // DividendCache holds a periodically-refreshed dividend-profile POPULATION for the bounded tracked
@@ -37,24 +44,26 @@ type DividendQuoteSource interface {
 // isn't in it (insufficient-not-wrong). Every number is Go-computed (indicators.ComputeDividend). On a
 // total miss it keeps the previous population rather than blanking it.
 type DividendCache struct {
-	funds   DividendFundamentalsSource
-	quotes  DividendQuoteSource
-	tickers TickerSource
-	every   time.Duration
-	log     *slog.Logger
+	funds    DividendFundamentalsSource
+	quotes   DividendQuoteSource
+	fallback DividendPriceFallback // optional on-demand price for not-yet-polled names; nil → store-only
+	tickers  TickerSource
+	every    time.Duration
+	log      *slog.Logger
 
 	mu         sync.RWMutex
 	population []indicators.TickerDividend
 	at         time.Time
 }
 
-// NewDividendCache builds the cache over a bounded TickerSource (pass analyticTickers). A nil logger
-// is tolerated (discarded).
-func NewDividendCache(funds DividendFundamentalsSource, quotes DividendQuoteSource, tickers TickerSource, log *slog.Logger) *DividendCache {
+// NewDividendCache builds the cache over a bounded TickerSource (pass analyticTickers). `fallback`
+// (pass the BarCache) supplies a fresh price for names the poller hasn't populated yet; it may be nil
+// (store-only). A nil logger is tolerated (discarded).
+func NewDividendCache(funds DividendFundamentalsSource, quotes DividendQuoteSource, fallback DividendPriceFallback, tickers TickerSource, log *slog.Logger) *DividendCache {
 	if log == nil {
 		log = slog.New(slog.NewTextHandler(io.Discard, nil))
 	}
-	return &DividendCache{funds: funds, quotes: quotes, tickers: tickers, every: dividendScanEvery, log: log}
+	return &DividendCache{funds: funds, quotes: quotes, fallback: fallback, tickers: tickers, every: dividendScanEvery, log: log}
 }
 
 // Run scans immediately, then every `every` until ctx is cancelled, on a background goroutine.
@@ -100,6 +109,12 @@ func (c *DividendCache) scan(ctx context.Context) {
 		price := 0.0
 		if q, ok, _ := c.quotes.GetQuote(ctx, tk); ok && q.Price > 0 {
 			price = q.Price
+		} else if c.fallback != nil {
+			// The poller hasn't populated this name yet (cold-start race) — fetch a fresh price so the
+			// yield computes, mirroring the per-stock /dividend handler (store quote → bars).
+			if q, ok, _ := c.fallback.LatestQuote(ctx, tk); ok && q.Price > 0 {
+				price = q.Price
+			}
 		}
 		dv, ok := indicators.ComputeDividend(price, f)
 		if !ok || !dv.HasAny() {
