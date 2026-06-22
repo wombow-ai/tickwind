@@ -59,6 +59,7 @@ import {IndicatorsPanel} from '@/components/IndicatorsPanel';
 import {SignalsCard} from '@/components/SignalsCard';
 import {BacktestWidget} from '@/components/BacktestWidget';
 import {SeasonalityCard} from '@/components/SeasonalityCard';
+import {RelativeStrengthCard} from '@/components/RelativeStrengthCard';
 import {AISummaryCard} from '@/components/AISummaryCard';
 import {DeepResearchView} from '@/components/DeepResearchView';
 import {MovementCard} from '@/components/MovementCard';
@@ -683,6 +684,7 @@ export function StockView({ticker}: {ticker: string}) {
           <IndicatorsPanel ticker={norm} />
           <SignalsCard ticker={norm} />
           <BacktestWidget ticker={norm} />
+          <RelativeStrengthCard ticker={norm} />
           <SeasonalityCard ticker={norm} />
         </div>
 

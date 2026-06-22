@@ -2792,6 +2792,41 @@ export async function getSeasonality(ticker: string, signal?: AbortSignal): Prom
   }
 }
 
+/** One trailing window of a stock's performance vs the benchmark (excess return, Go-computed). */
+export interface RelStrengthWindow {
+  label: string; // "1M","3M","6M","1Y"
+  stock_return: number; // % over the window
+  benchmark_return: number; // benchmark % over the same span
+  relative: number; // stock_return - benchmark_return (excess, pp)
+}
+
+/** A ticker's trailing relative strength vs SPY — a disclosed historical statistic (Go-computed). */
+export interface RelativeStrength {
+  benchmark: string;
+  as_of: string;
+  windows: RelStrengthWindow[];
+}
+
+/**
+ * Fetches a ticker's trailing relative strength vs SPY. Resolves to `null` on any 4xx/network
+ * error (no history / too short / ticker is the benchmark) so the card can hide gracefully.
+ * Public, no auth.
+ */
+export async function getRelativeStrength(
+  ticker: string,
+  signal?: AbortSignal,
+): Promise<RelativeStrength | null> {
+  try {
+    const r = await getJson<{ticker: string; relative_strength?: RelativeStrength}>(
+      `/v1/stocks/${encodeURIComponent(normalizeTicker(ticker))}/relative-strength`,
+      signal,
+    );
+    return r.relative_strength ?? null;
+  } catch {
+    return null;
+  }
+}
+
 // ── Per-user prefs (generic JSON UI-state blob) ──────────────────────────
 //
 // A small, generic per-user JSON-prefs surface. The blob is namespaced by
