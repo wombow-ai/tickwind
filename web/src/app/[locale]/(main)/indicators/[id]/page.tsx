@@ -3,12 +3,12 @@ import Link from '@/components/LocalLink';
 import {notFound} from 'next/navigation';
 import {LayoutGrid} from 'lucide-react';
 import {
-  getIndicators,
   HISTORYABLE_INDICATOR_IDS,
   indicatorBySlug,
   indicatorSlug,
   type Indicator,
 } from '@/lib/api';
+import {localCatalog} from '@/lib/catalog';
 import {SITE_URL, POPULAR_TICKERS, langAlternates} from '@/lib/config';
 import {isLocale, LOCALES} from '@/lib/locale';
 import {ogImageMeta, type OgParams} from '@/lib/og';
@@ -40,7 +40,7 @@ const DOMAIN_ZH: Record<string, string> = {
  */
 export async function generateStaticParams(): Promise<{locale: string; id: string}[]> {
   try {
-    const data = await getIndicators({}, AbortSignal.timeout(12000));
+    const data = await Promise.resolve(localCatalog({}));
     const core = data.indicators.filter(ind => ind.priority === 'P0');
     return LOCALES.flatMap(locale => core.map(ind => ({locale, id: indicatorSlug(ind.id)})));
   } catch {
@@ -52,7 +52,7 @@ export async function generateStaticParams(): Promise<{locale: string; id: strin
 /** Fetches the catalog (best-effort) and resolves the record for a URL slug. */
 async function lookup(slug: string): Promise<Indicator | null> {
   try {
-    const data = await getIndicators({}, AbortSignal.timeout(12000));
+    const data = await Promise.resolve(localCatalog({}));
     return indicatorBySlug(data.indicators, slug) ?? null;
   } catch {
     return null;
@@ -158,7 +158,7 @@ export default async function IndicatorRoute({
   // list, so fetch once. A transient API failure → notFound (ISR refills later).
   let all: Indicator[] = [];
   try {
-    all = (await getIndicators({}, AbortSignal.timeout(12000))).indicators;
+    all = (await Promise.resolve(localCatalog({}))).indicators;
   } catch {
     all = [];
   }

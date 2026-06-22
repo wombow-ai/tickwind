@@ -1,5 +1,6 @@
 import type {Metadata} from 'next';
-import {getIndicators, type IndicatorsResponse} from '@/lib/api';
+import {type IndicatorsResponse} from '@/lib/api';
+import {localCatalog} from '@/lib/catalog';
 import {langAlternates} from '@/lib/config';
 import {isLocale} from '@/lib/locale';
 import {ogImageMeta} from '@/lib/og';
@@ -75,11 +76,7 @@ export default async function IndicatorsPage() {
     indicators: [],
     facets: {domains: [], priorities: [], subcategories: []},
   };
-  try {
-    data = await getIndicators({}, AbortSignal.timeout(12000));
-  } catch {
-    // API hiccup → render the page shell; the client will retry on navigation.
-  }
+  data = localCatalog({}); // bundled static catalog — Vercel can't fetch the 150KB endpoint SSR
 
   return (
     <div className="mx-auto max-w-5xl">
