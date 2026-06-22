@@ -31,13 +31,18 @@ const DOMAIN_ZH: Record<string, string> = {
   sentiment: '情绪指标',
 };
 
-/** Pre-render every catalog record (282) × locale so each page is static / ISR. */
+/**
+ * Pre-render only the CORE (P0) indicators × locale (~56 pages). Prerendering all 282 × 2 made
+ * the Vercel build prerender ~1128 pages, which stalled/failed the build and left every detail
+ * page serving the loading fallback. The long tail (P1/P2) renders on-demand via ISR instead —
+ * the cached getIndicators (in-flight-coalesced + Data Cache) makes that runtime render reliable,
+ * and on-demand pages are still crawlable. Best-effort: a failed catalog fetch → no prerender.
+ */
 export async function generateStaticParams(): Promise<{locale: string; id: string}[]> {
   try {
     const data = await getIndicators({}, AbortSignal.timeout(12000));
-    return LOCALES.flatMap(locale =>
-      data.indicators.map(ind => ({locale, id: indicatorSlug(ind.id)})),
-    );
+    const core = data.indicators.filter(ind => ind.priority === 'P0');
+    return LOCALES.flatMap(locale => core.map(ind => ({locale, id: indicatorSlug(ind.id)})));
   } catch {
     // API unavailable at build → emit no params; pages render on-demand via ISR.
     return [];
