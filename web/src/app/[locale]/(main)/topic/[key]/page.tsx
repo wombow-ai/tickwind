@@ -9,30 +9,40 @@ import {
   type NewsItem,
 } from '@/lib/api';
 import {SITE_URL, langAlternates} from '@/lib/config';
-import {isLocale, LOCALES} from '@/lib/locale';
+import {isLocale} from '@/lib/locale';
 import {ogImageMeta} from '@/lib/og';
+import {localTopic} from '@/lib/topics';
 
 // Topics trend through the day → ISR with a 30-min window: the build-time set is
 // captured by generateStaticParams, and new/cooled topics regenerate on demand.
 export const revalidate = 1800;
 
-/** Render topic pages ON-DEMAND (no build prerender). Topics are trending/dynamic, and the
- *  concurrent build prerender of all 16 was where the cold-tunnel getTopics returned an empty
- *  200 and baked every page as the loading fallback. On-demand, each page renders at runtime on
- *  a single request (resilient getTopics retries an empty reply), then ISR-caches for
- *  `revalidate`. `dynamicParams` defaults true so any fetchable key generates on first hit. */
+/** Render topic pages ON-DEMAND (no build prerender). `dynamicParams` defaults true so any key
+ *  generates on first hit; ISR then caches for `revalidate`. We do NOT prerender at build, which
+ *  avoids the concurrent-build cold-tunnel fetch storm — and `lookup` falls back to the BUNDLED
+ *  snapshot, so an on-demand render is never blank even if the live fetch is empty/fails. */
 export function generateStaticParams(): {locale: string; key: string}[] {
   return [];
 }
 
-/** Fetches the topics snapshot (best-effort) and resolves the topic for a key. */
+/**
+ * Resolves the topic for a key, PREFERRING fresh live data and falling back to the bundled
+ * snapshot. Why the fallback: Vercel's server-side fetch of `/v1/topics` through the Cloudflare
+ * tunnel is unreliable (the cold hop intermittently returns a 200 with an EMPTY body). On a
+ * miss, the previous code returned null → `notFound()`, which Next then CACHED for the whole
+ * ~30-min `revalidate` window — so every page stayed blank. The bundled snapshot (`lib/topics`)
+ * guarantees real content server-side; live data is used whenever the backend is reachable so
+ * the page stays current. Returns null only when the key is in NEITHER live nor the snapshot.
+ */
 async function lookup(key: string): Promise<HotTopic | null> {
   try {
-    const data = await getTopics(AbortSignal.timeout(12000));
-    return (data.topics ?? []).find(t => t.key === key) ?? null;
+    const data = await getTopics(AbortSignal.timeout(5000));
+    const live = (data.topics ?? []).find(t => t.key === key);
+    if (live) return live;
   } catch {
-    return null;
+    // fall through to the bundled snapshot
   }
+  return localTopic(key);
 }
 
 export async function generateMetadata({

@@ -1,0 +1,105 @@
+{
+  "generated_at": "2026-06-22T08:32:17.52113511Z",
+  "window": "24h",
+  "topics": [
+    {
+      "key": "dividend",
+      "label": "Dividends & Buybacks",
+      "count": 8,
+      "momentum": 3.6666666666666665,
+      "related_tickers": [
+        "NVDA",
+        "AAPL",
+        "GOOGL",
+        "MSFT"
+      ]
+    },
+    {
+      "key": "ipo",
+      "label": "IPO",
+      "count": 7,
+      "momentum": 2.5,
+      "related_tickers": [
+        "NVDA",
+        "TSLA",
+        "AAPL",
+        "AMZN",
+        "GOOGL",
+        "MSFT"
+      ]
+    },
+    {
+      "key": "semis",
+      "label": "Semiconductors",
+      "count": 11,
+      "momentum": 1.1666666666666667,
+      "related_tickers": [
+        "AAPL",
+        "NVDA",
+        "GOOGL",
+        "AMZN",
+        "AVGO",
+        "AMD"
+      ]
+    },
+    {
+      "key": "ai",
+      "label": "AI",
+      "count": 8,
+      "momentum": 1.375,
+      "related_tickers": [
+        "AAPL",
+        "AVGO",
+        "GOOGL",
+        "META",
+        "MSFT",
+        "AMD"
+      ]
+    },
+    {
+      "key": "ai_capex",
+      "label": "AI capex",
+      "count": 4,
+      "momentum": 1.4,
+      "related_tickers": [
+        "META",
+        "NVDA",
+        "AMD",
+        "GOOGL",
+        "TSLA"
+      ]
+    },
+    {
+      "key": "ma",
+      "label": "M&A",
+      "count": 4,
+      "momentum": 1.4,
+      "related_tickers": [
+        "TSLA",
+        "NFLX"
+      ]
+    },
+    {
+      "key": "crypto",
+      "label": "Crypto",
+      "count": 7,
+      "momentum": 1,
+      "related_tickers": [
+        "MSTR",
+        "AMZN",
+        "GOOGL",
+        "META"
+      ]
+    },
+    {
+      "key": "fed",
+      "label": "Fed",
+      "count": 3,
+      "momentum": 1,
+      "related_tickers": [
+        "NVDA",
+        "MSFT"
+      ]
+    }
+  ]
+}

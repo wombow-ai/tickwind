@@ -11,6 +11,7 @@ import {SITE_URL} from '@/lib/config';
 import {GUIDES} from '@/lib/guides';
 import {SCREEN_PRESETS} from '@/lib/presets';
 import {SIGNAL_SCREEN_PRESETS} from '@/lib/signalPresets';
+import {localTopicKeys} from '@/lib/topics';
 import {ZONES} from '@/lib/zones';
 import {popularTickers, quoteBearingTickers, STOCK_DIRECTORY_LETTERS} from '@/lib/pseo';
 
@@ -106,11 +107,14 @@ async function indicatorSlugs(): Promise<string[]> {
 async function topicKeys(): Promise<string[]> {
   try {
     const r = await getTopics(AbortSignal.timeout(5000));
-    return (r.topics ?? []).map(t => t.key);
+    if (r.topics && r.topics.length > 0) return r.topics.map(t => t.key);
   } catch {
-    // API hiccup → skip topic pages this build; the rest of the sitemap stands.
-    return [];
+    // fall through to the bundled snapshot
   }
+  // Vercel's build-time fetch of /v1/topics through the Cloudflare tunnel is unreliable
+  // (cold-hop 200-empty), so fall back to the bundled snapshot — the same set the topic
+  // pages render from — instead of dropping every /topic URL from the sitemap.
+  return localTopicKeys();
 }
 
 import {LOCALES} from '@/lib/locale';
