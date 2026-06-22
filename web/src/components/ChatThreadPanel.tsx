@@ -170,7 +170,7 @@ export function ChatThreadPanel({source, onActivity, onMeter, onCreated}: {sourc
           }
           // Stream: append tokens to a live assistant message; `done` reconciles with the
           // authoritative advice-filtered blocks (so the anti-hallucination filter wins).
-          res = await postConvChatStream(convId, msg, token, lang, tok => {
+          const onTok = (tok: string) => {
             setStreamStarted(true);
             setMessages(m => {
               const next = [...m];
@@ -186,7 +186,25 @@ export function ChatThreadPanel({source, onActivity, onMeter, onCreated}: {sourc
               }
               return next;
             });
-          });
+          };
+          const popStreaming = () =>
+            setMessages(m => {
+              const next = [...m];
+              const last = next[next.length - 1];
+              if (last && last.role === 'assistant' && last.streaming) next.pop();
+              return next;
+            });
+          try {
+            res = await postConvChatStream(convId, msg, token, lang, onTok);
+          } catch {
+            // A dropped stream (e.g. a Cloudflare tunnel idle-cut) cancels the server turn before
+            // it persists, so ONE retry on the same conversation is safe — and now that the server
+            // heartbeats to keep the connection alive, it almost always succeeds. Clear the partial
+            // streamed placeholder first so the retried tokens don't pile onto it.
+            popStreaming();
+            setStreamStarted(false);
+            res = await postConvChatStream(convId, msg, token, lang, onTok);
+          }
         }
         setMessages(m => {
           const next = [...m];
