@@ -3,6 +3,7 @@ import Link from '@/components/LocalLink';
 import {langAlternates} from '@/lib/config';
 import {isLocale} from '@/lib/locale';
 import {SCREEN_PRESETS} from '@/lib/presets';
+import {FACTOR_PRESETS} from '@/lib/factors';
 import {Screener} from '@/components/Screener';
 
 export async function generateMetadata({
@@ -61,6 +62,31 @@ export default async function ScreenPage({
               key={p.key}
               href={`/screen/${p.key}`}
               className="block rounded-xl border border-slate-200 px-3 py-2.5 hover:border-sky-300 hover:bg-slate-50 dark:border-slate-800 dark:hover:border-sky-500/40 dark:hover:bg-slate-900"
+            >
+              <div className="text-[13px] font-semibold text-slate-800 dark:text-slate-100">
+                {zh ? p.titleZh : p.titleEn}
+              </div>
+            </Link>
+          ))}
+        </div>
+      </section>
+
+      {/* Factor leaderboards — the market-wide view of the per-stock multi-factor scorecard. */}
+      <section className="mt-8">
+        <h2 className="mb-1 text-[15px] font-bold text-slate-900 dark:text-slate-100">
+          {zh ? '因子排行榜' : 'Factor leaderboards'}
+        </h2>
+        <p className="mb-2.5 text-[12px] text-slate-500 dark:text-slate-400">
+          {zh
+            ? '按价值 / 成长 / 质量 / 动量因子的全市场百分位排名 —— 描述性,非评级。'
+            : 'Ranked by value / growth / quality / momentum percentile across the market — descriptive, not a rating.'}
+        </p>
+        <div className="grid gap-2 sm:grid-cols-2">
+          {FACTOR_PRESETS.map(p => (
+            <Link
+              key={p.key}
+              href={`/screen/factors/${p.key}`}
+              className="block rounded-xl border border-slate-200 px-3 py-2.5 hover:border-indigo-300 hover:bg-slate-50 dark:border-slate-800 dark:hover:border-indigo-500/40 dark:hover:bg-slate-900"
             >
               <div className="text-[13px] font-semibold text-slate-800 dark:text-slate-100">
                 {zh ? p.titleZh : p.titleEn}

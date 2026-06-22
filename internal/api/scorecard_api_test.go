@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"math"
 	"net/http"
 	"net/http/httptest"
@@ -15,6 +16,16 @@ type fakeScorecard struct{ pop []indicators.FactorMetrics }
 
 func (f fakeScorecard) Population() ([]indicators.FactorMetrics, time.Time) {
 	return f.pop, time.Unix(1_700_000_000, 0)
+}
+
+// PopulationRanked names the fake population (T00, T01, …) and ranks it via the real RankFactor, so
+// the factor-screen handler test exercises the genuine ranking path.
+func (f fakeScorecard) PopulationRanked(factor string) ([]indicators.FactorRank, time.Time) {
+	tfm := make([]indicators.TickerFactorMetrics, len(f.pop))
+	for i, m := range f.pop {
+		tfm[i] = indicators.TickerFactorMetrics{Ticker: fmt.Sprintf("T%02d", i), Metrics: m}
+	}
+	return indicators.RankFactor(tfm, factor), time.Unix(1_700_000_000, 0)
 }
 
 // scorecardServer wires a per-stock compute source + a factor population onto a test server.
@@ -113,6 +124,94 @@ func TestGetScorecard(t *testing.T) {
 		}
 		if body.Scorecard.Growth != nil {
 			t.Fatalf("growth should be omitted (no growth metric), got %s", string(*body.Scorecard.Growth))
+		}
+	})
+}
+
+func TestGetFactorScreen(t *testing.T) {
+	t.Run("nil source → 404", func(t *testing.T) {
+		srv := scorecardServer(t, nil, nil)
+		defer srv.Close()
+		resp := mustGet(t, srv.URL+"/v1/screen/factors?factor=value")
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusNotFound {
+			t.Fatalf("status = %d, want 404", resp.StatusCode)
+		}
+	})
+
+	t.Run("missing/invalid factor → 400", func(t *testing.T) {
+		srv := scorecardServer(t, nil, fakeScorecard{pop: pop10()})
+		defer srv.Close()
+		for _, q := range []string{"", "?factor=", "?factor=bogus"} {
+			resp := mustGet(t, srv.URL+"/v1/screen/factors"+q)
+			if resp.StatusCode != http.StatusBadRequest {
+				resp.Body.Close()
+				t.Fatalf("factor %q: status = %d, want 400", q, resp.StatusCode)
+			}
+			resp.Body.Close()
+		}
+	})
+
+	t.Run("value factor → cheapest ranks first", func(t *testing.T) {
+		srv := scorecardServer(t, nil, fakeScorecard{pop: pop10()})
+		defer srv.Close()
+		resp := mustGet(t, srv.URL+"/v1/screen/factors?factor=value")
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("status = %d, want 200", resp.StatusCode)
+		}
+		var body struct {
+			Factor     string `json:"factor"`
+			Count      int    `json:"count"`
+			Population int    `json:"population"`
+			AsOf       string `json:"as_of"`
+			Results    []struct {
+				Ticker     string  `json:"ticker"`
+				Percentile float64 `json:"percentile"`
+			} `json:"results"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if body.Factor != "value" || body.Population != 10 || body.Count != 10 || len(body.Results) != 10 {
+			t.Fatalf("unexpected meta: %+v", body)
+		}
+		if body.AsOf == "" {
+			t.Fatal("expected a non-empty as_of")
+		}
+		// pop10 P/E rises with index (T00 cheapest) → T00 has the HIGHEST value percentile → ranks #1.
+		if body.Results[0].Ticker != "T00" {
+			t.Fatalf("rank 1 = %s (%.1f), want T00 (cheapest)", body.Results[0].Ticker, body.Results[0].Percentile)
+		}
+		// Sorted high→low.
+		for i := 1; i < len(body.Results); i++ {
+			if body.Results[i].Percentile > body.Results[i-1].Percentile {
+				t.Fatalf("results not sorted desc at %d: %.1f > %.1f", i, body.Results[i].Percentile, body.Results[i-1].Percentile)
+			}
+		}
+	})
+
+	t.Run("limit truncates but population is the full count", func(t *testing.T) {
+		srv := scorecardServer(t, nil, fakeScorecard{pop: pop10()})
+		defer srv.Close()
+		resp := mustGet(t, srv.URL+"/v1/screen/factors?factor=quality&limit=3")
+		defer resp.Body.Close()
+		var body struct {
+			Count      int `json:"count"`
+			Population int `json:"population"`
+			Results    []struct {
+				Ticker string `json:"ticker"`
+			} `json:"results"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if body.Count != 3 || len(body.Results) != 3 || body.Population != 10 {
+			t.Fatalf("count/pop = %d/%d, want 3/10", body.Count, body.Population)
+		}
+		// Quality rises with ROE → T09 (highest ROE) ranks #1.
+		if body.Results[0].Ticker != "T09" {
+			t.Fatalf("rank 1 = %s, want T09 (highest ROE)", body.Results[0].Ticker)
 		}
 	})
 }

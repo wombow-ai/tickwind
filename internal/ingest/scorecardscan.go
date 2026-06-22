@@ -37,7 +37,7 @@ type ScorecardCache struct {
 	log     *slog.Logger
 
 	mu         sync.RWMutex
-	population []indicators.FactorMetrics
+	population []indicators.TickerFactorMetrics
 	at         time.Time
 }
 
@@ -72,7 +72,7 @@ func (c *ScorecardCache) Run(ctx context.Context) {
 // On a total miss it keeps the previous population rather than blanking it.
 func (c *ScorecardCache) scan(ctx context.Context) {
 	tickers := c.tickers(ctx)
-	pop := make([]indicators.FactorMetrics, 0, len(tickers))
+	pop := make([]indicators.TickerFactorMetrics, 0, len(tickers))
 	scanned := 0
 	for i, tk := range tickers {
 		select {
@@ -88,7 +88,7 @@ func (c *ScorecardCache) scan(ctx context.Context) {
 			}
 		}
 		res := c.compute.StockIndicators(ctx, tk)
-		pop = append(pop, indicators.ExtractFactorMetrics(res))
+		pop = append(pop, indicators.TickerFactorMetrics{Ticker: tk, Metrics: indicators.ExtractFactorMetrics(res)})
 		scanned++
 	}
 	if scanned == 0 {
@@ -100,11 +100,28 @@ func (c *ScorecardCache) scan(ctx context.Context) {
 	c.log.Debug("scorecard scan refreshed", "tickers", scanned)
 }
 
-// Population returns the latest factor-metric population (the ranking distribution) + when it was
-// built (zero time before the first scan). Cache-read only — the slice is shared read-only (the
-// scan swaps in a fresh slice; callers must not mutate it).
+// Population returns the latest factor-metric population (the ranking distribution, ticker stripped)
+// + when it was built (zero time before the first scan). The per-stock scorecard ranks a target
+// against this. Allocates a fresh slice per call (the population is bounded and reads are infrequent),
+// so callers may use it freely.
 func (c *ScorecardCache) Population() ([]indicators.FactorMetrics, time.Time) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	return c.population, c.at
+	out := make([]indicators.FactorMetrics, len(c.population))
+	for i, m := range c.population {
+		out[i] = m.Metrics
+	}
+	return out, c.at
+}
+
+// PopulationRanked ranks the tracked universe on one factor (value|growth|quality|momentum) and
+// returns the leaderboard high→low + when the population was built. Reads the cache; the only
+// request-path work is the bounded ranking arithmetic in indicators.RankFactor (no compute, no I/O).
+// Empty for an unknown factor or a cold/too-small population. The scan swaps in a fresh population
+// slice (never mutates in place), so reading the header under the lock then ranking outside it is safe.
+func (c *ScorecardCache) PopulationRanked(factor string) ([]indicators.FactorRank, time.Time) {
+	c.mu.RLock()
+	pop, at := c.population, c.at
+	c.mu.RUnlock()
+	return indicators.RankFactor(pop, factor), at
 }

@@ -85,6 +85,84 @@ func TestComputeScorecard(t *testing.T) {
 	}
 }
 
+func TestRankFactor(t *testing.T) {
+	nan := math.NaN()
+	// 10 names: P/E rises (T00 cheapest), ROE rises (T09 best quality); other metrics unavailable.
+	pop := make([]TickerFactorMetrics, 10)
+	for i := range pop {
+		pop[i] = TickerFactorMetrics{
+			Ticker: fmtTicker(i),
+			Metrics: FactorMetrics{
+				PE: float64(10 + i*5), ROE: float64(i+1) * 0.05,
+				PB: nan, PS: nan, RevGrowth: nan, EarnGrowth: nan,
+				ROIC: nan, EBITMargin: nan, Piotroski: nan, TSR: nan,
+			},
+		}
+	}
+
+	t.Run("unknown factor → empty", func(t *testing.T) {
+		if got := RankFactor(pop, "bogus"); len(got) != 0 {
+			t.Fatalf("unknown factor → %d results, want 0", len(got))
+		}
+	})
+
+	t.Run("growth (no sub-metric) → empty", func(t *testing.T) {
+		if got := RankFactor(pop, "growth"); len(got) != 0 {
+			t.Fatalf("growth has no inputs → %d results, want 0", len(got))
+		}
+	})
+
+	t.Run("too-small population → empty", func(t *testing.T) {
+		if got := RankFactor(pop[:4], "value"); len(got) != 0 {
+			t.Fatalf("pop < min → %d results, want 0 (percentile withheld)", len(got))
+		}
+	})
+
+	t.Run("value: cheapest first, sorted desc", func(t *testing.T) {
+		got := RankFactor(pop, "value")
+		if len(got) != 10 {
+			t.Fatalf("got %d, want 10", len(got))
+		}
+		if got[0].Ticker != "T00" {
+			t.Fatalf("rank 1 = %s, want T00 (cheapest P/E)", got[0].Ticker)
+		}
+		for i := 1; i < len(got); i++ {
+			if got[i].Percentile > got[i-1].Percentile {
+				t.Fatalf("not sorted desc at %d: %.1f > %.1f", i, got[i].Percentile, got[i-1].Percentile)
+			}
+		}
+	})
+
+	t.Run("matches the per-stock scorecard exactly", func(t *testing.T) {
+		// The leaderboard percentile for a member must equal what ComputeScorecard gives that member
+		// against the same population — the two surfaces can never disagree.
+		metrics := make([]FactorMetrics, len(pop))
+		for i, m := range pop {
+			metrics[i] = m.Metrics
+		}
+		ranked := RankFactor(pop, "quality")
+		byTicker := map[string]float64{}
+		for _, r := range ranked {
+			byTicker[r.Ticker] = r.Percentile
+		}
+		for _, m := range pop {
+			sc := ComputeScorecard(m.Metrics, metrics)
+			if sc.Quality == nil {
+				t.Fatalf("%s quality nil unexpectedly", m.Ticker)
+			}
+			if byTicker[m.Ticker] != sc.Quality.Percentile {
+				t.Fatalf("%s: leaderboard %.2f != scorecard %.2f", m.Ticker, byTicker[m.Ticker], sc.Quality.Percentile)
+			}
+		}
+	})
+}
+
+// fmtTicker formats a synthetic 2-digit ticker (T00..T09) for the rank-factor fixtures.
+func fmtTicker(i int) string {
+	const digits = "0123456789"
+	return "T" + string(digits[i/10]) + string(digits[i%10])
+}
+
 func TestComputeScorecard_AllInsufficient(t *testing.T) {
 	nan := math.NaN()
 	empty := FactorMetrics{PE: nan, PB: nan, PS: nan, RevGrowth: nan, EarnGrowth: nan, ROE: nan, ROIC: nan, EBITMargin: nan, Piotroski: nan, TSR: nan}

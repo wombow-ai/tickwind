@@ -383,6 +383,61 @@ func (s *Server) getScorecard(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, scorecardResp{Ticker: ticker, AsOf: res.AsOf, PopulationAsOf: popAsOf, Scorecard: &sc})
 }
 
+// factorScreenResp is the wire shape of GET /v1/screen/factors. Population is how many tracked
+// stocks had a computable percentile for this factor (the leaderboard's denominator, before any
+// limit truncation); AsOf is when the ranking population was last rebuilt.
+type factorScreenResp struct {
+	Factor     string                  `json:"factor"`
+	Count      int                     `json:"count"`
+	Results    []indicators.FactorRank `json:"results"`
+	Population int                     `json:"population"`
+	AsOf       string                  `json:"as_of,omitempty"`
+}
+
+// defaultFactorScreenLimit / maxFactorScreenLimit bound the factor leaderboard length.
+const (
+	defaultFactorScreenLimit = 50
+	maxFactorScreenLimit     = 200
+)
+
+// getFactorScreen serves the market-wide FACTOR LEADERBOARD: every tracked stock ranked by one
+// factor's PERCENTILE (`?factor=value|growth|quality|momentum`, `?limit=`) vs the whole tracked
+// universe. It reads the background-cached scorecard population (no per-request compute beyond the
+// bounded ranking arithmetic) and reuses the SAME ComputeScorecard path as the per-stock scorecard,
+// as-of the population's build time (AsOf discloses the vintage). Every number is Go-computed from
+// the public quote + SEC-XBRL fundamentals — descriptive percentiles, NO rating/advice — so it is
+// anti-hallucination-safe. Free + crawlable (the market-wide view of the
+// free per-stock scorecard). 400 on an unknown/missing factor; 404 when the population source is
+// unset; a cold or too-small population yields a 200 with an empty list (the scan/ISR refills it).
+func (s *Server) getFactorScreen(w http.ResponseWriter, r *http.Request) {
+	if s.scorecard == nil {
+		writeJSON(w, http.StatusNotFound, errBody("factor screen unavailable"))
+		return
+	}
+	factor := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("factor")))
+	if !indicators.ValidFactor(factor) {
+		writeJSON(w, http.StatusBadRequest, errBody("factor must be one of value, growth, quality, momentum"))
+		return
+	}
+	ranked, at := s.scorecard.PopulationRanked(factor)
+	total := len(ranked) // full ranked count BEFORE truncation (the leaderboard's population)
+	lim := queryLimit(r, defaultFactorScreenLimit)
+	if lim > maxFactorScreenLimit {
+		lim = maxFactorScreenLimit
+	}
+	if lim > 0 && len(ranked) > lim {
+		ranked = ranked[:lim]
+	}
+	if ranked == nil {
+		ranked = []indicators.FactorRank{}
+	}
+	out := factorScreenResp{Factor: factor, Count: len(ranked), Results: ranked, Population: total}
+	if !at.IsZero() {
+		out.AsOf = at.UTC().Format(time.RFC3339)
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
 // SignalScanSource is the whole-universe signals SCREENER (a background cache that
 // precomputes ticker→signals so the endpoint never recomputes on the request path).
 type SignalScanSource interface {

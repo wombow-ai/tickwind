@@ -349,6 +349,9 @@ type EarningsDatesSource interface {
 // source makes /v1/stocks/{ticker}/scorecard 404. Satisfied by *ingest.ScorecardCache.
 type ScorecardSource interface {
 	Population() ([]indicators.FactorMetrics, time.Time)
+	// PopulationRanked ranks the tracked universe on one factor (the market-wide factor
+	// leaderboard); see indicators.RankFactor. Reused by /v1/screen/factors.
+	PopulationRanked(factor string) ([]indicators.FactorRank, time.Time)
 }
 
 // InsiderActivitySource produces a company's recent insider-activity timeline —
@@ -612,6 +615,7 @@ func New(st store.Store, hub QuoteStream, enricher enrich.Enricher, verifier *au
 	mux.HandleFunc("GET /v1/universe/symbols", s.getUniverseSymbols)
 	mux.HandleFunc("GET /v1/screen", s.getScreen)
 	mux.HandleFunc("GET /v1/screen/signals", s.getScreenSignals)
+	mux.HandleFunc("GET /v1/screen/factors", s.getFactorScreen)
 	mux.HandleFunc("GET /v1/gurus", s.getGurus)
 	mux.HandleFunc("GET /v1/search", s.getSearch)
 	mux.HandleFunc("GET /v1/symbols", s.getSymbols)

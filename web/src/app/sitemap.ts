@@ -11,6 +11,7 @@ import {SITE_URL} from '@/lib/config';
 import {GUIDES} from '@/lib/guides';
 import {SCREEN_PRESETS} from '@/lib/presets';
 import {SIGNAL_SCREEN_PRESETS} from '@/lib/signalPresets';
+import {FACTOR_PRESETS} from '@/lib/factors';
 import {localTopicKeys} from '@/lib/topics';
 import {COMPARE_PAIRS, pairSlug} from '@/lib/compare';
 import {ZONES} from '@/lib/zones';
@@ -194,6 +195,13 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     changeFrequency: 'daily',
     priority: 0.6,
   }));
+  // Factor leaderboards (`/screen/factors/{factor}`) — value/growth/quality/momentum percentile
+  // rankings; the population rebuilds hourly, so a daily change frequency is apt.
+  const factorPages: Page[] = FACTOR_PRESETS.map(p => ({
+    path: `/screen/factors/${p.key}`,
+    changeFrequency: 'daily',
+    priority: 0.6,
+  }));
   // Curated theme zones (`/zone/{key}`) — the AI flagship + 10x theme siblings.
   const zonePages: Page[] = ZONES.map(z => ({
     path: `/zone/${z.key}`,
@@ -243,6 +251,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     ...guidePages,
     ...presetPages,
     ...signalPresetPages,
+    ...factorPages,
     ...zonePages,
     ...comparePages,
     ...stockDirectoryPages,

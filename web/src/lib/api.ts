@@ -2880,6 +2880,40 @@ export interface Scorecard {
   population: number;
 }
 
+/** One stock's standing on a single factor in the market-wide leaderboard (Go-computed percentile). */
+export interface FactorRank {
+  ticker: string;
+  percentile: number;
+  inputs: number;
+}
+
+/** Envelope returned by `GET /v1/screen/factors`. */
+export interface FactorScreenResponse {
+  factor: string;
+  count: number;
+  results: FactorRank[];
+  /** How many tracked stocks had a computable percentile for this factor (the leaderboard's denominator). */
+  population: number;
+  as_of?: string;
+}
+
+/**
+ * The market-wide FACTOR LEADERBOARD: every tracked stock ranked by one factor's percentile
+ * (value | growth | quality | momentum) vs the whole tracked universe. Each percentile is Go-computed
+ * by the same scorecard path the per-stock card uses, as of the population's build time (`as_of`).
+ * Descriptive only — no rating/advice. Public, no auth. Throws on a non-2xx/network error (callers
+ * SSR-fetch with a try/catch → empty state).
+ */
+export function getFactorScreen(
+  factor: string,
+  limit?: number,
+  signal?: AbortSignal,
+): Promise<FactorScreenResponse> {
+  const p = new URLSearchParams({factor});
+  if (limit != null) p.set('limit', String(limit));
+  return getJson<FactorScreenResponse>(`/v1/screen/factors?${p.toString()}`, signal);
+}
+
 /**
  * Fetches a ticker's multi-factor scorecard (percentiles vs the tracked universe). Resolves to
  * `null` on any 4xx/network error (no fundamentals / population not ready) so the card can hide

@@ -50,11 +50,47 @@ sources only, solo-dev scope, EN-first.** Ranked by value × feasibility × on-b
 Decision: **build Seasonality next** (started this tick: the Go core). Then earnings-reaction
 + relative-strength as quick deterministic follow-ons.
 
-## Status (updated 2026-06-22)
+## Status (updated 2026-06-23)
 - ✅ **#1 Seasonality** — SHIPPED end-to-end (endpoint + stock-page card + chat widget).
 - ✅ **#3 Relative strength vs SPY** — SHIPPED end-to-end (endpoint + card + chat widget).
-- ✅ **#2 Earnings-reaction history** — BACKEND shipped + live (`GET /v1/stocks/{t}/earnings-reaction`;
-  dates from SEC 8-K item 2.02; collapsed to ~1/quarter; min-sample floor; timing-robust ~2-session
-  window). Frontend card + chat widget = the next follow-on tick.
-- ⏭️ Remaining: #2 frontend, then #4 multi-factor percentile scorecard, #5 NL→screener bridge,
-  #6 side-by-side compare page. Re-scan competitors fresh once these are done.
+- ✅ **#2 Earnings-reaction history** — SHIPPED end-to-end (endpoint + card + chat widget).
+- ✅ **#4 Multi-factor percentile scorecard** — SHIPPED end-to-end (core → background population
+  cache → `GET /v1/stocks/{t}/scorecard` → stock-page card → chat widget). FREE.
+- ✅ **#6 Side-by-side compare page** — SHIPPED (`/compare` pSEO + `CompareTable` client-self-heal).
+- ⏭️ **#5 NL→screener bridge** — NOT built (intersects the Pro-gated screener = monetization; surface
+  before building). The deterministic-analytics suite (round 1) is otherwise complete.
+
+---
+
+## Round-2 backlog (re-scan 2026-06-23 — Workflow: competitor-gaps / codebase-extensions / AI-data-trends → synthesis)
+
+Same invariants (anti-hallucination · free/redistribution-safe data · solo-dev · EN-first). Prioritized
+by value × feasibility × on-brand fit, favoring REUSE of the existing engine over new ingestion. Full
+synthesis (incl. rejected ideas + why) lives in the scan output; the top items:
+
+1. **★ Market-wide factor screen + leaderboard (BUILDING THIS TICK).** Rank the EXISTING
+   `ScorecardCache.Population` (value/growth/quality/momentum) market-wide via `GET /v1/screen/factors`
+   + a `/screen/factors/[factor]` pSEO family ("Top Quality Stocks", "Cheapest by Value", …). Zero new
+   ingestion — the dormant population cache is already built per-stock; this is the per-stock→market-wide
+   inversion the signals screener validated. Reuses the SAME `ComputeScorecard` path so the leaderboard
+   percentile == the stock-page percentile. FREE + crawlable (market-wide view of the free scorecard). M.
+2. **Earnings-reaction badge on the earnings calendar.** Join each upcoming-earnings row with the existing
+   per-stock `EarningsReaction` stat ("historically moves ±6.2%, up 58%"). Pure join, no new compute. M.
+3. **Scorecard-percentile + earnings-ahead alert kinds.** New deterministic alert kinds powered by the
+   already-cached data (`factor_quality_top` / `earnings_soon`), reusing the whole existing alert
+   evaluator/store/UI. Lowest effort (S); alerts are the stickiest retention surface.
+4. **Dividend surface (SEC-derived yield / payout / coverage) + `/dividends` hub.** Tickwind's biggest
+   competitor gap (zero dividend feature). Reuses `edgar` `DividendsPaid` + live price. Strictly
+   descriptive coverage stats, NO "safety grade". CAVEAT: store holds only a latest-FY ANNUAL flow → scope
+   copy to "annual dividend trend", not per-payment history (that needs a new source). M.
+5. **Relative-strength leaderboard + screen vs SPY.** Per-stock RS → market-wide rank via a new paced RS
+   scan (clone `SignalScanCache`) feeding `GET /v1/screen/relative-strength`. M (needs a new background scan).
+6. **Watchlist correlation & beta matrix.** Pairwise correlation + beta-vs-SPY over the user's watchlist
+   (closed-form Go stats over candles already cached). Portfolio-risk lens; descriptive, no allocation advice. M.
+7. **Seasonality pSEO page + "this month historically" market ranking.** Crawlable per-stock seasonality
+   page (zero new compute, pure pSEO surfacing) + a `/screen/seasonal[/month]` market ranking. M.
+
+REJECTED (invariant conflicts, from the synthesis): total-return/ex-div calendar (needs per-payment
+history we don't store), revenue-by-segment XBRL parsing (brittle solo-dev L), net-new ingestion
+(N-PORT/USASpending/USPTO/EDGAR-FTS — multi-week builds, at most ONE later as a differentiation bet),
+provenance/claim-validator panel (already enforced server-side; trust-hardening, not a headliner).

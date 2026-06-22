@@ -1,6 +1,9 @@
 package indicators
 
-import "math"
+import (
+	"math"
+	"sort"
+)
 
 // minScorecardPopulation is the floor below which a factor percentile is withheld — ranking a stock
 // against a handful of peers is noise, not a statistic.
@@ -144,6 +147,85 @@ func factorScore(pop []FactorMetrics, subs []subMetric) *FactorScore {
 		return nil
 	}
 	return &FactorScore{Percentile: round2(sum / float64(cnt)), Inputs: cnt}
+}
+
+// TickerFactorMetrics pairs a ticker with its factor metrics so a MARKET-WIDE leaderboard can rank
+// named stocks (the bare FactorMetrics population carries no identity). The scan retains this; the
+// per-stock scorecard still ranks against the ticker-stripped FactorMetrics.
+type TickerFactorMetrics struct {
+	Ticker  string
+	Metrics FactorMetrics
+}
+
+// FactorRank is one stock's standing on a SINGLE factor for the market-wide factor leaderboard: its
+// ticker, the 0..100 percentile, and how many sub-metrics contributed. The percentile flows through
+// the SAME ComputeScorecard path the per-stock scorecard uses (identical formula, same population), so
+// the two surfaces stay consistent — as-of the population's build time (the per-stock page recomputes
+// its target against a live price, so a price-driven factor can shift intraday; the as-of discloses
+// the vintage). Descriptive, not a rating.
+type FactorRank struct {
+	Ticker     string  `json:"ticker"`
+	Percentile float64 `json:"percentile"`
+	Inputs     int     `json:"inputs"`
+}
+
+// ValidFactor reports whether name is one of the four rankable factors.
+func ValidFactor(name string) bool {
+	switch name {
+	case "value", "growth", "quality", "momentum":
+		return true
+	default:
+		return false
+	}
+}
+
+// factorOf returns the named factor's score from a Scorecard (nil for an uncomputable factor or an
+// unknown name).
+func factorOf(sc Scorecard, factor string) *FactorScore {
+	switch factor {
+	case "value":
+		return sc.Value
+	case "growth":
+		return sc.Growth
+	case "quality":
+		return sc.Quality
+	case "momentum":
+		return sc.Momentum
+	default:
+		return nil
+	}
+}
+
+// RankFactor ranks every population member on ONE factor (value|growth|quality|momentum) against the
+// whole population, returning those with a computable percentile sorted high→low (ticker tie-break,
+// for deterministic output). Each ticker's percentile flows through ComputeScorecard against the full
+// population — the identical formula the per-stock /scorecard endpoint uses — so a member's rank here
+// equals what ComputeScorecard yields for that member's metrics against this same population. Returns
+// an empty slice for an unknown factor or a population too small to rank (every percentile is then
+// withheld by minScorecardPopulation). Pure: no I/O, no mutation of pop.
+func RankFactor(pop []TickerFactorMetrics, factor string) []FactorRank {
+	out := make([]FactorRank, 0, len(pop))
+	if !ValidFactor(factor) {
+		return out
+	}
+	metrics := make([]FactorMetrics, len(pop))
+	for i, m := range pop {
+		metrics[i] = m.Metrics
+	}
+	for _, m := range pop {
+		fs := factorOf(ComputeScorecard(m.Metrics, metrics), factor)
+		if fs == nil {
+			continue
+		}
+		out = append(out, FactorRank{Ticker: m.Ticker, Percentile: fs.Percentile, Inputs: fs.Inputs})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Percentile != out[j].Percentile {
+			return out[i].Percentile > out[j].Percentile
+		}
+		return out[i].Ticker < out[j].Ticker
+	})
+	return out
 }
 
 // ComputeScorecard ranks `target` against `population` on the four factors. Value sub-metrics are
