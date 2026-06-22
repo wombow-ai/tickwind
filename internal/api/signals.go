@@ -601,6 +601,65 @@ func (s *Server) getEarningsReactionScreen(w http.ResponseWriter, r *http.Reques
 	writeJSON(w, http.StatusOK, out)
 }
 
+// dividendScreenResp is the wire shape of GET /v1/screen/dividends. Total is how many tracked stocks
+// had a computable metric for this view (the leaderboard denominator, before any limit); AsOf is when
+// the dividend population was last rebuilt.
+type dividendScreenResp struct {
+	View    string                    `json:"view"`
+	Count   int                       `json:"count"`
+	Results []indicators.DividendRank `json:"results"`
+	Total   int                       `json:"total"`
+	AsOf    string                    `json:"as_of,omitempty"`
+}
+
+// defaultDividendView / limits bound the dividend leaderboard.
+const (
+	defaultDividendView        = indicators.DividendViewHighestYield
+	defaultDividendScreenLimit = 50
+	maxDividendScreenLimit     = 200
+)
+
+// getDividendScreen serves the market-wide DIVIDEND LEADERBOARD: every tracked payer ranked by one
+// dividend view — `?view=highest-yield|fastest-growing|best-covered|lowest-payout` (default
+// highest-yield), `?limit=`. It reads the background-cached dividend population (no per-request compute
+// beyond bounded ranking) and reuses the SAME ComputeDividend profile as the per-stock dividend card.
+// Every number is Go-computed from SEC-filed dividends/cash-flow + the live price — descriptive
+// figures (yield/payout/coverage/growth), NO blended "dividend-safety grade" or rating/advice — so it
+// is anti-hallucination-safe. Free + crawlable (the market-wide view of the free per-stock dividend
+// card). 400 on an unknown view; 404 when the source is unset; a cold/too-thin population yields a 200
+// with an empty list (the scan/ISR refills it).
+func (s *Server) getDividendScreen(w http.ResponseWriter, r *http.Request) {
+	if s.dividendScan == nil {
+		writeJSON(w, http.StatusNotFound, errBody("dividend screen unavailable"))
+		return
+	}
+	view := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("view")))
+	if view == "" {
+		view = defaultDividendView
+	}
+	if !indicators.ValidDividendView(view) {
+		writeJSON(w, http.StatusBadRequest, errBody("view must be one of highest-yield, fastest-growing, best-covered, lowest-payout"))
+		return
+	}
+	ranked, at := s.dividendScan.PopulationRanked(view)
+	total := len(ranked)
+	lim := queryLimit(r, defaultDividendScreenLimit)
+	if lim > maxDividendScreenLimit {
+		lim = maxDividendScreenLimit
+	}
+	if lim > 0 && len(ranked) > lim {
+		ranked = ranked[:lim]
+	}
+	if ranked == nil {
+		ranked = []indicators.DividendRank{}
+	}
+	out := dividendScreenResp{View: view, Count: len(ranked), Results: ranked, Total: total}
+	if !at.IsZero() {
+		out.AsOf = at.UTC().Format(time.RFC3339)
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
 // SignalScanSource is the whole-universe signals SCREENER (a background cache that
 // precomputes ticker→signals so the endpoint never recomputes on the request path).
 type SignalScanSource interface {

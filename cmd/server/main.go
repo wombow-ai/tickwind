@@ -700,6 +700,15 @@ func main() {
 		go earningsReactionCache.Run(ctx)
 		apiServer.SetEarningsReactions(earningsReactionCache)
 
+		// Dividend leaderboard: a background cache computes each analytic-universe payer's dividend
+		// profile (yield/payout/DPS/FCF-coverage/YoY growth) every 60 min from SEC fundamentals
+		// (FundamentalsCache-served) + the polled quote price, so GET /v1/screen/dividends ranks the
+		// market-wide dividend leaders without per-request compute. Descriptive figures only — never a
+		// "dividend-safety grade"/rating.
+		dividendScan := ingest.NewDividendCache(fundCache, st, analyticTickers, log)
+		go dividendScan.Run(ctx)
+		apiServer.SetDividendScan(dividendScan)
+
 		// Alert evaluator: checks active user alerts against the latest price AND the
 		// deterministic signals (golden/death cross, RSI extremes, …) from signalScan.
 		// Constructed here (not in the price block) so it can read the signals cache.

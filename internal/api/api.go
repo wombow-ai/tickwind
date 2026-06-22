@@ -373,6 +373,13 @@ type RSScanSource interface {
 	RankByWindow(window string) ([]indicators.RSRank, time.Time)
 }
 
+// DividendScanSource ranks the tracked universe by a dividend VIEW (highest-yield | fastest-growing |
+// best-covered | lowest-payout) — the market-wide dividend leaderboard; see indicators.RankDividend.
+// nil-safe — a nil source makes /v1/screen/dividends 404. Satisfied by *ingest.DividendCache.
+type DividendScanSource interface {
+	PopulationRanked(view string) ([]indicators.DividendRank, time.Time)
+}
+
 // InsiderActivitySource produces a company's recent insider-activity timeline —
 // open-market Form 4 buys AND sells, newest first, each with the Go-owned facts
 // (shares/price/value/date, insider name + role, buy/sell, the best-effort
@@ -428,6 +435,7 @@ type Server struct {
 	earningsDates     EarningsDatesSource    // injected post-New via SetEarningsDates (8-K 2.02 dates for earnings-reaction)
 	scorecard         ScorecardSource        // injected post-New via SetScorecard (factor-percentile population)
 	rsScan            RSScanSource           // injected post-New via SetRSScan (relative-strength leaderboard)
+	dividendScan      DividendScanSource     // injected post-New via SetDividendScan (dividend leaderboard)
 	billing           *billing.Service       // injected post-New via SetBilling (Stripe; nil/disabled until keys are set)
 	insiderCalc       InsiderActivitySource  // injected post-New via SetInsiderActivity (Form 4 buy/sell timeline; no LLM)
 	admins            map[string]bool        // user UUIDs and/or emails (lowercased) allowed to delete any comment
@@ -641,6 +649,7 @@ func New(st store.Store, hub QuoteStream, enricher enrich.Enricher, verifier *au
 	mux.HandleFunc("GET /v1/screen/factors", s.getFactorScreen)
 	mux.HandleFunc("GET /v1/screen/relative-strength", s.getRSScreen)
 	mux.HandleFunc("GET /v1/screen/earnings-reaction", s.getEarningsReactionScreen)
+	mux.HandleFunc("GET /v1/screen/dividends", s.getDividendScreen)
 	mux.HandleFunc("GET /v1/gurus", s.getGurus)
 	mux.HandleFunc("GET /v1/search", s.getSearch)
 	mux.HandleFunc("GET /v1/symbols", s.getSymbols)
@@ -3509,6 +3518,10 @@ func (s *Server) SetEarningsDates(src EarningsDatesSource) { s.earningsDates = s
 // SetScorecard injects the factor-percentile population source after New (the multi-factor
 // scorecard ranks a ticker against it). Keeps it out of the New() signature.
 func (s *Server) SetScorecard(src ScorecardSource) { s.scorecard = src }
+
+// SetDividendScan injects the dividend leaderboard source after New (the dividend screen ranks the
+// tracked universe against it). Keeps it out of the New() signature.
+func (s *Server) SetDividendScan(src DividendScanSource) { s.dividendScan = src }
 
 // SetRSScan injects the relative-strength leaderboard source after New (the RS screen ranks the
 // tracked universe by trailing relative strength vs SPY). Keeps it out of the New() signature.
