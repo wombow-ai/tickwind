@@ -35,10 +35,28 @@ SC 13D      ACME ROBOTICS INC                                0000111111  2026-06
 SC 13G      WIDGET CORP                                      0000222222  2026-06-09  edgar/data/222222/0000222222-26-000020.txt
 SC 13D/A    ACME ROBOTICS INC                                0000111111  2026-06-09  edgar/data/111111/0000111111-26-000011.txt
 SC 13G/A    BIG INDEX FUND TARGET CO                         0000333333  2026-06-09  edgar/data/333333/0000333333-26-000030.txt
+SCHEDULE 13D   NEWFORM ACTIVIST CO                           0000444444  20260618    edgar/data/444444/0000444444-26-000040.txt
+SCHEDULE 13G/A NEWFORM PASSIVE CO                            0000555555  20260618    edgar/data/555555/0000555555-26-000050.txt
 `)
 	refs := parseOwnershipIndex(idx)
-	if len(refs) != 4 {
-		t.Fatalf("got %d ownership refs, want 4: %+v", len(refs), refs)
+	if len(refs) != 6 {
+		t.Fatalf("got %d ownership refs, want 6: %+v", len(refs), refs)
+	}
+
+	// The post-2024 "SCHEDULE 13D" form-type token is parsed (the bug that emptied
+	// the board) and normalized to the canonical "SC 13D" FormType.
+	var nf *OwnershipRef
+	for i := range refs {
+		if refs[i].CIK == 444444 {
+			nf = &refs[i]
+		}
+	}
+	if nf == nil || nf.FormType != "SC 13D" || nf.Company != "NEWFORM ACTIVIST CO" || !nf.Activist {
+		t.Errorf("SCHEDULE 13D row = %+v, want SC 13D / NEWFORM ACTIVIST CO / activist", nf)
+	}
+	// The compact YYYYMMDD index date is normalized to ISO YYYY-MM-DD.
+	if nf != nil && nf.FiledDate != "2026-06-18" {
+		t.Errorf("SCHEDULE row FiledDate = %q, want 2026-06-18 (normalized from 20260618)", nf.FiledDate)
 	}
 
 	first := refs[0]
@@ -79,7 +97,7 @@ SC 13G/A    BIG INDEX FUND TARGET CO                         0000333333  2026-06
 			nG++
 		}
 	}
-	if nD != 2 || nG != 2 {
-		t.Errorf("counts D=%d G=%d, want 2/2", nD, nG)
+	if nD != 3 || nG != 3 {
+		t.Errorf("counts D=%d G=%d, want 3/3 (incl. the SCHEDULE-form rows)", nD, nG)
 	}
 }

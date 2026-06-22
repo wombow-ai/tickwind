@@ -22,7 +22,7 @@ type OwnershipRef struct {
 	Company   string `json:"company"`
 	Ticker    string `json:"ticker,omitempty"` // resolved from CIK by the API (links to /stock)
 	Accession string `json:"accession"`
-	FiledDate string `json:"filed_date"`      // as listed in the index (YYYYMMDD)
+	FiledDate string `json:"filed_date"`      // ISO YYYY-MM-DD (normalized from the index's YYYYMMDD)
 	Activist  bool   `json:"activist"`        // true for 13D (and 13D/A); false for 13G
 	Filer     string `json:"filer,omitempty"` // the reporting institution (from the filing header)
 }
@@ -86,13 +86,17 @@ var ownershipForms = map[string]bool{
 
 // parseOwnershipIndex extracts Schedule 13D/13G rows from a form.idx
 // (whitespace-aligned: Form Type | Company | CIK | Date Filed | File Name). The
-// form type is two tokens ("SC 13D"), so the company spans fields[2:len-3].
+// form type is two tokens — historically "SC 13D", but since the SEC's 2024-25
+// structured-13D/13G modernization the daily index emits "SCHEDULE 13D" (and the
+// 13G / amendment variants) — so we accept either first token; the company then
+// spans fields[2:len-3]. (Matching only "SC" silently emptied the board once the
+// index switched to "SCHEDULE".)
 func parseOwnershipIndex(body []byte) []OwnershipRef {
 	var out []OwnershipRef
 	sc := bufio.NewScanner(bytes.NewReader(body))
 	for sc.Scan() {
 		fields := strings.Fields(sc.Text())
-		if len(fields) < 6 || fields[0] != "SC" {
+		if len(fields) < 6 || (fields[0] != "SC" && fields[0] != "SCHEDULE") {
 			continue
 		}
 		activist, ok := ownershipForms[fields[1]]
@@ -113,9 +117,21 @@ func parseOwnershipIndex(body []byte) []OwnershipRef {
 			CIK:       cik,
 			Company:   strings.Join(fields[2:len(fields)-3], " "),
 			Accession: strings.TrimSuffix(base, ".txt"),
-			FiledDate: fields[len(fields)-2],
+			FiledDate: normalizeIndexDate(fields[len(fields)-2]),
 			Activist:  activist,
 		})
 	}
 	return out
+}
+
+// normalizeIndexDate renders a daily-index date as ISO YYYY-MM-DD. The modern
+// form.idx emits a compact "YYYYMMDD"; older slices already carry "YYYY-MM-DD".
+// Both stay lexically sortable (the ingestor sorts newest-first by this string),
+// and the ISO form parses cleanly on the client (raw "20260618" is an invalid
+// JS Date). An unexpected shape is returned unchanged.
+func normalizeIndexDate(s string) string {
+	if len(s) == 8 && !strings.Contains(s, "-") {
+		return s[:4] + "-" + s[4:6] + "-" + s[6:]
+	}
+	return s
 }
