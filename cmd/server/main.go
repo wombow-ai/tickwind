@@ -582,12 +582,16 @@ func main() {
 	apiServer.SetPaywallEnabled(cfg.PaywallEnabled)                     // user-facing Pro paywall; OFF until go-live
 	apiServer.SetIndicatorsPaywallEnabled(cfg.IndicatorsPaywallEnabled) // signals Pro paywall; OFF until go-live
 	log.Info("billing", "enabled", billingSvc.Enabled(), "webhook_enabled", billingSvc.WebhookEnabled(), "paywall", cfg.PaywallEnabled, "indicators_paywall", cfg.IndicatorsPaywallEnabled)
-	// Periodic Stripe subscription reconciler — a safety backstop that re-syncs stored
-	// tiers to Stripe's authoritative state (corrects a missed/out-of-order webhook; never
-	// changes billing). OFF by default; the goroutine also no-ops without a Stripe key.
-	if cfg.BillingReconcileEnabled {
+	// Periodic Stripe subscription reconciler — a safety backstop that re-syncs stored tiers to
+	// Stripe's authoritative state (corrects a missed/out-of-order webhook → a lost Pro grant/
+	// revoke; reads Stripe + writes only our DB, NEVER changes billing). Runs whenever billing is
+	// LIVE (Stripe keys set) — once real subscriptions exist they need the backstop, so it must not
+	// hinge on a separate flag someone forgot to flip (the audit found it default-off in prod). The
+	// BILLING_RECONCILE_ENABLED flag stays a force-override for testing; the goroutine self-no-ops
+	// without a Stripe key, so this is safe in keyless dev.
+	if billingSvc.Enabled() || cfg.BillingReconcileEnabled {
 		go apiServer.RunBillingReconciler(ctx, 6*time.Hour)
-		log.Info("billing reconciler enabled", "every", "6h")
+		log.Info("billing reconciler enabled", "every", "6h", "reason", map[bool]string{true: "billing-live", false: "forced"}[billingSvc.Enabled()])
 	}
 
 	// Stock-applicable indicator catalog: a static, embedded metadata library

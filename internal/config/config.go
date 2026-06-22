@@ -191,11 +191,12 @@ type Config struct {
 	// the two paid points can go live separately.
 	IndicatorsPaywallEnabled bool
 
-	// BillingReconcileEnabled turns ON the periodic Stripe subscription reconciler — a
-	// safety backstop that re-syncs each user's stored tier to Stripe's authoritative
-	// subscription state (it never CHANGES billing, only corrects our DB when a webhook
-	// was missed or delivered out of order). Default FALSE so deploying it is inert; the
-	// owner flips BILLING_RECONCILE_ENABLED=true on the VPS .env once comfortable.
+	// BillingReconcileEnabled FORCE-runs the periodic Stripe subscription reconciler — a safety
+	// backstop that re-syncs each user's stored tier to Stripe's authoritative subscription state
+	// (it never CHANGES billing, only corrects our DB when a webhook was missed or delivered out of
+	// order). As of 2026-06-23 the reconciler also runs automatically whenever billing is LIVE
+	// (Stripe keys set) — see cmd/server/main.go — so live subscriptions always have the backstop;
+	// this flag is only a force-override for testing without keys. Default FALSE.
 	BillingReconcileEnabled bool
 
 	// Supabase auth. SupabaseURL (e.g. https://<ref>.supabase.co) enables ES256
