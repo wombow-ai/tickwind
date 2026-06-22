@@ -5,11 +5,34 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/wombow-ai/tickwind/internal/alpaca"
 )
+
+// TestDailyCandles_NegativeCache is the audit regression for the DoS-adjacent gap: a ticker whose
+// daily-candle fetch ERRORS (malformed/throttled symbol) must be negative-cached briefly so the
+// public stats endpoints can't be looped to re-hit Alpaca every request for the same bad symbol.
+func TestDailyCandles_NegativeCache(t *testing.T) {
+	var calls int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&calls, 1)
+		http.Error(w, "invalid symbol", http.StatusBadRequest) // non-200 → DailyOHLC errors
+	}))
+	defer srv.Close()
+	bc := NewBarCache(alpaca.New("k", "s", srv.URL, "iex"), 30, time.Minute)
+
+	for i := 0; i < 3; i++ {
+		if _, err := bc.DailyCandles(context.Background(), "GARBAGE"); err == nil {
+			t.Fatalf("call %d: expected an error for a failing ticker", i)
+		}
+	}
+	if n := atomic.LoadInt32(&calls); n != 1 {
+		t.Fatalf("Alpaca hit %d times for repeated misses; want 1 (the failure is negative-cached)", n)
+	}
+}
 
 // TestLatestQuote_DailyCandleFallback is the regression test for the "new IPO
 // shows no price on the cards but the K-line has it" bug. A brand-new / very

@@ -76,3 +76,31 @@ func TestComputeSeasonality_Guards(t *testing.T) {
 		t.Error("single candle should be not ok")
 	}
 }
+
+// TestComputeSeasonality_SkipsGap is the audit regression: a multi-month data gap must NOT
+// dump its cumulative return into the single calendar month on the far side of the gap.
+func TestComputeSeasonality_SkipsGap(t *testing.T) {
+	mk := func(y, m int, c float64) store.Candle {
+		return store.Candle{Time: time.Date(y, time.Month(m), 15, 0, 0, 0, 0, time.UTC), Open: c, High: c, Low: c, Close: c, Volume: 1}
+	}
+	// Jan→Feb consecutive (+10% into Feb); Feb→Aug is a GAP (skip); Aug→Sep consecutive (-10% into Sep).
+	candles := []store.Candle{mk(2024, 1, 100), mk(2024, 2, 110), mk(2024, 8, 200), mk(2024, 9, 180)}
+	se, ok := ComputeSeasonality(candles)
+	if !ok {
+		t.Fatal("ok=false, want true")
+	}
+	byMonth := map[int]SeasonStat{}
+	for _, s := range se.Months {
+		byMonth[s.Month] = s
+	}
+	// August must be ABSENT — the Feb→Aug gap return is skipped, not attributed to August.
+	if _, has := byMonth[8]; has {
+		t.Fatalf("August should have no sample (its only pair spans a gap); months=%+v", se.Months)
+	}
+	if byMonth[2].AvgReturn != 10 || byMonth[9].AvgReturn != -10 {
+		t.Fatalf("consecutive months wrong: Feb=%v (want 10), Sep=%v (want -10)", byMonth[2].AvgReturn, byMonth[9].AvgReturn)
+	}
+	if se.Samples != 2 {
+		t.Fatalf("samples=%d, want 2 (only the 2 consecutive-month moves)", se.Samples)
+	}
+}

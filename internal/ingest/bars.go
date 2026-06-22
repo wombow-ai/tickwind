@@ -2,6 +2,7 @@ package ingest
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"time"
 
@@ -37,7 +38,19 @@ type barEntry struct {
 type candleEntry struct {
 	candles []store.Candle
 	at      time.Time
+	failed  bool // a recent fetch ERRORED — negative-cache it briefly (candleNegTTL)
 }
+
+// candleNegTTL briefly negative-caches a FAILED daily-candle fetch (a malformed / throttled /
+// timed-out ticker — NOT a 200-with-empty-bars, which is already cached as success) so the public
+// stats endpoints (/relative-strength, /seasonality, /earnings-reaction, /scorecard, …) can't be
+// looped to re-hit Alpaca every request for the same bad symbol. Short, so a transient upstream
+// error self-heals quickly.
+const candleNegTTL = 3 * time.Minute
+
+// errCandleMissCached is returned for a ticker whose recent fetch failed and is still within
+// candleNegTTL — the caller treats it like any DailyCandles error (no data), without an Alpaca hit.
+var errCandleMissCached = errors.New("daily candles unavailable (cached miss)")
 
 type quoteEntry struct {
 	q  store.Quote
@@ -88,12 +101,21 @@ func (b *BarCache) DailyCandles(ctx context.Context, ticker string) ([]store.Can
 	b.mu.Lock()
 	e, ok := b.candles[ticker]
 	b.mu.Unlock()
-	if ok && time.Since(e.at) < b.ttl {
-		return e.candles, nil
+	if ok {
+		if e.failed {
+			if time.Since(e.at) < candleNegTTL {
+				return nil, errCandleMissCached // recent failure — don't re-hit Alpaca
+			}
+		} else if time.Since(e.at) < b.ttl {
+			return e.candles, nil
+		}
 	}
 
 	cs, err := b.client.DailyOHLC(ctx, ticker, candleDays)
 	if err != nil {
+		b.mu.Lock()
+		b.candles[ticker] = candleEntry{at: time.Now(), failed: true} // negative-cache the error
+		b.mu.Unlock()
 		return nil, err
 	}
 

@@ -53,12 +53,21 @@ func ComputeSeasonality(candles []store.Candle) (Seasonality, bool) {
 	byMonth := map[int][]float64{}
 	total := 0
 	for i := 1; i < len(order); i++ {
-		pc, cc := lastClose[order[i-1]], lastClose[order[i]]
+		prev, cur := order[i-1], order[i]
+		// Only a true month-OVER-month move counts. If the data has a gap (a halted /
+		// relisted / sparsely-traded name with a missing calendar month), prev→cur spans
+		// multiple months; attributing that cumulative return to cur's single calendar month
+		// would be a plausible-but-WRONG seasonality figure. Require cur to be exactly the
+		// next calendar month after prev (months-since-year-0 differ by 1).
+		if cur.y*12+cur.m != prev.y*12+prev.m+1 {
+			continue
+		}
+		pc, cc := lastClose[prev], lastClose[cur]
 		if pc <= 0 {
 			continue
 		}
-		ret := (cc/pc - 1) * 100 // the move INTO order[i]'s month → attribute to that calendar month
-		byMonth[order[i].m] = append(byMonth[order[i].m], ret)
+		ret := (cc/pc - 1) * 100 // the move INTO cur's month → attribute to that calendar month
+		byMonth[cur.m] = append(byMonth[cur.m], ret)
 		total++
 	}
 	if total == 0 {
