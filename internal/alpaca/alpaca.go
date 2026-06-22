@@ -25,11 +25,25 @@ const DefaultDataURL = "https://data.alpaca.markets"
 // Client fetches market data from Alpaca.
 type Client struct {
 	http    *http.Client
+	limiter *tokenBucket // shared rate budget across all callers, under the free-tier 200/min cap
 	keyID   string
 	secret  string
 	dataURL string
 	feed    string
 	loc     *time.Location
+}
+
+// do rate-limits then performs the request. The limiter waits on the CALLER's ctx (a background
+// scan's long-lived context or a user request's context) — NOT the http.Client's per-request
+// timeout — so queuing under load is a delay, not a spurious timeout. All Client methods route their
+// HTTP through here so every caller shares one budget.
+func (c *Client) do(ctx context.Context, req *http.Request) (*http.Response, error) {
+	if c.limiter != nil {
+		if err := c.limiter.Wait(ctx); err != nil {
+			return nil, err
+		}
+	}
+	return c.http.Do(req)
 }
 
 // New returns a Client. Empty dataURL falls back to DefaultDataURL; empty feed
@@ -47,6 +61,7 @@ func New(keyID, secret, dataURL, feed string) *Client {
 	}
 	return &Client{
 		http:    &http.Client{Timeout: 10 * time.Second},
+		limiter: newTokenBucket(alpacaRatePerSec, alpacaBurst),
 		keyID:   keyID,
 		secret:  secret,
 		dataURL: dataURL,
@@ -100,7 +115,7 @@ func (c *Client) LatestQuote(ctx context.Context, ticker string) (store.Quote, e
 	req.Header.Set("APCA-API-KEY-ID", c.keyID)
 	req.Header.Set("APCA-API-SECRET-KEY", c.secret)
 
-	resp, err := c.http.Do(req)
+	resp, err := c.do(ctx, req)
 	if err != nil {
 		return store.Quote{}, fmt.Errorf("alpaca: get snapshot %s: %w", ticker, err)
 	}
@@ -158,7 +173,7 @@ func (c *Client) DailyBars(ctx context.Context, ticker string, limit int) ([]flo
 	req.Header.Set("APCA-API-KEY-ID", c.keyID)
 	req.Header.Set("APCA-API-SECRET-KEY", c.secret)
 
-	resp, err := c.http.Do(req)
+	resp, err := c.do(ctx, req)
 	if err != nil {
 		return nil, fmt.Errorf("alpaca: get bars %s: %w", ticker, err)
 	}
@@ -212,7 +227,7 @@ func (c *Client) DailyOHLC(ctx context.Context, ticker string, limit int) ([]sto
 	req.Header.Set("APCA-API-KEY-ID", c.keyID)
 	req.Header.Set("APCA-API-SECRET-KEY", c.secret)
 
-	resp, err := c.http.Do(req)
+	resp, err := c.do(ctx, req)
 	if err != nil {
 		return nil, fmt.Errorf("alpaca: get ohlc %s: %w", ticker, err)
 	}
@@ -250,7 +265,7 @@ func (c *Client) IntradayOHLC(ctx context.Context, ticker, timeframe string, sta
 	req.Header.Set("APCA-API-KEY-ID", c.keyID)
 	req.Header.Set("APCA-API-SECRET-KEY", c.secret)
 
-	resp, err := c.http.Do(req)
+	resp, err := c.do(ctx, req)
 	if err != nil {
 		return nil, fmt.Errorf("alpaca: get intraday %s: %w", ticker, err)
 	}
@@ -332,7 +347,7 @@ func (c *Client) fetchSnapshotChunk(ctx context.Context, chunk []string, emit fu
 	req.Header.Set("APCA-API-KEY-ID", c.keyID)
 	req.Header.Set("APCA-API-SECRET-KEY", c.secret)
 
-	resp, err := c.http.Do(req)
+	resp, err := c.do(ctx, req)
 	if err != nil {
 		return fmt.Errorf("alpaca: get snapshots: %w", err)
 	}
