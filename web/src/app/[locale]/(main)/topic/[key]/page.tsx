@@ -16,19 +16,13 @@ import {ogImageMeta} from '@/lib/og';
 // captured by generateStaticParams, and new/cooled topics regenerate on demand.
 export const revalidate = 1800;
 
-/** Pre-render every trending topic × locale at build time. Best-effort: an API
- *  failure yields no params, so the route stays dynamic (never breaks the build).
- *  `dynamicParams` defaults true → new/unknown-but-fetchable keys ISR-generate. */
-export async function generateStaticParams(): Promise<{locale: string; key: string}[]> {
-  try {
-    const data = await getTopics(AbortSignal.timeout(12000));
-    return LOCALES.flatMap(locale =>
-      (data.topics ?? []).map(t => ({locale, key: t.key})),
-    );
-  } catch {
-    // API unavailable at build → emit no params; pages render on-demand via ISR.
-    return [];
-  }
+/** Render topic pages ON-DEMAND (no build prerender). Topics are trending/dynamic, and the
+ *  concurrent build prerender of all 16 was where the cold-tunnel getTopics returned an empty
+ *  200 and baked every page as the loading fallback. On-demand, each page renders at runtime on
+ *  a single request (resilient getTopics retries an empty reply), then ISR-caches for
+ *  `revalidate`. `dynamicParams` defaults true so any fetchable key generates on first hit. */
+export function generateStaticParams(): {locale: string; key: string}[] {
+  return [];
 }
 
 /** Fetches the topics snapshot (best-effort) and resolves the topic for a key. */

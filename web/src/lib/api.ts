@@ -778,17 +778,28 @@ export interface TopicsResponse {
   topics: HotTopic[];
 }
 
-// In-flight coalescing + Data Cache + retry for the trending-topics snapshot. The /topic/[key]
-// pSEO pages (16 = 8 topics × 2 locales, each calling this in generateMetadata AND the body)
-// prerender at build; a single cold-tunnel hiccup on this fetch baked them ALL as the loading
-// fallback ("Topic · Tickwind", no content) — confirmed live (renders fine locally, blank on
-// Vercel). Retry survives the transient cold reply; the shared promise collapses the build
-// burst to one fetch; the short Data Cache window keeps the trending data fresh but reliable.
+// Resilient trending-topics fetch. The cold Cloudflare-tunnel hop intermittently returns a
+// 200 with an EMPTY body (not a network reject — so the generic retry-on-reject misses it),
+// which baked all /topic/[key] pages as the loading fallback on Vercel. So: retry until the
+// snapshot is non-empty (covers both an empty 200 AND a reject), and DON'T Data-Cache it (a
+// cached empty would persist). An in-flight promise still collapses a build burst to one call.
+// The topic pages now render on-demand (no build prerender), where a single request is far less
+// likely to hit the cold-empty reply than the concurrent build was.
 let topicsInFlight: Promise<TopicsResponse> | null = null;
 export function getTopics(signal?: AbortSignal): Promise<TopicsResponse> {
   if (topicsInFlight) return topicsInFlight;
-  const init = {next: {revalidate: 600}} as RequestInit;
-  const promise = getJsonWithRetry<TopicsResponse>('/v1/topics', signal, null, init);
+  const promise = (async (): Promise<TopicsResponse> => {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const r = await getJson<TopicsResponse>('/v1/topics', signal);
+        if (r.topics && r.topics.length > 0) return r;
+      } catch {
+        if (isAbort(undefined, signal)) break; // a deliberate timeout/cancel — stop
+      }
+      if (attempt < 2) await abortableDelay(400, signal).catch(() => {});
+    }
+    return {generated_at: '', window: '', topics: []}; // gave up → caller shows the (noindex) fallback
+  })();
   topicsInFlight = promise;
   void promise.finally(() => {
     if (topicsInFlight === promise) topicsInFlight = null;
