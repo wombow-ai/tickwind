@@ -49,3 +49,12 @@ sources only, solo-dev scope, EN-first.** Ranked by value × feasibility × on-b
 
 Decision: **build Seasonality next** (started this tick: the Go core). Then earnings-reaction
 + relative-strength as quick deterministic follow-ons.
+
+## Status (updated 2026-06-22)
+- ✅ **#1 Seasonality** — SHIPPED end-to-end (endpoint + stock-page card + chat widget).
+- ✅ **#3 Relative strength vs SPY** — SHIPPED end-to-end (endpoint + card + chat widget).
+- ✅ **#2 Earnings-reaction history** — BACKEND shipped + live (`GET /v1/stocks/{t}/earnings-reaction`;
+  dates from SEC 8-K item 2.02; collapsed to ~1/quarter; min-sample floor; timing-robust ~2-session
+  window). Frontend card + chat widget = the next follow-on tick.
+- ⏭️ Remaining: #2 frontend, then #4 multi-factor percentile scorecard, #5 NL→screener bridge,
+  #6 side-by-side compare page. Re-scan competitors fresh once these are done.
