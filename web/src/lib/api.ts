@@ -2827,6 +2827,41 @@ export async function getRelativeStrength(
   }
 }
 
+/** One past earnings announcement + the stock's ~2-session reaction around it (Go-computed). */
+export interface EarningsEvent {
+  date: string; // YYYY-MM-DD (8-K item 2.02 filing date)
+  move: number; // ~2-session close-to-close % around the announcement
+}
+
+/** A ticker's earnings-reaction history — a disclosed historical statistic (Go-computed). */
+export interface EarningsReaction {
+  events: EarningsEvent[]; // most recent first
+  avg_move: number; // mean signed reaction %
+  avg_abs_move: number; // mean magnitude % (typical size)
+  up_rate: number; // fraction of events positive (0..1)
+  samples: number;
+}
+
+/**
+ * Fetches a ticker's earnings-reaction history. Resolves to `null` on any 4xx/network error
+ * (no history / too few reports / no earnings filings) so the card can hide gracefully.
+ * Public, no auth.
+ */
+export async function getEarningsReaction(
+  ticker: string,
+  signal?: AbortSignal,
+): Promise<EarningsReaction | null> {
+  try {
+    const r = await getJson<{ticker: string; earnings_reaction?: EarningsReaction}>(
+      `/v1/stocks/${encodeURIComponent(normalizeTicker(ticker))}/earnings-reaction`,
+      signal,
+    );
+    return r.earnings_reaction ?? null;
+  } catch {
+    return null;
+  }
+}
+
 // ── Per-user prefs (generic JSON UI-state blob) ──────────────────────────
 //
 // A small, generic per-user JSON-prefs surface. The blob is namespaced by
