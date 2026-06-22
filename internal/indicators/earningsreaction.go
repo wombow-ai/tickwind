@@ -2,6 +2,7 @@ package indicators
 
 import (
 	"math"
+	"sort"
 	"time"
 
 	"github.com/wombow-ai/tickwind/internal/store"
@@ -51,6 +52,77 @@ type ReactionSummary struct {
 // Summary reduces a full EarningsReaction to its calendar-facing aggregate.
 func (e EarningsReaction) Summary() ReactionSummary {
 	return ReactionSummary{AvgAbsMove: e.AvgAbsMove, UpRate: e.UpRate, Samples: e.Samples}
+}
+
+// TickerReaction pairs a ticker with its earnings-reaction aggregate — the unit the market-wide
+// earnings-reaction leaderboard ranks. (A bare ReactionSummary is ticker-less, for the calendar badge.)
+type TickerReaction struct {
+	Ticker string
+	ReactionSummary
+}
+
+// ReactionRank is one row of the market-wide earnings-reaction leaderboard: a ticker and the
+// Go-computed reaction aggregates that ranked it. A DISCLOSED HISTORICAL STATISTIC (the typical move
+// size and up-rate over PAST earnings), never a forecast/target/advice — Samples is carried so the
+// reader sees the basis. (Mirrors RSRank / FactorRank.)
+type ReactionRank struct {
+	Ticker     string  `json:"ticker"`
+	AvgAbsMove float64 `json:"avg_abs_move"`
+	UpRate     float64 `json:"up_rate"`
+	Samples    int     `json:"samples"`
+}
+
+// Earnings-reaction leaderboard VIEWS (each its own crawlable pSEO surface):
+//
+//	most-volatile   — the biggest typical ~2-session move around earnings (AvgAbsMove, high→low)
+//	highest-up-rate — most often UP after earnings (UpRate, high→low)
+const (
+	ReactionViewMostVolatile  = "most-volatile"
+	ReactionViewHighestUpRate = "highest-up-rate"
+)
+
+// ValidReactionView reports whether view is a known earnings-reaction leaderboard view.
+func ValidReactionView(view string) bool {
+	switch view {
+	case ReactionViewMostVolatile, ReactionViewHighestUpRate:
+		return true
+	}
+	return false
+}
+
+// RankEarningsReaction ranks a tracked-universe population by the chosen VIEW, high→low, and returns
+// the leaderboard. Every input aggregate is already Go-computed over >= minEarningsSamples past
+// earnings (the cache withholds thinner names), so this is pure ranking arithmetic — no compute, no
+// I/O. Ties break by sample count (more history first — so a high up-rate backed by more earnings
+// outranks the same rate from the floor) then ticker (stable + deterministic — the population comes
+// from a map whose iteration order is otherwise random). An unknown view yields nil.
+func RankEarningsReaction(pop []TickerReaction, view string) []ReactionRank {
+	if !ValidReactionView(view) {
+		return nil
+	}
+	out := make([]ReactionRank, 0, len(pop))
+	for _, p := range pop {
+		if p.Ticker == "" || p.Samples < minEarningsSamples {
+			continue // defensive: the cache already enforces the floor (insufficient-not-wrong)
+		}
+		out = append(out, ReactionRank{Ticker: p.Ticker, AvgAbsMove: p.AvgAbsMove, UpRate: p.UpRate, Samples: p.Samples})
+	}
+	primary := func(r ReactionRank) float64 {
+		if view == ReactionViewHighestUpRate {
+			return r.UpRate
+		}
+		return r.AvgAbsMove
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		if pi, pj := primary(out[i]), primary(out[j]); pi != pj {
+			return pi > pj // primary metric, high → low
+		}
+		if out[i].Samples != out[j].Samples {
+			return out[i].Samples > out[j].Samples // more history first
+		}
+		return out[i].Ticker < out[j].Ticker // deterministic final tie-break
+	})
+	return out
 }
 
 // ComputeEarningsReaction measures the price reaction around each earnings date. To be robust to

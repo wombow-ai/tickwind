@@ -120,3 +120,20 @@ func (c *EarningsReactionCache) Reaction(ticker string) (indicators.ReactionSumm
 	r, ok := c.m[ticker]
 	return r, ok
 }
+
+// PopulationRanked ranks the tracked set's cached earnings-reaction aggregates by the chosen VIEW
+// (most-volatile | highest-up-rate), high→low, plus when the population was built (zero before the
+// first scan). It reads the cache; the only request-path work is the bounded ranking arithmetic in
+// indicators.RankEarningsReaction (no compute, no I/O). Empty for an unknown view or a cold map.
+// The scan swaps in a fresh map (never mutates in place), so grabbing the map reference under the
+// lock then building/ranking outside it is race-safe (the swapped-out map is immutable).
+func (c *EarningsReactionCache) PopulationRanked(view string) ([]indicators.ReactionRank, time.Time) {
+	c.mu.RLock()
+	m, at := c.m, c.at
+	c.mu.RUnlock()
+	pop := make([]indicators.TickerReaction, 0, len(m))
+	for tk, rs := range m {
+		pop = append(pop, indicators.TickerReaction{Ticker: tk, ReactionSummary: rs})
+	}
+	return indicators.RankEarningsReaction(pop, view), at
+}

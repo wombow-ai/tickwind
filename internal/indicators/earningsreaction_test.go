@@ -121,3 +121,47 @@ func TestEarningsReactionSummary(t *testing.T) {
 		t.Fatalf("summary = %+v, want {4.2, 0.55, 9}", s)
 	}
 }
+
+func TestRankEarningsReaction(t *testing.T) {
+	pop := []TickerReaction{
+		{Ticker: "AAPL", ReactionSummary: ReactionSummary{AvgAbsMove: 8, UpRate: 0.5, Samples: 10}},
+		{Ticker: "TSLA", ReactionSummary: ReactionSummary{AvgAbsMove: 12, UpRate: 0.7, Samples: 8}},
+		{Ticker: "NVDA", ReactionSummary: ReactionSummary{AvgAbsMove: 6, UpRate: 0.9, Samples: 6}},
+		{Ticker: "KO", ReactionSummary: ReactionSummary{AvgAbsMove: 3, UpRate: 0.9, Samples: 12}},  // ties NVDA on up-rate
+		{Ticker: "LOWS", ReactionSummary: ReactionSummary{AvgAbsMove: 2, UpRate: 0.4, Samples: 3}}, // below floor → dropped
+		{Ticker: "", ReactionSummary: ReactionSummary{AvgAbsMove: 99, UpRate: 1, Samples: 99}},     // empty ticker → dropped
+	}
+
+	order := func(rs []ReactionRank) []string {
+		out := make([]string, len(rs))
+		for i, r := range rs {
+			out[i] = r.Ticker
+		}
+		return out
+	}
+	eq := func(a, b []string) bool {
+		if len(a) != len(b) {
+			return false
+		}
+		for i := range a {
+			if a[i] != b[i] {
+				return false
+			}
+		}
+		return true
+	}
+
+	if got := order(RankEarningsReaction(pop, ReactionViewMostVolatile)); !eq(got, []string{"TSLA", "AAPL", "NVDA", "KO"}) {
+		t.Fatalf("most-volatile = %v, want [TSLA AAPL NVDA KO] (LOWS+empty dropped)", got)
+	}
+	// up-rate desc; KO & NVDA both 0.9 → more samples (KO 12) first.
+	if got := order(RankEarningsReaction(pop, ReactionViewHighestUpRate)); !eq(got, []string{"KO", "NVDA", "TSLA", "AAPL"}) {
+		t.Fatalf("highest-up-rate = %v, want [KO NVDA TSLA AAPL]", got)
+	}
+	if got := RankEarningsReaction(pop, "bogus"); got != nil {
+		t.Fatalf("unknown view = %v, want nil", got)
+	}
+	if !ValidReactionView("most-volatile") || !ValidReactionView("highest-up-rate") || ValidReactionView("calmest") {
+		t.Fatal("ValidReactionView mismatch")
+	}
+}

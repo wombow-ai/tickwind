@@ -349,6 +349,10 @@ type EarningsDatesSource interface {
 // *ingest.EarningsReactionCache.
 type EarningsReactionSource interface {
 	Reaction(ticker string) (indicators.ReactionSummary, bool)
+	// PopulationRanked ranks the tracked universe by the chosen earnings-reaction view (the
+	// market-wide leaderboard); see indicators.RankEarningsReaction. Reused by
+	// /v1/screen/earnings-reaction.
+	PopulationRanked(view string) ([]indicators.ReactionRank, time.Time)
 }
 
 // ScorecardSource provides the factor-metric POPULATION (the percentile-ranking distribution over
@@ -636,6 +640,7 @@ func New(st store.Store, hub QuoteStream, enricher enrich.Enricher, verifier *au
 	mux.HandleFunc("GET /v1/screen/signals", s.getScreenSignals)
 	mux.HandleFunc("GET /v1/screen/factors", s.getFactorScreen)
 	mux.HandleFunc("GET /v1/screen/relative-strength", s.getRSScreen)
+	mux.HandleFunc("GET /v1/screen/earnings-reaction", s.getEarningsReactionScreen)
 	mux.HandleFunc("GET /v1/gurus", s.getGurus)
 	mux.HandleFunc("GET /v1/search", s.getSearch)
 	mux.HandleFunc("GET /v1/symbols", s.getSymbols)

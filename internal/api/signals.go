@@ -541,6 +541,66 @@ func (s *Server) getRSScreen(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
+// erScreenResp is the wire shape of GET /v1/screen/earnings-reaction. Total is how many tracked
+// stocks had a measurable earnings-reaction aggregate (the leaderboard denominator, before any
+// limit); AsOf is when the reaction population was last rebuilt.
+type erScreenResp struct {
+	View    string                    `json:"view"`
+	Count   int                       `json:"count"`
+	Results []indicators.ReactionRank `json:"results"`
+	Total   int                       `json:"total"`
+	AsOf    string                    `json:"as_of,omitempty"`
+}
+
+// defaultERView / limits bound the earnings-reaction leaderboard.
+const (
+	defaultERView        = indicators.ReactionViewMostVolatile
+	defaultERScreenLimit = 50
+	maxERScreenLimit     = 200
+)
+
+// getEarningsReactionScreen serves the market-wide EARNINGS-REACTION leaderboard: every tracked stock
+// ranked by how it has historically moved around its earnings — `?view=most-volatile|highest-up-rate`
+// (default most-volatile), `?limit=`. It reads the background-cached reaction population (no
+// per-request compute beyond bounded ranking) and reuses the SAME ComputeEarningsReaction aggregates
+// as the per-stock earnings-reaction card and the calendar badges. Every number is Go-computed from
+// the public daily candles + SEC 8-K (item 2.02) dates — a disclosed HISTORICAL statistic (typical
+// move size / up-rate over past earnings), descriptive, NEVER a forecast/target/advice — so it is
+// anti-hallucination-safe. Free + crawlable (the market-wide view of the free per-stock earnings
+// reaction). 400 on an unknown view; 404 when the source is unset; a cold/too-thin population yields a
+// 200 with an empty list (the scan/ISR refills it).
+func (s *Server) getEarningsReactionScreen(w http.ResponseWriter, r *http.Request) {
+	if s.earningsReactions == nil {
+		writeJSON(w, http.StatusNotFound, errBody("earnings-reaction screen unavailable"))
+		return
+	}
+	view := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("view")))
+	if view == "" {
+		view = defaultERView
+	}
+	if !indicators.ValidReactionView(view) {
+		writeJSON(w, http.StatusBadRequest, errBody("view must be one of most-volatile, highest-up-rate"))
+		return
+	}
+	ranked, at := s.earningsReactions.PopulationRanked(view)
+	total := len(ranked)
+	lim := queryLimit(r, defaultERScreenLimit)
+	if lim > maxERScreenLimit {
+		lim = maxERScreenLimit
+	}
+	if lim > 0 && len(ranked) > lim {
+		ranked = ranked[:lim]
+	}
+	if ranked == nil {
+		ranked = []indicators.ReactionRank{}
+	}
+	out := erScreenResp{View: view, Count: len(ranked), Results: ranked, Total: total}
+	if !at.IsZero() {
+		out.AsOf = at.UTC().Format(time.RFC3339)
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
 // SignalScanSource is the whole-universe signals SCREENER (a background cache that
 // precomputes ticker→signals so the endpoint never recomputes on the request path).
 type SignalScanSource interface {
