@@ -247,6 +247,56 @@ func (s *Server) getSeasonality(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, seasonalityResp{Ticker: ticker, Seasonality: &se})
 }
 
+// relStrengthBenchmark is the market benchmark a stock's relative strength is measured against —
+// the S&P 500 proxy SPY, matching the per-stock beta indicator (indicators.marketBenchmarkTicker).
+const relStrengthBenchmark = "SPY"
+
+// relStrengthResp is the wire shape of GET /v1/stocks/{ticker}/relative-strength: the ticker + its
+// trailing performance vs the benchmark (nil when there is too little history).
+type relStrengthResp struct {
+	Ticker           string                       `json:"ticker"`
+	RelativeStrength *indicators.RelativeStrength `json:"relative_strength,omitempty"`
+}
+
+// getRelativeStrength serves a ticker's trailing RELATIVE STRENGTH vs SPY
+// (indicators.ComputeRelativeStrength) — the stock's %-return minus SPY's over the same 1M/3M/6M/1Y
+// calendar spans. Pure Go math over the public daily candles (a disclosed HISTORICAL statistic,
+// like seasonality/backtest; NEVER a forecast, target, or advice), so it is anti-hallucination-safe.
+// 404 when there is no price source/history, 422 when the benchmark is unavailable, history is too
+// short, or the ticker IS the benchmark (relative strength vs itself is the degenerate 0). Free.
+func (s *Server) getRelativeStrength(w http.ResponseWriter, r *http.Request) {
+	if s.bars == nil {
+		writeJSON(w, http.StatusNotFound, errBody("relative strength unavailable"))
+		return
+	}
+	ticker := strings.ToUpper(strings.TrimSpace(r.PathValue("ticker")))
+	if ticker == "" {
+		writeJSON(w, http.StatusNotFound, errBody("no ticker"))
+		return
+	}
+	if ticker == relStrengthBenchmark {
+		writeJSON(w, http.StatusUnprocessableEntity, errBody("relative strength vs itself is not meaningful"))
+		return
+	}
+	candles, err := s.bars.DailyCandles(r.Context(), ticker)
+	if err != nil || len(candles) == 0 {
+		writeJSON(w, http.StatusNotFound, errBody("no price history for "+ticker))
+		return
+	}
+	bench, err := s.bars.DailyCandles(r.Context(), relStrengthBenchmark)
+	if err != nil || len(bench) == 0 {
+		writeJSON(w, http.StatusUnprocessableEntity, errBody("benchmark price history unavailable"))
+		return
+	}
+	rs, ok := indicators.ComputeRelativeStrength(candles, bench)
+	if !ok {
+		writeJSON(w, http.StatusUnprocessableEntity, errBody("insufficient history for relative strength"))
+		return
+	}
+	rs.Benchmark = relStrengthBenchmark
+	writeJSON(w, http.StatusOK, relStrengthResp{Ticker: ticker, RelativeStrength: &rs})
+}
+
 // SignalScanSource is the whole-universe signals SCREENER (a background cache that
 // precomputes ticker→signals so the endpoint never recomputes on the request path).
 type SignalScanSource interface {

@@ -544,3 +544,61 @@ func TestGetSeasonality(t *testing.T) {
 		}
 	})
 }
+
+func TestGetRelativeStrength(t *testing.T) {
+	t.Run("nil bars → 404", func(t *testing.T) {
+		srv := backtestServer(t, nil, false)
+		defer srv.Close()
+		resp := mustGet(t, srv.URL+"/v1/stocks/AAPL/relative-strength")
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusNotFound {
+			t.Fatalf("status = %d, want 404", resp.StatusCode)
+		}
+	})
+
+	t.Run("benchmark ticker itself → 422", func(t *testing.T) {
+		srv := backtestServer(t, fakeBars{monthSpanCandles(30)}, false)
+		defer srv.Close()
+		resp := mustGet(t, srv.URL+"/v1/stocks/SPY/relative-strength")
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusUnprocessableEntity {
+			t.Fatalf("status = %d, want 422 (relative strength vs itself)", resp.StatusCode)
+		}
+	})
+
+	t.Run("too little history → 422", func(t *testing.T) {
+		srv := backtestServer(t, fakeBars{monthSpanCandles(1)}, false) // 1 bar → no window fits
+		defer srv.Close()
+		resp := mustGet(t, srv.URL+"/v1/stocks/AAPL/relative-strength")
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusUnprocessableEntity {
+			t.Fatalf("status = %d, want 422", resp.StatusCode)
+		}
+	})
+
+	t.Run("valid → 200 with windows", func(t *testing.T) {
+		srv := backtestServer(t, fakeBars{monthSpanCandles(30)}, false) // ≥22 bars → ≥1 window
+		defer srv.Close()
+		resp := mustGet(t, srv.URL+"/v1/stocks/aapl/relative-strength")
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("status = %d, want 200", resp.StatusCode)
+		}
+		var body struct {
+			Ticker           string `json:"ticker"`
+			RelativeStrength *struct {
+				Benchmark string `json:"benchmark"`
+				Windows   []struct {
+					Label string `json:"label"`
+				} `json:"windows"`
+			} `json:"relative_strength"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if body.Ticker != "AAPL" || body.RelativeStrength == nil ||
+			body.RelativeStrength.Benchmark != "SPY" || len(body.RelativeStrength.Windows) == 0 {
+			t.Fatalf("unexpected body: %+v", body)
+		}
+	})
+}
