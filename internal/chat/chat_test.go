@@ -433,6 +433,37 @@ func TestAnswerEarningsReactionWidget(t *testing.T) {
 	}
 }
 
+func TestAnswerScorecardWidget(t *testing.T) {
+	llm := &scriptedLLM{enabled: true, replies: []reply{
+		{calls: []enrich.ChatToolCall{{ID: "c1", Name: "surface_widget", Arguments: `{"type":"scorecard"}`}}},
+		{content: "Here is how AAPL ranks on the factors."},
+	}}
+	svc := NewService(llm, fakeFacts{sampleSheet()}, nil, "")
+	ans, err := svc.Answer(context.Background(), "u", "AAPL", "en", nil, "how's AAPL's value and quality vs the market", true)
+	if err != nil {
+		t.Fatalf("Answer: %v", err)
+	}
+	var w *Block
+	for i := range ans.Blocks {
+		if ans.Blocks[i].Kind == "widget" {
+			w = &ans.Blocks[i]
+		}
+	}
+	if w == nil || w.Widget != "scorecard" || w.Params["ticker"] != "AAPL" {
+		t.Fatalf("scorecard widget wrong: %+v", ans.Blocks)
+	}
+	// Anti-hallucination: the tool result is a confirmation only — no factor numbers.
+	tool := ""
+	for _, m := range llm.gotMessages[1] {
+		if m.Role == "tool" {
+			tool = m.Content
+		}
+	}
+	if tool != "rendered: scorecard AAPL " {
+		t.Fatalf("widget tool result leaked data / wrong: %q", tool)
+	}
+}
+
 func TestAnswerIndicatorHistoryRejectsUnknownIndicator(t *testing.T) {
 	llm := &scriptedLLM{enabled: true, replies: []reply{
 		{calls: []enrich.ChatToolCall{{ID: "c1", Name: "surface_widget", Arguments: `{"type":"indicator_history","indicator":"made_up"}`}}},
