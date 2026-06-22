@@ -102,6 +102,26 @@ func usSymbols(tickers []string) []string {
 // MediaTek, Delta, Chunghwa Telecom, UMC.
 var taiwanSeed = []string{"2330.TW", "2317.TW", "2454.TW", "2308.TW", "2412.TW", "2303.TW"}
 
+// usPopularSeed is a curated, cross-sector set of US large-caps added to the ANALYTIC peer universe
+// (the factor scorecard / signals / earnings-reaction caches) so those features rank against a broad,
+// representative distribution instead of only the handful of watchlisted names. It deliberately does
+// NOT widen the news/social INGEST set (the scheduler) — only the cheap, cached, off-request-path
+// analytic scans — so it adds no per-cycle external-API ingestion load. All have SEC fundamentals
+// (a meaningful factor distribution across value/growth/quality/momentum).
+var usPopularSeed = []string{
+	// Tech & communications
+	"AAPL", "MSFT", "NVDA", "GOOGL", "AMZN", "META", "AVGO", "TSLA", "ORCL", "CRM",
+	"ADBE", "AMD", "CSCO", "QCOM", "TXN", "INTC", "NFLX", "DIS",
+	// Financials
+	"JPM", "BAC", "WFC", "GS", "MS", "V", "MA", "AXP", "BLK",
+	// Healthcare
+	"UNH", "JNJ", "LLY", "ABBV", "MRK", "PFE", "TMO", "ABT",
+	// Consumer
+	"WMT", "COST", "PG", "KO", "PEP", "MCD", "NKE", "HD",
+	// Industrials & energy
+	"XOM", "CVX", "CAT", "BA", "GE", "HON",
+}
+
 // hongKongSeed is the HK names the owner follows — Tencent, Zhipu / Z.ai (listed
 // as "Knowledge Atlas") and MiniMax — kept so their stock pages have a Security
 // (name + market) and on-demand collection works. HK exchange quotes are
@@ -236,6 +256,33 @@ func main() {
 			for _, t := range all {
 				add(t)
 			}
+		}
+		return out
+	}
+
+	// analyticTickers is the universe the FACTOR scorecard / signals / earnings-reaction caches scan:
+	// the ingested set PLUS the curated usPopularSeed, deduped + capped at maxIngestTickers. Broadening
+	// only these (not the scheduler's news/social ingest) gives the percentile/leaderboard/badge
+	// features a representative peer set without adding any per-cycle external-API ingestion load — the
+	// scans pull candles/fundamentals on demand (cached) off the request path.
+	analyticTickers := func(ctx context.Context) []string {
+		seen := make(map[string]struct{})
+		var out []string
+		add := func(t string) {
+			t = strings.ToUpper(strings.TrimSpace(t))
+			if t == "" || len(out) >= maxIngestTickers {
+				return
+			}
+			if _, ok := seen[t]; !ok {
+				seen[t] = struct{}{}
+				out = append(out, t)
+			}
+		}
+		for _, t := range ingestTickers(ctx) {
+			add(t)
+		}
+		for _, t := range usPopularSeed {
+			add(t)
 		}
 		return out
 	}
@@ -622,26 +669,26 @@ func main() {
 
 		// Signals SCREENER: a background cache recomputes ticker→signals every 15 min
 		// (off the request path, technicals-only, paced) so GET /v1/screen/signals filters
-		// instantly. Scans the BOUNDED tracked set (ingestTickers, ~maxIngestTickers names
-		// the poller already follows) — NOT the full ~7k universe, which would storm Alpaca/SEC.
-		signalScan := ingest.NewSignalScanCache(computer, ingestTickers, log)
+		// instantly. Scans analyticTickers (ingest set ∪ usPopularSeed, ≤maxIngestTickers — a
+		// representative large-cap peer set) — NOT the full ~7k universe, which would storm Alpaca/SEC.
+		signalScan := ingest.NewSignalScanCache(computer, analyticTickers, log)
 		go signalScan.Run(ctx)
 		apiServer.SetSignalScan(signalScan)
 
 		// Multi-factor scorecard population: a background cache computes the factor metrics
-		// (value/growth/quality/momentum inputs) over the SAME bounded tracked set every 60 min
-		// (full indicators incl. fundamentals, which are FundamentalsCache-cached, so steady-state
-		// is arithmetic), so GET /v1/stocks/{t}/scorecard can rank a stock against the distribution
-		// off the request path. Descriptive percentiles only — never a rating (the no-advice line).
-		scorecardScan := ingest.NewScorecardCache(computer, ingestTickers, log)
+		// (value/growth/quality/momentum inputs) over analyticTickers every 60 min (full indicators
+		// incl. fundamentals, which are FundamentalsCache-cached, so steady-state is arithmetic), so
+		// GET /v1/stocks/{t}/scorecard ranks a stock against a BROAD distribution (the popular seed
+		// widens it past the thin watchlist). Descriptive percentiles only — never a rating.
+		scorecardScan := ingest.NewScorecardCache(computer, analyticTickers, log)
 		go scorecardScan.Run(ctx)
 		apiServer.SetScorecard(scorecardScan)
 
-		// Earnings-reaction cache: precompute how each TRACKED stock has historically moved around
-		// its earnings (SEC 8-K 2.02 dates + daily candles), so the market-wide earnings calendar
-		// can badge recognizable rows without a per-row fetch. Refreshes every 12h — a reaction only
-		// changes when a new report lands.
-		earningsReactionCache := ingest.NewEarningsReactionCache(bars, edgarClient, ingestTickers, log)
+		// Earnings-reaction cache: precompute how each analytic-universe stock has historically moved
+		// around its earnings (SEC 8-K 2.02 dates + daily candles), so the market-wide earnings
+		// calendar can badge recognizable rows without a per-row fetch. Refreshes every 12h — a
+		// reaction only changes when a new report lands.
+		earningsReactionCache := ingest.NewEarningsReactionCache(bars, edgarClient, analyticTickers, log)
 		go earningsReactionCache.Run(ctx)
 		apiServer.SetEarningsReactions(earningsReactionCache)
 
