@@ -1,6 +1,7 @@
 package indicators
 
 import (
+	"sort"
 	"time"
 
 	"github.com/wombow-ai/tickwind/internal/store"
@@ -52,6 +53,58 @@ var relStrengthWindows = []struct {
 // actually months old. Without this, closeAtOrBefore would silently anchor on that stale bar and
 // the "1M" label would lie about the real span; rejecting keeps it insufficient-not-wrong.
 const relStrengthAnchorTolerance = 10 * 24 * time.Hour
+
+// TickerRelStrength pairs a ticker with its computed relative strength — the RS-leaderboard cache
+// retains these so it can rank named stocks by any window's excess return.
+type TickerRelStrength struct {
+	Ticker string
+	RS     RelativeStrength
+}
+
+// RSRank is one stock's standing on the relative-strength leaderboard for a given window: its excess
+// return (stock − benchmark, percentage points) plus the two legs for context. DESCRIPTIVE — a
+// disclosed historical statistic, never a forecast or advice.
+type RSRank struct {
+	Ticker          string  `json:"ticker"`
+	Relative        float64 `json:"relative"`
+	StockReturn     float64 `json:"stock_return"`
+	BenchmarkReturn float64 `json:"benchmark_return"`
+}
+
+// ValidRSWindow reports whether label is one of the ranked trailing windows ("1M","3M","6M","1Y").
+func ValidRSWindow(label string) bool {
+	for _, w := range relStrengthWindows {
+		if w.label == label {
+			return true
+		}
+	}
+	return false
+}
+
+// RankRelativeStrength ranks every population member by its excess return over `window` (e.g. "3M"),
+// highest→lowest (ticker tie-break, for deterministic output). A ticker that lacks the window (its
+// history doesn't reach back that far) is omitted — never fabricated. Empty for an unknown window.
+func RankRelativeStrength(pop []TickerRelStrength, window string) []RSRank {
+	out := make([]RSRank, 0, len(pop))
+	if !ValidRSWindow(window) {
+		return out
+	}
+	for _, m := range pop {
+		for _, w := range m.RS.Windows {
+			if w.Label == window {
+				out = append(out, RSRank{Ticker: m.Ticker, Relative: w.Relative, StockReturn: w.StockReturn, BenchmarkReturn: w.BenchmarkReturn})
+				break
+			}
+		}
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Relative != out[j].Relative {
+			return out[i].Relative > out[j].Relative
+		}
+		return out[i].Ticker < out[j].Ticker
+	})
+	return out
+}
 
 // ComputeRelativeStrength measures `stock`'s trailing return against `benchmark`'s over each
 // calendar window. Both series are ascending (oldest→newest). The end anchor is the latest stock

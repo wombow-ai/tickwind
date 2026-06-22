@@ -684,6 +684,14 @@ func main() {
 		go scorecardScan.Run(ctx)
 		apiServer.SetScorecard(scorecardScan)
 
+		// Relative-strength leaderboard: a background cache computes each analytic-universe stock's
+		// trailing relative strength vs SPY every 45 min (daily candles, cached), so
+		// GET /v1/screen/relative-strength ranks the market-wide RS without per-request compute.
+		// Descriptive excess returns only — never a forecast/advice.
+		rsScan := ingest.NewRelativeStrengthCache(bars, analyticTickers, log)
+		go rsScan.Run(ctx)
+		apiServer.SetRSScan(rsScan)
+
 		// Earnings-reaction cache: precompute how each analytic-universe stock has historically moved
 		// around its earnings (SEC 8-K 2.02 dates + daily candles), so the market-wide earnings
 		// calendar can badge recognizable rows without a per-row fetch. Refreshes every 12h — a

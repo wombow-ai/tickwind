@@ -7,7 +7,9 @@ import (
 	"github.com/wombow-ai/tickwind/internal/store"
 )
 
-type fakeReactionSrc struct{ m map[string]indicators.ReactionSummary }
+type fakeReactionSrc struct {
+	m map[string]indicators.ReactionSummary
+}
 
 func (f fakeReactionSrc) Reaction(t string) (indicators.ReactionSummary, bool) {
 	r, ok := f.m[t]

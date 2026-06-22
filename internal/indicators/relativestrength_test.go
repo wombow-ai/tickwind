@@ -159,3 +159,52 @@ func TestCandleAtOrBefore(t *testing.T) {
 		t.Fatal("before-all: ok=true, want false (no candle ≤ target)")
 	}
 }
+
+func TestRankRelativeStrength(t *testing.T) {
+	pop := []TickerRelStrength{
+		{Ticker: "A", RS: RelativeStrength{Windows: []RelStrengthWindow{{Label: "3M", Relative: 5, StockReturn: 10, BenchmarkReturn: 5}}}},
+		{Ticker: "B", RS: RelativeStrength{Windows: []RelStrengthWindow{{Label: "3M", Relative: 15}, {Label: "1Y", Relative: 2}}}},
+		{Ticker: "C", RS: RelativeStrength{Windows: []RelStrengthWindow{{Label: "1Y", Relative: 20}}}}, // no 3M window
+	}
+
+	if !ValidRSWindow("3M") || !ValidRSWindow("1Y") || ValidRSWindow("2W") {
+		t.Fatal("ValidRSWindow misclassified a window")
+	}
+
+	t.Run("unknown window → empty", func(t *testing.T) {
+		if got := RankRelativeStrength(pop, "2W"); len(got) != 0 {
+			t.Fatalf("unknown window → %d rows, want 0", len(got))
+		}
+	})
+
+	t.Run("3M: highest excess first, missing-window omitted", func(t *testing.T) {
+		got := RankRelativeStrength(pop, "3M")
+		if len(got) != 2 { // C lacks 3M
+			t.Fatalf("got %d, want 2 (C omitted)", len(got))
+		}
+		if got[0].Ticker != "B" || got[0].Relative != 15 || got[1].Ticker != "A" {
+			t.Fatalf("3M order = %v, want B(15),A(5)", got)
+		}
+		if got[1].StockReturn != 10 || got[1].BenchmarkReturn != 5 {
+			t.Fatalf("A legs not carried: %+v", got[1])
+		}
+	})
+
+	t.Run("1Y: C leads, A omitted", func(t *testing.T) {
+		got := RankRelativeStrength(pop, "1Y")
+		if len(got) != 2 || got[0].Ticker != "C" || got[1].Ticker != "B" {
+			t.Fatalf("1Y order = %v, want C(20),B(2)", got)
+		}
+	})
+
+	t.Run("ties break by ticker asc", func(t *testing.T) {
+		tied := []TickerRelStrength{
+			{Ticker: "Z", RS: RelativeStrength{Windows: []RelStrengthWindow{{Label: "3M", Relative: 3}}}},
+			{Ticker: "A", RS: RelativeStrength{Windows: []RelStrengthWindow{{Label: "3M", Relative: 3}}}},
+		}
+		got := RankRelativeStrength(tied, "3M")
+		if got[0].Ticker != "A" || got[1].Ticker != "Z" {
+			t.Fatalf("tie-break = %v, want A,Z", got)
+		}
+	})
+}

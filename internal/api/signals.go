@@ -483,6 +483,64 @@ func (s *Server) getFactorScreen(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
+// rsScreenResp is the wire shape of GET /v1/screen/relative-strength. Total is how many tracked
+// stocks had a computable excess return for this window (the leaderboard denominator, before any
+// limit); AsOf is when the RS population was last rebuilt.
+type rsScreenResp struct {
+	Window  string              `json:"window"`
+	Count   int                 `json:"count"`
+	Results []indicators.RSRank `json:"results"`
+	Total   int                 `json:"total"`
+	AsOf    string              `json:"as_of,omitempty"`
+}
+
+// defaultRSWindow / limits bound the relative-strength leaderboard.
+const (
+	defaultRSWindow      = "3M"
+	defaultRSScreenLimit = 50
+	maxRSScreenLimit     = 200
+)
+
+// getRSScreen serves the market-wide RELATIVE-STRENGTH leaderboard: every tracked stock ranked by its
+// trailing excess return vs SPY over a window (`?window=1M|3M|6M|1Y` default 3M, `?limit=`). It reads
+// the background-cached RS population (no per-request compute beyond bounded ranking) and reuses the
+// SAME ComputeRelativeStrength path as the per-stock relative-strength card. Every number is
+// Go-computed from the public daily candles — a disclosed HISTORICAL statistic (excess return),
+// descriptive, NEVER a forecast/target/advice — so it is anti-hallucination-safe. Free + crawlable
+// (the market-wide view of the free per-stock relative strength). 400 on an unknown window; 404 when
+// the source is unset; a cold/too-thin population yields a 200 with an empty list.
+func (s *Server) getRSScreen(w http.ResponseWriter, r *http.Request) {
+	if s.rsScan == nil {
+		writeJSON(w, http.StatusNotFound, errBody("relative-strength screen unavailable"))
+		return
+	}
+	window := strings.ToUpper(strings.TrimSpace(r.URL.Query().Get("window")))
+	if window == "" {
+		window = defaultRSWindow
+	}
+	if !indicators.ValidRSWindow(window) {
+		writeJSON(w, http.StatusBadRequest, errBody("window must be one of 1M, 3M, 6M, 1Y"))
+		return
+	}
+	ranked, at := s.rsScan.RankByWindow(window)
+	total := len(ranked)
+	lim := queryLimit(r, defaultRSScreenLimit)
+	if lim > maxRSScreenLimit {
+		lim = maxRSScreenLimit
+	}
+	if lim > 0 && len(ranked) > lim {
+		ranked = ranked[:lim]
+	}
+	if ranked == nil {
+		ranked = []indicators.RSRank{}
+	}
+	out := rsScreenResp{Window: window, Count: len(ranked), Results: ranked, Total: total}
+	if !at.IsZero() {
+		out.AsOf = at.UTC().Format(time.RFC3339)
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
 // SignalScanSource is the whole-universe signals SCREENER (a background cache that
 // precomputes ticker→signals so the endpoint never recomputes on the request path).
 type SignalScanSource interface {
