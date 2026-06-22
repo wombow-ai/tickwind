@@ -4,6 +4,7 @@ import {notFound} from 'next/navigation';
 import {LayoutGrid} from 'lucide-react';
 import {
   getIndicators,
+  HISTORYABLE_INDICATOR_IDS,
   indicatorBySlug,
   indicatorSlug,
   type Indicator,
@@ -11,7 +12,13 @@ import {
 import {SITE_URL, POPULAR_TICKERS, langAlternates} from '@/lib/config';
 import {isLocale, LOCALES} from '@/lib/locale';
 import {ogImageMeta, type OgParams} from '@/lib/og';
+import {IndicatorHistoryChart} from '@/components/IndicatorHistoryChart';
 import {ShareCardButton} from '@/components/ShareCardButton';
+
+// Indicators that have a server-side time series get a live example chart on the detail page.
+const HISTORY_CHARTABLE = new Set<string>(HISTORYABLE_INDICATOR_IDS);
+// A liquid, always-available reference stock for the worked example.
+const EXAMPLE_TICKER = 'AAPL';
 
 // SSR with ISR: the catalog is static (embedded metadata) and only changes on a
 // deploy that updates the dataset, so mirror the catalog page's long window.
@@ -280,6 +287,28 @@ export default async function IndicatorRoute({
           </span>
         </div>
       </header>
+
+      {/* Live worked example: this indicator's real time series on a reference stock. Only
+          for the indicators with a server-side history; client-fetched (Go-owns-the-numbers),
+          so the static pSEO page gains a live, anti-hallucination-safe chart. */}
+      {HISTORY_CHARTABLE.has(ind.id) && (
+        <section className="mb-6">
+          <h2 className="mb-1.5 text-[12px] font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">
+            {zh ? '走势示例' : 'Live example'}
+          </h2>
+          <p className="mb-2 text-[12.5px] leading-relaxed text-slate-500 dark:text-slate-400">
+            {zh
+              ? `${n.zh}在 ${EXAMPLE_TICKER} 上的历史走势,用真实日线数据计算 —— 可切换时间范围。`
+              : `${n.en} on ${EXAMPLE_TICKER}, computed from real daily price data — switch the range to zoom.`}
+          </p>
+          <div className="rounded-2xl border border-slate-200 p-3 dark:border-slate-800">
+            <IndicatorHistoryChart ticker={EXAMPLE_TICKER} id={ind.id} range="1Y" />
+          </div>
+          <p className="mt-1.5 text-[11px] text-slate-400 dark:text-slate-500">
+            {zh ? '延迟数据 · 仅供参考 · 非投资建议' : 'Delayed data · For reference only · Not investment advice'}
+          </p>
+        </section>
+      )}
 
       {/* Definition — falls back to formula + interpretation when empty. */}
       {hasDefinition && (
