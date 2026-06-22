@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	urlpkg "net/url"
 	"strings"
 	"time"
 
@@ -91,7 +92,7 @@ type snapshotResp struct {
 // trading day's close (for the day's change). Uses the snapshot endpoint so
 // price, session and prior close come from a single request.
 func (c *Client) LatestQuote(ctx context.Context, ticker string) (store.Quote, error) {
-	url := fmt.Sprintf("%s/v2/stocks/%s/snapshot?feed=%s", c.dataURL, ticker, c.feed)
+	url := fmt.Sprintf("%s/v2/stocks/%s/snapshot?feed=%s", c.dataURL, urlpkg.PathEscape(ticker), c.feed)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return store.Quote{}, err
@@ -148,7 +149,7 @@ func (c *Client) DailyBars(ctx context.Context, ticker string, limit int) ([]flo
 	start := time.Now().In(c.loc).AddDate(0, 0, -(limit*2 + 20)).Format("2006-01-02")
 	url := fmt.Sprintf(
 		"%s/v2/stocks/%s/bars?timeframe=1Day&start=%s&limit=%d&sort=desc&adjustment=split&feed=%s",
-		c.dataURL, ticker, start, limit, c.feed,
+		c.dataURL, urlpkg.PathEscape(ticker), start, limit, c.feed,
 	)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
@@ -202,7 +203,7 @@ func (c *Client) DailyOHLC(ctx context.Context, ticker string, limit int) ([]sto
 	start := time.Now().In(c.loc).AddDate(0, 0, -(limit*2 + 30)).Format("2006-01-02")
 	url := fmt.Sprintf(
 		"%s/v2/stocks/%s/bars?timeframe=1Day&start=%s&limit=%d&sort=desc&adjustment=split&feed=%s",
-		c.dataURL, ticker, start, limit, c.feed,
+		c.dataURL, urlpkg.PathEscape(ticker), start, limit, c.feed,
 	)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
@@ -240,7 +241,7 @@ func (c *Client) DailyOHLC(ctx context.Context, ticker string, limit int) ([]sto
 func (c *Client) IntradayOHLC(ctx context.Context, ticker, timeframe string, start time.Time) ([]store.Candle, error) {
 	url := fmt.Sprintf(
 		"%s/v2/stocks/%s/bars?timeframe=%s&start=%s&limit=10000&adjustment=split&feed=%s&sort=asc",
-		c.dataURL, ticker, timeframe, start.UTC().Format(time.RFC3339), c.feed,
+		c.dataURL, urlpkg.PathEscape(ticker), timeframe, start.UTC().Format(time.RFC3339), c.feed,
 	)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
