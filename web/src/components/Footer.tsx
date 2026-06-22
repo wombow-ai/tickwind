@@ -15,6 +15,7 @@ const COLUMNS: Array<[string, Array<[string, string]>]> = [
       ['nav.markets', '/'],
       ['nav.zones', '/zone'],
       ['nav.stocks', '/stocks'],
+      ['nav.compare', '/compare'],
       ['mod.hotStocks', '/hot'],
       ['nav.opportunities', '/opportunities'],
       ['nav.news', '/news'],

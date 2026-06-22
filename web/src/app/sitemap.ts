@@ -12,6 +12,7 @@ import {GUIDES} from '@/lib/guides';
 import {SCREEN_PRESETS} from '@/lib/presets';
 import {SIGNAL_SCREEN_PRESETS} from '@/lib/signalPresets';
 import {localTopicKeys} from '@/lib/topics';
+import {COMPARE_PAIRS, pairSlug} from '@/lib/compare';
 import {ZONES} from '@/lib/zones';
 import {popularTickers, quoteBearingTickers, STOCK_DIRECTORY_LETTERS} from '@/lib/pseo';
 
@@ -164,6 +165,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     {path: '/indicators', changeFrequency: 'monthly', priority: 0.6},
     {path: '/guide', changeFrequency: 'weekly', priority: 0.6},
     {path: '/stocks', changeFrequency: 'weekly', priority: 0.6},
+    {path: '/compare', changeFrequency: 'weekly', priority: 0.6},
     {path: '/announcements', changeFrequency: 'weekly', priority: 0.5},
     {path: '/contact', changeFrequency: 'yearly', priority: 0.3},
   ];
@@ -197,6 +199,12 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     path: `/zone/${z.key}`,
     changeFrequency: 'weekly',
     priority: 0.7,
+  }));
+  // Curated side-by-side comparisons (`/compare/{a}-vs-{b}`) — popular rivalries.
+  const comparePages: Page[] = COMPARE_PAIRS.map(([a, b]) => ({
+    path: `/compare/${pairSlug(a, b)}`,
+    changeFrequency: 'weekly',
+    priority: 0.5,
   }));
   const [tickers, memberSlugs, funds, indicators, topics] = await Promise.all([
     indexableTickers(),
@@ -236,6 +244,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     ...presetPages,
     ...signalPresetPages,
     ...zonePages,
+    ...comparePages,
     ...stockDirectoryPages,
     ...stockPages,
     ...memberPages,
