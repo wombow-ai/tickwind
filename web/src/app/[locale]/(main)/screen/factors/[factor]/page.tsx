@@ -7,6 +7,7 @@ import {SITE_URL, langAlternates} from '@/lib/config';
 import {isLocale, LOCALES} from '@/lib/locale';
 import {ogImageMeta} from '@/lib/og';
 import {FACTOR_PRESETS, factorByKey} from '@/lib/factors';
+import {FactorLeaderboard} from '@/components/FactorLeaderboard';
 
 // The factor population is rebuilt hourly (fundamentals barely move intraday); ISR re-fetches the
 // ranked leaderboard every 30 minutes so the page self-heals an empty/cold bake without a deploy.
@@ -142,50 +143,13 @@ export default async function FactorScreenRoute({
         <p className="mt-1.5 text-[13.5px] leading-relaxed text-slate-600 dark:text-slate-300">
           {desc}
         </p>
-        <p className="mt-1 text-[12px] text-slate-500 dark:text-slate-400">
-          {basis}
-          {population > 0 && (
-            <>
-              {' · '}
-              {zh
-                ? `相对 ${population} 只个股排名`
-                : `ranked across ${population} stocks`}
-            </>
-          )}
-        </p>
+        <p className="mt-1 text-[12px] text-slate-500 dark:text-slate-400">{basis}</p>
       </header>
 
-      {results.length > 0 ? (
-        <div className="tw-fade overflow-hidden rounded-2xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950">
-          <div className="flex items-center gap-3 border-b border-slate-200 px-4 py-2 text-[11px] font-semibold uppercase tracking-wide text-slate-400 dark:border-slate-800 dark:text-slate-500">
-            <span className="w-8 text-right tabular-nums">#</span>
-            <span className="w-24">{zh ? '代码' : 'Ticker'}</span>
-            <span className="flex-1">{zh ? '百分位' : 'Percentile'}</span>
-            <span className="w-12 text-right tabular-nums">{zh ? '分位' : 'Pct'}</span>
-          </div>
-          {results.map((r, i) => (
-            <Row key={r.ticker} r={r} rank={i + 1} last={i === results.length - 1} />
-          ))}
-        </div>
-      ) : (
-        <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-10 text-center dark:border-slate-800 dark:bg-slate-900">
-          <Layers size={22} className="mx-auto mb-2 text-slate-300 dark:text-slate-600" />
-          <p className="text-[14px] font-semibold text-slate-700 dark:text-slate-200">
-            {zh ? '排行榜正在生成' : 'Leaderboard is warming up'}
-          </p>
-          <p className="mt-1 text-[12.5px] text-slate-500 dark:text-slate-400">
-            {zh
-              ? '因子分布每小时刷新一次,稍后再来查看。'
-              : 'The factor distribution rebuilds hourly — check back shortly.'}
-          </p>
-          <Link
-            href="/screen"
-            className="mt-3 inline-block rounded-lg bg-indigo-600 px-3 py-1.5 text-[12.5px] font-semibold text-white transition hover:bg-indigo-700 dark:bg-indigo-500 dark:hover:bg-indigo-600"
-          >
-            {zh ? '打开完整筛选器 →' : 'Open the full screener →'}
-          </Link>
-        </div>
-      )}
+      {/* The leaderboard self-heals client-side (see FactorLeaderboard) — the SSR `results` seed the
+          crawlable rows + JSON-LD when the tunnel cooperates, but the browser re-fetch guarantees
+          users always see the live ranking even when the SSR fetch baked empty. */}
+      <FactorLeaderboard factor={p.key} initial={results} initialPopulation={population} zh={zh} />
 
       <p className="mt-4 text-center text-[11px] text-slate-400 dark:text-slate-500">
         {zh
@@ -219,37 +183,5 @@ export default async function FactorScreenRoute({
         </div>
       </section>
     </article>
-  );
-}
-
-/**
- * One ranked row → an internal link into the stock page, with a NEUTRAL percentile bar (no
- * green/red good-bad cue — that would read as a rating; the bar length IS the percentile).
- */
-function Row({r, rank, last}: {r: FactorRank; rank: number; last: boolean}) {
-  const pct = Math.max(0, Math.min(100, r.percentile));
-  return (
-    <Link
-      href={`/stock/${encodeURIComponent(r.ticker)}`}
-      className={`flex items-center gap-3 px-4 py-2.5 text-[13.5px] transition hover:bg-slate-50 dark:hover:bg-slate-900 ${
-        last ? '' : 'border-b border-slate-200 dark:border-slate-800'
-      }`}
-    >
-      <span className="w-8 text-right font-semibold tabular-nums text-slate-400 dark:text-slate-500">
-        {rank}
-      </span>
-      <span className="w-24 font-bold text-slate-900 dark:text-slate-100">{r.ticker}</span>
-      <span className="flex-1">
-        <span className="block h-2 w-full overflow-hidden rounded-full bg-slate-200 dark:bg-slate-800">
-          <span
-            className="block h-full rounded-full bg-indigo-500/70 dark:bg-indigo-400/70"
-            style={{width: `${pct}%`}}
-          />
-        </span>
-      </span>
-      <span className="w-12 text-right font-semibold tabular-nums text-slate-900 dark:text-slate-100">
-        {Math.round(pct)}
-      </span>
-    </Link>
   );
 }
