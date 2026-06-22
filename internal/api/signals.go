@@ -383,6 +383,51 @@ func (s *Server) getScorecard(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, scorecardResp{Ticker: ticker, AsOf: res.AsOf, PopulationAsOf: popAsOf, Scorecard: &sc})
 }
 
+// dividendResp is the wire shape of GET /v1/stocks/{ticker}/dividend: the ticker + its dividend
+// profile (nil for a non-payer or when nothing is computable).
+type dividendResp struct {
+	Ticker   string                   `json:"ticker"`
+	Dividend *indicators.DividendView `json:"dividend,omitempty"`
+}
+
+// getDividend serves a stock's DIVIDEND PROFILE (indicators.ComputeDividend): yield, payout ratio,
+// dividends-per-share, free-cash-flow coverage, and YoY dividend growth — the income-investor lens,
+// surfacing the SEC-filed dividend figures that otherwise sit buried among the ~160 indicators. Every
+// number is Go-computed (descriptive, NEVER a "dividend-safety grade" — the no-advice line), so it is
+// anti-hallucination-safe. 404 when the fundamentals source is unset or the ticker has no
+// fundamentals; 422 for a NON-PAYER (no dividend profile) or when nothing is computable. Free.
+func (s *Server) getDividend(w http.ResponseWriter, r *http.Request) {
+	if s.fundamentals == nil {
+		writeJSON(w, http.StatusNotFound, errBody("dividend data unavailable"))
+		return
+	}
+	ticker := strings.ToUpper(strings.TrimSpace(r.PathValue("ticker")))
+	if ticker == "" {
+		writeJSON(w, http.StatusNotFound, errBody("no ticker"))
+		return
+	}
+	f, err := s.fundamentals.Fundamentals(r.Context(), ticker)
+	if err != nil || !f.HasData() {
+		writeJSON(w, http.StatusNotFound, errBody("no fundamentals for "+ticker))
+		return
+	}
+	// Price (for the yield): the polled quote first, else an on-demand fetch (mirrors getFundamentals).
+	price := 0.0
+	if q, ok, _ := s.store.GetQuote(r.Context(), ticker); ok && q.Price > 0 {
+		price = q.Price
+	} else if s.bars != nil {
+		if oq, found, qerr := s.bars.LatestQuote(r.Context(), ticker); qerr == nil && found {
+			price = oq.Price
+		}
+	}
+	dv, ok := indicators.ComputeDividend(price, f)
+	if !ok || !dv.HasAny() {
+		writeJSON(w, http.StatusUnprocessableEntity, errBody("no dividend profile for "+ticker))
+		return
+	}
+	writeJSON(w, http.StatusOK, dividendResp{Ticker: ticker, Dividend: &dv})
+}
+
 // factorScreenResp is the wire shape of GET /v1/screen/factors. Population is how many tracked
 // stocks had a computable percentile for this factor (the leaderboard's denominator, before any
 // limit truncation); AsOf is when the ranking population was last rebuilt.

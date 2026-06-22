@@ -39,14 +39,15 @@ type Fundamentals struct {
 
 	// Additional figures for margin / leverage / cash-flow / YoY indicators.
 	// Each is 0 when the underlying concept is absent (best-effort).
-	GrossProfit       float64 `json:"gross_profit,omitempty"`        // latest-FY gross profit; us-gaap:GrossProfit, else Revenue − cost of revenue
-	TotalAssets       float64 `json:"total_assets,omitempty"`        // us-gaap:Assets (latest instant)
-	TotalLiabilities  float64 `json:"total_liabilities,omitempty"`   // us-gaap:Liabilities (latest instant), else TotalAssets − Equity
-	OperatingCashFlow float64 `json:"operating_cash_flow,omitempty"` // latest-FY cash from operations (can be <0)
-	CapEx             float64 `json:"capex,omitempty"`               // latest-FY capital expenditure, stored POSITIVE
-	DividendsPaid     float64 `json:"dividends_paid,omitempty"`      // latest-FY common dividends paid, stored POSITIVE; 0 for non-payers
-	RevenuePrior      float64 `json:"revenue_prior,omitempty"`       // prior-FY revenue (for YoY growth)
-	NetIncomePrior    float64 `json:"net_income_prior,omitempty"`    // prior-FY net income (for YoY growth)
+	GrossProfit        float64 `json:"gross_profit,omitempty"`         // latest-FY gross profit; us-gaap:GrossProfit, else Revenue − cost of revenue
+	TotalAssets        float64 `json:"total_assets,omitempty"`         // us-gaap:Assets (latest instant)
+	TotalLiabilities   float64 `json:"total_liabilities,omitempty"`    // us-gaap:Liabilities (latest instant), else TotalAssets − Equity
+	OperatingCashFlow  float64 `json:"operating_cash_flow,omitempty"`  // latest-FY cash from operations (can be <0)
+	CapEx              float64 `json:"capex,omitempty"`                // latest-FY capital expenditure, stored POSITIVE
+	DividendsPaid      float64 `json:"dividends_paid,omitempty"`       // latest-FY common dividends paid, stored POSITIVE; 0 for non-payers
+	DividendsPaidPrior float64 `json:"dividends_paid_prior,omitempty"` // prior-FY common dividends paid (for YoY dividend growth)
+	RevenuePrior       float64 `json:"revenue_prior,omitempty"`        // prior-FY revenue (for YoY growth)
+	NetIncomePrior     float64 `json:"net_income_prior,omitempty"`     // prior-FY net income (for YoY growth)
 
 	// --- Increment 2 (design §1.2 Groups 1/2/4): additional XBRL concepts that
 	// unlock the income-statement, current-balance-sheet, and debt/EV ratio
@@ -328,9 +329,14 @@ func extractFundamentals(resp factsResp) Fundamentals {
 	}
 
 	// Common dividends paid (annual flow) — stored positive; 0 for non-payers.
-	if p, ok := latestAnnual(pick(gaap, "USD",
-		"PaymentsOfDividendsCommonStock", "PaymentsOfDividends")); ok {
+	divPts := pick(gaap, "USD", "PaymentsOfDividendsCommonStock", "PaymentsOfDividends")
+	if p, ok := latestAnnual(divPts); ok {
 		f.DividendsPaid = abs(p.Val)
+		// Prior-FY dividends (same concept, end-date year − 1) for YoY dividend growth — matched
+		// to the period ending one year before the chosen current period (mirrors RevenuePrior).
+		if pp, ok := annualForEndYear(divPts, endYear(p)-1); ok {
+			f.DividendsPaidPrior = abs(pp.Val)
+		}
 	}
 
 	// --- Increment 2 (design §1.2 Groups 1/2/4) ---

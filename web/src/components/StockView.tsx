@@ -62,6 +62,7 @@ import {SeasonalityCard} from '@/components/SeasonalityCard';
 import {RelativeStrengthCard} from '@/components/RelativeStrengthCard';
 import {EarningsReactionCard} from '@/components/EarningsReactionCard';
 import {ScorecardCard} from '@/components/ScorecardCard';
+import {DividendCard} from '@/components/DividendCard';
 import {AISummaryCard} from '@/components/AISummaryCard';
 import {DeepResearchView} from '@/components/DeepResearchView';
 import {MovementCard} from '@/components/MovementCard';
@@ -670,6 +671,11 @@ export function StockView({ticker}: {ticker: string}) {
         {/* fundamentals: market cap / P/E / revenue / net income (SEC XBRL; hides for non-US) */}
         <div id="fundamentals" className="scroll-mt-20">
           <FundamentalsCard ticker={norm} />
+        </div>
+        {/* dividend profile: yield / payout / DPS / FCF coverage / YoY growth (SEC annual figures;
+            hides for non-payers) — the income-investor lens */}
+        <div id="dividends" className="scroll-mt-20">
+          <DividendCard ticker={norm} />
         </div>
         {/* AI digest: daily-cached bullets from news+social (hides when LLM off/empty) */}
         <AISummaryCard ticker={norm} onOpen={() => setTopTab('Research')} />

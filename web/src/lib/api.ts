@@ -2867,6 +2867,36 @@ export async function getEarningsReaction(
   }
 }
 
+/**
+ * A stock's dividend profile (Go-computed from SEC annual figures + the live price). Every field is
+ * descriptive — there is no "dividend-safety grade". Fields are absent when not computable; the whole
+ * object is null for a non-payer.
+ */
+export interface DividendView {
+  yield?: number; // %
+  payout_ratio?: number; // %
+  dps?: number; // $ per share
+  fcf_coverage?: number; // x (free cash flow / dividends)
+  yoy_growth?: number; // % YoY change in dividends paid
+  period?: string; // fiscal year of the annual figures
+}
+
+/**
+ * Fetches a ticker's dividend profile. Resolves to `null` on any 4xx/network error (a non-payer or no
+ * fundamentals) so the card hides gracefully. Public, no auth.
+ */
+export async function getDividend(ticker: string, signal?: AbortSignal): Promise<DividendView | null> {
+  try {
+    const r = await getJson<{ticker: string; dividend?: DividendView}>(
+      `/v1/stocks/${encodeURIComponent(normalizeTicker(ticker))}/dividend`,
+      signal,
+    );
+    return r.dividend ?? null;
+  } catch {
+    return null;
+  }
+}
+
 /** One factor's standing: a 0..100 percentile vs the tracked universe + how many sub-metrics fed it. */
 export interface FactorScore {
   percentile: number;
