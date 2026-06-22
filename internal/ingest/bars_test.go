@@ -5,11 +5,13 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/wombow-ai/tickwind/internal/alpaca"
+	"github.com/wombow-ai/tickwind/internal/store"
 )
 
 // TestDailyCandles_NegativeCache is the audit regression for the DoS-adjacent gap: a ticker whose
@@ -109,5 +111,51 @@ func TestLatestQuote_NoCandlesStaysEmpty(t *testing.T) {
 
 	if _, ok, err := bc.LatestQuote(context.Background(), "NADA"); err != nil || ok {
 		t.Fatalf("LatestQuote ok=%v err=%v; want ok=false, nil err (no real price → stay empty, never fabricate)", ok, err)
+	}
+}
+
+// TestDailyCandles_Coalesce is the audit regression for the candle-fetch storm: concurrent
+// DailyCandles for the SAME ticker (a burst of background scans) must collapse to ONE underlying
+// fetch (singleflight), then serve the rest from cache — so a broadened multi-scan set can't storm
+// the rate-limited Alpaca API.
+func TestDailyCandles_Coalesce(t *testing.T) {
+	var calls int32
+	bc := &BarCache{
+		ttl:       time.Minute,
+		candles:   map[string]candleEntry{},
+		candleInf: map[string]*candleCall{},
+		candleFetch: func(_ context.Context, _ string, _ int) ([]store.Candle, error) {
+			atomic.AddInt32(&calls, 1)
+			time.Sleep(40 * time.Millisecond) // hold the in-flight so concurrent callers join it
+			return []store.Candle{{Close: 1}}, nil
+		},
+	}
+	const n = 25
+	var wg sync.WaitGroup
+	errs := make([]error, n)
+	lens := make([]int, n)
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			cs, err := bc.DailyCandles(context.Background(), "AAPL")
+			errs[i], lens[i] = err, len(cs)
+		}(i)
+	}
+	wg.Wait()
+	if got := atomic.LoadInt32(&calls); got != 1 {
+		t.Fatalf("fetched %d times for one ticker, want 1 (coalesced)", got)
+	}
+	for i := 0; i < n; i++ {
+		if errs[i] != nil || lens[i] != 1 {
+			t.Fatalf("caller %d shared a bad result: err=%v len=%d", i, errs[i], lens[i])
+		}
+	}
+	// A later call hits the positive cache — no new fetch.
+	if _, err := bc.DailyCandles(context.Background(), "AAPL"); err != nil {
+		t.Fatalf("cached read: %v", err)
+	}
+	if got := atomic.LoadInt32(&calls); got != 1 {
+		t.Fatalf("cached read refetched: calls=%d, want 1", got)
 	}
 }

@@ -22,12 +22,25 @@ type BarCache struct {
 	client *alpaca.Client
 	limit  int
 	ttl    time.Duration
+	// candleFetch is the underlying daily-OHLC fetch (defaults to client.DailyOHLC; overridable in
+	// tests). DailyCandles coalesces concurrent calls for one ticker down to a single invocation.
+	candleFetch func(ctx context.Context, ticker string, days int) ([]store.Candle, error)
 
-	mu       sync.Mutex
-	entries  map[string]barEntry
-	candles  map[string]candleEntry
-	intraday map[string]candleEntry // key: ticker|resolution
-	quotes   map[string]quoteEntry
+	mu        sync.Mutex
+	entries   map[string]barEntry
+	candles   map[string]candleEntry
+	candleInf map[string]*candleCall // in-flight daily-candle fetches, for request coalescing
+	intraday  map[string]candleEntry // key: ticker|resolution
+	quotes    map[string]quoteEntry
+}
+
+// candleCall is one in-flight DailyCandles fetch that concurrent callers share (singleflight): the
+// first caller fetches, the rest wait on `done` and read the result — so a burst of background scans
+// requesting the SAME ticker collapses to ONE Alpaca call instead of storming the rate-limited API.
+type candleCall struct {
+	done    chan struct{}
+	candles []store.Candle
+	err     error
 }
 
 type barEntry struct {
@@ -63,15 +76,18 @@ const quoteTTL = 20 * time.Second
 // NewBarCache builds a cache fetching `limit` daily closes per ticker, holding
 // each series for ttl.
 func NewBarCache(client *alpaca.Client, limit int, ttl time.Duration) *BarCache {
-	return &BarCache{
-		client:   client,
-		limit:    limit,
-		ttl:      ttl,
-		entries:  make(map[string]barEntry),
-		candles:  make(map[string]candleEntry),
-		intraday: make(map[string]candleEntry),
-		quotes:   make(map[string]quoteEntry),
+	bc := &BarCache{
+		client:    client,
+		limit:     limit,
+		ttl:       ttl,
+		entries:   make(map[string]barEntry),
+		candles:   make(map[string]candleEntry),
+		candleInf: make(map[string]*candleCall),
+		intraday:  make(map[string]candleEntry),
+		quotes:    make(map[string]quoteEntry),
 	}
+	bc.candleFetch = client.DailyOHLC
+	return bc
 }
 
 // DailyBars returns the cached series for ticker, fetching and caching it when
@@ -98,31 +114,46 @@ func (b *BarCache) DailyBars(ctx context.Context, ticker string) ([]float64, err
 // DailyCandles returns the cached OHLC series for ticker (for the candlestick
 // chart), fetching ~candleDays of history when missing or stale.
 func (b *BarCache) DailyCandles(ctx context.Context, ticker string) ([]store.Candle, error) {
+	// One critical section decides cache-hit vs join-in-flight vs become-leader, so two callers can
+	// never both miss and both fetch the same ticker (the storm a broadened multi-scan set caused).
 	b.mu.Lock()
-	e, ok := b.candles[ticker]
-	b.mu.Unlock()
-	if ok {
-		if e.failed {
-			if time.Since(e.at) < candleNegTTL {
-				return nil, errCandleMissCached // recent failure — don't re-hit Alpaca
-			}
-		} else if time.Since(e.at) < b.ttl {
+	if e, ok := b.candles[ticker]; ok {
+		if e.failed && time.Since(e.at) < candleNegTTL {
+			b.mu.Unlock()
+			return nil, errCandleMissCached // recent failure — don't re-hit Alpaca
+		}
+		if !e.failed && time.Since(e.at) < b.ttl {
+			b.mu.Unlock()
 			return e.candles, nil
 		}
 	}
-
-	cs, err := b.client.DailyOHLC(ctx, ticker, candleDays)
-	if err != nil {
-		b.mu.Lock()
-		b.candles[ticker] = candleEntry{at: time.Now(), failed: true} // negative-cache the error
+	if call, ok := b.candleInf[ticker]; ok {
+		// A fetch for this ticker is already running — wait for it and share its result.
 		b.mu.Unlock()
-		return nil, err
+		select {
+		case <-call.done:
+			return call.candles, call.err
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
 	}
+	call := &candleCall{done: make(chan struct{})}
+	b.candleInf[ticker] = call
+	b.mu.Unlock()
+
+	cs, err := b.candleFetch(ctx, ticker, candleDays)
 
 	b.mu.Lock()
-	b.candles[ticker] = candleEntry{candles: cs, at: time.Now()}
+	if err != nil {
+		b.candles[ticker] = candleEntry{at: time.Now(), failed: true} // negative-cache the error
+	} else {
+		b.candles[ticker] = candleEntry{candles: cs, at: time.Now()}
+	}
+	delete(b.candleInf, ticker)
+	call.candles, call.err = cs, err
 	b.mu.Unlock()
-	return cs, nil
+	close(call.done) // wake any waiters (they read call.candles/err, set before this close)
+	return cs, err
 }
 
 // intradayCfg maps a chart resolution to the Alpaca timeframe + lookback window
