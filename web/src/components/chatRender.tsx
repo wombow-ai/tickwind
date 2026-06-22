@@ -8,6 +8,7 @@ import {KLineChart} from '@/components/KLineChart';
 import {SeasonalityCard} from '@/components/SeasonalityCard';
 import {RelativeStrengthCard} from '@/components/RelativeStrengthCard';
 import {EarningsReactionCard} from '@/components/EarningsReactionCard';
+import {ScorecardCard} from '@/components/ScorecardCard';
 import Link from '@/components/LocalLink';
 import {Markdown} from '@/components/Markdown';
 import {ChatPortfolioWidget} from '@/components/PortfolioWidgets';
@@ -144,6 +145,11 @@ function ChatWidget({widget, ticker, indicatorId, range, tr}: {widget: string; t
   // numbers never enter the model — the widget carries only the ticker).
   if (widget === 'earnings_reaction') {
     return <EarningsReactionCard ticker={ticker} />;
+  }
+  // scorecard: value/growth/quality/momentum factor PERCENTILES vs the tracked universe
+  // (Go-computed; descriptive, not a rating — the widget carries only the ticker).
+  if (widget === 'scorecard') {
+    return <ScorecardCard ticker={ticker} />;
   }
   if (widget === 'fundamentals_table' || widget === 'valuation_table') {
     return <FundamentalsCard ticker={ticker} />;
