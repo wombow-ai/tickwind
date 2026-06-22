@@ -339,6 +339,50 @@ func (s *Server) getEarningsReaction(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, earningsReactionResp{Ticker: ticker, EarningsReaction: &er})
 }
 
+// scorecardResp is the wire shape of GET /v1/stocks/{ticker}/scorecard: the ticker + its four
+// factor PERCENTILES vs the tracked universe (nil when nothing is computable). PopulationAsOf is
+// when the ranking distribution was last rebuilt (so a stale ranking is disclosed, not hidden).
+type scorecardResp struct {
+	Ticker         string                `json:"ticker"`
+	AsOf           string                `json:"as_of,omitempty"`
+	PopulationAsOf string                `json:"population_as_of,omitempty"`
+	Scorecard      *indicators.Scorecard `json:"scorecard,omitempty"`
+}
+
+// getScorecard serves a ticker's MULTI-FACTOR SCORECARD (indicators.ComputeScorecard): where it
+// ranks — as a PERCENTILE vs Tickwind's tracked universe — on Value / Growth / Quality / Momentum.
+// The four factors are independent and DESCRIPTIVE; there is deliberately no blended composite
+// "score" and no rating/recommendation (the no-advice line). Every number is Go-computed from the
+// public quote + SEC-XBRL fundamentals, so it is anti-hallucination-safe. The target's factor
+// metrics are computed on-demand and ranked against the background-cached population. 404 when the
+// compute/population source is unset; 422 when neither the population nor the ticker yields a
+// computable factor (insufficient — e.g. an ETF with no fundamentals, or before the first scan).
+// Currently free.
+func (s *Server) getScorecard(w http.ResponseWriter, r *http.Request) {
+	if s.indicatorCalc == nil || s.scorecard == nil {
+		writeJSON(w, http.StatusNotFound, errBody("scorecard unavailable"))
+		return
+	}
+	ticker := strings.ToUpper(strings.TrimSpace(r.PathValue("ticker")))
+	if ticker == "" {
+		writeJSON(w, http.StatusNotFound, errBody("no ticker"))
+		return
+	}
+	population, popAt := s.scorecard.Population()
+	res := s.indicatorCalc.StockIndicators(r.Context(), ticker)
+	target := indicators.ExtractFactorMetrics(res)
+	sc := indicators.ComputeScorecard(target, population)
+	if !sc.HasAny() {
+		writeJSON(w, http.StatusUnprocessableEntity, errBody("insufficient factor data for "+ticker))
+		return
+	}
+	popAsOf := ""
+	if !popAt.IsZero() {
+		popAsOf = popAt.UTC().Format("2006-01-02")
+	}
+	writeJSON(w, http.StatusOK, scorecardResp{Ticker: ticker, AsOf: res.AsOf, PopulationAsOf: popAsOf, Scorecard: &sc})
+}
+
 // SignalScanSource is the whole-universe signals SCREENER (a background cache that
 // precomputes ticker→signals so the endpoint never recomputes on the request path).
 type SignalScanSource interface {

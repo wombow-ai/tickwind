@@ -624,6 +624,15 @@ func main() {
 		go signalScan.Run(ctx)
 		apiServer.SetSignalScan(signalScan)
 
+		// Multi-factor scorecard population: a background cache computes the factor metrics
+		// (value/growth/quality/momentum inputs) over the SAME bounded tracked set every 60 min
+		// (full indicators incl. fundamentals, which are FundamentalsCache-cached, so steady-state
+		// is arithmetic), so GET /v1/stocks/{t}/scorecard can rank a stock against the distribution
+		// off the request path. Descriptive percentiles only — never a rating (the no-advice line).
+		scorecardScan := ingest.NewScorecardCache(computer, ingestTickers, log)
+		go scorecardScan.Run(ctx)
+		apiServer.SetScorecard(scorecardScan)
+
 		// Alert evaluator: checks active user alerts against the latest price AND the
 		// deterministic signals (golden/death cross, RSI extremes, …) from signalScan.
 		// Constructed here (not in the price block) so it can read the signals cache.

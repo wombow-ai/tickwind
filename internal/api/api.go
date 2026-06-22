@@ -343,6 +343,14 @@ type EarningsDatesSource interface {
 	EarningsDates(ctx context.Context, ticker string) ([]time.Time, error)
 }
 
+// ScorecardSource provides the factor-metric POPULATION (the percentile-ranking distribution over
+// the tracked universe) for the multi-factor scorecard. The /scorecard handler computes the target
+// ticker's own factor metrics on-demand and ranks them against this population. nil-safe — a nil
+// source makes /v1/stocks/{ticker}/scorecard 404. Satisfied by *ingest.ScorecardCache.
+type ScorecardSource interface {
+	Population() ([]indicators.FactorMetrics, time.Time)
+}
+
 // InsiderActivitySource produces a company's recent insider-activity timeline —
 // open-market Form 4 buys AND sells, newest first, each with the Go-owned facts
 // (shares/price/value/date, insider name + role, buy/sell, the best-effort
@@ -393,6 +401,7 @@ type Server struct {
 	movementCalc  MovementSource         // injected post-New via SetMovement (move-explainer)
 	materialCalc  MaterialEventsSource   // injected post-New via SetMaterialEvents (8-K material events + AI summary)
 	earningsDates EarningsDatesSource    // injected post-New via SetEarningsDates (8-K 2.02 dates for earnings-reaction)
+	scorecard     ScorecardSource        // injected post-New via SetScorecard (factor-percentile population)
 	billing       *billing.Service       // injected post-New via SetBilling (Stripe; nil/disabled until keys are set)
 	insiderCalc   InsiderActivitySource  // injected post-New via SetInsiderActivity (Form 4 buy/sell timeline; no LLM)
 	admins        map[string]bool        // user UUIDs and/or emails (lowercased) allowed to delete any comment
@@ -633,6 +642,7 @@ func New(st store.Store, hub QuoteStream, enricher enrich.Enricher, verifier *au
 	mux.HandleFunc("GET /v1/stocks/{ticker}/seasonality", s.getSeasonality)
 	mux.HandleFunc("GET /v1/stocks/{ticker}/relative-strength", s.getRelativeStrength)
 	mux.HandleFunc("GET /v1/stocks/{ticker}/earnings-reaction", s.getEarningsReaction)
+	mux.HandleFunc("GET /v1/stocks/{ticker}/scorecard", s.getScorecard)
 	mux.HandleFunc("GET /v1/stocks/{ticker}/backtest", s.getBacktest)
 	mux.HandleFunc("GET /v1/stocks/{ticker}/research", s.getResearch)
 	mux.HandleFunc("POST /v1/stocks/{ticker}/chat", s.postChat)
@@ -3439,6 +3449,10 @@ func (s *Server) SetMaterialEvents(src MaterialEventsSource) { s.materialCalc = 
 // SetEarningsDates injects the earnings-dates source (8-K item 2.02 filing dates) after New —
 // the dated anchors for the earnings-reaction statistic. Keeps it out of the New() signature.
 func (s *Server) SetEarningsDates(src EarningsDatesSource) { s.earningsDates = src }
+
+// SetScorecard injects the factor-percentile population source after New (the multi-factor
+// scorecard ranks a ticker against it). Keeps it out of the New() signature.
+func (s *Server) SetScorecard(src ScorecardSource) { s.scorecard = src }
 
 // materialEventsDailyCap bounds material-events LLM-summary REPORTS per day across
 // ALL tickers — a hard token-budget backstop. The cap gates the LLM-summary path
