@@ -329,6 +329,37 @@ func TestAnswerSeasonalityWidget(t *testing.T) {
 	}
 }
 
+func TestAnswerRelativeStrengthWidget(t *testing.T) {
+	llm := &scriptedLLM{enabled: true, replies: []reply{
+		{calls: []enrich.ChatToolCall{{ID: "c1", Name: "surface_widget", Arguments: `{"type":"relative_strength"}`}}},
+		{content: "Here is how AAPL has done versus the market."},
+	}}
+	svc := NewService(llm, fakeFacts{sampleSheet()}, nil, "")
+	ans, err := svc.Answer(context.Background(), "u", "AAPL", "en", nil, "is AAPL beating the market", true)
+	if err != nil {
+		t.Fatalf("Answer: %v", err)
+	}
+	var w *Block
+	for i := range ans.Blocks {
+		if ans.Blocks[i].Kind == "widget" {
+			w = &ans.Blocks[i]
+		}
+	}
+	if w == nil || w.Widget != "relative_strength" || w.Params["ticker"] != "AAPL" {
+		t.Fatalf("relative_strength widget wrong: %+v", ans.Blocks)
+	}
+	// Anti-hallucination: the tool result is a confirmation only — no return numbers.
+	tool := ""
+	for _, m := range llm.gotMessages[1] {
+		if m.Role == "tool" {
+			tool = m.Content
+		}
+	}
+	if tool != "rendered: relative_strength AAPL " {
+		t.Fatalf("widget tool result leaked data / wrong: %q", tool)
+	}
+}
+
 func TestAnswerIndicatorHistoryRejectsUnknownIndicator(t *testing.T) {
 	llm := &scriptedLLM{enabled: true, replies: []reply{
 		{calls: []enrich.ChatToolCall{{ID: "c1", Name: "surface_widget", Arguments: `{"type":"indicator_history","indicator":"made_up"}`}}},
