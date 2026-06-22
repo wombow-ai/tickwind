@@ -360,6 +360,48 @@ func TestAnswerRelativeStrengthWidget(t *testing.T) {
 	}
 }
 
+func TestDedupeWidgets(t *testing.T) {
+	wg := func(typ, tk string) Block {
+		return Block{Kind: "widget", Widget: typ, Params: map[string]string{"ticker": tk}}
+	}
+	names := func(bs []Block) []string {
+		out := make([]string, len(bs))
+		for i, b := range bs {
+			out[i] = b.Widget
+		}
+		return out
+	}
+	eq := func(a, b []string) bool {
+		if len(a) != len(b) {
+			return false
+		}
+		for i := range a {
+			if a[i] != b[i] {
+				return false
+			}
+		}
+		return true
+	}
+	tests := []struct {
+		name string
+		in   []Block
+		want []string
+	}{
+		{"drop redundant chart beside specific", []Block{wg("kline", "AAPL"), wg("relative_strength", "AAPL")}, []string{"relative_strength"}},
+		{"indicators chart also dropped", []Block{wg("indicators", "AAPL"), wg("earnings_reaction", "AAPL")}, []string{"earnings_reaction"}},
+		{"lone chart kept", []Block{wg("kline", "AAPL")}, []string{"kline"}},
+		{"two specifics both kept", []Block{wg("relative_strength", "AAPL"), wg("seasonality", "AAPL")}, []string{"relative_strength", "seasonality"}},
+		{"exact dup collapsed", []Block{wg("relative_strength", "AAPL"), wg("relative_strength", "AAPL")}, []string{"relative_strength"}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := names(dedupeWidgets(tc.in)); !eq(got, tc.want) {
+				t.Fatalf("dedupeWidgets = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestAnswerEarningsReactionWidget(t *testing.T) {
 	llm := &scriptedLLM{enabled: true, replies: []reply{
 		{calls: []enrich.ChatToolCall{{ID: "c1", Name: "surface_widget", Arguments: `{"type":"earnings_reaction"}`}}},

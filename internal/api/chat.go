@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/wombow-ai/tickwind/internal/auth"
@@ -331,15 +332,57 @@ func (s *Server) chatTurnStream(w http.ResponseWriter, r *http.Request, u auth.U
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
 	w.Header().Set("X-Accel-Buffering", "no") // disable proxy buffering so tokens flush live
+	var sendMu sync.Mutex                     // serializes the heartbeat goroutine vs. token/done writes
+	writeRaw := func(s string) {
+		sendMu.Lock()
+		_, _ = w.Write([]byte(s))
+		if flusher != nil {
+			flusher.Flush()
+		}
+		sendMu.Unlock()
+	}
 	send := func(payload any) {
 		b, _ := json.Marshal(payload)
+		sendMu.Lock()
 		_, _ = w.Write([]byte("data: "))
 		_, _ = w.Write(b)
 		_, _ = w.Write([]byte("\n\n"))
 		if flusher != nil {
 			flusher.Flush()
 		}
+		sendMu.Unlock()
 	}
+	// Flush headers + a first byte IMMEDIATELY, then heartbeat every 2s, so the Cloudflare tunnel
+	// never sees a >~3s gap with no bytes. The chat's tool loop produces no token for several
+	// seconds (slower the longer the conversation history), and the tunnel was cutting that idle
+	// connection → the client saw `ERR_CONNECTION_CLOSED` ("Something went wrong"). SSE comments
+	// (lines starting with ":") are ignored by the client parser, so they keep-alive harmlessly.
+	writeRaw(": connected\n\n")
+	hbStop := make(chan struct{})
+	hbDone := make(chan struct{})
+	go func() {
+		defer close(hbDone)
+		t := time.NewTicker(2 * time.Second)
+		defer t.Stop()
+		for {
+			select {
+			case <-hbStop:
+				return
+			case <-t.C:
+				writeRaw(": ping\n\n")
+			}
+		}
+	}()
+	hbStopped := false
+	stopHeartbeat := func() { // idempotent; blocks until the goroutine has fully exited (no write-after-return)
+		if hbStopped {
+			return
+		}
+		hbStopped = true
+		close(hbStop)
+		<-hbDone
+	}
+	defer stopHeartbeat()
 
 	note, blocked, pro, period, usedTokens, limit := s.chatQuotaGate(r.Context(), u.ID, lang)
 	if blocked {
@@ -374,6 +417,7 @@ func (s *Server) chatTurnStream(w http.ResponseWriter, r *http.Request, u auth.U
 	ans, err := s.chatSvc.AnswerStream(ctx, u.ID, anchorTicker, lang, llmHist, msg, s.chatPersonalDataAllowed(ctx, u.ID), func(tok string) {
 		send(map[string]any{"type": "token", "text": tok})
 	})
+	stopHeartbeat() // answer ready (or errored) — no more keep-alive pings
 	if err != nil {
 		s.log.Debug("chat stream failed", "conv", convID, "err", err)
 		send(map[string]any{"type": "error"})
