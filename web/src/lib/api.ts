@@ -944,6 +944,11 @@ export interface Earning {
   eps_actual?: number;
   revenue_estimate?: number;
   revenue_actual?: number;
+  /**
+   * How the stock has historically moved around earnings (Go-computed aggregate), present only for
+   * tracked tickers with enough history. Descriptive — never a forecast.
+   */
+  reaction?: {avg_abs_move: number; up_rate: number; samples: number};
 }
 
 /** Envelope returned by `GET /v1/earnings`. */

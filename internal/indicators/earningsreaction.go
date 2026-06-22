@@ -39,6 +39,20 @@ type EarningsReaction struct {
 	Samples    int             `json:"samples"`      // number of events with a measurable reaction (>= minEarningsSamples)
 }
 
+// ReactionSummary is the compact, calendar-facing slice of an earnings reaction: the typical move
+// magnitude, up-rate, and sample count — WITHOUT the full per-event series (the earnings-calendar
+// badge needs only the aggregate, and a slim payload). Every number is Go-computed.
+type ReactionSummary struct {
+	AvgAbsMove float64 `json:"avg_abs_move"`
+	UpRate     float64 `json:"up_rate"`
+	Samples    int     `json:"samples"`
+}
+
+// Summary reduces a full EarningsReaction to its calendar-facing aggregate.
+func (e EarningsReaction) Summary() ReactionSummary {
+	return ReactionSummary{AvgAbsMove: e.AvgAbsMove, UpRate: e.UpRate, Samples: e.Samples}
+}
+
 // ComputeEarningsReaction measures the price reaction around each earnings date. To be robust to
 // the announcement's timing (before-open vs after-close, which a filing date alone can't
 // disambiguate), the reaction spans the announcement: the close of the last trading day STRICTLY

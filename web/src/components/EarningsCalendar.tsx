@@ -10,6 +10,32 @@ import {cx, tok} from '@/lib/ui';
 import {EmptyState, ErrorState, FeedSkeleton} from '@/components/ui/states';
 
 type Status = 'loading' | 'ready' | 'error';
+type Tokens = ReturnType<typeof tok>;
+
+/**
+ * A compact, NEUTRAL "typical earnings move" chip for one calendar row: the stock's Go-computed
+ * historical ±avg-magnitude move around past earnings, with the up-rate + sample count in the
+ * tooltip. The data rides in the calendar payload (the backend joins a cached aggregate for tracked
+ * tickers — no per-row fetch), so it renders straight from the row. It is a disclosed HISTORICAL
+ * statistic, never a forecast — and the magnitude carries NO green/red cue (direction isn't implied).
+ * Renders nothing for rows without a reaction (untracked / too little history → insufficient).
+ */
+function ReactionBadge({reaction, t, tr}: {reaction: Earning['reaction']; t: Tokens; tr: (k: string) => string}) {
+  if (!reaction || reaction.samples <= 0) return null;
+  const tip = tr('er.calTip')
+    .replace('{move}', `±${reaction.avg_abs_move.toFixed(1)}%`)
+    .replace('{up}', `${Math.round(reaction.up_rate * 100)}%`)
+    .replace('{n}', String(reaction.samples));
+  return (
+    <span
+      title={tip}
+      aria-label={tip}
+      className={cx('rounded-md px-1.5 py-0.5 text-[10.5px] font-semibold tabular-nums', t.chip, t.chipText)}
+    >
+      ±{reaction.avg_abs_move.toFixed(1)}%
+    </span>
+  );
+}
 
 // Finnhub reporting-time codes → i18n keys (reused from the per-stock chip).
 const HOUR_KEY: Record<string, string> = {
@@ -120,6 +146,7 @@ export function EarningsCalendar() {
                         </span>
                       )}
                       <span className="ml-auto flex items-center gap-3 text-[12px] tabular-nums">
+                        <ReactionBadge reaction={e.reaction} t={t} tr={tr} />
                         {typeof e.eps_estimate === 'number' && (
                           <span className={t.faint}>
                             {tr('earnings.est')} <span className={cx('font-semibold', t.sub)}>${e.eps_estimate.toFixed(2)}</span>

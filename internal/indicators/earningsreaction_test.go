@@ -107,3 +107,17 @@ func TestCandleStrictlyBracket(t *testing.T) {
 		t.Fatalf("bracket dates: before %s after %s, want 2024-01-04 / 2024-01-06", before.Time.Format(dateOnly), after.Time.Format(dateOnly))
 	}
 }
+
+func TestEarningsReactionSummary(t *testing.T) {
+	er := EarningsReaction{
+		Events:     []EarningsEvent{{}, {}},
+		AvgMove:    -0.5,
+		AvgAbsMove: 4.2,
+		UpRate:     0.55,
+		Samples:    9,
+	}
+	s := er.Summary()
+	if s.AvgAbsMove != 4.2 || s.UpRate != 0.55 || s.Samples != 9 {
+		t.Fatalf("summary = %+v, want {4.2, 0.55, 9}", s)
+	}
+}

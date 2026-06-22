@@ -343,6 +343,14 @@ type EarningsDatesSource interface {
 	EarningsDates(ctx context.Context, ticker string) ([]time.Time, error)
 }
 
+// EarningsReactionSource provides cached earnings-reaction AGGREGATES for the tracked set, so the
+// earnings calendar can badge how a stock has historically moved around its reports without a
+// per-row compute. nil-safe — when unset, calendar rows simply carry no reaction. Satisfied by
+// *ingest.EarningsReactionCache.
+type EarningsReactionSource interface {
+	Reaction(ticker string) (indicators.ReactionSummary, bool)
+}
+
 // ScorecardSource provides the factor-metric POPULATION (the percentile-ranking distribution over
 // the tracked universe) for the multi-factor scorecard. The /scorecard handler computes the target
 // ticker's own factor metrics on-demand and ranks them against this population. nil-safe — a nil
@@ -368,47 +376,50 @@ type InsiderActivitySource interface {
 }
 
 type Server struct {
-	store         store.Store
-	hub           QuoteStream
-	clip          *clip.Fetcher
-	enrich        enrich.Enricher
-	auth          *auth.Verifier
-	bars          BarSource
-	topics        TopicSource
-	opps          OpportunitySource
-	universe      UniverseSource
-	gurus         GuruSource
-	ingestor      TickerIngestor
-	symbols       SymbolSearcher
-	events        EventSource
-	fundamentals  FundamentalsSource
-	earnings      EarningsSource
-	congress      CongressSource
-	institutional InstitutionalSource
-	live          LiveSubscriber
-	indices       IndicesSource
-	short         ShortSource
-	briefing      BriefingSource
-	options       OptionsSource
-	thirteenf     ThirteenFSource
-	shortVolume   ShortVolumeSource      // injected post-New via SetShortVolume (avoids growing the New signature)
-	sentiment     SentimentSource        // injected post-New via SetSentiment
-	rateCut       RateCutSource          // injected post-New via SetRateCut
-	macro         MacroSource            // injected post-New via SetMacro (Treasury yield curve)
-	crypto        CryptoSource           // injected post-New via SetCrypto (crypto Fear & Greed)
-	congressTx    CongressTxSource       // injected post-New via SetCongressTx
-	ipo           IPOSource              // injected post-New via SetIPO
-	indicators    IndicatorSource        // injected post-New via SetIndicators (static catalog)
-	indicatorCalc IndicatorComputeSource // injected post-New via SetIndicatorCompute (per-stock compute)
-	researchCalc  ResearchSource         // injected post-New via SetResearch (deep-research report)
-	movementCalc  MovementSource         // injected post-New via SetMovement (move-explainer)
-	materialCalc  MaterialEventsSource   // injected post-New via SetMaterialEvents (8-K material events + AI summary)
-	earningsDates EarningsDatesSource    // injected post-New via SetEarningsDates (8-K 2.02 dates for earnings-reaction)
-	scorecard     ScorecardSource        // injected post-New via SetScorecard (factor-percentile population)
-	billing       *billing.Service       // injected post-New via SetBilling (Stripe; nil/disabled until keys are set)
-	insiderCalc   InsiderActivitySource  // injected post-New via SetInsiderActivity (Form 4 buy/sell timeline; no LLM)
-	admins        map[string]bool        // user UUIDs and/or emails (lowercased) allowed to delete any comment
-	commentRL     *rateLimiter           // per-user comment-post throttle
+	store        store.Store
+	hub          QuoteStream
+	clip         *clip.Fetcher
+	enrich       enrich.Enricher
+	auth         *auth.Verifier
+	bars         BarSource
+	topics       TopicSource
+	opps         OpportunitySource
+	universe     UniverseSource
+	gurus        GuruSource
+	ingestor     TickerIngestor
+	symbols      SymbolSearcher
+	events       EventSource
+	fundamentals FundamentalsSource
+	earnings     EarningsSource
+	// earningsReactions badges calendar rows with how the stock has historically moved around
+	// earnings; injected post-New via SetEarningsReactions. nil → rows carry no reaction.
+	earningsReactions EarningsReactionSource
+	congress          CongressSource
+	institutional     InstitutionalSource
+	live              LiveSubscriber
+	indices           IndicesSource
+	short             ShortSource
+	briefing          BriefingSource
+	options           OptionsSource
+	thirteenf         ThirteenFSource
+	shortVolume       ShortVolumeSource      // injected post-New via SetShortVolume (avoids growing the New signature)
+	sentiment         SentimentSource        // injected post-New via SetSentiment
+	rateCut           RateCutSource          // injected post-New via SetRateCut
+	macro             MacroSource            // injected post-New via SetMacro (Treasury yield curve)
+	crypto            CryptoSource           // injected post-New via SetCrypto (crypto Fear & Greed)
+	congressTx        CongressTxSource       // injected post-New via SetCongressTx
+	ipo               IPOSource              // injected post-New via SetIPO
+	indicators        IndicatorSource        // injected post-New via SetIndicators (static catalog)
+	indicatorCalc     IndicatorComputeSource // injected post-New via SetIndicatorCompute (per-stock compute)
+	researchCalc      ResearchSource         // injected post-New via SetResearch (deep-research report)
+	movementCalc      MovementSource         // injected post-New via SetMovement (move-explainer)
+	materialCalc      MaterialEventsSource   // injected post-New via SetMaterialEvents (8-K material events + AI summary)
+	earningsDates     EarningsDatesSource    // injected post-New via SetEarningsDates (8-K 2.02 dates for earnings-reaction)
+	scorecard         ScorecardSource        // injected post-New via SetScorecard (factor-percentile population)
+	billing           *billing.Service       // injected post-New via SetBilling (Stripe; nil/disabled until keys are set)
+	insiderCalc       InsiderActivitySource  // injected post-New via SetInsiderActivity (Form 4 buy/sell timeline; no LLM)
+	admins            map[string]bool        // user UUIDs and/or emails (lowercased) allowed to delete any comment
+	commentRL         *rateLimiter           // per-user comment-post throttle
 	// AI digest cache: one LLM generation per (ticker, ET day), then served from
 	// memory — token spend stays bounded no matter the traffic. Guarded by sumMu;
 	// sumInflight dedupes concurrent first requests; sumDay* enforce a global
@@ -2211,7 +2222,31 @@ func (s *Server) getEarnings(w http.ResponseWriter, r *http.Request) {
 			earnings = got
 		}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"count": len(earnings), "earnings": earnings})
+	writeJSON(w, http.StatusOK, map[string]any{"count": len(earnings), "earnings": s.withReactions(earnings)})
+}
+
+// earningRow is one earnings-calendar row enriched with the stock's cached earnings-reaction
+// aggregate (present only for tracked tickers with enough history). store.Earning is embedded, so
+// all its JSON fields are promoted; Reaction is omitted when absent.
+type earningRow struct {
+	store.Earning
+	Reaction *indicators.ReactionSummary `json:"reaction,omitempty"`
+}
+
+// withReactions attaches the cached earnings-reaction summary to each calendar row whose ticker is
+// in the tracked-reaction cache (no per-row compute). A no-op shape when the source is unset.
+func (s *Server) withReactions(earnings []store.Earning) []earningRow {
+	rows := make([]earningRow, len(earnings))
+	for i, e := range earnings {
+		rows[i] = earningRow{Earning: e}
+		if s.earningsReactions != nil {
+			if rs, ok := s.earningsReactions.Reaction(strings.ToUpper(e.Ticker)); ok && rs.Samples > 0 {
+				summary := rs
+				rows[i].Reaction = &summary
+			}
+		}
+	}
+	return rows
 }
 
 // getStockEarnings returns the recent/upcoming earnings rows for one ticker
@@ -3457,6 +3492,10 @@ func (s *Server) SetEarningsDates(src EarningsDatesSource) { s.earningsDates = s
 // SetScorecard injects the factor-percentile population source after New (the multi-factor
 // scorecard ranks a ticker against it). Keeps it out of the New() signature.
 func (s *Server) SetScorecard(src ScorecardSource) { s.scorecard = src }
+
+// SetEarningsReactions injects the cached earnings-reaction aggregates after New (the earnings
+// calendar badges each tracked row with them). Keeps it out of the New() signature.
+func (s *Server) SetEarningsReactions(src EarningsReactionSource) { s.earningsReactions = src }
 
 // materialEventsDailyCap bounds material-events LLM-summary REPORTS per day across
 // ALL tickers — a hard token-budget backstop. The cap gates the LLM-summary path

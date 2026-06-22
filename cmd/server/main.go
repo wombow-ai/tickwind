@@ -637,6 +637,14 @@ func main() {
 		go scorecardScan.Run(ctx)
 		apiServer.SetScorecard(scorecardScan)
 
+		// Earnings-reaction cache: precompute how each TRACKED stock has historically moved around
+		// its earnings (SEC 8-K 2.02 dates + daily candles), so the market-wide earnings calendar
+		// can badge recognizable rows without a per-row fetch. Refreshes every 12h — a reaction only
+		// changes when a new report lands.
+		earningsReactionCache := ingest.NewEarningsReactionCache(bars, edgarClient, ingestTickers, log)
+		go earningsReactionCache.Run(ctx)
+		apiServer.SetEarningsReactions(earningsReactionCache)
+
 		// Alert evaluator: checks active user alerts against the latest price AND the
 		// deterministic signals (golden/death cross, RSI extremes, …) from signalScan.
 		// Constructed here (not in the price block) so it can read the signals cache.
