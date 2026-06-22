@@ -5,6 +5,7 @@ import {useState} from 'react';
 import {FundamentalsCard} from '@/components/FundamentalsCard';
 import {IndicatorHistoryChart} from '@/components/IndicatorHistoryChart';
 import {KLineChart} from '@/components/KLineChart';
+import {SeasonalityCard} from '@/components/SeasonalityCard';
 import Link from '@/components/LocalLink';
 import {Markdown} from '@/components/Markdown';
 import {ChatPortfolioWidget} from '@/components/PortfolioWidgets';
@@ -127,6 +128,10 @@ function ChatWidget({widget, ticker, indicatorId, range, tr}: {widget: string; t
   if (widget === 'indicator_history') {
     if (!indicatorId) return null;
     return <IndicatorHistoryChart ticker={ticker} id={indicatorId} range={range} />;
+  }
+  // seasonality: the month-of-year return card (Go-computed; numbers never enter the model).
+  if (widget === 'seasonality') {
+    return <SeasonalityCard ticker={ticker} />;
   }
   if (widget === 'fundamentals_table' || widget === 'valuation_table') {
     return <FundamentalsCard ticker={ticker} />;
