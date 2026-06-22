@@ -10,7 +10,6 @@ import {cx, tok} from '@/lib/ui';
 type Tokens = ReturnType<typeof tok>;
 type Status = 'loading' | 'ready' | 'hidden';
 
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const TRACK = 60; // px half-height for the tallest bar each side of the zero line
 
 /**
@@ -75,6 +74,10 @@ function MonthBars({months, dark, t, tr}: {months: SeasonStat[]; dark: boolean; 
   const maxAbs = Math.max(0.01, ...months.map(m => Math.abs(m.avg_return)));
   const up = dark ? 'bg-emerald-400' : 'bg-emerald-500';
   const down = dark ? 'bg-rose-400' : 'bg-rose-500';
+  // Localized month labels: full (tooltip) + compact (axis). EN axis = first letters (J,F,…),
+  // zh axis = numbers (1..12) — taking [0] of a zh label would collapse 10/11/12月 all to "1".
+  const monthFull = tr('season.months').split(',');
+  const monthAxis = tr('season.monthAxis').split(',');
 
   return (
     <div className="flex items-stretch gap-1">
@@ -84,11 +87,11 @@ function MonthBars({months, dark, t, tr}: {months: SeasonStat[]; dark: boolean; 
         const barH = s ? Math.round((Math.abs(avg) / maxAbs) * TRACK) : 0;
         const pos = avg >= 0;
         const title = s
-          ? `${MONTHS[m - 1]}: ${tr('season.tip')
+          ? `${monthFull[m - 1]}: ${tr('season.tip')
               .replace('{avg}', `${avg > 0 ? '+' : ''}${avg.toFixed(2)}%`)
               .replace('{win}', `${Math.round(s.win_rate * 100)}%`)
               .replace('{n}', String(s.years))}`
-          : MONTHS[m - 1];
+          : monthFull[m - 1];
         return (
           <div key={m} className="flex flex-1 flex-col items-center" title={title}>
             {/* positive half (grows up from the zero line) */}
@@ -100,7 +103,7 @@ function MonthBars({months, dark, t, tr}: {months: SeasonStat[]; dark: boolean; 
             <div className="flex w-full items-start justify-center" style={{height: TRACK}}>
               {s && !pos && <div className={cx('w-2.5 rounded-b', down)} style={{height: barH}} />}
             </div>
-            <span className={cx('mt-1 text-[9.5px] tabular-nums', t.faint)}>{MONTHS[m - 1][0]}</span>
+            <span className={cx('mt-1 text-[9.5px] tabular-nums', t.faint)}>{monthAxis[m - 1]}</span>
           </div>
         );
       })}
