@@ -7,6 +7,7 @@ import {IndicatorHistoryChart} from '@/components/IndicatorHistoryChart';
 import {KLineChart} from '@/components/KLineChart';
 import {SeasonalityCard} from '@/components/SeasonalityCard';
 import {RelativeStrengthCard} from '@/components/RelativeStrengthCard';
+import {EarningsReactionCard} from '@/components/EarningsReactionCard';
 import Link from '@/components/LocalLink';
 import {Markdown} from '@/components/Markdown';
 import {ChatPortfolioWidget} from '@/components/PortfolioWidgets';
@@ -138,6 +139,11 @@ function ChatWidget({widget, ticker, indicatorId, range, tr}: {widget: string; t
   // enter the model — the widget carries only the ticker).
   if (widget === 'relative_strength') {
     return <RelativeStrengthCard ticker={ticker} />;
+  }
+  // earnings_reaction: how the stock has historically moved around past earnings (Go-computed;
+  // numbers never enter the model — the widget carries only the ticker).
+  if (widget === 'earnings_reaction') {
+    return <EarningsReactionCard ticker={ticker} />;
   }
   if (widget === 'fundamentals_table' || widget === 'valuation_table') {
     return <FundamentalsCard ticker={ticker} />;
