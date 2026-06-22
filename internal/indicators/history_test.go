@@ -61,6 +61,53 @@ func TestIndicatorHistory_LatestMatchesPointValue(t *testing.T) {
 	if bv, _ := bollinger(closes, defaultBollPeriod, defaultBollMult); !eq4(latest("technical.boll"), math.Round(bv.Middle*1e4)/1e4) {
 		t.Errorf("BOLL middle latest mismatch")
 	}
+
+	highs := make([]float64, len(candles))
+	lows := make([]float64, len(candles))
+	for i, c := range candles {
+		highs[i] = c.High
+		lows[i] = c.Low
+	}
+	if av, _ := atrWilder(highs, lows, closes, defaultATRPeriod); !eq4(latest("technical.atr"), math.Round(av*1e4)/1e4) {
+		t.Errorf("ATR latest mismatch")
+	}
+	if kv, _ := stochasticKDJ(highs, lows, closes, defaultStochN, defaultStochSlowK, defaultStochSlowD); !eq4(latest("technical.stochastic-kdj"), math.Round(kv.K*1e4)/1e4) {
+		t.Errorf("KDJ %%K latest mismatch")
+	}
+}
+
+// KDJ's extra D and J lines must match the point triple too.
+func TestIndicatorHistory_KDJLines(t *testing.T) {
+	closes := make([]float64, 90)
+	for i := range closes {
+		closes[i] = 40 + float64(i)*0.5 + 8*math.Sin(float64(i)/3)
+	}
+	candles := histCandles(closes)
+	highs := make([]float64, len(candles))
+	lows := make([]float64, len(candles))
+	for i, c := range candles {
+		highs[i] = c.High
+		lows[i] = c.Low
+	}
+	hs, ok := IndicatorHistory(candles, "technical.stochastic-kdj", 0)
+	if !ok {
+		t.Fatal("kdj history not ok")
+	}
+	kv, _ := stochasticKDJ(highs, lows, closes, defaultStochN, defaultStochSlowK, defaultStochSlowD)
+	d := hs.Lines["d"]
+	j := hs.Lines["j"]
+	if len(d) == 0 || len(j) == 0 {
+		t.Fatal("kdj missing d/j lines")
+	}
+	if !eq4(hs.Points[len(hs.Points)-1].Value, math.Round(kv.K*1e4)/1e4) {
+		t.Errorf("K latest mismatch")
+	}
+	if !eq4(d[len(d)-1].Value, math.Round(kv.D*1e4)/1e4) {
+		t.Errorf("D latest mismatch")
+	}
+	if !eq4(j[len(j)-1].Value, math.Round(kv.J*1e4)/1e4) {
+		t.Errorf("J latest mismatch")
+	}
 }
 
 // The extra aligned lines (MACD signal/histogram, BOLL bands) must also match the point triple.
@@ -104,8 +151,8 @@ func TestIndicatorHistory_ExtraLinesMatch(t *testing.T) {
 }
 
 func TestIndicatorHistory_Guards(t *testing.T) {
-	// Unsupported id.
-	if _, ok := IndicatorHistory(histCandles([]float64{1, 2, 3}), "technical.atr", 0); ok {
+	// Unsupported id (vwap is intentionally not history-charted; fundamentals never are).
+	if _, ok := IndicatorHistory(histCandles([]float64{1, 2, 3}), "technical.vwap", 0); ok {
 		t.Error("expected unsupported id to be not ok")
 	}
 	// Insufficient history (fewer closes than the period).
@@ -116,7 +163,7 @@ func TestIndicatorHistory_Guards(t *testing.T) {
 	if _, ok := IndicatorHistory(nil, "technical.rsi", 0); ok {
 		t.Error("expected empty candles to be not ok")
 	}
-	if !HistoryableID("technical.rsi") || HistoryableID("technical.atr") {
+	if !HistoryableID("technical.rsi") || !HistoryableID("technical.atr") || HistoryableID("technical.vwap") {
 		t.Error("HistoryableID wrong")
 	}
 }

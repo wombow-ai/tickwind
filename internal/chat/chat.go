@@ -50,6 +50,9 @@ var historyIndicatorIDs = map[string]string{
 	"ema":       "technical.ema",
 	"bollinger": "technical.boll",
 	"boll":      "technical.boll",
+	"atr":       "technical.atr",
+	"kdj":       "technical.stochastic-kdj",
+	"stochastic": "technical.stochastic-kdj",
 }
 
 // widgetEnum returns the widget types offered to the model: the portfolio widgets are
@@ -618,7 +621,7 @@ func toolSpecs(lang string, general, hasUserData, hasWeb bool) []enrich.ChatTool
 				"type":      map[string]any{"type": "string", "enum": widgetEnum(hasUserData), "description": "Which preset widget to render. indicator_history charts ONE indicator over time (set `indicator`). watchlist_summary/holdings_pnl/portfolio_heatmap show the user's OWN portfolio (no ticker)."},
 				"ticker":    map[string]any{"type": "string", "description": "Which stock (defaults to this conversation's stock); ignored for portfolio widgets."},
 				"range":     map[string]any{"type": "string", "enum": []string{"3M", "1Y", "5Y"}, "description": "Time range for chart widgets (kline/indicators)."},
-				"indicator": map[string]any{"type": "string", "enum": []string{"rsi", "macd", "sma", "ema", "bollinger"}, "description": "For indicator_history ONLY: which indicator's time-series line to chart."},
+				"indicator": map[string]any{"type": "string", "enum": []string{"rsi", "macd", "sma", "ema", "bollinger", "atr", "kdj"}, "description": "For indicator_history ONLY: which indicator's time-series line to chart."},
 			}, "required": []string{"type"}},
 		},
 	)
@@ -712,8 +715,8 @@ func systemPrompt(ticker, lang, material string, general, hasUserData, hasWeb bo
 			"- get_watchlist() / get_holdings() / get_my_notes(ticker?): the user's own watchlist/holdings/notes.\n- surface_widget(watchlist_summary/holdings_pnl/portfolio_heatmap): show the user's own portfolio inline (no ticker).\n"))
 	}
 	b.WriteString("\n")
-	b.WriteString(d("展示控件:当用户问某只股票的基本面/估值、且该股票确实有这些数据时,先用 get_facts/get_stock_facts 取事实,再调用 surface_widget(fundamentals_table 或 valuation_table[, ticker]) 让用户看到真实表格,而不是只罗列数字;问价格/技术面时同理用 kline。若用户问某个技术指标随时间的走势(\"RSI 这一年怎么走的\"\"看下 MACD 历史\"),用 surface_widget(indicator_history, indicator=rsi|macd|sma|ema|bollinger[, ticker]) 画出该指标的历史折线。控件只返回确认,不返回数据 —— 正常。但若事实工具说某股票没有公司基本面(例如 ETF),就不要再 surface fundamentals_table/valuation_table —— 说明工具讲了什么,并改提供 K 线/技术图。\n",
-		"SHOWING WIDGETS: when the user asks about a stock's fundamentals or valuation AND that data exists, first pull the facts with get_facts/get_stock_facts, then call surface_widget(fundamentals_table | valuation_table[, ticker]) so they see the real table instead of a list of numbers; likewise use kline for a price/technicals question. If the user asks how ONE technical indicator moved over time (\"how has RSI trended this year\", \"show MACD history\"), call surface_widget(indicator_history, indicator=rsi|macd|sma|ema|bollinger[, ticker]) to chart that indicator's history line. The widget returns only a confirmation, not data — that's expected. BUT if a fact tool says a stock has no company fundamentals (e.g. an ETF), do NOT surface fundamentals_table/valuation_table — explain what the tool said and offer the kline/technical chart instead.\n"))
+	b.WriteString(d("展示控件:当用户问某只股票的基本面/估值、且该股票确实有这些数据时,先用 get_facts/get_stock_facts 取事实,再调用 surface_widget(fundamentals_table 或 valuation_table[, ticker]) 让用户看到真实表格,而不是只罗列数字;问价格/技术面时同理用 kline。若用户问某个技术指标随时间的走势(\"RSI 这一年怎么走的\"\"看下 MACD 历史\"),用 surface_widget(indicator_history, indicator=rsi|macd|sma|ema|bollinger|atr|kdj[, ticker]) 画出该指标的历史折线。控件只返回确认,不返回数据 —— 正常。但若事实工具说某股票没有公司基本面(例如 ETF),就不要再 surface fundamentals_table/valuation_table —— 说明工具讲了什么,并改提供 K 线/技术图。\n",
+		"SHOWING WIDGETS: when the user asks about a stock's fundamentals or valuation AND that data exists, first pull the facts with get_facts/get_stock_facts, then call surface_widget(fundamentals_table | valuation_table[, ticker]) so they see the real table instead of a list of numbers; likewise use kline for a price/technicals question. If the user asks how ONE technical indicator moved over time (\"how has RSI trended this year\", \"show MACD history\"), call surface_widget(indicator_history, indicator=rsi|macd|sma|ema|bollinger|atr|kdj[, ticker]) to chart that indicator's history line. The widget returns only a confirmation, not data — that's expected. BUT if a fact tool says a stock has no company fundamentals (e.g. an ETF), do NOT surface fundamentals_table/valuation_table — explain what the tool said and offer the kline/technical chart instead.\n"))
 	b.WriteString(d("风格:简洁、以散文为主、平实。只说数据支持的内容。\n\n", "STYLE: concise, prose-first, plain language. Stay within what the data supports.\n\n"))
 	if general {
 		b.WriteString(d("没有预载某一只股票。用 get_stock_facts 取任意股票的事实,用用户数据工具了解他的组合。",

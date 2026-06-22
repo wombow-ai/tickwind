@@ -439,7 +439,7 @@ func TestGetIndicatorHistory(t *testing.T) {
 	t.Run("unsupported id → 400", func(t *testing.T) {
 		srv := backtestServer(t, fakeBars{rampCandles(300)}, false)
 		defer srv.Close()
-		resp := mustGet(t, srv.URL+"/v1/stocks/AAPL/indicator-history?id=technical.atr")
+		resp := mustGet(t, srv.URL+"/v1/stocks/AAPL/indicator-history?id=technical.vwap")
 		defer resp.Body.Close()
 		if resp.StatusCode != http.StatusBadRequest {
 			t.Fatalf("status = %d, want 400", resp.StatusCode)

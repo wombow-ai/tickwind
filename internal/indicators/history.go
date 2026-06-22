@@ -25,11 +25,13 @@ type HistorySeries struct {
 // historyDefaults maps each history-capable indicator id to its default period (0 when the
 // period field is not meaningful, e.g. MACD which is parameterised by fast/slow/signal).
 var historyDefaults = map[string]int{
-	"technical.sma-ma": defaultSMAPeriod,
-	"technical.ema":    defaultEMAPeriod,
-	"technical.rsi":    defaultRSIPeriod,
-	"technical.macd":   0,
-	"technical.boll":   defaultBollPeriod,
+	"technical.sma-ma":         defaultSMAPeriod,
+	"technical.ema":            defaultEMAPeriod,
+	"technical.rsi":            defaultRSIPeriod,
+	"technical.macd":           0,
+	"technical.boll":           defaultBollPeriod,
+	"technical.atr":            defaultATRPeriod,
+	"technical.stochastic-kdj": 0, // parameterised by n/slowK/slowD, not a single period
 }
 
 // HistoryableID reports whether an indicator id has a time-series history implementation.
@@ -57,8 +59,12 @@ func IndicatorHistory(candles []store.Candle, id string, period int) (HistorySer
 		return HistorySeries{}, false
 	}
 	closes := make([]float64, len(candles))
+	highs := make([]float64, len(candles))
+	lows := make([]float64, len(candles))
 	for i, c := range candles {
 		closes[i] = c.Close
+		highs[i] = c.High
+		lows[i] = c.Low
 	}
 
 	switch id {
@@ -136,6 +142,35 @@ func IndicatorHistory(candles []store.Candle, id string, period int) (HistorySer
 			Lines: map[string][]Point{
 				"upper": pointsFromPadded(candles, up),
 				"lower": pointsFromPadded(candles, low),
+			},
+		}, true
+
+	case "technical.atr":
+		if period <= 0 {
+			period = defaultATRPeriod
+		}
+		s, ok := atrSeriesPadded(highs, lows, closes, period)
+		if !ok {
+			return HistorySeries{}, false
+		}
+		return finishSingle(candles, id, period, unitPrice, s)
+
+	case "technical.stochastic-kdj":
+		k, dLine, jLine, ok := kdjSeriesPadded(highs, lows, closes, defaultStochN, defaultStochSlowK, defaultStochSlowD)
+		if !ok {
+			return HistorySeries{}, false
+		}
+		pts := pointsFromPadded(candles, k)
+		if len(pts) == 0 {
+			return HistorySeries{}, false
+		}
+		return HistorySeries{
+			Indicator: id,
+			Unit:      unitNone,
+			Points:    pts, // %K is the headline line (matches the point value)
+			Lines: map[string][]Point{
+				"d": pointsFromPadded(candles, dLine),
+				"j": pointsFromPadded(candles, jLine),
 			},
 		}, true
 	}
@@ -247,4 +282,85 @@ func bollSeriesPadded(closes []float64, period int, mult float64) (mid, up, low 
 		low[i] = m - mult*sd
 	}
 	return mid, up, low, true
+}
+
+// atrSeriesPadded returns the full-length (NaN-padded) Wilder ATR series, matching atrWilder:
+// TR = max(H−L, |H−Cprev|, |L−Cprev|); seed = mean of the first `period` TRs (indices 1..period);
+// then ATRᵢ = (ATRᵢ₋₁·(period−1) + TRᵢ)/period. Defined from index `period`.
+func atrSeriesPadded(highs, lows, closes []float64, period int) ([]float64, bool) {
+	n := len(closes)
+	if period <= 0 || n < period+1 || len(highs) != n || len(lows) != n {
+		return nil, false
+	}
+	tr := make([]float64, n) // tr[0] undefined (no previous close)
+	for i := 1; i < n; i++ {
+		hl := highs[i] - lows[i]
+		hc := math.Abs(highs[i] - closes[i-1])
+		lc := math.Abs(lows[i] - closes[i-1])
+		tr[i] = math.Max(hl, math.Max(hc, lc))
+	}
+	out := nanPadded(n)
+	seed := 0.0
+	for i := 1; i <= period; i++ {
+		seed += tr[i]
+	}
+	atr := seed / float64(period)
+	out[period] = atr
+	for i := period + 1; i < n; i++ {
+		atr = (atr*float64(period-1) + tr[i]) / float64(period)
+		out[i] = atr
+	}
+	return out, true
+}
+
+// kdjSeriesPadded returns the full-length (NaN-padded) Stochastic/KDJ %K, %D and J series,
+// matching stochasticKDJ: RSV = (C−Lₙ)/(Hₙ−Lₙ)·100 (flat window → 50); %K = SMA(RSV, slowK);
+// %D = SMA(%K, slowD); J = 3K − 2D. K is defined earlier than D/J; J is emitted only where both
+// K and D exist. Each value is mapped back to its candle date so the three lines stay aligned.
+func kdjSeriesPadded(highs, lows, closes []float64, n, slowK, slowD int) (kArr, dArr, jArr []float64, ok bool) {
+	length := len(closes)
+	if n <= 0 || slowK <= 0 || slowD <= 0 || len(highs) != length || len(lows) != length || length < n {
+		return nil, nil, nil, false
+	}
+	// RSV at each candle index i >= n-1; rsvIdx[m] is the candle index of rsv[m].
+	rsv := make([]float64, 0, length-n+1)
+	rsvIdx := make([]int, 0, length-n+1)
+	for i := n - 1; i < length; i++ {
+		hi, lo := highs[i], lows[i]
+		for j := i - n + 1; j <= i; j++ {
+			if highs[j] > hi {
+				hi = highs[j]
+			}
+			if lows[j] < lo {
+				lo = lows[j]
+			}
+		}
+		if rng := hi - lo; rng == 0 {
+			rsv = append(rsv, 50)
+		} else {
+			rsv = append(rsv, (closes[i]-lo)/rng*100)
+		}
+		rsvIdx = append(rsvIdx, i)
+	}
+	kSeries := smaSeries(rsv, slowK) // kSeries[m] ← rsv[m+slowK-1]
+	if len(kSeries) == 0 {
+		return nil, nil, nil, false
+	}
+	dSeries := smaSeries(kSeries, slowD) // dSeries[p] ← kSeries[p+slowD-1]
+	if len(dSeries) == 0 {
+		return nil, nil, nil, false
+	}
+	kArr = nanPadded(length)
+	dArr = nanPadded(length)
+	jArr = nanPadded(length)
+	for m, v := range kSeries {
+		kArr[rsvIdx[m+slowK-1]] = v
+	}
+	for p, dv := range dSeries {
+		kv := kSeries[p+slowD-1]
+		ci := rsvIdx[p+slowD-1+slowK-1] // candle index where both K and D are defined
+		dArr[ci] = dv
+		jArr[ci] = 3*kv - 2*dv
+	}
+	return kArr, dArr, jArr, true
 }

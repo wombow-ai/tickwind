@@ -2686,6 +2686,8 @@ export const HISTORYABLE_INDICATOR_IDS = [
   'technical.rsi',
   'technical.macd',
   'technical.boll',
+  'technical.atr',
+  'technical.stochastic-kdj',
 ] as const;
 
 /**

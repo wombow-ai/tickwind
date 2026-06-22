@@ -21,6 +21,15 @@ const UP = '#16a34a';
 const DOWN = '#dc2626';
 const RANGES: Range[] = ['3M', '1Y', 'Max'];
 
+// Per-line styling for an indicator's extra `lines`: Bollinger upper/lower draw as a dashed
+// indigo envelope; KDJ %D/J as solid amber/violet companions to the %K line.
+const LINE_STYLE: Record<string, {color: string; dashed: boolean}> = {
+  upper: {color: '#6366f1', dashed: true},
+  lower: {color: '#6366f1', dashed: true},
+  d: {color: '#f59e0b', dashed: false},
+  j: {color: '#a855f7', dashed: false},
+};
+
 /** Maps an external range hint (incl. the chat's 3M/1Y/5Y) to a chart range; defaults to 1Y. */
 function normalizeRange(r?: string): Range {
   if (r === '3M') return '3M';
@@ -127,20 +136,20 @@ export function IndicatorHistoryChart({ticker, id, period, range: rangeProp}: {t
     } else {
       const primary = chart.addSeries(LineSeries, {color: accent, lineWidth: 2, priceLineVisible: false});
       primary.setData(toSeries(pts));
-      // Bollinger bands (dashed envelope around the middle line).
-      for (const k of ['upper', 'lower'] as const) {
+      // Extra aligned lines: Bollinger upper/lower (dashed indigo envelope) or KDJ %D/J (solid).
+      for (const k of Object.keys(data.lines ?? {})) {
         const band = win(k);
-        if (band) {
-          const s = chart.addSeries(LineSeries, {
-            color: '#6366f1',
-            lineWidth: 1,
-            lineStyle: LineStyle.Dashed,
-            priceLineVisible: false,
-            lastValueVisible: false,
-            crosshairMarkerVisible: false,
-          });
-          s.setData(toSeries(band));
-        }
+        if (!band) continue;
+        const st = LINE_STYLE[k] ?? {color: '#94a3b8', dashed: false};
+        const s = chart.addSeries(LineSeries, {
+          color: st.color,
+          lineWidth: 1,
+          lineStyle: st.dashed ? LineStyle.Dashed : LineStyle.Solid,
+          priceLineVisible: false,
+          lastValueVisible: false,
+          crosshairMarkerVisible: false,
+        });
+        s.setData(toSeries(band));
       }
     }
     chart.timeScale().fitContent();
