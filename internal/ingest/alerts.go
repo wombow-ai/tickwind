@@ -14,7 +14,13 @@ type AlertStore interface {
 	ListActiveAlerts(ctx context.Context) ([]store.Alert, error)
 	MarkAlertTriggered(ctx context.Context, id string, at time.Time) error
 	ListFilings(ctx context.Context, ticker string, limit int) ([]store.Filing, error)
+	ListEarningsForTicker(ctx context.Context, ticker string, limit int) ([]store.Earning, error)
 }
+
+// earningsSoonLeadDays is the default lead window for an "earnings_soon" alert: it fires when the
+// ticker's next scheduled report is this many days away (or fewer). An alert may override it via its
+// Threshold (interpreted as days) — 0 falls back to this default.
+const earningsSoonLeadDays = 7
 
 // PriceLatest fetches the latest quote for a ticker (ingest.BarCache satisfies it).
 type PriceLatest interface {
@@ -97,12 +103,14 @@ func (e *AlertEvaluator) Run(ctx context.Context) {
 // tickerData caches a ticker's latest quote + newest filing time for one
 // evaluate cycle (fetched lazily, once per ticker).
 type tickerData struct {
-	q           store.Quote
-	haveQuote   bool
-	lastFiling  time.Time
-	haveFiling  bool
-	signals     []indicators.Signal
-	haveSignals bool
+	q            store.Quote
+	haveQuote    bool
+	lastFiling   time.Time
+	haveFiling   bool
+	signals      []indicators.Signal
+	haveSignals  bool
+	nextEarnings time.Time
+	haveEarnings bool
 }
 
 func (e *AlertEvaluator) evaluate(ctx context.Context) {
@@ -145,6 +153,14 @@ func (e *AlertEvaluator) evaluate(ctx context.Context) {
 				d.haveSignals = true
 			}
 			hit = signalAlertHit(a.Kind, d.signals)
+		case a.Kind == "earnings_soon":
+			if !d.haveEarnings {
+				if es, eerr := e.store.ListEarningsForTicker(ctx, a.Ticker, 12); eerr == nil {
+					d.nextEarnings = nextUpcomingEarnings(es, now)
+				}
+				d.haveEarnings = true
+			}
+			hit = earningsSoonHit(d.nextEarnings, now, a.Threshold)
 		default:
 			if !d.haveQuote {
 				if q, found, qerr := e.prices.LatestQuote(ctx, a.Ticker); qerr == nil && found {
@@ -166,6 +182,37 @@ func (e *AlertEvaluator) evaluate(ctx context.Context) {
 	if fired > 0 {
 		e.log.Info("alerts: triggered", "count", fired, "checked", len(alerts))
 	}
+}
+
+// nextUpcomingEarnings returns the earliest scheduled earnings date on or after today (zero if none
+// upcoming). Rows are day-granular, so an earnings dated today still counts as upcoming.
+func nextUpcomingEarnings(es []store.Earning, now time.Time) time.Time {
+	day := now.UTC().Truncate(24 * time.Hour)
+	var best time.Time
+	for _, e := range es {
+		if e.Date.Before(day) {
+			continue // already happened
+		}
+		if best.IsZero() || e.Date.Before(best) {
+			best = e.Date
+		}
+	}
+	return best
+}
+
+// earningsSoonHit reports whether the next scheduled earnings falls within the lead window —
+// thresholdDays (interpreted as days; <=0 → earningsSoonLeadDays) from today. Only fires for a real
+// upcoming date (never fabricated).
+func earningsSoonHit(next, now time.Time, thresholdDays float64) bool {
+	if next.IsZero() {
+		return false
+	}
+	days := int(thresholdDays)
+	if days <= 0 {
+		days = earningsSoonLeadDays
+	}
+	cutoff := now.UTC().Truncate(24*time.Hour).AddDate(0, 0, days)
+	return !next.After(cutoff)
 }
 
 // priceAlertHit reports whether a price-based alert (price_above / price_below /

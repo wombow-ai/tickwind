@@ -39,6 +39,7 @@ func TestPriceAlertHit(t *testing.T) {
 type fakeAlertStore struct {
 	active    []store.Alert
 	filings   map[string][]store.Filing
+	earnings  map[string][]store.Earning
 	triggered map[string]time.Time
 }
 
@@ -54,6 +55,9 @@ func (f *fakeAlertStore) MarkAlertTriggered(_ context.Context, id string, at tim
 }
 func (f *fakeAlertStore) ListFilings(_ context.Context, ticker string, _ int) ([]store.Filing, error) {
 	return f.filings[ticker], nil
+}
+func (f *fakeAlertStore) ListEarningsForTicker(_ context.Context, ticker string, _ int) ([]store.Earning, error) {
+	return f.earnings[ticker], nil
 }
 
 type fakePrices map[string]store.Quote
@@ -95,6 +99,38 @@ func TestSignalAlertHit(t *testing.T) {
 	}
 }
 
+func TestEarningsSoon(t *testing.T) {
+	now := time.Date(2026, 6, 23, 12, 0, 0, 0, time.UTC)
+	day := func(d int) time.Time { return time.Date(2026, 6, d, 0, 0, 0, 0, time.UTC) }
+
+	// nextUpcomingEarnings: earliest date on/after today; past dates ignored.
+	es := []store.Earning{
+		{Ticker: "X", Date: day(10)}, // past
+		{Ticker: "X", Date: day(28)},
+		{Ticker: "X", Date: day(25)}, // earliest upcoming
+	}
+	if got := nextUpcomingEarnings(es, now); !got.Equal(day(25)) {
+		t.Fatalf("nextUpcomingEarnings = %v, want 2026-06-25", got)
+	}
+	if got := nextUpcomingEarnings([]store.Earning{{Date: day(1)}}, now); !got.IsZero() {
+		t.Fatalf("all-past → zero, got %v", got)
+	}
+
+	// earningsSoonHit: default 7-day lead → 06-25 (2 days out) fires; 07-15 doesn't; custom 30d does.
+	if !earningsSoonHit(day(25), now, 0) {
+		t.Error("06-25 within default 7-day lead should fire")
+	}
+	if earningsSoonHit(time.Date(2026, 7, 15, 0, 0, 0, 0, time.UTC), now, 0) {
+		t.Error("07-15 is >7 days out, should NOT fire at default lead")
+	}
+	if !earningsSoonHit(time.Date(2026, 7, 15, 0, 0, 0, 0, time.UTC), now, 30) {
+		t.Error("07-15 within a custom 30-day lead should fire")
+	}
+	if earningsSoonHit(time.Time{}, now, 0) {
+		t.Error("no upcoming earnings → never fires")
+	}
+}
+
 func TestEvaluateTriggers(t *testing.T) {
 	created := time.Now().Add(-time.Hour)
 	st := &fakeAlertStore{
@@ -106,10 +142,16 @@ func TestEvaluateTriggers(t *testing.T) {
 			{ID: "e", Ticker: "GOOG", Kind: "golden_cross", Active: true, CreatedAt: created},                 // GOOG has a golden cross → hit
 			{ID: "f", Ticker: "GOOG", Kind: "death_cross", Active: true, CreatedAt: created},                  // GOOG has golden, not death → no
 			{ID: "g", Ticker: "TSLA", Kind: "signal_bearish", Active: true, CreatedAt: created},               // TSLA has a bearish signal → hit
+			{ID: "h", Ticker: "ABC", Kind: "earnings_soon", Active: true, CreatedAt: created},                 // ABC reports in 3 days → hit
+			{ID: "i", Ticker: "XYZ", Kind: "earnings_soon", Active: true, CreatedAt: created},                 // XYZ reports in 40 days → no (default 7d lead)
 		},
 		filings: map[string][]store.Filing{
 			"MSTR": {{FiledAt: time.Now()}},
 			"NVDA": {{FiledAt: time.Now().Add(-2 * time.Hour)}},
+		},
+		earnings: map[string][]store.Earning{
+			"ABC": {{Ticker: "ABC", Date: time.Now().UTC().Add(3 * 24 * time.Hour)}},
+			"XYZ": {{Ticker: "XYZ", Date: time.Now().UTC().Add(40 * 24 * time.Hour)}},
 		},
 	}
 	sigs := fakeSignals{
@@ -120,12 +162,12 @@ func TestEvaluateTriggers(t *testing.T) {
 		slog.New(slog.NewTextHandler(io.Discard, nil)))
 	ev.evaluate(context.Background())
 
-	for _, id := range []string{"a", "c", "e", "g"} {
+	for _, id := range []string{"a", "c", "e", "g", "h"} {
 		if _, ok := st.triggered[id]; !ok {
 			t.Errorf("alert %q should have triggered", id)
 		}
 	}
-	for _, id := range []string{"b", "d", "f"} {
+	for _, id := range []string{"b", "d", "f", "i"} {
 		if _, ok := st.triggered[id]; ok {
 			t.Errorf("alert %q should NOT have triggered", id)
 		}

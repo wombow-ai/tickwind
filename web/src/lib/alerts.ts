@@ -4,8 +4,9 @@ import {type Alert} from '@/lib/api';
 // AlertsCenter so the two surfaces can't drift (they previously rendered a pct_move
 // alert differently: one with the ± prefix, one without).
 
-/** Threshold-based price/event alert kinds (the create picker on the stock page). */
-export const PRICE_KINDS = ['price_above', 'price_below', 'pct_move', 'new_filing'] as const;
+/** Price/event alert kinds (the create picker on the stock page). new_filing + earnings_soon are
+ * thresholdless events; the others take a price/percent threshold. */
+export const PRICE_KINDS = ['price_above', 'price_below', 'pct_move', 'new_filing', 'earnings_soon'] as const;
 
 /** Deterministic signal-condition alert kinds (self-describing — no threshold needed). */
 export const SIGNAL_KINDS = [
@@ -17,9 +18,9 @@ export const SIGNAL_KINDS = [
   'signal_bearish',
 ] as const;
 
-/** Thresholdless kinds: new_filing + every signal kind ignore the threshold field. */
+/** Thresholdless kinds: new_filing, earnings_soon + every signal kind ignore the threshold field. */
 export function isThresholdless(kind: string): boolean {
-  return kind === 'new_filing' || (SIGNAL_KINDS as readonly string[]).includes(kind);
+  return kind === 'new_filing' || kind === 'earnings_soon' || (SIGNAL_KINDS as readonly string[]).includes(kind);
 }
 
 /** Maps an alert kind to its i18n label key. */
@@ -43,6 +44,8 @@ export function kindLabelKey(kind: string): string {
       return 'alerts.signalBullish';
     case 'signal_bearish':
       return 'alerts.signalBearish';
+    case 'earnings_soon':
+      return 'alerts.earningsSoon';
     default:
       return 'alerts.newFiling';
   }

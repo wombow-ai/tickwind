@@ -1059,7 +1059,8 @@ func (s *Server) deleteNote(w http.ResponseWriter, r *http.Request) {
 // self-describing and ignore Threshold (gated via ingest.IsSignalAlertKind below).
 var validAlertKinds = map[string]bool{
 	"price_above": true, "price_below": true, "pct_move": true, "new_filing": true,
-	"golden_cross": true, "death_cross": true, "rsi_oversold": true,
+	"earnings_soon": true,
+	"golden_cross":  true, "death_cross": true, "rsi_oversold": true,
 	"rsi_overbought": true, "signal_bullish": true, "signal_bearish": true,
 }
 
@@ -1086,9 +1087,10 @@ func (s *Server) postAlert(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, errBody("invalid alert kind"))
 		return
 	}
-	// Threshold is required only for the price kinds; new_filing and the signal-
-	// condition kinds are self-describing and ignore it.
-	if req.Kind != "new_filing" && !ingest.IsSignalAlertKind(req.Kind) && req.Threshold <= 0 {
+	// Threshold is required only for the price kinds; new_filing, earnings_soon, and the
+	// signal-condition kinds are self-describing (earnings_soon defaults its lead window) and
+	// treat an absent threshold as 0.
+	if req.Kind != "new_filing" && req.Kind != "earnings_soon" && !ingest.IsSignalAlertKind(req.Kind) && req.Threshold <= 0 {
 		writeJSON(w, http.StatusBadRequest, errBody("threshold must be positive"))
 		return
 	}
