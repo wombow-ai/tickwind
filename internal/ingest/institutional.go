@@ -29,6 +29,15 @@ type InstitutionalIngestor struct {
 	log   *slog.Logger
 }
 
+// institutionalSweepDays is how many calendar days back the refresh scans the SEC daily index.
+// It must comfortably clear a holiday CLUSTER (e.g. a Thu/Fri federal holiday + the weekend + a
+// not-yet-disseminated Monday) so the board never empties when no business day with filings happens
+// to fall in a short window — the 2026 Juneteenth weekend (06-19 holiday → 06-20/21 weekend) left a
+// 4-day window with zero 13D/13G rows while 06-18 had 84. 10 days spans any single such cluster; the
+// cache keeps-last-good across emptier refreshes and caps at `max` newest, so a wider scan only adds a
+// few cheap daily-index fetches.
+const institutionalSweepDays = 10
+
 // NewInstitutionalIngestor builds the ingestor; every is the refresh cadence.
 func NewInstitutionalIngestor(secClient OwnershipFetcher, cache *institutional.Cache, every time.Duration, log *slog.Logger) *InstitutionalIngestor {
 	return &InstitutionalIngestor{sec: secClient, cache: cache, every: every, max: 150, log: log}
@@ -53,9 +62,9 @@ func (i *InstitutionalIngestor) refresh(ctx context.Context) {
 	now := time.Now().UTC()
 	seen := make(map[string]struct{})
 	var all []sec.OwnershipRef
-	// Filings disseminate the next business day; scan the last few calendar days
-	// (weekend/holiday days simply return nothing) and dedupe by accession.
-	for d := 0; d <= 3; d++ {
+	// Filings disseminate the next business day; scan a window of calendar days wide enough to clear a
+	// holiday cluster (weekend/holiday days simply return nothing) and dedupe by accession.
+	for d := 0; d < institutionalSweepDays; d++ {
 		refs, err := i.sec.DailyBeneficialOwnership(ctx, now.AddDate(0, 0, -d))
 		if err != nil {
 			i.log.Warn("institutional: fetch failed", "day_offset", -d, "err", err)
