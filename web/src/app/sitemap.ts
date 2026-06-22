@@ -13,6 +13,7 @@ import {SCREEN_PRESETS} from '@/lib/presets';
 import {SIGNAL_SCREEN_PRESETS} from '@/lib/signalPresets';
 import {FACTOR_PRESETS} from '@/lib/factors';
 import {RS_WINDOWS} from '@/lib/rsWindows';
+import {REACTION_VIEWS} from '@/lib/reactionViews';
 import {localTopicKeys} from '@/lib/topics';
 import {COMPARE_PAIRS, pairSlug} from '@/lib/compare';
 import {ZONES} from '@/lib/zones';
@@ -209,6 +210,13 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     changeFrequency: 'daily',
     priority: 0.6,
   }));
+  // Earnings-reaction leaderboards (`/screen/earnings-reaction/{view}`) — most-volatile / highest-up-
+  // rate over past earnings; the reaction population rebuilds every 12 h, so a daily change freq is apt.
+  const reactionPages: Page[] = REACTION_VIEWS.map(v => ({
+    path: `/screen/earnings-reaction/${v.key}`,
+    changeFrequency: 'daily',
+    priority: 0.6,
+  }));
   // Curated theme zones (`/zone/{key}`) — the AI flagship + 10x theme siblings.
   const zonePages: Page[] = ZONES.map(z => ({
     path: `/zone/${z.key}`,
@@ -260,6 +268,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     ...signalPresetPages,
     ...factorPages,
     ...rsPages,
+    ...reactionPages,
     ...zonePages,
     ...comparePages,
     ...stockDirectoryPages,

@@ -2978,6 +2978,41 @@ export function getRSScreen(window: string, limit?: number, signal?: AbortSignal
   return getJson<RSScreenResponse>(`/v1/screen/relative-strength?${p.toString()}`, signal);
 }
 
+/** One stock's standing on the earnings-reaction leaderboard: the typical move around its past
+ * earnings + how often it rose, with the sample count (the disclosed basis). */
+export interface ReactionRank {
+  ticker: string;
+  avg_abs_move: number; // mean magnitude % of the ~2-session move around earnings
+  up_rate: number; // fraction of past earnings with a positive reaction (0..1)
+  samples: number; // number of measurable past earnings reactions (>= 4)
+}
+
+/** Envelope returned by `GET /v1/screen/earnings-reaction`. */
+export interface ERScreenResponse {
+  view: string; // "most-volatile" | "highest-up-rate"
+  count: number;
+  results: ReactionRank[];
+  total: number; // how many tracked stocks had a measurable earnings-reaction aggregate
+  as_of?: string;
+}
+
+/**
+ * The market-wide EARNINGS-REACTION leaderboard: every tracked stock ranked by how it has historically
+ * moved around its earnings (view = most-volatile | highest-up-rate). Go-computed historical statistics
+ * (typical ~2-session move size / up-rate over past earnings), each disclosed with its sample count —
+ * descriptive, no advice/forecast. Public, no auth. Throws on a non-2xx/network error (callers
+ * client-fetch with a try/catch → empty/loading state).
+ */
+export function getEarningsReactionScreen(
+  view: string,
+  limit?: number,
+  signal?: AbortSignal,
+): Promise<ERScreenResponse> {
+  const p = new URLSearchParams({view});
+  if (limit != null) p.set('limit', String(limit));
+  return getJson<ERScreenResponse>(`/v1/screen/earnings-reaction?${p.toString()}`, signal);
+}
+
 /**
  * Fetches a ticker's multi-factor scorecard (percentiles vs the tracked universe). Resolves to
  * `null` on any 4xx/network error (no fundamentals / population not ready) so the card can hide
