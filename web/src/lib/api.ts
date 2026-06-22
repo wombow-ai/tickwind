@@ -2862,6 +2862,44 @@ export async function getEarningsReaction(
   }
 }
 
+/** One factor's standing: a 0..100 percentile vs the tracked universe + how many sub-metrics fed it. */
+export interface FactorScore {
+  percentile: number;
+  inputs: number;
+}
+
+/**
+ * A stock's four INDEPENDENT factor percentiles vs Tickwind's tracked universe (Go-computed).
+ * Descriptive only — there is deliberately no blended composite score and no rating.
+ */
+export interface Scorecard {
+  value?: FactorScore;
+  growth?: FactorScore;
+  quality?: FactorScore;
+  momentum?: FactorScore;
+  population: number;
+}
+
+/**
+ * Fetches a ticker's multi-factor scorecard (percentiles vs the tracked universe). Resolves to
+ * `null` on any 4xx/network error (no fundamentals / population not ready) so the card can hide
+ * gracefully. Returns the populationAsOf alongside for vintage disclosure. Public, no auth.
+ */
+export async function getScorecard(
+  ticker: string,
+  signal?: AbortSignal,
+): Promise<{scorecard: Scorecard; populationAsOf: string} | null> {
+  try {
+    const r = await getJson<{ticker: string; population_as_of?: string; scorecard?: Scorecard}>(
+      `/v1/stocks/${encodeURIComponent(normalizeTicker(ticker))}/scorecard`,
+      signal,
+    );
+    return r.scorecard ? {scorecard: r.scorecard, populationAsOf: r.population_as_of ?? ''} : null;
+  } catch {
+    return null;
+  }
+}
+
 // ── Per-user prefs (generic JSON UI-state blob) ──────────────────────────
 //
 // A small, generic per-user JSON-prefs surface. The blob is namespaced by
