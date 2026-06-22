@@ -3,6 +3,7 @@ package ingest
 import (
 	"context"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/wombow-ai/tickwind/internal/indicators"
@@ -14,13 +15,22 @@ type AlertStore interface {
 	ListActiveAlerts(ctx context.Context) ([]store.Alert, error)
 	MarkAlertTriggered(ctx context.Context, id string, at time.Time) error
 	ListFilings(ctx context.Context, ticker string, limit int) ([]store.Filing, error)
-	ListEarningsForTicker(ctx context.Context, ticker string, limit int) ([]store.Earning, error)
+	// ListEarnings returns the earnings calendar over a [from,to] date window — the evaluator uses a
+	// FORWARD window (today..+earningsSoonMaxLeadDays) for "earnings_soon" so it sees UPCOMING reports.
+	// (ListEarningsForTicker is deliberately NOT used here: it returns the OLDEST rows by edate, so on
+	// the append-only earnings table a long-tracked ticker would only surface past dates.)
+	ListEarnings(ctx context.Context, from, to time.Time) ([]store.Earning, error)
 }
 
 // earningsSoonLeadDays is the default lead window for an "earnings_soon" alert: it fires when the
 // ticker's next scheduled report is this many days away (or fewer). An alert may override it via its
 // Threshold (interpreted as days) — 0 falls back to this default.
 const earningsSoonLeadDays = 7
+
+// earningsSoonMaxLeadDays bounds the forward earnings scan (the upcoming-earnings calendar window the
+// evaluator reads once per cycle). A custom alert Threshold beyond this won't fire until the report
+// is within the window — fine, since the earnings feed itself only carries ~45 days ahead.
+const earningsSoonMaxLeadDays = 90
 
 // PriceLatest fetches the latest quote for a ticker (ingest.BarCache satisfies it).
 type PriceLatest interface {
@@ -103,14 +113,12 @@ func (e *AlertEvaluator) Run(ctx context.Context) {
 // tickerData caches a ticker's latest quote + newest filing time for one
 // evaluate cycle (fetched lazily, once per ticker).
 type tickerData struct {
-	q            store.Quote
-	haveQuote    bool
-	lastFiling   time.Time
-	haveFiling   bool
-	signals      []indicators.Signal
-	haveSignals  bool
-	nextEarnings time.Time
-	haveEarnings bool
+	q           store.Quote
+	haveQuote   bool
+	lastFiling  time.Time
+	haveFiling  bool
+	signals     []indicators.Signal
+	haveSignals bool
 }
 
 func (e *AlertEvaluator) evaluate(ctx context.Context) {
@@ -125,6 +133,15 @@ func (e *AlertEvaluator) evaluate(ctx context.Context) {
 	cache := make(map[string]*tickerData)
 	fired := 0
 	now := time.Now().UTC()
+	// Build the upcoming-earnings map ONCE per cycle (a single forward-windowed calendar read), only
+	// if any earnings_soon alert is active. ticker → earliest upcoming report date.
+	var upcoming map[string]time.Time
+	for _, a := range alerts {
+		if a.Kind == "earnings_soon" {
+			upcoming = e.upcomingEarnings(ctx, now)
+			break
+		}
+	}
 	for _, a := range alerts {
 		d := cache[a.Ticker]
 		if d == nil {
@@ -154,13 +171,7 @@ func (e *AlertEvaluator) evaluate(ctx context.Context) {
 			}
 			hit = signalAlertHit(a.Kind, d.signals)
 		case a.Kind == "earnings_soon":
-			if !d.haveEarnings {
-				if es, eerr := e.store.ListEarningsForTicker(ctx, a.Ticker, 12); eerr == nil {
-					d.nextEarnings = nextUpcomingEarnings(es, now)
-				}
-				d.haveEarnings = true
-			}
-			hit = earningsSoonHit(d.nextEarnings, now, a.Threshold)
+			hit = earningsSoonHit(upcoming[strings.ToUpper(a.Ticker)], now, a.Threshold)
 		default:
 			if !d.haveQuote {
 				if q, found, qerr := e.prices.LatestQuote(ctx, a.Ticker); qerr == nil && found {
@@ -184,20 +195,31 @@ func (e *AlertEvaluator) evaluate(ctx context.Context) {
 	}
 }
 
-// nextUpcomingEarnings returns the earliest scheduled earnings date on or after today (zero if none
-// upcoming). Rows are day-granular, so an earnings dated today still counts as upcoming.
-func nextUpcomingEarnings(es []store.Earning, now time.Time) time.Time {
+// upcomingEarnings reads the earnings calendar over a FORWARD window (today..+earningsSoonMaxLeadDays)
+// and reduces it to ticker → the earliest upcoming report date. Reading forward (rather than the
+// oldest-first per-ticker slice) is what keeps "earnings_soon" correct on the append-only earnings
+// table. Returns an empty map on error (no alert fires, never fabricates a date).
+func (e *AlertEvaluator) upcomingEarnings(ctx context.Context, now time.Time) map[string]time.Time {
 	day := now.UTC().Truncate(24 * time.Hour)
-	var best time.Time
-	for _, e := range es {
-		if e.Date.Before(day) {
-			continue // already happened
-		}
-		if best.IsZero() || e.Date.Before(best) {
-			best = e.Date
+	es, err := e.store.ListEarnings(ctx, day, day.AddDate(0, 0, earningsSoonMaxLeadDays))
+	if err != nil {
+		e.log.Warn("alerts: list earnings", "err", err)
+		return map[string]time.Time{}
+	}
+	return earliestByTicker(es)
+}
+
+// earliestByTicker maps each ticker to the earliest date among its earnings rows (the calendar read
+// is already forward-windowed, so every row is upcoming). Tickers are upper-cased to match lookups.
+func earliestByTicker(es []store.Earning) map[string]time.Time {
+	m := make(map[string]time.Time, len(es))
+	for _, ev := range es {
+		tk := strings.ToUpper(ev.Ticker)
+		if cur, ok := m[tk]; !ok || ev.Date.Before(cur) {
+			m[tk] = ev.Date
 		}
 	}
-	return best
+	return m
 }
 
 // earningsSoonHit reports whether the next scheduled earnings falls within the lead window —

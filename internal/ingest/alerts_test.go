@@ -39,7 +39,7 @@ func TestPriceAlertHit(t *testing.T) {
 type fakeAlertStore struct {
 	active    []store.Alert
 	filings   map[string][]store.Filing
-	earnings  map[string][]store.Earning
+	earnings  []store.Earning // the earnings calendar (any tickers); ListEarnings filters by date window
 	triggered map[string]time.Time
 }
 
@@ -56,8 +56,14 @@ func (f *fakeAlertStore) MarkAlertTriggered(_ context.Context, id string, at tim
 func (f *fakeAlertStore) ListFilings(_ context.Context, ticker string, _ int) ([]store.Filing, error) {
 	return f.filings[ticker], nil
 }
-func (f *fakeAlertStore) ListEarningsForTicker(_ context.Context, ticker string, _ int) ([]store.Earning, error) {
-	return f.earnings[ticker], nil
+func (f *fakeAlertStore) ListEarnings(_ context.Context, from, to time.Time) ([]store.Earning, error) {
+	var out []store.Earning
+	for _, e := range f.earnings {
+		if !e.Date.Before(from) && !e.Date.After(to) {
+			out = append(out, e)
+		}
+	}
+	return out, nil
 }
 
 type fakePrices map[string]store.Quote
@@ -103,17 +109,18 @@ func TestEarningsSoon(t *testing.T) {
 	now := time.Date(2026, 6, 23, 12, 0, 0, 0, time.UTC)
 	day := func(d int) time.Time { return time.Date(2026, 6, d, 0, 0, 0, 0, time.UTC) }
 
-	// nextUpcomingEarnings: earliest date on/after today; past dates ignored.
-	es := []store.Earning{
-		{Ticker: "X", Date: day(10)}, // past
+	// earliestByTicker: the earliest date per ticker (the calendar read is already forward-windowed,
+	// so callers never pass past rows); tickers upper-cased.
+	m := earliestByTicker([]store.Earning{
 		{Ticker: "X", Date: day(28)},
-		{Ticker: "X", Date: day(25)}, // earliest upcoming
+		{Ticker: "X", Date: day(25)}, // earliest for X
+		{Ticker: "y", Date: day(30)}, // lower-case → upper-cased key
+	})
+	if !m["X"].Equal(day(25)) {
+		t.Fatalf("X earliest = %v, want 2026-06-25", m["X"])
 	}
-	if got := nextUpcomingEarnings(es, now); !got.Equal(day(25)) {
-		t.Fatalf("nextUpcomingEarnings = %v, want 2026-06-25", got)
-	}
-	if got := nextUpcomingEarnings([]store.Earning{{Date: day(1)}}, now); !got.IsZero() {
-		t.Fatalf("all-past → zero, got %v", got)
+	if !m["Y"].Equal(day(30)) {
+		t.Fatalf("Y (upper-cased) = %v, want 2026-06-30", m["Y"])
 	}
 
 	// earningsSoonHit: default 7-day lead → 06-25 (2 days out) fires; 07-15 doesn't; custom 30d does.
@@ -149,9 +156,9 @@ func TestEvaluateTriggers(t *testing.T) {
 			"MSTR": {{FiledAt: time.Now()}},
 			"NVDA": {{FiledAt: time.Now().Add(-2 * time.Hour)}},
 		},
-		earnings: map[string][]store.Earning{
-			"ABC": {{Ticker: "ABC", Date: time.Now().UTC().Add(3 * 24 * time.Hour)}},
-			"XYZ": {{Ticker: "XYZ", Date: time.Now().UTC().Add(40 * 24 * time.Hour)}},
+		earnings: []store.Earning{
+			{Ticker: "ABC", Date: time.Now().UTC().Add(3 * 24 * time.Hour)},  // within 7d → hit
+			{Ticker: "XYZ", Date: time.Now().UTC().Add(40 * 24 * time.Hour)}, // in-window but >7d → no
 		},
 	}
 	sigs := fakeSignals{
