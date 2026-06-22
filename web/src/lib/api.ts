@@ -2421,7 +2421,28 @@ export function getIndicators(
   if (params.subcategory) p.set('subcategory', params.subcategory);
   if (params.q) p.set('q', params.q);
   const q = p.toString();
-  return getJson<IndicatorsResponse>(`/v1/indicators${q ? `?${q}` : ''}`, signal);
+  if (q === '') {
+    return cachedFullCatalog(signal); // the hot path: the full ~150KB catalog
+  }
+  return getJson<IndicatorsResponse>(`/v1/indicators?${q}`, signal);
+}
+
+// In-flight coalescing + Data Cache for the FULL indicator catalog (~150 KB). The library page
+// AND every /indicators/[id] detail page (564 routes) fetch it at build; without this they each
+// fire a cold 150 KB request and the concurrent storm times out → pages bake as the loading
+// fallback (no content, fallback metadata) — exactly the universe/directory bug, here for the
+// indicator catalog. A shared promise collapses one worker's burst to a single fetch; `next`
+// caches it (the catalog is static, changes only on a dataset deploy) so it stays reliable.
+let catalogInFlight: Promise<IndicatorsResponse> | null = null;
+function cachedFullCatalog(signal?: AbortSignal): Promise<IndicatorsResponse> {
+  if (catalogInFlight) return catalogInFlight;
+  const init = {next: {revalidate: 86400}} as RequestInit;
+  const promise = getJsonWithRetry<IndicatorsResponse>('/v1/indicators', signal, null, init);
+  catalogInFlight = promise;
+  void promise.finally(() => {
+    if (catalogInFlight === promise) catalogInFlight = null;
+  });
+  return promise;
 }
 
 /**

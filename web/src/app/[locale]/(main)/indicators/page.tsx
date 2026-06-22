@@ -76,7 +76,7 @@ export default async function IndicatorsPage() {
     facets: {domains: [], priorities: [], subcategories: []},
   };
   try {
-    data = await getIndicators({}, AbortSignal.timeout(5000));
+    data = await getIndicators({}, AbortSignal.timeout(12000));
   } catch {
     // API hiccup → render the page shell; the client will retry on navigation.
   }

@@ -34,7 +34,7 @@ const DOMAIN_ZH: Record<string, string> = {
 /** Pre-render every catalog record (282) × locale so each page is static / ISR. */
 export async function generateStaticParams(): Promise<{locale: string; id: string}[]> {
   try {
-    const data = await getIndicators({}, AbortSignal.timeout(5000));
+    const data = await getIndicators({}, AbortSignal.timeout(12000));
     return LOCALES.flatMap(locale =>
       data.indicators.map(ind => ({locale, id: indicatorSlug(ind.id)})),
     );
@@ -47,7 +47,7 @@ export async function generateStaticParams(): Promise<{locale: string; id: strin
 /** Fetches the catalog (best-effort) and resolves the record for a URL slug. */
 async function lookup(slug: string): Promise<Indicator | null> {
   try {
-    const data = await getIndicators({}, AbortSignal.timeout(5000));
+    const data = await getIndicators({}, AbortSignal.timeout(12000));
     return indicatorBySlug(data.indicators, slug) ?? null;
   } catch {
     return null;
@@ -153,7 +153,7 @@ export default async function IndicatorRoute({
   // list, so fetch once. A transient API failure → notFound (ISR refills later).
   let all: Indicator[] = [];
   try {
-    all = (await getIndicators({}, AbortSignal.timeout(5000))).indicators;
+    all = (await getIndicators({}, AbortSignal.timeout(12000))).indicators;
   } catch {
     all = [];
   }
