@@ -328,8 +328,10 @@ func extractFundamentals(resp factsResp) Fundamentals {
 		f.CapEx = abs(p.Val)
 	}
 
-	// Common dividends paid (annual flow) — stored positive; 0 for non-payers.
-	divPts := pick(gaap, "USD", "PaymentsOfDividendsCommonStock", "PaymentsOfDividends")
+	// Common dividends paid (annual cash-flow outflow) — stored positive; 0 for non-payers. Tries
+	// the common-stock concept, then the general one, then PaymentsOfOrdinaryDividends (the
+	// cash-paid concept large filers like JNJ/PFE use instead — same paid semantics).
+	divPts := pick(gaap, "USD", "PaymentsOfDividendsCommonStock", "PaymentsOfDividends", "PaymentsOfOrdinaryDividends")
 	if p, ok := latestAnnual(divPts); ok {
 		f.DividendsPaid = abs(p.Val)
 		// Prior-FY dividends (same concept, end-date year − 1) for YoY dividend growth — matched
