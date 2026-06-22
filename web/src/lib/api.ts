@@ -2714,6 +2714,39 @@ export async function getIndicatorHistory(
   }
 }
 
+/** One calendar month's historical return stats (GET /v1/stocks/{t}/seasonality). */
+export interface SeasonStat {
+  month: number; // 1..12
+  avg_return: number; // mean MoM % return
+  median_return: number;
+  win_rate: number; // 0..1
+  years: number;
+}
+
+/** A ticker's month-of-year return seasonality — a disclosed historical statistic (Go-computed). */
+export interface Seasonality {
+  months: SeasonStat[];
+  from_year: number;
+  to_year: number;
+  samples: number;
+}
+
+/**
+ * Fetches a ticker's month-of-year seasonality. Resolves to `null` on any 4xx/network error
+ * (no history / too short) so the card can hide gracefully. Public, no auth.
+ */
+export async function getSeasonality(ticker: string, signal?: AbortSignal): Promise<Seasonality | null> {
+  try {
+    const r = await getJson<{ticker: string; seasonality?: Seasonality}>(
+      `/v1/stocks/${encodeURIComponent(normalizeTicker(ticker))}/seasonality`,
+      signal,
+    );
+    return r.seasonality ?? null;
+  } catch {
+    return null;
+  }
+}
+
 // ── Per-user prefs (generic JSON UI-state blob) ──────────────────────────
 //
 // A small, generic per-user JSON-prefs surface. The blob is namespaced by

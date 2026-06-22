@@ -58,6 +58,7 @@ import {FundamentalsCard} from '@/components/FundamentalsCard';
 import {IndicatorsPanel} from '@/components/IndicatorsPanel';
 import {SignalsCard} from '@/components/SignalsCard';
 import {BacktestWidget} from '@/components/BacktestWidget';
+import {SeasonalityCard} from '@/components/SeasonalityCard';
 import {AISummaryCard} from '@/components/AISummaryCard';
 import {DeepResearchView} from '@/components/DeepResearchView';
 import {MovementCard} from '@/components/MovementCard';
@@ -682,6 +683,7 @@ export function StockView({ticker}: {ticker: string}) {
           <IndicatorsPanel ticker={norm} />
           <SignalsCard ticker={norm} />
           <BacktestWidget ticker={norm} />
+          <SeasonalityCard ticker={norm} />
         </div>
 
         {/* pulse: Reddit buzz + news sentiment (renders nothing when empty) */}

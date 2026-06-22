@@ -122,6 +122,11 @@ export const dict: Record<Lang, Record<string, string>> = {
     'sigscreen.locked.preview': 'Showing {shown} of {total} matches — Tickwind Pro unlocks the full market scan by signal.',
     'sigscreen.locked.cta': 'See Pro plans',
     // signal backtest (the BacktestWidget on the stock page)
+    'season.title': 'Seasonality',
+    'season.range': '{a}–{b}',
+    'season.sub': 'Average return by calendar month over the available years.',
+    'season.tip': 'avg {avg} · positive {win} of years · {n} samples',
+    'season.disclaimer': 'Historical average monthly returns — a disclosed statistic, not a forecast or advice. Delayed data.',
     'backtest.title': 'Signal Backtest',
     'backtest.rule': 'Rule',
     'backtest.horizon': 'Horizon',
@@ -1070,6 +1075,11 @@ export const dict: Record<Lang, Record<string, string>> = {
     'sigscreen.locked.preview': '显示 {total} 只中的 {shown} 只 —— Tickwind Pro 解锁按信号扫描全市场。',
     'sigscreen.locked.cta': '查看 Pro 方案',
     // signal backtest (the BacktestWidget on the stock page)
+    'season.title': '季节性',
+    'season.range': '{a}–{b}',
+    'season.sub': '按自然月统计的历史平均收益(覆盖可用年份)。',
+    'season.tip': '均值 {avg} · {win} 的年份上涨 · {n} 个样本',
+    'season.disclaimer': '历史月度平均收益 —— 已披露的统计,不是预测或建议。数据有延迟。',
     'backtest.title': '信号回测',
     'backtest.rule': '规则',
     'backtest.horizon': '周期',
