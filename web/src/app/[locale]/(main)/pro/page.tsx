@@ -52,7 +52,14 @@ export default function ProPage() {
   };
 
   // Already-Pro users see a Manage card (portal); free/anon see the pricing + Subscribe flow.
-  const features = [tr('pro.feat1'), tr('pro.feat2'), tr('pro.feat3'), tr('pro.feat4')];
+  const features = [
+    tr('pro.feat1'),
+    tr('pro.feat2'),
+    tr('pro.feat3'),
+    tr('pro.feat4'),
+    tr('pro.feat5'),
+    tr('pro.feat6'),
+  ];
 
   return (
     <div className="mx-auto max-w-lg">

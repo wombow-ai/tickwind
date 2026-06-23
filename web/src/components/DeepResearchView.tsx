@@ -806,6 +806,20 @@ function DeepGate({
  * source/as-of) → prose → bull/bear (if any) → citations. The price section
  * additionally gets the K-line chart, since price materially clarifies it.
  */
+// lockedTeasers maps a report section key → a dict key for a ONE-LINE, number-free,
+// structural description of what that section contains. Shown on the locked (free-tier)
+// card so the Pro value is legible at the point of friction — "a locked box labeled with
+// what's inside" rather than a bare lock. Purely structural (no figures/advice) →
+// anti-hallucination-safe. A key with no entry simply shows no teaser.
+const lockedTeasers: Record<string, string> = {
+  valuation: 'deep.teaser.valuation',
+  fundamentals: 'deep.teaser.fundamentals',
+  technical: 'deep.teaser.technical',
+  relative: 'deep.teaser.relative',
+  flows: 'deep.teaser.flows',
+  sentiment: 'deep.teaser.sentiment',
+};
+
 function DeepSection({
   sec,
   ticker,
@@ -848,6 +862,9 @@ function DeepSection({
           <Lock size={14} className={dark ? 'text-violet-300' : 'text-violet-500'} />
           {title}
         </h2>
+        {lockedTeasers[sec.key] && (
+          <p className={cx('mt-1 text-[12.5px]', t.faint)}>{tr(lockedTeasers[sec.key])}</p>
+        )}
         <p
           className={cx(
             'mt-1.5 flex items-center gap-1 text-[12.5px] font-semibold',
