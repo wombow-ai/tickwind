@@ -70,7 +70,7 @@ func assembleSentiment(ctx context.Context, ticker string, src Sources, lang str
 			citations = append(citations, hc...)
 		}
 
-		sec.Context = corpusContext(ctx, ticker, src.Store)
+		sec.Context = corpusContext(ctx, ticker, src.Store, lang)
 	}
 
 	sec.Citations = citations
@@ -178,29 +178,33 @@ func hotListFacts(ctx context.Context, ticker string, sr StoreReader) ([]Fact, [
 	return facts, citations
 }
 
-// corpusContext pulls the top-N recent news headlines and social post snippets and
-// formats them as ATTRIBUTED strings ("据新闻 …" / "据社区讨论 …") for the LLM. These
-// are quotable backdrop ONLY — never facts, never a synthesized sentiment number.
-// The Chinese-translated headline is preferred when present. Returns nil when there
-// is nothing to attribute.
-func corpusContext(ctx context.Context, ticker string, sr StoreReader) []string {
+// corpusContext pulls the top-N recent news headlines and social post snippets and formats them as
+// ATTRIBUTED strings for the LLM — per the report language: "per news …" / "per community discussion …"
+// for en, "据新闻 …" / "据社区讨论 …" for zh. These are quotable backdrop ONLY — never facts, never a
+// synthesized sentiment number. The headline AND the attribution label are language-matched to the
+// report so an EN report is never fed a Chinese-preferring snippet or a Chinese "新闻" source label (the
+// preferred headline falls back to the other language only when the preferred one is empty). Returns
+// nil when there is nothing to attribute.
+func corpusContext(ctx context.Context, ticker string, sr StoreReader, lang string) []string {
 	var out []string
 
 	if news, err := sr.ListNews(ctx, ticker, sentimentNewsN); err == nil {
 		for _, n := range news {
-			h := n.HeadlineZH
+			// en → the original headline (usually English for US news); zh → the Chinese translation.
+			h := strings.TrimSpace(pickLang(lang, n.Headline, n.HeadlineZH))
 			if h == "" {
-				h = n.Headline
+				h = strings.TrimSpace(pickLang(lang, n.HeadlineZH, n.Headline)) // fall back to the other language
 			}
-			h = strings.TrimSpace(h)
 			if h == "" {
 				continue
 			}
 			src := n.Source
 			if src == "" {
-				src = "新闻"
+				src = pickLang(lang, "news", "新闻")
 			}
-			out = append(out, fmt.Sprintf("据新闻(%s):%s", src, h))
+			out = append(out, pickLang(lang,
+				fmt.Sprintf("per news (%s): %s", src, h),
+				fmt.Sprintf("据新闻(%s):%s", src, h)))
 		}
 	}
 
@@ -219,9 +223,11 @@ func corpusContext(ctx context.Context, ticker string, sr StoreReader) []string 
 			}
 			src := p.Source
 			if src == "" {
-				src = "社区"
+				src = pickLang(lang, "community", "社区")
 			}
-			out = append(out, fmt.Sprintf("据社区讨论(%s):%s", src, body))
+			out = append(out, pickLang(lang,
+				fmt.Sprintf("per community discussion (%s): %s", src, body),
+				fmt.Sprintf("据社区讨论(%s):%s", src, body)))
 		}
 	}
 	return out
