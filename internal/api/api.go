@@ -334,6 +334,14 @@ type MaterialEventsSource interface {
 	Model() string
 }
 
+// MaterialFeedSource serves a market-wide feed of recent NOTABLE 8-K material events (leadership
+// change, M&A, bankruptcy, restatement, …) across the tracked universe — facts only, no LLM; an
+// optional item code filters it. See ingest.MaterialFeedCache. nil-safe — a nil source makes
+// /v1/material-feed 404. Satisfied by *ingest.MaterialFeedCache.
+type MaterialFeedSource interface {
+	Feed(item string) ([]materialevents.FeedEvent, time.Time)
+}
+
 // EarningsDatesSource provides a company's past earnings-announcement dates (the filing dates of
 // its 8-K item 2.02 reports), newest-first — the dated anchors for the deterministic
 // earnings-reaction statistic. Every date is a real SEC filing date (anti-hallucination-safe).
@@ -432,6 +440,7 @@ type Server struct {
 	researchCalc      ResearchSource         // injected post-New via SetResearch (deep-research report)
 	movementCalc      MovementSource         // injected post-New via SetMovement (move-explainer)
 	materialCalc      MaterialEventsSource   // injected post-New via SetMaterialEvents (8-K material events + AI summary)
+	materialFeed      MaterialFeedSource     // injected post-New via SetMaterialFeed (market-wide notable-events feed)
 	earningsDates     EarningsDatesSource    // injected post-New via SetEarningsDates (8-K 2.02 dates for earnings-reaction)
 	scorecard         ScorecardSource        // injected post-New via SetScorecard (factor-percentile population)
 	rsScan            RSScanSource           // injected post-New via SetRSScan (relative-strength leaderboard)
@@ -697,6 +706,7 @@ func New(st store.Store, hub QuoteStream, enricher enrich.Enricher, verifier *au
 	mux.HandleFunc("GET /v1/conversations/{id}/chat", s.getConvHistory)
 	mux.HandleFunc("GET /v1/stocks/{ticker}/movement", s.getMovement)
 	mux.HandleFunc("GET /v1/stocks/{ticker}/material-events", s.getMaterialEvents)
+	mux.HandleFunc("GET /v1/material-feed", s.getMaterialFeed)
 	mux.HandleFunc("GET /v1/stocks/{ticker}/insider-activity", s.getInsiderActivity)
 	mux.HandleFunc("GET /v1/indicators", s.getIndicators)
 	mux.HandleFunc("GET /v1/stream", s.getStream)
@@ -3511,6 +3521,10 @@ func (s *Server) writeMovement(w http.ResponseWriter, e movementEntry, status st
 // api.New's positional signature stable). nil-safe: the endpoint 404s until set.
 func (s *Server) SetMaterialEvents(src MaterialEventsSource) { s.materialCalc = src }
 
+// SetMaterialFeed injects the market-wide notable-events feed source after New. nil-safe: the
+// /v1/material-feed endpoint 404s until set.
+func (s *Server) SetMaterialFeed(src MaterialFeedSource) { s.materialFeed = src }
+
 // SetEarningsDates injects the earnings-dates source (8-K item 2.02 filing dates) after New —
 // the dated anchors for the earnings-reaction statistic. Keeps it out of the New() signature.
 func (s *Server) SetEarningsDates(src EarningsDatesSource) { s.earningsDates = src }
@@ -3537,6 +3551,50 @@ func (s *Server) SetEarningsReactions(src EarningsReactionSource) { s.earningsRe
 // links) is cheap and always serves, so over-cap requests still return 200 with
 // the filings and no summaries.
 const materialEventsDailyCap = 80
+
+// materialFeedResp is the wire shape of GET /v1/material-feed: the market-wide notable-events feed.
+type materialFeedResp struct {
+	Count  int                        `json:"count"`
+	Events []materialevents.FeedEvent `json:"events"`
+	AsOf   string                     `json:"as_of,omitempty"`
+}
+
+// defaultMaterialFeedLimit / max bound the feed length.
+const (
+	defaultMaterialFeedLimit = 60
+	maxMaterialFeedLimit     = 120
+)
+
+// getMaterialFeed serves the market-wide NOTABLE MATERIAL-EVENTS feed: recent high-signal 8-K filings
+// (leadership change, M&A, bankruptcy, restatement, delisting, …) across the tracked universe, newest
+// first — the market-wide roll-up of the per-stock material-events view. `?item=5.02` filters to one
+// 8-K item code; `?limit=` caps (default 60). Every field is a Go-owned SEC fact (form, dates, item
+// codes + canonical labels, filing link) — FACTS ONLY, no LLM, no advice — so it is
+// anti-hallucination-safe. Free + crawlable. Always 200 with a (possibly empty) list; 404 only when
+// the feed source is unset; a cold cache yields an empty list (the scan refills it).
+func (s *Server) getMaterialFeed(w http.ResponseWriter, r *http.Request) {
+	if s.materialFeed == nil {
+		writeJSON(w, http.StatusNotFound, errBody("material-events feed unavailable"))
+		return
+	}
+	item := strings.TrimSpace(r.URL.Query().Get("item"))
+	events, at := s.materialFeed.Feed(item)
+	lim := queryLimit(r, defaultMaterialFeedLimit)
+	if lim > maxMaterialFeedLimit {
+		lim = maxMaterialFeedLimit
+	}
+	if lim > 0 && len(events) > lim {
+		events = events[:lim]
+	}
+	if events == nil {
+		events = []materialevents.FeedEvent{}
+	}
+	out := materialFeedResp{Count: len(events), Events: events}
+	if !at.IsZero() {
+		out.AsOf = at.UTC().Format(time.RFC3339)
+	}
+	writeJSON(w, http.StatusOK, out)
+}
 
 // materialEventsEntry is one cached material-events report (per ticker per ET day
 // per language). It holds the assembled Report and the generation timestamp.

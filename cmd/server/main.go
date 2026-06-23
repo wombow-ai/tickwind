@@ -709,6 +709,14 @@ func main() {
 		go dividendScan.Run(ctx)
 		apiServer.SetDividendScan(dividendScan)
 
+		// Market-wide notable material-events feed: a background cache aggregates recent HIGH-SIGNAL
+		// 8-K filings (leadership change, M&A, bankruptcy, restatement, …) across analyticTickers every
+		// 60 min from SEC EDGAR (facts only, item codes Go-owned, no LLM), so GET /v1/material-feed
+		// surfaces corporate events for recognizable names without a per-request fan-out.
+		materialFeedCache := ingest.NewMaterialFeedCache(edgarClient, analyticTickers, log)
+		go materialFeedCache.Run(ctx)
+		apiServer.SetMaterialFeed(materialFeedCache)
+
 		// Alert evaluator: checks active user alerts against the latest price AND the
 		// deterministic signals (golden/death cross, RSI extremes, …) from signalScan.
 		// Constructed here (not in the price block) so it can read the signals cache.
