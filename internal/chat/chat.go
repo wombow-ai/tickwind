@@ -747,8 +747,8 @@ func systemPrompt(ticker, lang, material string, general, hasUserData, hasWeb bo
 	b.WriteString("\n")
 	b.WriteString(d("工具:\n", "TOOLS:\n"))
 	if !general {
-		b.WriteString(d("- get_facts(section):本股票某板块的事实。\n- get_news_context():本股票近期带出处的新闻/社区背景。\n",
-			"- get_facts(section): this stock's facts (valuation/fundamentals/technical/flows/sentiment).\n- get_news_context(): recent attributed news/community context for this stock.\n"))
+		b.WriteString(d("- get_facts(section):本股票某板块的事实(板块含 relative=该股价值/成长/质量/动量相对追踪股池的百分位 —— 问到\"相对大盘/同业怎么样\"时取它来引用具体百分位)。\n- get_news_context():本股票近期带出处的新闻/社区背景。\n",
+			"- get_facts(section): this stock's facts (valuation/fundamentals/technical/relative/flows/sentiment; the 'relative' section is its value/growth/quality/momentum PERCENTILE vs the tracked universe — pull it to cite the actual percentile when asked how the stock ranks vs peers or the market).\n- get_news_context(): recent attributed news/community context for this stock.\n"))
 	}
 	b.WriteString(d("- get_stock_facts(ticker, section):任意股票某板块的事实(跨股票对比)。\n- surface_widget(type[, ticker, range]):内联渲染真实图表/表格,优先用控件展示。\n",
 		"- get_stock_facts(ticker, section): any stock's facts (for comparisons).\n- surface_widget(type[, ticker, range]): render a real chart/table inline; prefer it over reciting numbers.\n"))

@@ -22,7 +22,7 @@ func Material(fs FactSheet, lang string) string { return buildMaterial(fs, lang)
 // FactSectionKeys is the CLOSED set of sections that carry Go-owned facts a chat user can
 // pull via the get_facts tool (overview is LLM-only prose and is excluded). Report order.
 func FactSectionKeys() []string {
-	return []string{"valuation", "fundamentals", "technical", "flows", "sentiment"}
+	return []string{"valuation", "fundamentals", "technical", "relative", "flows", "sentiment"}
 }
 
 // FactsForSection returns the pre-formatted facts block for ONE section (by Key), in the
