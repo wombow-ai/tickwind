@@ -392,6 +392,8 @@ func TestDedupeWidgets(t *testing.T) {
 		{"lone chart kept", []Block{wg("kline", "AAPL")}, []string{"kline"}},
 		{"two specifics both kept", []Block{wg("relative_strength", "AAPL"), wg("seasonality", "AAPL")}, []string{"relative_strength", "seasonality"}},
 		{"exact dup collapsed", []Block{wg("relative_strength", "AAPL"), wg("relative_strength", "AAPL")}, []string{"relative_strength"}},
+		{"fundamentals+valuation collapse (same card)", []Block{wg("fundamentals_table", "AAPL"), wg("valuation_table", "AAPL")}, []string{"fundamentals_table"}},
+		{"fundamentals+valuation diff tickers both kept", []Block{wg("fundamentals_table", "AAPL"), wg("valuation_table", "MSFT")}, []string{"fundamentals_table", "valuation_table"}},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

@@ -21,6 +21,30 @@ import {type ChatBlock} from '@/lib/api';
 
 const PORTFOLIO_WIDGETS = new Set(['watchlist_summary', 'holdings_pnl', 'portfolio_heatmap']);
 
+// widgetRenderKey collapses widgets that render the SAME component (fundamentals_table +
+// valuation_table → one FundamentalsCard) to a single key. dedupeBlocks then drops
+// render-identical widget blocks (keeping the first); text blocks pass through. The server
+// already dedupes new messages (chat.go dedupeWidgets) — this is a belt-and-suspenders
+// backstop that also cleans historical / streamed messages that bypass it.
+function widgetRenderKey(b: ChatBlock): string {
+  const w =
+    b.widget === 'fundamentals_table' || b.widget === 'valuation_table'
+      ? 'fundamentals_family'
+      : b.widget;
+  return `${w}|${b.params?.ticker ?? ''}|${b.params?.indicator ?? ''}`;
+}
+
+function dedupeBlocks(blocks: ChatBlock[]): ChatBlock[] {
+  const seen = new Set<string>();
+  return blocks.filter(b => {
+    if (b.kind !== 'widget') return true;
+    const k = widgetRenderKey(b);
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
+}
+
 // `streaming` marks the live, still-being-typed assistant message. It carries its text as a
 // single text BLOCK (not the `text` field) so the live and final renders share ONE render
 // path (BlockView → Markdown): on `done` the block is updated in place rather than the prose
@@ -64,7 +88,7 @@ export function MsgRow({m, fallbackTicker, tr}: {m: Msg; fallbackTicker: string;
           <span style={{fontSize: 12.5, fontWeight: 600, color: 'var(--text)'}}>{tr('chat.aiName')}</span>
           <span style={{fontSize: 11, color: 'var(--text3)'}}>{tr('chat.justNow')}</span>
         </div>
-        {(m.blocks ?? []).map((b, i) => <BlockView key={i} block={b} fallbackTicker={fallbackTicker} tr={tr} />)}
+        {dedupeBlocks(m.blocks ?? []).map((b, i) => <BlockView key={i} block={b} fallbackTicker={fallbackTicker} tr={tr} />)}
         {!m.blocks && m.text && (
           <div style={{fontSize: 14, lineHeight: 1.62, color: 'var(--text)'}}>
             <Markdown>{m.text}</Markdown>
