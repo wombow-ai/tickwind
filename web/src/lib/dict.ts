@@ -477,6 +477,9 @@ export const dict: Record<Lang, Record<string, string>> = {
     // share card ("propagation organ") — save/share a branded image card
     'share.save': 'Save image',
     'share.aria': 'Open a shareable image card in a new tab',
+    'share.link': 'Share',
+    'share.linkAria': 'Share or copy a link to this page',
+    'share.copied': 'Link copied',
     'earnings.next': 'Next earnings',
     'earnings.estEps': 'Est. EPS',
     'earnings.bmo': 'Pre-market',
@@ -1475,6 +1478,9 @@ export const dict: Record<Lang, Record<string, string>> = {
     // share card ("propagation organ") — save/share a branded image card
     'share.save': '保存图片',
     'share.aria': '在新标签页打开可分享的图片卡',
+    'share.link': '分享',
+    'share.linkAria': '分享或复制本页链接',
+    'share.copied': '链接已复制',
     'earnings.next': '下次财报',
     'earnings.estEps': '预期EPS',
     'earnings.bmo': '盘前',
