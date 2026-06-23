@@ -46,6 +46,7 @@ import {
 import {StockCard} from '@/components/StockCard';
 import {StockListToggle, StockRow, useStockListView} from '@/components/StockRow';
 import {TopicsStrip} from '@/components/TopicsStrip';
+import {ZonesStrip} from '@/components/ZonesStrip';
 
 type Tokens = ReturnType<typeof tok>;
 
@@ -144,6 +145,11 @@ export function HomeHub() {
       </header>
 
       <TopicsStrip />
+
+      {/* Theme Zones — curated, evergreen themes, framed distinctly from the dynamic
+          Hot Topics above (Layers/violet vs Flame/amber); surfaces the /zone pages
+          that were buried in the More▾ menu. */}
+      <ZonesStrip />
 
       <IndicesStrip />
 
