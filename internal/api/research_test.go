@@ -14,6 +14,7 @@ import (
 
 	"github.com/wombow-ai/tickwind/internal/auth"
 	"github.com/wombow-ai/tickwind/internal/enrich"
+	"github.com/wombow-ai/tickwind/internal/indicators"
 	"github.com/wombow-ai/tickwind/internal/research"
 	"github.com/wombow-ai/tickwind/internal/store/memory"
 	"github.com/wombow-ai/tickwind/internal/stream"
@@ -111,10 +112,10 @@ func serverWithResearch(src ResearchSource) *httptest.Server {
 	return srv
 }
 
-// serverWithResearchStore is serverWithResearch but also returns the backing memory
-// store, so a test can read the per-user deep-research quota counter directly (the
-// async deep path charges it from a background goroutine).
-func serverWithResearchStore(src ResearchSource) (*httptest.Server, *memory.Store) {
+// buildResearchHandler builds the api handler + its backing memory store with the fake
+// research source attached (no httptest wrap), so callers can attach more sources (e.g.
+// a scorecard for the relative section) before serving.
+func buildResearchHandler(src ResearchSource) (*Server, *memory.Store) {
 	st := memory.New()
 	h := New(
 		st, stream.NewHub(), enrich.Noop{},
@@ -143,7 +144,50 @@ func serverWithResearchStore(src ResearchSource) (*httptest.Server, *memory.Stor
 	if src != nil {
 		h.SetResearch(src)
 	}
+	return h, st
+}
+
+// serverWithResearchStore is serverWithResearch but also returns the backing memory
+// store, so a test can read the per-user deep-research quota counter directly (the
+// async deep path charges it from a background goroutine).
+func serverWithResearchStore(src ResearchSource) (*httptest.Server, *memory.Store) {
+	h, st := buildResearchHandler(src)
 	return httptest.NewServer(h), st
+}
+
+// serverWithResearchScorecard attaches both a research source and a scorecard population
+// source — needed to exercise the cold-start cache-skip in getResearchSync (a report
+// assembled while the population is cold omits the relative section and must not be cached).
+func serverWithResearchScorecard(src ResearchSource, sc ScorecardSource) *httptest.Server {
+	h, _ := buildResearchHandler(src)
+	if sc != nil {
+		h.SetScorecard(sc)
+	}
+	return httptest.NewServer(h)
+}
+
+// togglableScorecard is a ScorecardSource whose population can be flipped from cold
+// (empty) to warm mid-test (mutex-guarded so the request goroutine's Population read is
+// race-clean against the test goroutine's setWarm).
+type togglableScorecard struct {
+	mu  sync.Mutex
+	pop []indicators.FactorMetrics
+}
+
+func (s *togglableScorecard) setWarm(pop []indicators.FactorMetrics) {
+	s.mu.Lock()
+	s.pop = pop
+	s.mu.Unlock()
+}
+
+func (s *togglableScorecard) Population() ([]indicators.FactorMetrics, time.Time) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.pop, time.Unix(1_700_000_000, 0)
+}
+
+func (s *togglableScorecard) PopulationRanked(string) ([]indicators.FactorRank, time.Time) {
+	return nil, time.Time{}
 }
 
 // deepQuotaUsed reads user `sub`'s deep-research quota count for the current ET month
@@ -279,6 +323,42 @@ func TestGetResearch_EnabledHappyPath(t *testing.T) {
 	// runs exactly once.
 	if _, _ = getResearch(t, srv.URL+"/v1/stocks/AAPL/research"); fake.composeCount() != 1 {
 		t.Errorf("Compose ran %d times; want 1 (second request served from cache)", fake.composeCount())
+	}
+}
+
+// TestGetResearch_ColdScorecardSkipsCache locks the cold-start cache-poisoning fix: a
+// normal /research report assembled while the cross-sectional factor population is COLD
+// (empty — the post-restart window before the scorecard's first scan) omits the "relative"
+// peer-percentile section, so it must NOT be durably cached (else the relative-less sheet
+// freezes in the per-(ticker, ET-day, lang) cache for the rest of the ET-day). Once the
+// population is WARM, the report caches normally and a repeat request is a free hit.
+func TestGetResearch_ColdScorecardSkipsCache(t *testing.T) {
+	fake := &fakeResearch{
+		fs:      sampleSheet(),
+		enabled: true,
+		model:   "deepseek-chat",
+		prose:   map[string]string{"valuation": "估值偏高。"},
+	}
+	sc := &togglableScorecard{} // empty population → cold
+	srv := serverWithResearchScorecard(fake, sc)
+	defer srv.Close()
+	url := srv.URL + "/v1/stocks/AAPL/research"
+
+	// COLD: two requests must BOTH re-assemble + re-compose — a cold report is never cached.
+	if resp, _ := getResearch(t, url); resp.StatusCode != http.StatusOK {
+		t.Fatalf("cold request 1 status = %d; want 200", resp.StatusCode)
+	}
+	getResearch(t, url)
+	if got := fake.composeCount(); got != 2 {
+		t.Fatalf("cold scorecard: Compose ran %d times; want 2 (a cold report must not be cached)", got)
+	}
+
+	// WARM: flip the population non-empty; the next report caches, so its follow-up is a hit.
+	sc.setWarm(pop10())
+	getResearch(t, url) // generates + caches (compose #3)
+	getResearch(t, url) // cache hit → no new compose
+	if got := fake.composeCount(); got != 3 {
+		t.Fatalf("warm scorecard: Compose ran %d times total; want 3 (warm report cached, repeat served from cache)", got)
 	}
 }
 

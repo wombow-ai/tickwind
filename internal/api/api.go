@@ -2965,9 +2965,19 @@ func (s *Server) getResearchSync(w http.ResponseWriter, r *http.Request, ticker,
 	s.researchInflight[key] = ch
 	s.researchMu.Unlock()
 
+	// coldScorecard is set right after the data-only assemble below. It is true when the
+	// cross-sectional factor population was still COLD (empty) at assemble time — the
+	// ~1-3 min after a restart, before the scorecard cache's first scan lands — which makes
+	// assembleRelative omit the "relative" peer-percentile section for EVERY ticker. We then
+	// SKIP the durable per-(ticker, ET-day, lang) cache for that report so a relative-less
+	// sheet can't freeze for the rest of the day; the next visit re-assembles a complete
+	// report once the population is warm. Cheap: the data-only sheet is always returned, and
+	// only the few reports born in the brief cold window re-assemble.
+	coldScorecard := false
+
 	finish := func(e *researchEntry) {
 		s.researchMu.Lock()
-		if e != nil {
+		if e != nil && !coldScorecard {
 			s.researchCache[key] = *e
 		}
 		delete(s.researchInflight, key)
@@ -2985,6 +2995,18 @@ func (s *Server) getResearchSync(w http.ResponseWriter, r *http.Request, ticker,
 		}
 	}
 
+	// Capture whether the cross-sectional factor population is cold BEFORE assembling, so
+	// coldScorecard reflects the state at-or-before the assemble's own population read inside
+	// assembleRelative. If cold, the relative section is omitted for every ticker and finish()
+	// skips the durable cache (a relative-less sheet can't freeze for the ET-day; the next
+	// visit re-assembles once warm). Reading BEFORE the assemble makes the only possible race
+	// a HARMLESS false-positive (skip caching a complete report once, re-gen next request) —
+	// never the harmful inverse of caching a cold report. nil scorecard = feature off → cache.
+	if s.scorecard != nil {
+		if pop, _ := s.scorecard.Population(); len(pop) == 0 {
+			coldScorecard = true
+		}
+	}
 	// Always assemble the data-only fact sheet first (cheap, no LLM, never errors).
 	fs := s.researchCalc.Report(r.Context(), ticker, lang)
 	// "Nothing at all": no sections and no underlying date → unknown/invalid ticker.
