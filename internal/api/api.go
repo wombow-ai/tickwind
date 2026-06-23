@@ -3016,6 +3016,11 @@ func (s *Server) relativeSourcesCold() bool {
 			return true
 		}
 	}
+	if s.earningsReactions != nil {
+		if ranks, _ := s.earningsReactions.PopulationRanked(indicators.ReactionViewMostVolatile); len(ranks) == 0 {
+			return true
+		}
+	}
 	return false
 }
 

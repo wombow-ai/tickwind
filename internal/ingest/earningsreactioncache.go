@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
@@ -136,4 +137,37 @@ func (c *EarningsReactionCache) PopulationRanked(view string) ([]indicators.Reac
 		pop = append(pop, indicators.TickerReaction{Ticker: tk, ReactionSummary: rs})
 	}
 	return indicators.RankEarningsReaction(pop, view), at
+}
+
+// minReactionPopulation is the floor below which an earnings-reaction percentile is withheld —
+// ranking a stock's earnings-day behavior against too few peers is noise, not a statistic (mirrors
+// minRSPopulation in the relative-strength cache).
+const minReactionPopulation = 8
+
+// ReactionPercentile ranks a ticker's typical earnings-day move MAGNITUDE (AvgAbsMove) against the
+// tracked population and returns the percentile (0–100, higher = a bigger earnings mover than peers),
+// the population size, the build time, and ok. It feeds the deep report's "relative to market" section
+// as a third peer lens (alongside relative-strength + the scorecard factors). CACHE-ONLY (no I/O): a
+// ticker absent from the cache — not tracked, or too little earnings history to clear the sample floor
+// — returns ok=false (insufficient-not-wrong), so the report simply omits the fact for it. The scan
+// swaps in a fresh map (never mutates in place), so grabbing the map reference under the lock then
+// ranking outside it is race-safe (the swapped-out map is immutable).
+func (c *EarningsReactionCache) ReactionPercentile(ticker string) (pct float64, n int, asOf time.Time, ok bool) {
+	c.mu.RLock()
+	m, at := c.m, c.at
+	c.mu.RUnlock()
+	if len(m) < minReactionPopulation {
+		return 0, 0, at, false
+	}
+	target, present := m[strings.ToUpper(strings.TrimSpace(ticker))]
+	if !present {
+		return 0, 0, at, false
+	}
+	below := 0
+	for _, rs := range m {
+		if rs.AvgAbsMove < target.AvgAbsMove {
+			below++
+		}
+	}
+	return 100 * float64(below) / float64(len(m)), len(m), at, true
 }

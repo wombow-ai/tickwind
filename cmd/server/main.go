@@ -746,11 +746,12 @@ func main() {
 		// Every handle satisfies its research provider interface directly, so NO
 		// adapter types are needed beyond the existing latestPriceProvider.
 		researchSvc := research.NewService(research.Sources{
-			Indicators:   computer,
-			Fundamentals: fundCache,
-			Quote:        priceProvider,
-			Scorecard:    scorecardScan, // factor-percentile population → the "relative to market" report section
-			RSRanker:     rsScan,        // relative-strength-vs-SPY percentile → a second "relative" lens
+			Indicators:     computer,
+			Fundamentals:   fundCache,
+			Quote:          priceProvider,
+			Scorecard:      scorecardScan,         // factor-percentile population → the "relative to market" report section
+			RSRanker:       rsScan,                // relative-strength-vs-SPY percentile → a second "relative" lens
+			ReactionRanker: earningsReactionCache, // earnings-day move-magnitude percentile → a third "relative" lens
 
 			// 资金面 / flows providers.
 			Congress:  congressCache,

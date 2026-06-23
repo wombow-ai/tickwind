@@ -46,6 +46,16 @@ type RSPercentiler interface {
 	RSPercentile(ctx context.Context, ticker, window string) (pct float64, n int, asOf time.Time, ok bool)
 }
 
+// ReactionPercentiler yields a ticker's earnings-reaction PERCENTILE vs the tracked universe — how big
+// its typical ~2-session move around earnings is, ranked against peers (0–100, higher = a bigger
+// earnings mover) — a third "relative to market" lens alongside relative-strength + the scorecard
+// factors. Satisfied by *ingest.EarningsReactionCache. nil → the fact is omitted. The percentile is
+// Go-computed (anti-hallucination-safe); returns the population size + as-of and ok=false when the
+// universe is too small or this stock has too little earnings history (insufficient-not-wrong).
+type ReactionPercentiler interface {
+	ReactionPercentile(ticker string) (pct float64, n int, asOf time.Time, ok bool)
+}
+
 // FundProvider returns a ticker's XBRL-derived fundamentals (SEC companyfacts).
 type FundProvider interface {
 	// Fundamentals returns the latest reported fundamentals, or an error for an
@@ -152,11 +162,12 @@ type StoreReader interface {
 // for flows, Market/Store for sentiment. A nil provider simply omits its facts;
 // a section that ends up with zero usable facts is omitted entirely.
 type Sources struct {
-	Indicators   IndicatorCalc
-	Fundamentals FundProvider
-	Quote        QuoteProvider
-	Scorecard    ScorecardProvider // factor-percentile population → the "relative to market" section
-	RSRanker     RSPercentiler     // relative-strength-vs-SPY percentile → a second "relative" lens
+	Indicators     IndicatorCalc
+	Fundamentals   FundProvider
+	Quote          QuoteProvider
+	Scorecard      ScorecardProvider   // factor-percentile population → the "relative to market" section
+	RSRanker       RSPercentiler       // relative-strength-vs-SPY percentile → a second "relative" lens
+	ReactionRanker ReactionPercentiler // earnings-day move-magnitude percentile → a third "relative" lens
 
 	// 资金面 / flows providers.
 	Congress  CongressProvider
@@ -446,6 +457,14 @@ func assembleRelative(ctx context.Context, indResult indicators.StockIndicatorsR
 			sec.Facts = append(sec.Facts, rsPercentileFact(pct, n, asOf, lang))
 		}
 	}
+	// Earnings-reaction percentile — a third "relative" lens: how big this stock's typical ~2-session
+	// move around earnings is vs peers (omitted when the universe is thin or this stock has too little
+	// earnings history). Present-or-omitted on its own, like the RS fact.
+	if src.ReactionRanker != nil {
+		if pct, n, asOf, ok := src.ReactionRanker.ReactionPercentile(indResult.Ticker); ok {
+			sec.Facts = append(sec.Facts, reactionPercentileFact(pct, n, asOf, lang))
+		}
+	}
 	return sec
 }
 
@@ -469,6 +488,29 @@ func rsPercentileFact(pct float64, n int, asOf time.Time, lang string) Fact {
 	}
 	return Fact{
 		Key: "rs_percentile", LabelZH: "相对强弱(3 月,对 SPY)", LabelEN: "Relative strength (3M vs SPY)",
+		Value:  pickLang(lang, fmtPercentileEN(pct), fmtPercentileZH(pct)),
+		Raw:    &pr,
+		Status: StatusOK, Source: source, AsOf: asOfStr,
+	}
+}
+
+// reactionPercentileFact renders the earnings-reaction percentile as a report Fact (Go-computed,
+// descriptive — higher = a bigger typical ~2-session move around earnings than peers; a volatility/
+// risk read, never advice/forecast).
+func reactionPercentileFact(pct float64, n int, asOf time.Time, lang string) Fact {
+	pr := pct
+	asOfStr := ""
+	if !asOf.IsZero() {
+		asOfStr = asOf.Format("2006-01-02")
+	}
+	source := pickLang(lang, "Tickwind universe", "Tickwind 全市场")
+	if n > 0 {
+		source = pickLang(lang,
+			"vs "+strconv.Itoa(n)+" tracked US stocks",
+			"对比 "+strconv.Itoa(n)+" 只追踪美股")
+	}
+	return Fact{
+		Key: "earnings_reaction_percentile", LabelZH: "财报日波动(对比同类)", LabelEN: "Earnings-day move (vs peers)",
 		Value:  pickLang(lang, fmtPercentileEN(pct), fmtPercentileZH(pct)),
 		Raw:    &pr,
 		Status: StatusOK, Source: source, AsOf: asOfStr,
