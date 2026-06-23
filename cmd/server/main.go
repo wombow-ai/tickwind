@@ -749,6 +749,7 @@ func main() {
 			Indicators:   computer,
 			Fundamentals: fundCache,
 			Quote:        priceProvider,
+			Scorecard:    scorecardScan, // factor-percentile population → the "relative to market" report section
 
 			// 资金面 / flows providers.
 			Congress:  congressCache,

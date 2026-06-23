@@ -2,7 +2,9 @@ package research
 
 import (
 	"context"
+	"math"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -24,6 +26,15 @@ type IndicatorCalc interface {
 	// StockIndicators returns the computed indicator set; missing inputs yield
 	// insufficient indicators rather than an error.
 	StockIndicators(ctx context.Context, ticker string) indicators.StockIndicatorsResult
+}
+
+// ScorecardProvider yields the factor-metric POPULATION (the percentile-ranking distribution over the
+// tracked universe) + when it was built, so the report can place this stock's factors as PERCENTILES
+// vs its peers — the de-isolation that makes the report read relatively, not in a vacuum. Satisfied by
+// *ingest.ScorecardCache. nil → no "relative" section. Every percentile is Go-computed
+// (indicators.ComputeScorecard), so it is anti-hallucination-safe.
+type ScorecardProvider interface {
+	Population() ([]indicators.FactorMetrics, time.Time)
 }
 
 // FundProvider returns a ticker's XBRL-derived fundamentals (SEC companyfacts).
@@ -135,6 +146,7 @@ type Sources struct {
 	Indicators   IndicatorCalc
 	Fundamentals FundProvider
 	Quote        QuoteProvider
+	Scorecard    ScorecardProvider // factor-percentile population → the "relative to market" section
 
 	// 资金面 / flows providers.
 	Congress  CongressProvider
@@ -389,6 +401,9 @@ func Assemble(ctx context.Context, ticker, lang string, src Sources) FactSheet {
 	}
 	addSection(&fs, technical)
 
+	// --- §1.x 相对全市场 / Relative to Market (peer percentiles — de-isolates the report) ---
+	addSection(&fs, assembleRelative(indResult, src, lang))
+
 	// --- §1.4 资金面 / Smart Money & Flows ---
 	addSection(&fs, assembleFlows(ctx, ticker, src, lang))
 
@@ -396,6 +411,98 @@ func Assemble(ctx context.Context, ticker, lang string, src Sources) FactSheet {
 	addSection(&fs, assembleSentiment(ctx, ticker, src, lang))
 
 	return fs
+}
+
+// assembleRelative places this stock's factor metrics as PERCENTILES vs the tracked universe — the
+// de-isolation that lets the report (and its LLM prose) read corroboration vs divergence instead of
+// five single-ticker snapshots. Every percentile is Go-computed (indicators.ComputeScorecard over the
+// background-cached scorecard population); the section self-omits (addSection drops a zero-fact
+// section) when the source is nil, the population is too thin (ComputeScorecard withholds below its
+// floor), or this stock has no computable factor — never fabricated. Descriptive percentiles only,
+// labels stay neutral ("value percentile", not "cheap") so it carries no advice.
+func assembleRelative(indResult indicators.StockIndicatorsResult, src Sources, lang string) SectionFacts {
+	if src.Scorecard == nil {
+		return SectionFacts{Key: "relative", TitleZH: "相对全市场", TitleEN: "Relative to Market"}
+	}
+	population, popAt := src.Scorecard.Population()
+	sc := indicators.ComputeScorecard(indicators.ExtractFactorMetrics(indResult), population)
+	return relativeSection(sc, popAt, lang)
+}
+
+// relativeSection turns a Go-computed Scorecard into the report's "relative" SectionFacts (4 factor
+// percentiles). Split from assembleRelative so it is unit-testable from a constructed Scorecard. Empty
+// (→ addSection drops it) when nothing is computable.
+func relativeSection(sc indicators.Scorecard, popAt time.Time, lang string) SectionFacts {
+	sec := SectionFacts{Key: "relative", TitleZH: "相对全市场", TitleEN: "Relative to Market"}
+	if !sc.HasAny() {
+		return sec
+	}
+	asOf := ""
+	if !popAt.IsZero() {
+		asOf = popAt.Format("2006-01-02")
+	}
+	source := pickLang(lang, "Tickwind universe", "Tickwind 全市场")
+	if sc.Population > 0 {
+		source = pickLang(lang,
+			"vs "+strconv.Itoa(sc.Population)+" tracked US stocks",
+			"对比 "+strconv.Itoa(sc.Population)+" 只追踪美股")
+	}
+	add := func(key, labelZH, labelEN string, f *indicators.FactorScore) {
+		if f == nil || f.Inputs <= 0 {
+			return
+		}
+		p := f.Percentile
+		pr := p
+		sec.Facts = append(sec.Facts, Fact{
+			Key: key, LabelZH: labelZH, LabelEN: labelEN,
+			Value:  pickLang(lang, fmtPercentileEN(p), fmtPercentileZH(p)),
+			Raw:    &pr,
+			Status: StatusOK, Source: source, AsOf: asOf,
+		})
+	}
+	add("value_percentile", "估值百分位", "Value percentile", sc.Value)
+	add("growth_percentile", "成长百分位", "Growth percentile", sc.Growth)
+	add("quality_percentile", "质量百分位", "Quality percentile", sc.Quality)
+	add("momentum_percentile", "动量百分位", "Momentum percentile", sc.Momentum)
+	return sec
+}
+
+// fmtPercentileEN/ZH render a 0–100 factor percentile for the report ("82nd percentile" / "第 82 百分位").
+func fmtPercentileEN(p float64) string {
+	n := clampPct(p)
+	return strconv.Itoa(n) + ordinalSuffix(n) + " percentile"
+}
+
+func fmtPercentileZH(p float64) string {
+	return "第 " + strconv.Itoa(clampPct(p)) + " 百分位"
+}
+
+func clampPct(p float64) int {
+	n := int(math.Round(p))
+	if n < 0 {
+		return 0
+	}
+	if n > 100 {
+		return 100
+	}
+	return n
+}
+
+// ordinalSuffix returns the English ordinal suffix for n (1→"st", 2→"nd", 3→"rd", 11–13→"th", …).
+func ordinalSuffix(n int) string {
+	if n%100 >= 11 && n%100 <= 13 {
+		return "th"
+	}
+	switch n % 10 {
+	case 1:
+		return "st"
+	case 2:
+		return "nd"
+	case 3:
+		return "rd"
+	default:
+		return "th"
+	}
 }
 
 // technicalIDOrder fixes the display order of the technical facts (the map is
