@@ -3119,6 +3119,21 @@ func (s *Server) getResearchDeep(w http.ResponseWriter, r *http.Request, ticker,
 	}
 	dataOnly := researchEntry{fs: fs, llm: false, model: "", at: time.Now().UTC()}
 
+	// coldScorecard: the cross-sectional factor population was still cold (empty) when we
+	// assembled fs, so fs OMITS the relative peer-percentile section (assembleRelative found
+	// no peers to rank against). The deep path caches the prose'd report per ET-MONTH AND
+	// persists it to the store (served for deepReportTTL days), so caching a cold relative-less
+	// deep report would freeze it far longer than the sync path's one ET-day. We therefore
+	// DEFER the gen while cold (below): the gen — which charges the scarce monthly quota and
+	// caches — starts only once the population is warm. nil scorecard = relative feature off →
+	// never cold → generate normally.
+	coldScorecard := false
+	if s.scorecard != nil {
+		if pop, _ := s.scorecard.Population(); len(pop) == 0 {
+			coldScorecard = true
+		}
+	}
+
 	// Decide what to do under the lock so the single-flight gate + the cap reservation
 	// are atomic with the inflight check (no two requests can both become the generator).
 	s.researchMu.Lock()
@@ -3138,6 +3153,16 @@ func (s *Server) getResearchDeep(w http.ResponseWriter, r *http.Request, ticker,
 	if !s.researchCalc.Enabled() { // LLM off → data-only is final, no gen.
 		s.researchMu.Unlock()
 		s.writeResearchStatus(w, dataOnly, proseStatusLLMDisabled)
+		return
+	}
+	if coldScorecard {
+		// Factor population still cold → fs omits the relative section. Defer the gen (which
+		// caches for the ET-month + persists to the store + charges the monthly quota) until
+		// the population is warm, so we never persist a relative-less deep report. The client
+		// keeps polling (~4s) and a later poll — once warm — starts the real gen. Reuses the
+		// "generating" terminal state: no gen is started and no quota is touched here.
+		s.researchMu.Unlock()
+		s.writeResearchStatus(w, dataOnly, proseStatusGenerating)
 		return
 	}
 	s.sweepResearchDay(day)

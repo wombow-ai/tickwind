@@ -155,15 +155,23 @@ func serverWithResearchStore(src ResearchSource) (*httptest.Server, *memory.Stor
 	return httptest.NewServer(h), st
 }
 
-// serverWithResearchScorecard attaches both a research source and a scorecard population
-// source — needed to exercise the cold-start cache-skip in getResearchSync (a report
-// assembled while the population is cold omits the relative section and must not be cached).
-func serverWithResearchScorecard(src ResearchSource, sc ScorecardSource) *httptest.Server {
-	h, _ := buildResearchHandler(src)
+// serverWithResearchScorecardStore attaches both a research source and a scorecard
+// population source, and returns the backing store — needed to exercise the cold-start
+// cache behavior (sync: a report assembled while the population is cold omits the relative
+// section and must not be cached; deep: the gen is deferred until warm) and to read the
+// deep-research quota counter.
+func serverWithResearchScorecardStore(src ResearchSource, sc ScorecardSource) (*httptest.Server, *memory.Store) {
+	h, st := buildResearchHandler(src)
 	if sc != nil {
 		h.SetScorecard(sc)
 	}
-	return httptest.NewServer(h)
+	return httptest.NewServer(h), st
+}
+
+// serverWithResearchScorecard is serverWithResearchScorecardStore without the store handle.
+func serverWithResearchScorecard(src ResearchSource, sc ScorecardSource) *httptest.Server {
+	srv, _ := serverWithResearchScorecardStore(src, sc)
+	return srv
 }
 
 // togglableScorecard is a ScorecardSource whose population can be flipped from cold
@@ -359,6 +367,55 @@ func TestGetResearch_ColdScorecardSkipsCache(t *testing.T) {
 	getResearch(t, url) // cache hit → no new compose
 	if got := fake.composeCount(); got != 3 {
 		t.Fatalf("warm scorecard: Compose ran %d times total; want 3 (warm report cached, repeat served from cache)", got)
+	}
+}
+
+// TestGetResearch_DeepColdScorecardDefersGen locks the deep-path half of the cold-start
+// fix: the deep report caches per ET-MONTH and persists to the store for days, so a cold
+// (relative-less) deep report must NOT be generated/cached while the population is cold —
+// it would be far stickier than the sync path's one ET-day, and skipping its cache would
+// instead DOUBLE-CHARGE the 1/month quota on the re-gen. So while cold the deep request is
+// DEFERRED: data-only "generating", NO ComposeDeep, NO quota charge. Once warm, a poll
+// starts the real gen exactly once.
+func TestGetResearch_DeepColdScorecardDefersGen(t *testing.T) {
+	fake := &fakeResearch{
+		fs:        sampleSheet(),
+		enabled:   true,
+		deepModel: "deep-x",
+		prose:     map[string]string{"valuation": "ok"},
+	}
+	sc := &togglableScorecard{} // empty population → cold
+	srv, st := serverWithResearchScorecardStore(fake, sc)
+	defer srv.Close()
+	url := srv.URL + "/v1/stocks/AAPL/research?depth=deep"
+
+	// COLD: deep request → "generating", but the gen is DEFERRED — no ComposeDeep, no charge.
+	_, body := getResearchAs(t, url, "user-1")
+	if body.ProseStatus != proseStatusGenerating {
+		t.Fatalf("cold deep prose_status = %q; want %q (gen deferred while cold)", body.ProseStatus, proseStatusGenerating)
+	}
+	if body.LLM {
+		t.Error("cold deep llm=true; want false (data-only while deferred)")
+	}
+	time.Sleep(20 * time.Millisecond) // give any (erroneously) spawned gen a chance to run
+	if fake.deepComposeCount() != 0 {
+		t.Errorf("ComposeDeep ran %d times while cold; want 0 (gen deferred until warm)", fake.deepComposeCount())
+	}
+	if used := deepQuotaUsed(t, st, "user-1"); used != 0 {
+		t.Errorf("quota used = %d while cold; want 0 (no charge until a real gen)", used)
+	}
+
+	// WARM: flip the population non-empty; a poll now starts the gen → ready, charged once.
+	sc.setWarm(pop10())
+	body = pollDeepUntilReady(t, url, "user-1")
+	if !body.LLM || body.Model != "deep-x" {
+		t.Fatalf("warm deep: llm=%v model=%q; want true / the deep model", body.LLM, body.Model)
+	}
+	if fake.deepComposeCount() != 1 {
+		t.Errorf("ComposeDeep ran %d times; want exactly 1 (one gen, once warm)", fake.deepComposeCount())
+	}
+	if used := deepQuotaUsed(t, st, "user-1"); used != 1 {
+		t.Errorf("quota used = %d; want exactly 1 (charged once on the warm gen)", used)
 	}
 }
 
