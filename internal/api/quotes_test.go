@@ -122,6 +122,71 @@ func TestGetQuotesBatch_Cap(t *testing.T) {
 	}
 }
 
+// fakeBulkQuoteBars implements the optional bulkQuoter (LatestQuotes) on top of
+// BarSource, so getQuotesBatch takes the single-bulk-call fast path. It counts the
+// bulk vs per-ticker calls to assert the batch resolves misses in ONE snapshot.
+type fakeBulkQuoteBars struct {
+	mu        sync.Mutex
+	bulkCalls int
+	perTicker int
+	data      map[string]store.Quote
+}
+
+func (f *fakeBulkQuoteBars) DailyBars(context.Context, string) ([]float64, error) { return nil, nil }
+func (f *fakeBulkQuoteBars) DailyCandles(context.Context, string) ([]store.Candle, error) {
+	return nil, nil
+}
+func (f *fakeBulkQuoteBars) IntradayCandles(context.Context, string, string) ([]store.Candle, error) {
+	return nil, nil
+}
+
+func (f *fakeBulkQuoteBars) LatestQuote(_ context.Context, ticker string) (store.Quote, bool, error) {
+	f.mu.Lock()
+	f.perTicker++
+	f.mu.Unlock()
+	q, ok := f.data[ticker]
+	return q, ok, nil
+}
+
+func (f *fakeBulkQuoteBars) LatestQuotes(_ context.Context, tickers []string) (map[string]store.Quote, error) {
+	f.mu.Lock()
+	f.bulkCalls++
+	f.mu.Unlock()
+	out := map[string]store.Quote{}
+	for _, t := range tickers {
+		if q, ok := f.data[t]; ok {
+			out[t] = q
+		}
+	}
+	return out, nil
+}
+
+func TestGetQuotesBatch_BulkPath(t *testing.T) {
+	fake := &fakeBulkQuoteBars{data: map[string]store.Quote{
+		"AAPL": {Ticker: "AAPL", Price: 190, Source: "alpaca"},
+		"NVDA": {Ticker: "NVDA", Price: 200, Source: "alpaca"},
+		// MSFT absent → omitted.
+	}}
+	srv := serverWithBars(fake)
+	defer srv.Close()
+
+	resp, err := http.Get(srv.URL + "/v1/quotes?tickers=AAPL,NVDA,MSFT")
+	if err != nil {
+		t.Fatal(err)
+	}
+	quotes := decodeQuotes(t, resp)
+
+	if len(quotes) != 2 {
+		t.Fatalf("got %d quotes; want 2 (AAPL,NVDA; MSFT omitted): %v", len(quotes), quotes)
+	}
+	if fake.bulkCalls != 1 {
+		t.Errorf("bulk LatestQuotes called %d times; want exactly 1 (one snapshot for all misses)", fake.bulkCalls)
+	}
+	if fake.perTicker != 0 {
+		t.Errorf("per-ticker LatestQuote called %d times; want 0 (bulk path used instead)", fake.perTicker)
+	}
+}
+
 func TestGetQuotesBatch_NilSourceEmptyStore(t *testing.T) {
 	srv := newTestServer() // nil bar source + empty memory store
 	defer srv.Close()

@@ -71,6 +71,16 @@ type BarSource interface {
 	LatestQuote(ctx context.Context, ticker string) (store.Quote, bool, error)
 }
 
+// bulkQuoter is an OPTIONAL extension a BarSource may implement to resolve many
+// on-demand quotes in ONE upstream call. getQuotesBatch type-asserts for it so a
+// 40-ticker list/zone refresh is a single bulk snapshot instead of N serialized
+// per-ticker LatestQuote fallbacks (the ~5-11s cold-zone latency). Sources without
+// it fall back to per-ticker. Satisfied by *ingest.BarCache (one Alpaca
+// SnapshotQuotesLive over the uncached misses).
+type bulkQuoter interface {
+	LatestQuotes(ctx context.Context, tickers []string) (map[string]store.Quote, error)
+}
+
 // TopicSource provides the latest trending-topics snapshot. nil disables the
 // topics endpoint (returns an empty list).
 type TopicSource interface {
@@ -2113,46 +2123,82 @@ func (s *Server) getBarsBatch(w http.ResponseWriter, r *http.Request) {
 // the bulk counterpart to GET /v1/stocks/{ticker}/quote that list/zone views use so
 // a 40-stock page makes ONE call instead of 40 (which saturated the browser's
 // per-host connection cap and the per-IP rate limiter, the ~20s Theme-Zones load).
-// Each ticker resolves through the SAME path as getQuote (store quote → drop a
-// lingering Yahoo quote → on-demand consolidated-tape fallback when missing/stale),
-// fetched concurrently. Missing tickers are simply omitted from the map (the client
-// renders "—" and the SSE stream fills them in), so the response is always 200 with
-// a possibly-partial map.
+// Two phases: (1) concurrent in-process STORE reads (fast, no upstream calls),
+// keeping a stale non-Yahoo quote as a baseline; (2) the missing/stale tickers are
+// refreshed with a live price — ONE bulk snapshot via the optional bulkQuoter
+// (prod BarCache → a single Alpaca SnapshotQuotesLive) instead of N serialized
+// per-ticker fallbacks, overwriting a baseline only when fresher. Missing tickers
+// are omitted (the client renders "—" and the SSE stream fills them in), so the
+// response is always 200 with a possibly-partial map.
 func (s *Server) getQuotesBatch(w http.ResponseWriter, r *http.Request) {
 	result := map[string]store.Quote{}
 	list := queryTickers(r, maxQuotesBatch)
-	if len(list) > 0 {
-		var mu sync.Mutex
-		var wg sync.WaitGroup
-		for _, ticker := range list {
-			wg.Add(1)
-			go func(ticker string) {
-				defer wg.Done()
-				q, ok, err := s.store.GetQuote(r.Context(), ticker)
-				if err != nil {
-					ok = false
-				}
-				// Yahoo was removed (commercial-use risk): never serve a lingering
-				// Yahoo-sourced quote — treat it as absent so the fallback re-resolves.
-				if ok && q.Source == "yahoo" {
-					ok = false
-				}
-				if s.bars != nil && (!ok || time.Since(q.At) > quoteStaleAfter) {
-					if oq, found, qerr := s.bars.LatestQuote(r.Context(), ticker); qerr == nil && found {
-						if !ok || oq.At.After(q.At) {
-							q, ok = oq, true
-						}
+	if len(list) == 0 {
+		writeJSON(w, http.StatusOK, map[string]any{"quotes": result})
+		return
+	}
+
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	// Phase 1 — concurrent STORE reads (in-process, fast, no upstream calls). Keep
+	// even a stale non-Yahoo quote as a baseline; a missing/stale ticker is collected
+	// for the live refresh below. (Yahoo was removed for commercial-use risk: never
+	// serve a lingering Yahoo-sourced quote — treat it as absent so it re-resolves.)
+	needRefresh := map[string]struct{}{}
+	for _, ticker := range list {
+		wg.Add(1)
+		go func(ticker string) {
+			defer wg.Done()
+			q, ok, err := s.store.GetQuote(r.Context(), ticker)
+			if err != nil || (ok && q.Source == "yahoo") {
+				ok = false
+			}
+			mu.Lock()
+			if ok {
+				result[ticker] = q
+			}
+			if !ok || time.Since(q.At) > quoteStaleAfter {
+				needRefresh[ticker] = struct{}{}
+			}
+			mu.Unlock()
+		}(ticker)
+	}
+	wg.Wait()
+
+	// Phase 2 — refresh the missing/stale tickers with a LIVE price. Prefer ONE bulk
+	// snapshot (prod *ingest.BarCache via bulkQuoter) over N serialized per-ticker
+	// fallbacks — the whole point of the batch endpoint; overwrite a baseline only
+	// when the refreshed quote is fresher. Sources without the bulk extension fall
+	// back to per-ticker LatestQuote, concurrently.
+	if len(needRefresh) > 0 && s.bars != nil {
+		misses := make([]string, 0, len(needRefresh))
+		for t := range needRefresh {
+			misses = append(misses, t)
+		}
+		if bq, ok := s.bars.(bulkQuoter); ok {
+			if quotes, err := bq.LatestQuotes(r.Context(), misses); err == nil {
+				for t, q := range quotes {
+					if cur, had := result[t]; !had || q.At.After(cur.At) {
+						result[t] = q
 					}
 				}
-				if !ok {
-					return
-				}
-				mu.Lock()
-				result[ticker] = q
-				mu.Unlock()
-			}(ticker)
+			}
+		} else {
+			for _, ticker := range misses {
+				wg.Add(1)
+				go func(ticker string) {
+					defer wg.Done()
+					if oq, found, qerr := s.bars.LatestQuote(r.Context(), ticker); qerr == nil && found {
+						mu.Lock()
+						if cur, had := result[ticker]; !had || oq.At.After(cur.At) {
+							result[ticker] = oq
+						}
+						mu.Unlock()
+					}
+				}(ticker)
+			}
+			wg.Wait()
 		}
-		wg.Wait()
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"quotes": result})
 }

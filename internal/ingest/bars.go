@@ -245,6 +245,47 @@ func (b *BarCache) LatestQuote(ctx context.Context, ticker string) (store.Quote,
 	return q, true, nil
 }
 
+// LatestQuotes returns on-demand quotes for MANY tickers in ONE bulk Alpaca
+// snapshot — the batch /v1/quotes path for list/zone views, replacing N serialized
+// per-ticker LatestQuote calls (the ~5-11s cold-zone latency). Cache-first per
+// ticker against the SAME quoteTTL cache LatestQuote uses (so it also warms — and is
+// warmed by — single-quote lookups); only the uncached/stale tickers hit Alpaca, in
+// a single SnapshotQuotesLive request. Tickers with no live price are omitted (the
+// caller renders "—" and the SSE stream fills them in). Unlike LatestQuote it does
+// NOT do the per-ticker daily-candle fallback (kept bulk + fast; a brand-new IPO's
+// closed-price still resolves via the single getQuote on its detail page).
+func (b *BarCache) LatestQuotes(ctx context.Context, tickers []string) (map[string]store.Quote, error) {
+	out := make(map[string]store.Quote, len(tickers))
+	now := time.Now()
+	var need []string
+	b.mu.Lock()
+	for _, t := range tickers {
+		if e, ok := b.quotes[t]; ok && now.Sub(e.at) < quoteTTL {
+			out[t] = e.q
+		} else {
+			need = append(need, t)
+		}
+	}
+	b.mu.Unlock()
+	if len(need) == 0 {
+		return out, nil
+	}
+	quotes, err := b.client.SnapshotQuotesLive(ctx, need)
+	if err != nil {
+		return out, err // return whatever the cache already gave us
+	}
+	b.mu.Lock()
+	for t, q := range quotes {
+		if q.Price <= 0 { // never cache/serve an empty print over a real one
+			continue
+		}
+		b.quotes[t] = quoteEntry{q: q, at: now}
+		out[t] = q
+	}
+	b.mu.Unlock()
+	return out, nil
+}
+
 // latestDailyClose returns the most recent daily candle for ticker (newest of
 // the cached DailyCandles series), used as the last-resort quote price when no
 // live or consolidated trade is available. ok=false when there are no candles
