@@ -37,6 +37,15 @@ type ScorecardProvider interface {
 	Population() ([]indicators.FactorMetrics, time.Time)
 }
 
+// RSPercentiler yields a ticker's relative-strength PERCENTILE vs the tracked universe for a window
+// (excess return over SPY, 0–100, higher = stronger) — a second "relative to market" lens alongside
+// the scorecard factors. Satisfied by *ingest.RelativeStrengthCache. nil → the RS fact is omitted.
+// The percentile is Go-computed (anti-hallucination-safe); returns the population size + as-of and
+// ok=false when the universe is too small or the window can't be computed (insufficient-not-wrong).
+type RSPercentiler interface {
+	RSPercentile(ctx context.Context, ticker, window string) (pct float64, n int, asOf time.Time, ok bool)
+}
+
 // FundProvider returns a ticker's XBRL-derived fundamentals (SEC companyfacts).
 type FundProvider interface {
 	// Fundamentals returns the latest reported fundamentals, or an error for an
@@ -147,6 +156,7 @@ type Sources struct {
 	Fundamentals FundProvider
 	Quote        QuoteProvider
 	Scorecard    ScorecardProvider // factor-percentile population → the "relative to market" section
+	RSRanker     RSPercentiler     // relative-strength-vs-SPY percentile → a second "relative" lens
 
 	// 资金面 / flows providers.
 	Congress  CongressProvider
@@ -402,7 +412,7 @@ func Assemble(ctx context.Context, ticker, lang string, src Sources) FactSheet {
 	addSection(&fs, technical)
 
 	// --- §1.x 相对全市场 / Relative to Market (peer percentiles — de-isolates the report) ---
-	addSection(&fs, assembleRelative(indResult, src, lang))
+	addSection(&fs, assembleRelative(ctx, indResult, src, lang))
 
 	// --- §1.4 资金面 / Smart Money & Flows ---
 	addSection(&fs, assembleFlows(ctx, ticker, src, lang))
@@ -420,13 +430,49 @@ func Assemble(ctx context.Context, ticker, lang string, src Sources) FactSheet {
 // section) when the source is nil, the population is too thin (ComputeScorecard withholds below its
 // floor), or this stock has no computable factor — never fabricated. Descriptive percentiles only,
 // labels stay neutral ("value percentile", not "cheap") so it carries no advice.
-func assembleRelative(indResult indicators.StockIndicatorsResult, src Sources, lang string) SectionFacts {
-	if src.Scorecard == nil {
-		return SectionFacts{Key: "relative", TitleZH: "相对全市场", TitleEN: "Relative to Market"}
+func assembleRelative(ctx context.Context, indResult indicators.StockIndicatorsResult, src Sources, lang string) SectionFacts {
+	sec := SectionFacts{Key: "relative", TitleZH: "相对全市场", TitleEN: "Relative to Market"}
+	// Factor percentiles (value/growth/quality/momentum vs the universe).
+	if src.Scorecard != nil {
+		population, popAt := src.Scorecard.Population()
+		sc := indicators.ComputeScorecard(indicators.ExtractFactorMetrics(indResult), population)
+		sec = relativeSection(sc, popAt, lang)
 	}
-	population, popAt := src.Scorecard.Population()
-	sc := indicators.ComputeScorecard(indicators.ExtractFactorMetrics(indResult), population)
-	return relativeSection(sc, popAt, lang)
+	// Relative-strength-vs-SPY percentile — a second, independent "relative" lens (omitted when
+	// the universe is too small or this stock's window can't be computed). Each fact is
+	// present-or-omitted on its own, so a thin ticker simply shows fewer (insufficient-not-wrong).
+	if src.RSRanker != nil {
+		if pct, n, asOf, ok := src.RSRanker.RSPercentile(ctx, indResult.Ticker, rsRelWindow); ok {
+			sec.Facts = append(sec.Facts, rsPercentileFact(pct, n, asOf, lang))
+		}
+	}
+	return sec
+}
+
+// rsRelWindow is the trailing window the report's relative-strength percentile uses — 3 months, a
+// medium-term read that balances noise against recency (the RS leaderboard supports 1M/3M/6M/1Y).
+const rsRelWindow = "3M"
+
+// rsPercentileFact renders the relative-strength-vs-SPY percentile as a report Fact (Go-computed,
+// descriptive — higher = stronger trailing excess return vs the market; never advice/forecast).
+func rsPercentileFact(pct float64, n int, asOf time.Time, lang string) Fact {
+	pr := pct
+	asOfStr := ""
+	if !asOf.IsZero() {
+		asOfStr = asOf.Format("2006-01-02")
+	}
+	source := pickLang(lang, "Tickwind universe", "Tickwind 全市场")
+	if n > 0 {
+		source = pickLang(lang,
+			"vs "+strconv.Itoa(n)+" tracked US stocks",
+			"对比 "+strconv.Itoa(n)+" 只追踪美股")
+	}
+	return Fact{
+		Key: "rs_percentile", LabelZH: "相对强弱(3 月,对 SPY)", LabelEN: "Relative strength (3M vs SPY)",
+		Value:  pickLang(lang, fmtPercentileEN(pct), fmtPercentileZH(pct)),
+		Raw:    &pr,
+		Status: StatusOK, Source: source, AsOf: asOfStr,
+	}
 }
 
 // relativeSection turns a Go-computed Scorecard into the report's "relative" SectionFacts (4 factor

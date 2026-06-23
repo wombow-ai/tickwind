@@ -750,6 +750,7 @@ func main() {
 			Fundamentals: fundCache,
 			Quote:        priceProvider,
 			Scorecard:    scorecardScan, // factor-percentile population → the "relative to market" report section
+			RSRanker:     rsScan,        // relative-strength-vs-SPY percentile → a second "relative" lens
 
 			// 资金面 / flows providers.
 			Congress:  congressCache,

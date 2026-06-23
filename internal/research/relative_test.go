@@ -1,6 +1,7 @@
 package research
 
 import (
+	"context"
 	"strings"
 	"testing"
 	"time"
@@ -66,9 +67,9 @@ func TestRelativeSection(t *testing.T) {
 }
 
 func TestAssembleRelativeNilSource(t *testing.T) {
-	sec := assembleRelative(indicators.StockIndicatorsResult{}, Sources{}, "en")
+	sec := assembleRelative(context.Background(), indicators.StockIndicatorsResult{}, Sources{}, "en")
 	if len(sec.Facts) != 0 {
-		t.Fatalf("nil scorecard source → no facts, got %+v", sec.Facts)
+		t.Fatalf("nil scorecard + nil RS source → no facts, got %+v", sec.Facts)
 	}
 }
 

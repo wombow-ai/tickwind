@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
@@ -116,4 +117,74 @@ func (c *RelativeStrengthCache) RankByWindow(window string) ([]indicators.RSRank
 	pop, at := c.pop, c.at
 	c.mu.RUnlock()
 	return indicators.RankRelativeStrength(pop, window), at
+}
+
+// minRSPopulation is the floor below which an RS percentile is withheld — ranking a stock against
+// too few peers isn't meaningful (mirrors indicators.minScorecardPopulation).
+const minRSPopulation = 8
+
+// RSPercentile returns `ticker`'s relative-strength PERCENTILE for `window` ("1M".."1Y") — how its
+// excess return vs SPY ranks within the tracked universe (0–100, higher = stronger). It powers the
+// research report's "relative to market" section. The population distribution is read from the cache;
+// the target's own excess return is reused from the population when present, else computed on-demand
+// from its daily candles (so ANY ticker gets a percentile, not only the cached universe). ok=false
+// when the population is too small (< minRSPopulation) or the target's window can't be computed
+// (insufficient history) — never fabricated. Also returns the population size + as-of for attribution.
+func (c *RelativeStrengthCache) RSPercentile(ctx context.Context, ticker, window string) (float64, int, time.Time, bool) {
+	ranks, at := c.RankByWindow(window)
+	if len(ranks) < minRSPopulation {
+		return 0, 0, at, false
+	}
+	ticker = strings.ToUpper(strings.TrimSpace(ticker))
+	rel, ok := relForTicker(ranks, ticker)
+	if !ok {
+		// Not in the tracked universe → compute its excess return vs SPY on-demand.
+		rel, ok = c.computeRel(ctx, ticker, window)
+		if !ok {
+			return 0, 0, at, false
+		}
+	}
+	below := 0
+	for _, r := range ranks {
+		if r.Relative < rel {
+			below++
+		}
+	}
+	return 100 * float64(below) / float64(len(ranks)), len(ranks), at, true
+}
+
+// relForTicker returns the ticker's excess return from a ranked window, if it is in the population.
+func relForTicker(ranks []indicators.RSRank, ticker string) (float64, bool) {
+	for _, r := range ranks {
+		if r.Ticker == ticker {
+			return r.Relative, true
+		}
+	}
+	return 0, false
+}
+
+// computeRel computes `ticker`'s excess return vs SPY for `window` on-demand (a target outside the
+// cached universe), reusing the SAME candle source + ComputeRelativeStrength the scan uses.
+func (c *RelativeStrengthCache) computeRel(ctx context.Context, ticker, window string) (float64, bool) {
+	if ticker == "" || ticker == rsBenchmark {
+		return 0, false
+	}
+	bench, err := c.candles.DailyCandles(ctx, rsBenchmark)
+	if err != nil || len(bench) == 0 {
+		return 0, false
+	}
+	cs, err := c.candles.DailyCandles(ctx, ticker)
+	if err != nil || len(cs) == 0 {
+		return 0, false
+	}
+	rs, ok := indicators.ComputeRelativeStrength(cs, bench)
+	if !ok {
+		return 0, false
+	}
+	for _, w := range rs.Windows {
+		if w.Label == window {
+			return w.Relative, true
+		}
+	}
+	return 0, false
 }
