@@ -97,6 +97,40 @@ func usSymbols(tickers []string) []string {
 	return out
 }
 
+// indexProxyTickers are the ETF proxies the homepage IndicesStrip shows for the
+// three US indices (SPY = S&P 500, DIA = Dow, QQQ = Nasdaq-100). They are pinned to
+// the FRONT of the WS base set (via withIndexProxies) so the index strip streams in
+// real-time like the watchlist/popular set instead of relying on the slower REST
+// poller — they aren't in ingestTickers, so without pinning they'd only enter the WS
+// via the shared, LRU-evictable "viewed" slots and tick unreliably.
+var indexProxyTickers = []string{"SPY", "DIA", "QQQ"}
+
+// withIndexProxies returns the WS base symbols with the index ETF proxies prepended
+// (deduped, proxies first so capBase never trims them; foreign/empty already filtered
+// by usSymbols). Used for both the initial base set and the periodic RefreshBase so
+// the proxies stay pinned across refreshes.
+func withIndexProxies(syms []string) []string {
+	seen := make(map[string]struct{}, len(syms)+len(indexProxyTickers))
+	out := make([]string, 0, len(syms)+len(indexProxyTickers))
+	add := func(t string) {
+		if t == "" {
+			return
+		}
+		if _, ok := seen[t]; ok {
+			return
+		}
+		seen[t] = struct{}{}
+		out = append(out, t)
+	}
+	for _, t := range indexProxyTickers {
+		add(t)
+	}
+	for _, t := range syms {
+		add(t)
+	}
+	return out
+}
+
 // taiwanSeed is a small set of Taiwan large-caps (TWSE .TW codes) always
 // ingested, so TW stock pages have data out of the box — TSMC, Hon Hai,
 // MediaTek, Delta, Chunghwa Telecom, UMC.
@@ -572,7 +606,7 @@ func main() {
 		// watchlist US set (≤30, free-tier cap); the REST poller covers breadth +
 		// seeds prev/regular-close. Quotes flow to the same SSE hub + store.
 		if cfg.AlpacaWSEnabled {
-			wsSyms := usSymbols(ingestTickers(ctx))
+			wsSyms := withIndexProxies(usSymbols(ingestTickers(ctx)))
 			streamer := alpacaws.New(cfg.AlpacaWSURL, cfg.AlpacaKeyID, cfg.AlpacaSecret, wsSyms,
 				priceClient, priceClient.SessionAt, hub.Publish, st, log)
 			liveSub = streamer // viewed-ticker live subscription (#2b)
@@ -587,7 +621,7 @@ func main() {
 					case <-ctx.Done():
 						return
 					case <-tk.C:
-						streamer.RefreshBase(usSymbols(ingestTickers(ctx)))
+						streamer.RefreshBase(withIndexProxies(usSymbols(ingestTickers(ctx))))
 					}
 				}
 			}()
