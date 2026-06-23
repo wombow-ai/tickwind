@@ -2994,6 +2994,31 @@ type researchEntry struct {
 	paywallLocked bool
 }
 
+// researchRelativeRSWindow is the trailing window the report's relative-strength percentile uses
+// (mirrors research.rsRelWindow = "3M"); the cold-cache guard checks the RS leaderboard for it.
+const researchRelativeRSWindow = "3M"
+
+// relativeSourcesCold reports whether any cross-sectional "relative to market" source feeding the
+// report's relative section — the factor scorecard OR the relative-strength leaderboard — is still
+// COLD (empty population): the brief post-restart window before that source's first scan lands. A
+// report assembled now omits that source's relative fact(s) for EVERY ticker, so the cold-cache
+// guards (sync: skip the durable cache; deep: defer the gen) treat it as cold until BOTH are warm,
+// so a relative-INCOMPLETE report can't freeze for the ET-day/-month. nil source = that lens is off
+// → not cold (steady state, cache normally).
+func (s *Server) relativeSourcesCold() bool {
+	if s.scorecard != nil {
+		if pop, _ := s.scorecard.Population(); len(pop) == 0 {
+			return true
+		}
+	}
+	if s.rsScan != nil {
+		if ranks, _ := s.rsScan.RankByWindow(researchRelativeRSWindow); len(ranks) == 0 {
+			return true
+		}
+	}
+	return false
+}
+
 // getResearch serves the per-ticker deep-research report: a Go-assembled, source-
 // attributed fact sheet (every number set in Go) plus optional per-section LLM
 // prose. The LLM is OFF THE CRITICAL PATH — the data-only fact sheet always serves
@@ -3066,19 +3091,18 @@ func (s *Server) getResearchSync(w http.ResponseWriter, r *http.Request, ticker,
 	s.researchInflight[key] = ch
 	s.researchMu.Unlock()
 
-	// coldScorecard is set right after the data-only assemble below. It is true when the
-	// cross-sectional factor population was still COLD (empty) at assemble time — the
-	// ~1-3 min after a restart, before the scorecard cache's first scan lands — which makes
-	// assembleRelative omit the "relative" peer-percentile section for EVERY ticker. We then
-	// SKIP the durable per-(ticker, ET-day, lang) cache for that report so a relative-less
-	// sheet can't freeze for the rest of the day; the next visit re-assembles a complete
-	// report once the population is warm. Cheap: the data-only sheet is always returned, and
-	// only the few reports born in the brief cold window re-assemble.
-	coldScorecard := false
+	// coldRelative is set right before the data-only assemble below: true when any relative-section
+	// source (the factor scorecard OR the relative-strength leaderboard) is still COLD (empty
+	// population) — the brief post-restart window before its first scan lands — which makes the
+	// relative section incomplete for EVERY ticker. We then SKIP the durable per-(ticker, ET-day,
+	// lang) cache so a relative-INCOMPLETE sheet can't freeze for the day; the next visit
+	// re-assembles once warm. Cheap: the data-only sheet always returns, and only the few reports
+	// born in the brief cold window re-assemble.
+	coldRelative := false
 
 	finish := func(e *researchEntry) {
 		s.researchMu.Lock()
-		if e != nil && !coldScorecard {
+		if e != nil && !coldRelative {
 			s.researchCache[key] = *e
 		}
 		delete(s.researchInflight, key)
@@ -3096,18 +3120,11 @@ func (s *Server) getResearchSync(w http.ResponseWriter, r *http.Request, ticker,
 		}
 	}
 
-	// Capture whether the cross-sectional factor population is cold BEFORE assembling, so
-	// coldScorecard reflects the state at-or-before the assemble's own population read inside
-	// assembleRelative. If cold, the relative section is omitted for every ticker and finish()
-	// skips the durable cache (a relative-less sheet can't freeze for the ET-day; the next
-	// visit re-assembles once warm). Reading BEFORE the assemble makes the only possible race
-	// a HARMLESS false-positive (skip caching a complete report once, re-gen next request) —
-	// never the harmful inverse of caching a cold report. nil scorecard = feature off → cache.
-	if s.scorecard != nil {
-		if pop, _ := s.scorecard.Population(); len(pop) == 0 {
-			coldScorecard = true
-		}
-	}
+	// Capture whether any relative source is cold BEFORE assembling (see relativeSourcesCold), so
+	// coldRelative reflects the state at-or-before the assemble's own reads. Reading BEFORE the
+	// assemble makes the only possible race a HARMLESS false-positive (skip caching a complete
+	// report once, re-gen next request) — never the harmful inverse of caching a cold report.
+	coldRelative = s.relativeSourcesCold()
 	// Always assemble the data-only fact sheet first (cheap, no LLM, never errors).
 	fs := s.researchCalc.Report(r.Context(), ticker, lang)
 	// "Nothing at all": no sections and no underlying date → unknown/invalid ticker.
@@ -3220,20 +3237,14 @@ func (s *Server) getResearchDeep(w http.ResponseWriter, r *http.Request, ticker,
 	}
 	dataOnly := researchEntry{fs: fs, llm: false, model: "", at: time.Now().UTC()}
 
-	// coldScorecard: the cross-sectional factor population was still cold (empty) when we
-	// assembled fs, so fs OMITS the relative peer-percentile section (assembleRelative found
-	// no peers to rank against). The deep path caches the prose'd report per ET-MONTH AND
-	// persists it to the store (served for deepReportTTL days), so caching a cold relative-less
-	// deep report would freeze it far longer than the sync path's one ET-day. We therefore
-	// DEFER the gen while cold (below): the gen — which charges the scarce monthly quota and
-	// caches — starts only once the population is warm. nil scorecard = relative feature off →
-	// never cold → generate normally.
-	coldScorecard := false
-	if s.scorecard != nil {
-		if pop, _ := s.scorecard.Population(); len(pop) == 0 {
-			coldScorecard = true
-		}
-	}
+	// coldRelative: a relative-section source (the factor scorecard OR the relative-strength
+	// leaderboard — see relativeSourcesCold) was still cold (empty) when we assembled fs, so fs
+	// OMITS that relative fact for every ticker. The deep path caches per ET-MONTH AND persists to
+	// the store (served for deepReportTTL days), so caching a relative-INCOMPLETE deep report would
+	// freeze it far longer than the sync path's one ET-day. We therefore DEFER the gen while cold
+	// (below): the gen — which charges the scarce monthly quota and caches — starts only once the
+	// sources are warm. nil sources = relative lens off → never cold → generate normally.
+	coldRelative := s.relativeSourcesCold()
 
 	// Decide what to do under the lock so the single-flight gate + the cap reservation
 	// are atomic with the inflight check (no two requests can both become the generator).
@@ -3256,8 +3267,8 @@ func (s *Server) getResearchDeep(w http.ResponseWriter, r *http.Request, ticker,
 		s.writeResearchStatus(w, dataOnly, proseStatusLLMDisabled)
 		return
 	}
-	if coldScorecard {
-		// Factor population still cold → fs omits the relative section. Defer the gen (which
+	if coldRelative {
+		// A relative source still cold → fs omits a relative fact. Defer the gen (which
 		// caches for the ET-month + persists to the store + charges the monthly quota) until
 		// the population is warm, so we never persist a relative-less deep report. The client
 		// keeps polling (~4s) and a later poll — once warm — starts the real gen. Reuses the

@@ -198,6 +198,25 @@ func (s *togglableScorecard) PopulationRanked(string) ([]indicators.FactorRank, 
 	return nil, time.Time{}
 }
 
+// togglableRS is an RSScanSource whose leaderboard can be flipped from cold (empty) to warm
+// mid-test, to exercise the relative-section cold guard's RS arm (relativeSourcesCold).
+type togglableRS struct {
+	mu    sync.Mutex
+	ranks []indicators.RSRank
+}
+
+func (s *togglableRS) setWarm(r []indicators.RSRank) {
+	s.mu.Lock()
+	s.ranks = r
+	s.mu.Unlock()
+}
+
+func (s *togglableRS) RankByWindow(string) ([]indicators.RSRank, time.Time) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.ranks, time.Unix(1_700_000_000, 0)
+}
+
 // deepQuotaUsed reads user `sub`'s deep-research quota count for the current ET month
 // (the key the async deep path charges against) from the test's memory store.
 func deepQuotaUsed(t *testing.T, st *memory.Store, sub string) int {
@@ -367,6 +386,43 @@ func TestGetResearch_ColdScorecardSkipsCache(t *testing.T) {
 	getResearch(t, url) // cache hit → no new compose
 	if got := fake.composeCount(); got != 3 {
 		t.Fatalf("warm scorecard: Compose ran %d times total; want 3 (warm report cached, repeat served from cache)", got)
+	}
+}
+
+// TestGetResearch_ColdRSSkipsCache locks the RS arm of the relative-section cold guard: the relative
+// section also carries a relative-strength-vs-SPY percentile, so a report assembled while the RS
+// leaderboard is still cold (post-restart, before its first scan) is relative-INCOMPLETE and must NOT
+// be cached — even when the scorecard is already warm. Once the RS leaderboard warms too, it caches.
+func TestGetResearch_ColdRSSkipsCache(t *testing.T) {
+	fake := &fakeResearch{
+		fs:      sampleSheet(),
+		enabled: true,
+		model:   "deepseek-chat",
+		prose:   map[string]string{"valuation": "估值偏高。"},
+	}
+	sc := &togglableScorecard{}
+	sc.setWarm(pop10())  // scorecard WARM
+	rs := &togglableRS{} // RS leaderboard COLD (empty)
+	h, _ := buildResearchHandler(fake)
+	h.SetScorecard(sc)
+	h.SetRSScan(rs)
+	srv := httptest.NewServer(h)
+	defer srv.Close()
+	url := srv.URL + "/v1/stocks/AAPL/research"
+
+	// Scorecard warm but RS cold → relative section incomplete → not cached → both re-compose.
+	getResearch(t, url)
+	getResearch(t, url)
+	if got := fake.composeCount(); got != 2 {
+		t.Fatalf("scorecard-warm + RS-cold: Compose ran %d times; want 2 (relative-incomplete report must not be cached)", got)
+	}
+
+	// Warm the RS leaderboard too → the next report caches → its repeat is a hit.
+	rs.setWarm([]indicators.RSRank{{Ticker: "X", Relative: 1}})
+	getResearch(t, url) // generates + caches (compose #3)
+	getResearch(t, url) // cache hit → no new compose
+	if got := fake.composeCount(); got != 3 {
+		t.Fatalf("both warm: Compose ran %d times total; want 3 (warm report cached)", got)
 	}
 }
 
