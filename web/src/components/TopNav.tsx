@@ -136,6 +136,7 @@ export function TopNav() {
     {href: '/screen', label: tr('nav.screen')},
     {href: '/indicators', label: tr('nav.indicators')},
     {href: '/smart-money', label: tr('nav.smartMoney')},
+    {href: '/events', label: tr('nav.materialEvents')},
     {href: '/unusual', label: tr('nav.unusual')},
     {href: '/calendar/earnings', label: tr('nav.calendar')},
     {href: '/discussion', label: tr('nav.discussion')},

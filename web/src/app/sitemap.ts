@@ -15,6 +15,7 @@ import {FACTOR_PRESETS} from '@/lib/factors';
 import {RS_WINDOWS} from '@/lib/rsWindows';
 import {REACTION_VIEWS} from '@/lib/reactionViews';
 import {DIVIDEND_VIEWS} from '@/lib/dividendViews';
+import {EVENT_CATEGORIES} from '@/lib/eventCategories';
 import {localTopicKeys} from '@/lib/topics';
 import {COMPARE_PAIRS, pairSlug} from '@/lib/compare';
 import {ZONES} from '@/lib/zones';
@@ -225,6 +226,16 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     changeFrequency: 'daily',
     priority: 0.6,
   }));
+  // Material-events feed (`/events` + `/events/{category}`) — recent high-signal 8-K filings; new
+  // filings land daily, so a daily change frequency keeps the pages crawl-fresh.
+  const eventPages: Page[] = [
+    {path: '/events', changeFrequency: 'daily', priority: 0.6},
+    ...EVENT_CATEGORIES.map(c => ({
+      path: `/events/${c.key}`,
+      changeFrequency: 'daily' as const,
+      priority: 0.6,
+    })),
+  ];
   // Curated theme zones (`/zone/{key}`) — the AI flagship + 10x theme siblings.
   const zonePages: Page[] = ZONES.map(z => ({
     path: `/zone/${z.key}`,
@@ -278,6 +289,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     ...rsPages,
     ...reactionPages,
     ...dividendPages,
+    ...eventPages,
     ...zonePages,
     ...comparePages,
     ...stockDirectoryPages,

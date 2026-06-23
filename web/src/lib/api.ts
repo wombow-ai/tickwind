@@ -3052,6 +3052,46 @@ export function getDividendScreen(
   return getJson<DividendScreenResponse>(`/v1/screen/dividends?${p.toString()}`, signal);
 }
 
+/** One parsed 8-K item code with its canonical Go-owned label. */
+export interface MaterialEventItem {
+  code: string;
+  label_en: string;
+  label_zh: string;
+}
+
+/** One notable 8-K on the market-wide material-events feed: the ticker + the Go-owned event facts
+ * (form, dates, SEC filing link, and the filtered NOTABLE item codes). Facts only — no LLM. */
+export interface MaterialFeedEvent {
+  ticker: string;
+  form: string;
+  filed_date: string;
+  report_date?: string;
+  accession_url: string;
+  items: MaterialEventItem[];
+}
+
+/** Envelope returned by `GET /v1/material-feed`. */
+export interface MaterialFeedResponse {
+  count: number;
+  events: MaterialFeedEvent[];
+  as_of?: string;
+}
+
+/**
+ * The market-wide NOTABLE material-events feed: recent high-signal 8-K filings (leadership change,
+ * M&A, bankruptcy, restatement, …) across the tracked universe, newest first. An optional 8-K item
+ * code filters to one category (e.g. "5.02"). Go-owned facts + canonical labels — no LLM, no advice.
+ * Public, no auth. Throws on a non-2xx/network error (callers client-fetch with a try/catch → empty
+ * state).
+ */
+export function getMaterialFeed(item?: string, limit?: number, signal?: AbortSignal): Promise<MaterialFeedResponse> {
+  const p = new URLSearchParams();
+  if (item) p.set('item', item);
+  if (limit != null) p.set('limit', String(limit));
+  const q = p.toString();
+  return getJson<MaterialFeedResponse>(`/v1/material-feed${q ? `?${q}` : ''}`, signal);
+}
+
 /**
  * Fetches a ticker's multi-factor scorecard (percentiles vs the tracked universe). Resolves to
  * `null` on any 4xx/network error (no fundamentals / population not ready) so the card can hide
