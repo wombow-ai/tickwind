@@ -289,15 +289,22 @@ func (s *Server) chatTurn(w http.ResponseWriter, r *http.Request, u auth.User, c
 	writeJSON(w, http.StatusOK, resp)
 }
 
-// getChatUsage returns the signed-in user's current monthly chat token usage, so the hub
-// can show the quota bar immediately on load (the per-turn meter only arrives with a reply).
+// getChatUsage returns the signed-in user's chat token usage for THEIR tier's quota window,
+// so the hub can show the quota bar (Pro) or a low-quota nudge (free) immediately on load —
+// the per-turn meter only arrives with a reply. It mirrors chatQuotaGate: Pro is metered per
+// ET-month on the high cap, the free taste per ET-week on the small cap. Reporting the monthly
+// bucket for a free user (the old behavior) misstated their weekly allowance.
 func (s *Server) getChatUsage(w http.ResponseWriter, r *http.Request) {
 	u, ok := s.requireUser(w, r)
 	if !ok {
 		return
 	}
-	used, _ := s.store.GetChatTokensUsed(r.Context(), u.ID, researchMonth())
-	writeJSON(w, http.StatusOK, map[string]int{"used": used, "limit": s.chatMonthlyTokenLimit})
+	period, limit := researchMonth(), s.chatMonthlyTokenLimit
+	if s.tierOf(r.Context(), u.ID) != tierPro {
+		period, limit = researchWeek(), s.chatFreeWeeklyTokens
+	}
+	used, _ := s.store.GetChatTokensUsed(r.Context(), u.ID, period)
+	writeJSON(w, http.StatusOK, map[string]int{"used": used, "limit": limit})
 }
 
 // chatTurnStream is the SSE (streaming) variant of chatTurn: it streams the final answer's

@@ -92,15 +92,13 @@ export function ChatHub() {
       try {
         const token = await getToken();
         const list = await listConversations(token);
-        // The AI-quota bar is a Pro-only affordance — free users chat on a small hidden
-        // taste, so skip the usage fetch entirely for them.
+        // Quota is tier-aware server-side (Pro → monthly bucket for the meter; free → weekly
+        // bucket for the low-quota nudge), so fetch it for both tiers on load.
         let usage: {used: number; limit: number} | null = null;
-        if (isPro) {
-          try {
-            usage = await getChatUsage(token);
-          } catch {
-            /* the per-turn meter will fill it in */
-          }
+        try {
+          usage = await getChatUsage(token);
+        } catch {
+          /* the per-turn meter will fill it in */
         }
         if (active) {
           setConvs(list);
@@ -297,6 +295,13 @@ export function ChatHub() {
                 </div>
               );
             })()}
+            {/* Free taste: a gentle heads-up only when actually running low — not a meter
+                from msg 1 (that would invite consumption + read as stingy). */}
+            {!isPro && meter && meter.used / Math.max(1, meter.limit) >= 0.75 && (
+              <Link href="/pro" onClick={() => setSidebarOpen(false)} style={{display: 'block', fontSize: 11.5, lineHeight: 1.45, color: 'var(--accent2)', textDecoration: 'none', padding: '8px 10px', borderRadius: 8, background: 'var(--surface2)', border: '1px solid var(--border)'}}>
+                {tr('chat.hub.lowQuota')}
+              </Link>
+            )}
             <div style={{display: 'flex', alignItems: 'center', gap: 9}}>
               <div style={{width: 28, height: 28, borderRadius: '50%', background: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 600, color: '#1c1404'}}>{(user.email ?? 'TW').slice(0, 2).toUpperCase()}</div>
               <div style={{flex: 1, minWidth: 0}}>
