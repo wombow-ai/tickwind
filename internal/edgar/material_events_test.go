@@ -168,7 +168,7 @@ func TestExtractMaterialEvents(t *testing.T) {
 	r.Items = []string{"2.02,9.01", "", "5.02", "", "8.01", "7.01"}
 
 	cik := "0000320193"
-	got := extractMaterialEvents(sub, cik)
+	got := extractMaterialEvents(sub, cik, maxMaterialEvents)
 
 	// Expect the 3 in-window 8-K/8-K/A filings (indices 0, 2, 5); the 10-Q, Form 4,
 	// and the out-of-window 8-K (index 4) are dropped.
@@ -238,9 +238,13 @@ func TestExtractMaterialEventsCap(t *testing.T) {
 		r.PrimaryDocument = append(r.PrimaryDocument, "doc.htm")
 		r.Items = append(r.Items, "8.01")
 	}
-	got := extractMaterialEvents(sub, "0000320193")
+	got := extractMaterialEvents(sub, "0000320193", maxMaterialEvents)
 	if len(got) != maxMaterialEvents {
 		t.Fatalf("extractMaterialEvents kept %d, want cap %d", len(got), maxMaterialEvents)
+	}
+	// A higher cap (the feed's deeper fetch) returns more of the in-window 8-Ks.
+	if deep := extractMaterialEvents(sub, "0000320193", n); len(deep) != n {
+		t.Fatalf("extractMaterialEvents(max=%d) kept %d, want %d (deeper cap binds higher)", n, len(deep), n)
 	}
 }
 

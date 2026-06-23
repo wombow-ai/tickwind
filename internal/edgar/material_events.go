@@ -204,6 +204,18 @@ type submissions8KResp struct {
 // ticker/CIK can't be resolved or the feed fetch fails — an existing company with
 // zero recent 8-Ks returns an empty slice and nil error.
 func (c *Client) MaterialEvents(ctx context.Context, ticker string) ([]MaterialEvent, error) {
+	return c.MaterialEventsN(ctx, ticker, maxMaterialEvents)
+}
+
+// MaterialEventsN is MaterialEvents with an explicit cap on how many recent 8-Ks to return (still
+// bounded to materialEventsLookback). The market-wide material-events FEED passes a higher cap so a
+// chatty filer's routine 8-Ks (earnings, exhibits, Reg FD) don't crowd its NOTABLE filings (officer
+// change, M&A, restatement, …) out of the per-ticker window before the feed's notable-filter runs —
+// the default cap of 10 leaves the feed thin. max <= 0 falls back to maxMaterialEvents.
+func (c *Client) MaterialEventsN(ctx context.Context, ticker string, max int) ([]MaterialEvent, error) {
+	if max <= 0 {
+		max = maxMaterialEvents
+	}
 	info, err := c.lookup(ctx, ticker)
 	if err != nil {
 		return nil, err
@@ -212,7 +224,7 @@ func (c *Client) MaterialEvents(ctx context.Context, ticker string) ([]MaterialE
 	if err := c.get(ctx, fmt.Sprintf(submissionsURL, info.CIK), &sub); err != nil {
 		return nil, err
 	}
-	return extractMaterialEvents(sub, info.CIK), nil
+	return extractMaterialEvents(sub, info.CIK, max), nil
 }
 
 // earningsDatesLookback bounds how far back EarningsDates collects earnings announcements
@@ -297,12 +309,12 @@ func hasItem(raw, code string) bool {
 // recent 8-K / 8-K/A filings and builds the MaterialEvent list. It is pure (no
 // I/O) so it is unit-testable. Filtering: form[i] is "8-K" or "8-K/A", filed
 // within the lookback window, newest first, capped at maxMaterialEvents.
-func extractMaterialEvents(sub submissions8KResp, cik string) []MaterialEvent {
+func extractMaterialEvents(sub submissions8KResp, cik string, max int) []MaterialEvent {
 	r := sub.Filings.Recent
 	cikTrimmed := strings.TrimLeft(cik, "0")
 	cutoff := time.Now().UTC().Add(-materialEventsLookback)
 
-	out := make([]MaterialEvent, 0, maxMaterialEvents)
+	out := make([]MaterialEvent, 0, max)
 	for i := 0; i < len(r.Form); i++ {
 		form := strings.TrimSpace(r.Form[i])
 		if form != "8-K" && form != "8-K/A" {
@@ -336,7 +348,7 @@ func extractMaterialEvents(sub submissions8KResp, cik string) []MaterialEvent {
 				cikTrimmed, accNoDashes, primaryDoc)
 		}
 		out = append(out, ev)
-		if len(out) >= maxMaterialEvents {
+		if len(out) >= max {
 			break
 		}
 	}

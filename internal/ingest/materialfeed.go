@@ -19,12 +19,16 @@ const (
 	materialFeedScanEvery = 60 * time.Minute
 	materialFeedScanPace  = 80 * time.Millisecond
 	materialFeedMax       = 120
+	// materialFeedPerTicker: how many recent 8-Ks to pull PER TICKER before filtering to notable
+	// items — higher than the per-stock view's 10 so routine filings (earnings/exhibits) don't crowd a
+	// ticker's NOTABLE events out of the window (which left the feed thin at the default cap).
+	materialFeedPerTicker = 40
 )
 
-// MaterialEventSource yields a ticker's recent 8-K material events (FACTS ONLY — no LLM; satisfied by
-// *edgar.Client). Declared here so this package needn't import api.
+// MaterialEventSource yields a ticker's recent 8-K material events, capped at `max` (FACTS ONLY — no
+// LLM; satisfied by *edgar.Client). Declared here so this package needn't import api.
 type MaterialEventSource interface {
-	MaterialEvents(ctx context.Context, ticker string) ([]edgar.MaterialEvent, error)
+	MaterialEventsN(ctx context.Context, ticker string, max int) ([]edgar.MaterialEvent, error)
 }
 
 // MaterialFeedCache precomputes a market-wide feed of NOTABLE recent 8-K events (leadership change,
@@ -87,7 +91,7 @@ func (c *MaterialFeedCache) scan(ctx context.Context) {
 			case <-time.After(materialFeedScanPace):
 			}
 		}
-		events, err := c.src.MaterialEvents(ctx, tk)
+		events, err := c.src.MaterialEventsN(ctx, tk, materialFeedPerTicker)
 		if err != nil {
 			continue
 		}

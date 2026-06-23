@@ -11,7 +11,7 @@ type fakeMatEvents struct {
 	m map[string][]edgar.MaterialEvent
 }
 
-func (f fakeMatEvents) MaterialEvents(ctx context.Context, t string) ([]edgar.MaterialEvent, error) {
+func (f fakeMatEvents) MaterialEventsN(ctx context.Context, t string, max int) ([]edgar.MaterialEvent, error) {
 	return f.m[t], nil
 }
 
