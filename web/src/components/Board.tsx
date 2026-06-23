@@ -31,6 +31,7 @@ import {
 } from '@/components/SortControl';
 import {StockCard} from '@/components/StockCard';
 import {StockListToggle, StockRow, useStockListView} from '@/components/StockRow';
+import {WatchlistWhatsNew} from '@/components/WatchlistWhatsNew';
 import {TimelineItem} from '@/components/TimelineItem';
 import {EmptyState, ErrorState, FeedSkeleton} from '@/components/ui/states';
 import {useToast} from '@/components/ui/Toast';
@@ -289,6 +290,13 @@ export function Board() {
           </Link>
         </div>
       )}
+
+      {/* Welcome-back hook: how many watchlist headlines arrived since the last visit. Self-hides
+          unless signed-in, with a watchlist, viewing the full (unfocused) feed, and it's loaded. */}
+      <WatchlistWhatsNew
+        news={news.items}
+        ready={!needLogin && !focusTicker && tickers.length > 0 && news.status === 'ready'}
+      />
 
       {/* Stock strip */}
       {!needLogin &&
