@@ -70,6 +70,7 @@ func TestRankDividend(t *testing.T) {
 		{Ticker: "MO", Dividend: DividendView{Yield: divF64(6.5)}},                              // ties T on yield → ticker tie-break (MO<T)
 		{Ticker: "XYZ", Dividend: DividendView{PayoutRatio: divF64(-10), YoYGrowth: divF64(1)}}, // loss-maker: negative payout, no yield
 		{Ticker: "NOYLD", Dividend: DividendView{PayoutRatio: divF64(30)}},                      // payout-only
+		{Ticker: "BURN", Dividend: DividendView{FCFCoverage: divF64(-2.5)}},                     // cash-burner: <=0 FCF coverage → excluded from best-covered
 		{Ticker: "", Dividend: DividendView{Yield: divF64(99)}},                                 // empty ticker → dropped
 	}
 	order := func(rs []DividendRank) []string {
@@ -98,8 +99,9 @@ func TestRankDividend(t *testing.T) {
 	if got := order(RankDividend(pop, DividendViewFastestGrowing)); !eq(got, []string{"NVDA", "KO", "AAPL", "T", "XYZ"}) {
 		t.Fatalf("fastest-growing = %v, want [NVDA KO AAPL T XYZ]", got)
 	}
+	// best-covered desc, POSITIVE coverage only → BURN (-2.5×, FCF didn't cover the payout) excluded.
 	if got := order(RankDividend(pop, DividendViewBestCovered)); !eq(got, []string{"NVDA", "AAPL", "KO", "T"}) {
-		t.Fatalf("best-covered = %v, want [NVDA AAPL KO T]", got)
+		t.Fatalf("best-covered = %v, want [NVDA AAPL KO T] (BURN's negative coverage excluded)", got)
 	}
 	// lowest-payout asc, POSITIVE only → XYZ (-10) excluded.
 	if got := order(RankDividend(pop, DividendViewLowestPayout)); !eq(got, []string{"NVDA", "AAPL", "NOYLD", "T", "KO"}) {

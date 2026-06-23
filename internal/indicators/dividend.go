@@ -135,8 +135,11 @@ func RankDividend(pop []TickerDividend, view string) []DividendRank {
 		if metric == nil {
 			continue // this view's metric isn't computable for the ticker → omit (insufficient)
 		}
-		if view == DividendViewLowestPayout && *metric <= 0 {
-			continue // a non-positive payout ratio (loss-maker) is not a meaningful "low payout"
+		// A non-positive ranking metric is meaningless for these views (and would otherwise sort to the
+		// tail): a <=0 payout ratio is a loss-maker, and <=0 FCF coverage means free cash flow did NOT
+		// cover the payout — so a cash-burning payer can't belong on a "best covered by FCF" board.
+		if *metric <= 0 && (view == DividendViewLowestPayout || view == DividendViewBestCovered) {
+			continue
 		}
 		rows = append(rows, scored{
 			row: DividendRank{
