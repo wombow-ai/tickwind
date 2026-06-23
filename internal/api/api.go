@@ -646,6 +646,7 @@ func New(st store.Store, hub QuoteStream, enricher enrich.Enricher, verifier *au
 	mux.HandleFunc("GET /v1/stocks/{ticker}/earnings", s.getStockEarnings)
 	mux.HandleFunc("GET /v1/stocks/{ticker}/summary", s.getSummary)
 	mux.HandleFunc("GET /v1/bars", s.getBarsBatch)
+	mux.HandleFunc("GET /v1/quotes", s.getQuotesBatch)
 	mux.HandleFunc("GET /v1/news", s.getNewsBatch)
 	mux.HandleFunc("GET /v1/social", s.getSocialBatch)
 	mux.HandleFunc("GET /v1/hot", s.getHot)
@@ -2045,6 +2046,12 @@ func (s *Server) getScreen(w http.ResponseWriter, r *http.Request) {
 // will resolve.
 const maxBarsBatch = 30
 
+// maxQuotesBatch caps how many tickers one batched /v1/quotes request resolves.
+// Higher than maxBarsBatch because a list/zone view can show ~40 stocks and these
+// are cheap store reads (the on-demand fallback only fires for the few misses); the
+// client chunks anything larger into multiple batches.
+const maxQuotesBatch = 50
+
 // quoteStaleAfter: a stored quote whose last trade is older than this gets an
 // on-demand refresh (which can also engage the consolidated-tape fallback).
 const quoteStaleAfter = 5 * time.Minute
@@ -2100,6 +2107,54 @@ func (s *Server) getBarsBatch(w http.ResponseWriter, r *http.Request) {
 		wg.Wait()
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"bars": result})
+}
+
+// getQuotesBatch returns the latest quote for multiple tickers in ONE request —
+// the bulk counterpart to GET /v1/stocks/{ticker}/quote that list/zone views use so
+// a 40-stock page makes ONE call instead of 40 (which saturated the browser's
+// per-host connection cap and the per-IP rate limiter, the ~20s Theme-Zones load).
+// Each ticker resolves through the SAME path as getQuote (store quote → drop a
+// lingering Yahoo quote → on-demand consolidated-tape fallback when missing/stale),
+// fetched concurrently. Missing tickers are simply omitted from the map (the client
+// renders "—" and the SSE stream fills them in), so the response is always 200 with
+// a possibly-partial map.
+func (s *Server) getQuotesBatch(w http.ResponseWriter, r *http.Request) {
+	result := map[string]store.Quote{}
+	list := queryTickers(r, maxQuotesBatch)
+	if len(list) > 0 {
+		var mu sync.Mutex
+		var wg sync.WaitGroup
+		for _, ticker := range list {
+			wg.Add(1)
+			go func(ticker string) {
+				defer wg.Done()
+				q, ok, err := s.store.GetQuote(r.Context(), ticker)
+				if err != nil {
+					ok = false
+				}
+				// Yahoo was removed (commercial-use risk): never serve a lingering
+				// Yahoo-sourced quote — treat it as absent so the fallback re-resolves.
+				if ok && q.Source == "yahoo" {
+					ok = false
+				}
+				if s.bars != nil && (!ok || time.Since(q.At) > quoteStaleAfter) {
+					if oq, found, qerr := s.bars.LatestQuote(r.Context(), ticker); qerr == nil && found {
+						if !ok || oq.At.After(q.At) {
+							q, ok = oq, true
+						}
+					}
+				}
+				if !ok {
+					return
+				}
+				mu.Lock()
+				result[ticker] = q
+				mu.Unlock()
+			}(ticker)
+		}
+		wg.Wait()
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"quotes": result})
 }
 
 // getNewsBatch returns recent news merged across several tickers (the home

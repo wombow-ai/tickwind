@@ -1,7 +1,7 @@
 'use client';
 
 import {useEffect, useState} from 'react';
-import {API_BASE, getQuote, type Quote} from '@/lib/api';
+import {API_BASE, getQuotesBatch, type Quote} from '@/lib/api';
 
 /**
  * Subscribes to live prices for a set of tickers.
@@ -73,10 +73,18 @@ export function useQuotes(
     }
 
     const controller = new AbortController();
-    for (const ticker of symbols) {
-      getQuote(ticker, controller.signal).then(apply, () => {
-        // No quote yet (404) or a transient fetch error: leave it unset and let
-        // the stream fill it in when a price arrives.
+    // Initial snapshot in ONE batched request per chunk (server caps a batch at 50),
+    // instead of one request per ticker — a 40-stock list/zone now makes a single call,
+    // not 40 (which saturated the browser's per-host connection cap + the per-IP rate
+    // limiter). Missing tickers are absent from the map; the SSE stream fills them in.
+    const CHUNK = 50;
+    for (let i = 0; i < symbols.length; i += CHUNK) {
+      getQuotesBatch(symbols.slice(i, i + CHUNK), controller.signal).then(res => {
+        for (const quote of Object.values(res.quotes)) {
+          apply(quote);
+        }
+      }, () => {
+        // Batch fetch failed/aborted: leave quotes unset and let the stream fill them in.
       });
     }
 

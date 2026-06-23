@@ -640,6 +640,30 @@ export function getBarsBatch(
   );
 }
 
+/** Envelope returned by `GET /v1/quotes?tickers=...` (bulk live quotes). */
+export interface QuotesBatchResponse {
+  /** Map from ticker to its latest quote. Missing tickers are omitted. */
+  quotes: Record<string, Quote>;
+}
+
+/**
+ * Fetches the latest quote for several tickers in ONE request — the bulk
+ * counterpart to {@link getQuote} for list/zone views, so a 40-stock page makes
+ * one call instead of 40. Missing tickers are omitted from the map. The server
+ * caps a single request at 50 tickers; callers with more should chunk (see
+ * {@link useQuotes}).
+ */
+export function getQuotesBatch(
+  tickers: readonly string[],
+  signal?: AbortSignal,
+): Promise<QuotesBatchResponse> {
+  const q = tickers.map(normalizeTicker).join(',');
+  return getJson<QuotesBatchResponse>(
+    `/v1/quotes?tickers=${encodeURIComponent(q)}`,
+    signal,
+  );
+}
+
 /** Envelope returned by `GET /v1/news?tickers=...` (merged home feed). */
 export interface NewsFeedResponse {
   count: number;
