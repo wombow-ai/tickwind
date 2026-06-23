@@ -114,23 +114,23 @@ export async function GET(req: NextRequest, ctx: {params: Promise<{kind: string}
         {/* header */}
         <div style={{display: 'flex', alignItems: 'center', justifyContent: 'space-between'}}>
           <div style={{display: 'flex', alignItems: 'center'}}>
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                width: 56,
-                height: 56,
-                borderRadius: 16,
-                background: accent,
-                color: 'white',
-                fontSize: 34,
-                fontWeight: 700,
-                marginRight: 18,
-              }}
-            >
-              ↗
-            </div>
+            {/* The Tickwind "streams" mark, inlined as an SVG data-URI (Satori rasterizes
+                it via resvg — reliable, unlike CSS currentColor): navy streams + green
+                leader/node, matching the main-site LogoMark on this light card. */}
+            <img
+              width={56}
+              height={56}
+              style={{marginRight: 18}}
+              src={`data:image/svg+xml;base64,${Buffer.from(
+                '<svg xmlns="http://www.w3.org/2000/svg" viewBox="12 13 76 76" fill="none">' +
+                  '<path d="M18 67 C42 67 54 60 67 46" stroke="#0E1B2E" stroke-width="6" stroke-linecap="round"/>' +
+                  '<path d="M18 76 C38 76 48 71 58 60" stroke="#0E1B2E" stroke-width="6" stroke-linecap="round"/>' +
+                  '<path d="M18 58 C44 58 57 50 76 32" stroke="#00C08B" stroke-width="6" stroke-linecap="round"/>' +
+                  '<circle cx="76" cy="32" r="4.4" fill="#00C08B"/>' +
+                  '<circle cx="76" cy="32" r="8.4" stroke="#00C08B" stroke-width="1.5"/>' +
+                  '</svg>',
+              ).toString('base64')}`}
+            />
             <div style={{display: 'flex', fontSize: 40, fontWeight: 700}}>
               <span style={{color: accent}}>Tick</span>
               <span style={{color: '#0f172a'}}>wind</span>

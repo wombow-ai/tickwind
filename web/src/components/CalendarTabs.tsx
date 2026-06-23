@@ -14,9 +14,12 @@ import {cx, tok} from '@/lib/ui';
  * lives on the page and the crawler sees three distinct URLs. The active tab is
  * highlighted from the current pathname.
  */
+// Events (the macro events timeline) leads — the owner's primary calendar view —
+// then Earnings and IPO. The hrefs stay stable (independently-indexable subpaths);
+// only the order + the cal.macro label ("Events") changed.
 const TABS: {href: string; key: string}[] = [
-  {href: '/calendar/earnings', key: 'cal.earnings'},
   {href: '/calendar/macro', key: 'cal.macro'},
+  {href: '/calendar/earnings', key: 'cal.earnings'},
   {href: '/calendar/ipo', key: 'cal.ipo'},
 ];
 

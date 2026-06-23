@@ -393,7 +393,7 @@ export const dict: Record<Lang, Record<string, string>> = {
     'chat.pw.value': 'Value',
     'chat.pw.gain': 'Gain',
     'chat.pw.weight': 'Weight',
-    'nav.chat': 'Chat',
+    'nav.chat': 'AI Chat',
     'pro.title': 'Tickwind Pro',
     'pro.subtitle': 'Full AI Deep Research and more — every figure still sourced from public data.',
     'pro.annual': 'Annual',
@@ -930,7 +930,7 @@ export const dict: Record<Lang, Record<string, string>> = {
     'notes.legendNotes': 'Notes',
     // unified calendar shell tabs
     'cal.earnings': 'Earnings',
-    'cal.macro': 'Macro',
+    'cal.macro': 'Events',
     'cal.ipo': 'IPO',
     // personal hub (/me) tabs
     'me.title': 'My',
@@ -1382,7 +1382,7 @@ export const dict: Record<Lang, Record<string, string>> = {
     'chat.pw.value': '市值',
     'chat.pw.gain': '盈亏',
     'chat.pw.weight': '占比',
-    'nav.chat': '对话',
+    'nav.chat': 'AI 对话',
     'pro.title': 'Tickwind Pro',
     'pro.subtitle': '完整 AI 深度研报及更多——每个数字依旧来自公开数据、有出处。',
     'pro.annual': '年付',
@@ -1903,7 +1903,7 @@ export const dict: Record<Lang, Record<string, string>> = {
     'notes.legendNotes': '笔记',
     // unified calendar shell tabs
     'cal.earnings': '财报',
-    'cal.macro': '宏观',
+    'cal.macro': '事件',
     'cal.ipo': 'IPO',
     // personal hub (/me) tabs
     'me.title': '我的',

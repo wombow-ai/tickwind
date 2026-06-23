@@ -381,6 +381,18 @@ html.dark .tw-load {
 .tw-md th { font-weight: 600; background: rgba(148, 163, 184, 0.12); }
 .tw-md del { text-decoration: line-through; opacity: 0.7; }
 
+/* Chat-hub markdown polish — scoped to the chat prose wrapper (.tw-chat-prose), warming
+   the compact base .tw-md with the gold chat palette (vars set by lib/chatTheme on the hub
+   root, light+dark). Tables get a gold header + zebra rows + softer hairlines; blockquotes a
+   gold rule; code a faint gold tint. The main-site .tw-md is untouched. */
+.tw-chat-prose .tw-md th, .tw-chat-prose .tw-md td { border-color: var(--bubble-line, rgba(148, 163, 184, 0.3)); padding: 0.42em 0.78em; }
+.tw-chat-prose .tw-md thead th { background: var(--accent-fill, rgba(207, 154, 51, 0.14)); color: var(--accent2, inherit); border-bottom: 1px solid var(--accent-line, rgba(207, 154, 51, 0.36)); }
+.tw-chat-prose .tw-md tbody tr:nth-child(even) td { background: var(--accent-soft, rgba(207, 154, 51, 0.07)); }
+.tw-chat-prose .tw-md blockquote { border-left: 3px solid var(--accent, #cf9a33); padding: 0.1em 0 0.1em 0.85rem; opacity: 0.95; }
+.tw-chat-prose .tw-md code { background: var(--accent-soft, rgba(148, 163, 184, 0.18)); }
+.tw-chat-prose .tw-md pre { border: 1px solid var(--bubble-line, rgba(148, 163, 184, 0.18)); }
+.tw-chat-prose .tw-md pre code { background: transparent; }
+
 /* ----------------------- bilingual SSR content ------------------------ */
 /* Server-rendered blocks (e.g. the home intro + board directory) can't use the
    client useT() hook, so they emit BOTH languages — crawlers index both, and
