@@ -17,6 +17,11 @@ const (
 	etfHoldingsTTL    = 24 * time.Hour
 	etfHoldingsNegTTL = 1 * time.Hour
 	etfHoldingsCacheN = 50
+	// etfEnrichN bounds how many top positions get an OpenFIGI ticker lookup — exactly 1 keyless
+	// batch (OpenFIGI's keyless cap is 10 jobs/request), so the cold fetch stays fast. Enriching all
+	// ~50 would be 5 batches with ~2.5s inter-batch gaps ≈ 12s on the request path; the big holdings
+	// are the ones worth a cross-link anyway.
+	etfEnrichN = 10
 )
 
 // ETFHoldingsFetcher fetches a fund/ETF's raw holdings from its N-PORT filing (satisfied by *edgar.Client).
@@ -91,10 +96,16 @@ func (c *ETFHoldingsCache) enrichTickers(ctx context.Context, holdings []edgar.E
 	if c.mapper == nil {
 		return
 	}
+	// Only the top etfEnrichN positions (= 1 keyless OpenFIGI batch) are resolved, so the cold
+	// fetch stays fast — see etfEnrichN.
+	n := len(holdings)
+	if n > etfEnrichN {
+		n = etfEnrichN
+	}
 	var cusips []string
-	for _, h := range holdings {
-		if h.Ticker == "" && h.CUSIP != "" {
-			cusips = append(cusips, h.CUSIP)
+	for i := 0; i < n; i++ {
+		if holdings[i].Ticker == "" && holdings[i].CUSIP != "" {
+			cusips = append(cusips, holdings[i].CUSIP)
 		}
 	}
 	if len(cusips) == 0 {
@@ -104,7 +115,7 @@ func (c *ETFHoldingsCache) enrichTickers(ctx context.Context, holdings []edgar.E
 	if err != nil {
 		return
 	}
-	for i := range holdings {
+	for i := 0; i < n; i++ {
 		if holdings[i].Ticker == "" {
 			if tk := m[strings.ToUpper(strings.TrimSpace(holdings[i].CUSIP))]; tk != "" {
 				holdings[i].Ticker = tk

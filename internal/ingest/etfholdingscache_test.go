@@ -3,6 +3,7 @@ package ingest
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -101,5 +102,34 @@ func TestETFHoldingsCache(t *testing.T) {
 	_, _, _ = ec.ETFHoldings(ctx, "AAPL", 25)
 	if errFetcher.calls != 1 {
 		t.Fatalf("errored ticker fetched %d times; want 1 (neg-cached)", errFetcher.calls)
+	}
+}
+
+// TestETFHoldingsCacheEnrichCap: only the top etfEnrichN positions get an OpenFIGI ticker (1 keyless
+// batch — keeps the cold fetch fast), even when every CUSIP is mappable.
+func TestETFHoldingsCacheEnrichCap(t *testing.T) {
+	n := etfEnrichN + 2
+	holdings := make([]edgar.ETFHolding, n)
+	mapped := map[string]string{}
+	for i := range holdings {
+		cu := fmt.Sprintf("CUSIP%02d", i)
+		holdings[i] = edgar.ETFHolding{Name: fmt.Sprintf("Co %d", i), CUSIP: cu, PctVal: float64(n - i)}
+		mapped[cu] = fmt.Sprintf("T%02d", i) // every CUSIP IS mappable
+	}
+	c := NewETFHoldingsCache(&fakeETFFetcher{holdings: holdings, asOf: time.Unix(1, 0).UTC()}, &fakeMapper{m: mapped})
+
+	got, _, _ := c.ETFHoldings(context.Background(), "X", 50)
+	if len(got) != n {
+		t.Fatalf("len=%d; want %d", len(got), n)
+	}
+	for i := 0; i < etfEnrichN; i++ {
+		if got[i].Ticker == "" {
+			t.Fatalf("holding %d (within top-%d) should be enriched", i, etfEnrichN)
+		}
+	}
+	for i := etfEnrichN; i < n; i++ {
+		if got[i].Ticker != "" {
+			t.Fatalf("holding %d (beyond top-%d) must stay unenriched, got %q", i, etfEnrichN, got[i].Ticker)
+		}
 	}
 }
