@@ -19,7 +19,7 @@ jobs:
     name: Go · build · vet · gofmt · test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
@@ -48,7 +48,7 @@ jobs:
       run:
         working-directory: web
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v6
         with:
           node-version: 20
@@ -72,7 +72,7 @@ jobs:
     name: Security · govulncheck · gosec
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       # Call-graph-aware vuln scan — fails CI only on a vuln we actually reach.
       - name: govulncheck
         uses: golang/govulncheck-action@v1
