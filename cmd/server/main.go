@@ -289,6 +289,9 @@ func main() {
 
 	edgarClient := edgar.New(cfg.EDGARUserAgent)
 	fundCache := ingest.NewFundamentalsCache(edgarClient)
+	// ETF/fund holdings (SEC N-PORT) served on-demand with a 24h TTL + OpenFIGI CUSIP→ticker
+	// enrichment (its own openfigi client; mega-cap CUSIPs resolve once + cache for the process life).
+	etfHoldingsCache := ingest.NewETFHoldingsCache(edgarClient, openfigi.New(""))
 	// Bulk numeric signals (buzz/sentiment): one call per source per cycle.
 	// ApeWisdom is keyless; Alpha Vantage self-disables without a key. The same
 	// ApeWisdom client also drives the market-wide trending hot list.
@@ -608,7 +611,7 @@ func main() {
 	// Inject the setter-based sources (keeps api.New's signature stable). nil-safe:
 	// each endpoint serves an empty-but-200 shape until its cache is first filled.
 	apiServer.SetShortVolume(shortVolumeCache)
-	apiServer.SetETFHoldings(edgarClient) // GET /v1/etf/{ticker}/holdings — SEC N-PORT, on-demand
+	apiServer.SetETFHoldings(etfHoldingsCache) // GET /v1/etf/{ticker}/holdings — SEC N-PORT, 24h cache + ticker enrichment
 	apiServer.SetSentiment(sentimentCache)
 	apiServer.SetRateCut(rateCutIngestor.Cache())
 	apiServer.SetMacro(macroCache)         // U.S. Treasury yield curve (2s10s macro strip)
@@ -778,7 +781,7 @@ func main() {
 		// "DRAM is an ETF") from the symbol directory, so the model can't invent a launch
 		// year / coverage reason. *symbols.Cache satisfies chat.SymbolDescriber via ByTicker.
 		chatSvc.SetSymbols(symbolCache)
-		chatSvc.SetETFHoldings(api.NewChatETFHoldings(edgarClient)) // get_etf_holdings — SEC N-PORT, closes the ETF chat gap
+		chatSvc.SetETFHoldings(api.NewChatETFHoldings(etfHoldingsCache)) // get_etf_holdings — SEC N-PORT (24h cache + ticker enrichment)
 		// Optional attributed web-context tool — INERT without WEBSEARCH_API_KEY (the
 		// chat stays grounded-only). When keyed, the model may quote attributed web
 		// snippets but never derive a number from them (the systemPrompt firewall).
