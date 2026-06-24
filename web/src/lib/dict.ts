@@ -60,6 +60,9 @@ export const dict: Record<Lang, Record<string, string>> = {
     'fund.pb': 'P/B',
     'fund.loss': 'Loss',
     'fund.source': 'Source: SEC filings',
+    'etf.title': 'Top holdings',
+    'etf.source': 'SEC Form N-PORT',
+    'etf.note': 'Largest positions from the fund’s most recent SEC Form N-PORT filing (reported quarterly, filed with a lag). Percentages are of net assets.',
     // per-stock indicators panel
     'ind2.title': 'Indicators',
     'ind2.asOf': 'as of {d}',
@@ -1067,6 +1070,9 @@ export const dict: Record<Lang, Record<string, string>> = {
     'fund.pb': '市净率',
     'fund.loss': '亏损',
     'fund.source': '数据来源：SEC 申报',
+    'etf.title': '主要持仓',
+    'etf.source': 'SEC N-PORT 申报',
+    'etf.note': '来自该基金最新的 SEC N-PORT 季度持仓申报(按季披露,申报有滞后);百分比为占基金净值比例。',
     // per-stock indicators panel
     'ind2.title': '指标',
     'ind2.asOf': '数据截至 {d}',

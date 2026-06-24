@@ -622,6 +622,39 @@ export function getFundamentals(
   );
 }
 
+/** One position in an ETF/fund's SEC Form N-PORT portfolio (every figure parsed from the filing). */
+export interface EtfHolding {
+  name: string;
+  ticker?: string;
+  cusip?: string;
+  pct_val: number; // percent of the fund's net assets
+  val_usd: number;
+  asset_cat?: string;
+  country?: string;
+}
+
+/** Envelope returned by `GET /v1/etf/{ticker}/holdings` — a fund's top positions by weight. */
+export interface EtfHoldings {
+  ticker: string;
+  as_of: string;
+  count: number;
+  holdings: EtfHolding[];
+}
+
+/**
+ * Fetches an ETF/fund's largest holdings (SEC Form N-PORT). The request REJECTS (404) for a
+ * non-fund ticker, so a caller mounts the panel on every stock page and hides it on rejection.
+ */
+export function getEtfHoldings(
+  ticker: string,
+  signal?: AbortSignal,
+): Promise<EtfHoldings> {
+  return getJson<EtfHoldings>(
+    `/v1/etf/${encodeURIComponent(normalizeTicker(ticker))}/holdings?limit=20`,
+    signal,
+  );
+}
+
 /** Envelope returned by `GET /v1/bars?tickers=...`. */
 export interface BarsBatchResponse {
   /** Map from ticker to its recent daily closes (oldest first). */
