@@ -608,6 +608,7 @@ func main() {
 	// Inject the setter-based sources (keeps api.New's signature stable). nil-safe:
 	// each endpoint serves an empty-but-200 shape until its cache is first filled.
 	apiServer.SetShortVolume(shortVolumeCache)
+	apiServer.SetETFHoldings(edgarClient) // GET /v1/etf/{ticker}/holdings — SEC N-PORT, on-demand
 	apiServer.SetSentiment(sentimentCache)
 	apiServer.SetRateCut(rateCutIngestor.Cache())
 	apiServer.SetMacro(macroCache)         // U.S. Treasury yield curve (2s10s macro strip)

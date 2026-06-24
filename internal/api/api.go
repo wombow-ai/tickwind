@@ -10,6 +10,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"hash/fnv"
 	"io"
@@ -426,6 +427,7 @@ type Server struct {
 	symbols      SymbolSearcher
 	events       EventSource
 	fundamentals FundamentalsSource
+	etf          ETFHoldingsSource // ETF/fund N-PORT holdings (SEC), on-demand; set via SetETFHoldings
 	earnings     EarningsSource
 	// earningsReactions badges calendar rows with how the stock has historically moved around
 	// earnings; injected post-New via SetEarningsReactions. nil → rows carry no reaction.
@@ -650,6 +652,7 @@ func New(st store.Store, hub QuoteStream, enricher enrich.Enricher, verifier *au
 	mux.HandleFunc("GET /v1/stocks/{ticker}/bars", s.getBars)
 	mux.HandleFunc("GET /v1/stocks/{ticker}/candles", s.getCandles)
 	mux.HandleFunc("GET /v1/stocks/{ticker}/fundamentals", s.getFundamentals)
+	mux.HandleFunc("GET /v1/etf/{ticker}/holdings", s.getETFHoldings)
 	mux.HandleFunc("GET /v1/stocks/{ticker}/news", s.getNews)
 	mux.HandleFunc("GET /v1/stocks/{ticker}/social", s.getSocial)
 	mux.HandleFunc("GET /v1/stocks/{ticker}/signals", s.getSignals)
@@ -1670,6 +1673,64 @@ func (s *Server) getFilings(w http.ResponseWriter, r *http.Request) {
 // FundamentalsSource returns XBRL-derived fundamentals for a US ticker (cached).
 type FundamentalsSource interface {
 	Fundamentals(ctx context.Context, ticker string) (edgar.Fundamentals, error)
+}
+
+// ETFHoldingsSource returns a fund/ETF's largest positions from its latest SEC Form N-PORT-P,
+// on-demand (the edgar client self-throttles). nil → /v1/etf/{ticker}/holdings 404s. Satisfied by
+// *edgar.Client.
+type ETFHoldingsSource interface {
+	ETFHoldings(ctx context.Context, ticker string, max int) ([]edgar.ETFHolding, time.Time, error)
+}
+
+// SetETFHoldings wires the ETF/fund holdings source (post-New; nil-safe → endpoint 404s).
+func (s *Server) SetETFHoldings(src ETFHoldingsSource) { s.etf = src }
+
+// etfHoldingsResp is the /v1/etf/{ticker}/holdings payload: the fund's top positions by weight,
+// each Go-parsed verbatim from the N-PORT-P filing, plus the filing date.
+type etfHoldingsResp struct {
+	Ticker   string             `json:"ticker"`
+	AsOf     time.Time          `json:"as_of"`
+	Count    int                `json:"count"`
+	Holdings []edgar.ETFHolding `json:"holdings"`
+}
+
+// getETFHoldings serves a fund/ETF's largest disclosed positions (SEC Form N-PORT-P). Facts only —
+// every figure is parsed verbatim from the filing; no LLM, no advice. 404 for a non-ETF ticker or a
+// fund with no holdings filing; 502 on an upstream SEC failure.
+func (s *Server) getETFHoldings(w http.ResponseWriter, r *http.Request) {
+	if s.etf == nil {
+		writeJSON(w, http.StatusNotFound, errBody("etf holdings unavailable"))
+		return
+	}
+	ticker := strings.ToUpper(strings.TrimSpace(r.PathValue("ticker")))
+	// Cheap pre-check: only funds/ETFs file N-PORT. If the symbol directory KNOWS this exact ticker
+	// and it is not an ETF, skip the SEC round-trip. An unknown ticker falls through (the fetch
+	// self-guards with ErrNoNPORT).
+	if s.symbols != nil {
+		for _, h := range s.symbols.Search(ticker, 5) {
+			if strings.ToUpper(h.Ticker) == ticker {
+				if !h.ETF {
+					writeJSON(w, http.StatusNotFound, errBody(ticker+" is not an ETF"))
+					return
+				}
+				break
+			}
+		}
+	}
+	limit := queryLimit(r, 25)
+	if limit > 200 {
+		limit = 200
+	}
+	holdings, asOf, err := s.etf.ETFHoldings(r.Context(), ticker, limit)
+	if err != nil {
+		if errors.Is(err, edgar.ErrNoNPORT) {
+			writeJSON(w, http.StatusNotFound, errBody("no holdings filing for "+ticker))
+			return
+		}
+		writeJSON(w, http.StatusBadGateway, errBody("holdings fetch failed for "+ticker))
+		return
+	}
+	writeJSON(w, http.StatusOK, etfHoldingsResp{Ticker: ticker, AsOf: asOf, Count: len(holdings), Holdings: holdings})
 }
 
 // fundamentalsResp embeds the reported XBRL figures and adds the price-derived
