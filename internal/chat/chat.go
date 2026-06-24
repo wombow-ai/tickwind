@@ -109,15 +109,25 @@ type WebSearcher interface {
 	Search(ctx context.Context, query, lang string) string
 }
 
+// ETFHoldingsLister returns a Go-OWNED, attributed summary of a fund/ETF's largest holdings (name +
+// percent of net assets), parsed verbatim from its latest SEC Form N-PORT-P filing — the model may
+// quote these figures (Go owns them) but must not derive new ones. ok=false when the ticker has no
+// such filing (an ordinary stock), so the model answers honestly instead of improvising holdings.
+// Satisfied by the api ETF-holdings adapter; nil → the get_etf_holdings tool is not offered.
+type ETFHoldingsLister interface {
+	ETFHoldingsText(ctx context.Context, ticker, lang string) (string, bool)
+}
+
 // Service orchestrates one chat turn. model overrides the enricher's default chat model
 // when non-empty (e.g. a Sonnet deep-dive turn); "" uses the configured chat default.
 type Service struct {
-	llm       LLM
-	facts     FactSource
-	userData  UserData        // the user's own watchlist/holdings/notes (nil → those tools off)
-	webSearch WebSearcher     // attributed web context (nil → the search_web tool is off)
-	symbols   SymbolDescriber // ticker → name + ETF flag, to ground a "no fundamentals" answer (nil → bare "No data.")
-	model     string
+	llm         LLM
+	facts       FactSource
+	userData    UserData          // the user's own watchlist/holdings/notes (nil → those tools off)
+	webSearch   WebSearcher       // attributed web context (nil → the search_web tool is off)
+	etfHoldings ETFHoldingsLister // ETF/fund N-PORT holdings text (nil → the get_etf_holdings tool is off)
+	symbols     SymbolDescriber   // ticker → name + ETF flag, to ground a "no fundamentals" answer (nil → bare "No data.")
+	model       string
 
 	// fsCache holds a recently-assembled fact sheet per (ticker, lang) so consecutive
 	// turns in a thread reuse the IDENTICAL per-ticker material. This keeps the cached
@@ -151,6 +161,10 @@ func (s *Service) SetWebSearch(ws WebSearcher) { s.webSearch = ws }
 // ticker's real asset type (e.g. "DRAM is an ETF — no company fundamentals"). nil/unset →
 // the bare "No data." fallback (current behavior); safe to deploy before wiring.
 func (s *Service) SetSymbols(d SymbolDescriber) { s.symbols = d }
+
+// SetETFHoldings wires the ETF/fund holdings source (enables the get_etf_holdings tool). nil/unset →
+// the tool is never offered; safe to deploy before wiring.
+func (s *Service) SetETFHoldings(l ETFHoldingsLister) { s.etfHoldings = l }
 
 // describeTicker returns a Go-OWNED, deterministic sentence describing what a ticker IS
 // (name from the directory + ETF flag from the Nasdaq-Trader feed), so the model can state a
@@ -247,13 +261,14 @@ func (s *Service) Answer(ctx context.Context, userID, anchorTicker, lang string,
 	}
 	hasUserData := s.userData != nil && allowUserData
 	hasWeb := s.webSearch != nil
+	hasETF := s.etfHoldings != nil
 
 	msgs := make([]enrich.ChatMessage, 0, len(history)+2)
 	msgs = append(msgs, enrich.ChatMessage{Role: "system", Content: systemPrompt(anchorTicker, lang, material, general, hasUserData, hasWeb)})
 	msgs = append(msgs, history...)
 	msgs = append(msgs, enrich.ChatMessage{Role: "user", Content: question})
 
-	tools := toolSpecs(lang, general, hasUserData, hasWeb)
+	tools := toolSpecs(lang, general, hasUserData, hasWeb, hasETF)
 	var widgets []Block
 	var total enrich.Usage
 
@@ -309,13 +324,14 @@ func (s *Service) AnswerStream(ctx context.Context, userID, anchorTicker, lang s
 	}
 	hasUserData := s.userData != nil && allowUserData
 	hasWeb := s.webSearch != nil
+	hasETF := s.etfHoldings != nil
 
 	msgs := make([]enrich.ChatMessage, 0, len(history)+2)
 	msgs = append(msgs, enrich.ChatMessage{Role: "system", Content: systemPrompt(anchorTicker, lang, material, general, hasUserData, hasWeb)})
 	msgs = append(msgs, history...)
 	msgs = append(msgs, enrich.ChatMessage{Role: "user", Content: question})
 
-	tools := toolSpecs(lang, general, hasUserData, hasWeb)
+	tools := toolSpecs(lang, general, hasUserData, hasWeb, hasETF)
 	var widgets []Block
 	var total enrich.Usage
 
@@ -560,6 +576,25 @@ func (s *Service) execTool(ctx context.Context, c enrich.ChatToolCall, userID, a
 			return "Provide a search query."
 		}
 		return s.webSearch.Search(ctx, q, lang)
+	case "get_etf_holdings":
+		if s.etfHoldings == nil {
+			return "ETF holdings are not available."
+		}
+		var args struct {
+			Ticker string `json:"ticker"`
+		}
+		_ = json.Unmarshal([]byte(c.Arguments), &args)
+		tk := strings.ToUpper(strings.TrimSpace(args.Ticker))
+		if tk == "" {
+			tk = anchorTicker // default to the conversation's anchored ticker
+		}
+		if tk == "" {
+			return "Specify an ETF ticker."
+		}
+		if txt, ok := s.etfHoldings.ETFHoldingsText(ctx, tk, lang); ok {
+			return txt
+		}
+		return tk + " has no SEC fund-holdings (N-PORT) filing — it may not be an ETF/fund."
 	default:
 		return "Unknown tool."
 	}
@@ -635,7 +670,7 @@ func addUsage(dst *enrich.Usage, u enrich.Usage) {
 // toolSpecs is the closed tool surface offered to the model, varying by mode: anchor-only
 // tools (get_facts/get_news_context) appear for a stock conversation; get_stock_facts +
 // surface_widget always; the user-data tools appear when userData is wired.
-func toolSpecs(lang string, general, hasUserData, hasWeb bool) []enrich.ChatTool {
+func toolSpecs(lang string, general, hasUserData, hasWeb, hasETF bool) []enrich.ChatTool {
 	en := lang == "en"
 	d := func(zh, enS string) string {
 		if en {
@@ -691,6 +726,16 @@ func toolSpecs(lang string, general, hasUserData, hasWeb bool) []enrich.ChatTool
 			Parameters: map[string]any{"type": "object", "properties": map[string]any{
 				"query": map[string]any{"type": "string", "description": d("搜索关键词", "the search query")},
 			}, "required": []string{"query"}},
+		})
+	}
+
+	if hasETF {
+		tools = append(tools, enrich.ChatTool{
+			Name:        "get_etf_holdings",
+			Description: d("返回某只 ETF/基金最新 SEC 季度持仓申报(N-PORT)里的最大持仓(名称 + 占净值%,经 Go 解析自官方申报,可引用)。当用户问某 ETF“持有什么/重仓股/成分股”时调用;普通个股没有此申报。", "Return an ETF/fund's largest holdings (name + % of net assets) from its latest SEC quarterly portfolio filing (Form N-PORT), Go-parsed from the official filing — you may quote these. Call this when the user asks what an ETF HOLDS / its top holdings / constituents. Ordinary stocks have no such filing."),
+			Parameters: map[string]any{"type": "object", "properties": map[string]any{
+				"ticker": map[string]any{"type": "string", "description": d("ETF 代码,如 QQQ;留空则用当前会话的标的", "the ETF ticker, e.g. QQQ; omit to use this conversation's stock")},
+			}},
 		})
 	}
 

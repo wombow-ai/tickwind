@@ -778,6 +778,7 @@ func main() {
 		// "DRAM is an ETF") from the symbol directory, so the model can't invent a launch
 		// year / coverage reason. *symbols.Cache satisfies chat.SymbolDescriber via ByTicker.
 		chatSvc.SetSymbols(symbolCache)
+		chatSvc.SetETFHoldings(api.NewChatETFHoldings(edgarClient)) // get_etf_holdings — SEC N-PORT, closes the ETF chat gap
 		// Optional attributed web-context tool — INERT without WEBSEARCH_API_KEY (the
 		// chat stays grounded-only). When keyed, the model may quote attributed web
 		// snippets but never derive a number from them (the systemPrompt firewall).
