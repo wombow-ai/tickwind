@@ -175,6 +175,16 @@ feature-flagged plugin, never on the critical path. Web only.
 - Full stack (server): `docker compose up -d --build`.
 
 ## Current state (update each iteration)
+- **2026-06-27 — 📐 Margins trend on the Financials tab (SHIPPED, frontend-only).** Added Gross / Operating / Net
+  margin % rows to the financial-history table, under a "Margins" divider between the income statement and the
+  balance sheet. Each margin is computed CLIENT-SIDE from the existing real series (gross_profit / operating_income
+  / net_income ÷ revenue per period) — anti-hallucination-safe (real reported values divided; a missing or
+  zero-revenue period is skipped, never fabricated). Works in BOTH the Annual and Quarterly views (computed from the
+  respective series; a derived-Q4 margin carries the same † + footnote). The table cell rendering became
+  format-aware (`%` for margins, `$` for the rest; the sparkline shows the margin trend too). i18n
+  fhist.margins/grossMargin/operatingMargin/netMargin (en+zh). No backend change. Preview-verified on AAPL: FY2025
+  gross 46.9% / operating 32.0% / net 26.9% (= 195.20/416.16 etc.); quarterly margins compute with the derived †
+  propagating; balance rows still hide in Quarterly. fe = this commit.
 - **2026-06-27 — 🏦 Balance-sheet history (assets / liabilities / equity) on the Financials tab (SHIPPED).** Extends
   the financial-history feature with a per-fiscal-year BALANCE-SHEET history. **Backend (be `cead3f8`):**
   balance-sheet concepts are INSTANTS (a value AT a period-end, not over a period), so the series aligns each
@@ -189,7 +199,7 @@ feature-flagged plugin, never on the critical path. Web only.
   components at the same FY-end) so the history row matches the card's coverage and the identity holds for the
   general filer, not only taggers (`fillLiabilities` + test). Accepted gaps recorded in comments
   (insufficient-not-wrong): fyEnds from revenue (a no-revenue filer gets no balance history); exact FY-end-date
-  alignment. **FE (fe `<next>`):** 3 balance rows added to FinancialsHistoryTable with a "Balance sheet" divider;
+  alignment. **FE (fe `e51bc9a`):** 3 balance rows added to FinancialsHistoryTable with a "Balance sheet" divider;
   ANNUAL-ONLY (no `_q`) so they auto-hide in the Quarterly view. i18n fhist.balanceSheet/totalAssets/
   totalLiabilities/equity (en+zh). Tests: TestAnnualBalanceSeries + TestFillLiabilities.
 - **2026-06-27 — 📊 Financial-history feature: owner's 3-point feedback — quarterly + tab move + sparkline (SHIPPED).**

@@ -124,7 +124,36 @@ export function FinancialsHistoryTable({ticker}: {ticker: string}) {
   // If the chosen view has no data (e.g. an only-cumulative filer with no quarterly), fall back.
   const q = quarterly ? quarterlyOK : !annualOK && quarterlyOK;
 
-  const rows = ROWS.map(r => ({...r, data: seriesFor(hist, r.key, q)})).filter(r => r.data.length > 0);
+  // Display rows: income lines (backend), then computed MARGINS (% of revenue — real reported
+  // values divided, never fabricated; a missing period is simply skipped), then the balance-sheet
+  // lines (backend). Each row carries its number format + group.
+  const base = ROWS.map(r => ({
+    id: r.key as string,
+    label: r.label,
+    group: r.group as 'income' | 'margin' | 'balance',
+    format: 'usd' as 'usd' | 'pct',
+    data: seriesFor(hist, r.key, q),
+  }));
+  const revByKey = new Map((base.find(r => r.id === 'revenue')?.data ?? []).map(p => [p.key, p.val]));
+  const marginOf = (numId: string, label: string) => ({
+    id: `m_${numId}`,
+    label,
+    group: 'margin' as const,
+    format: 'pct' as const,
+    data: (base.find(r => r.id === numId)?.data ?? [])
+      .map((p): Pt | null => {
+        const rv = revByKey.get(p.key);
+        return rv && rv !== 0 ? {key: p.key, label: p.label, val: p.val / rv, derived: p.derived} : null;
+      })
+      .filter((x): x is Pt => x !== null),
+  });
+  const rows = [
+    ...base.filter(r => r.group === 'income'),
+    marginOf('gross_profit', 'fhist.grossMargin'),
+    marginOf('operating_income', 'fhist.operatingMargin'),
+    marginOf('net_income', 'fhist.netMargin'),
+    ...base.filter(r => r.group === 'balance'),
+  ].filter(r => r.data.length > 0);
   // Column set = union of period keys across the kept rows, NEWEST first (YYYY-prefixed → lexical).
   const colLabel = new Map<string, string>();
   for (const r of rows) for (const p of r.data) colLabel.set(p.key, p.label);
@@ -174,19 +203,19 @@ export function FinancialsHistoryTable({ticker}: {ticker: string}) {
           <tbody>
             {rows.map((r, idx) => {
               const m = new Map(r.data.map(p => [p.key, p]));
-              // A "Balance sheet" divider before the first visible balance-sheet row (separates
-              // the year-END instants from the income-statement flows above).
-              const showBalanceHeader =
-                r.group === 'balance' && (idx === 0 || rows[idx - 1].group !== 'balance');
+              // A group divider ("Margins" / "Balance sheet") before the first row of a new section.
+              const headerKey =
+                r.group === 'margin' ? 'fhist.margins' : r.group === 'balance' ? 'fhist.balanceSheet' : null;
+              const showHeader = headerKey && (idx === 0 || rows[idx - 1].group !== r.group);
               return (
-                <Fragment key={r.key}>
-                  {showBalanceHeader && (
+                <Fragment key={r.id}>
+                  {showHeader && (
                     <tr>
                       <td
                         colSpan={cols.length + 1}
                         className={cx('pt-3 pb-1 text-left text-[10.5px] font-bold uppercase tracking-wide', t.faint)}
                       >
-                        {tr('fhist.balanceSheet')}
+                        {tr(headerKey)}
                       </td>
                     </tr>
                   )}
@@ -213,7 +242,7 @@ export function FinancialsHistoryTable({ticker}: {ticker: string}) {
                             '—'
                           ) : (
                             <>
-                              {fmtCompactUSD(p.val)}
+                              {r.format === 'pct' ? `${(p.val * 100).toFixed(1)}%` : fmtCompactUSD(p.val)}
                               {p.derived && <sup className={cx('ml-0.5', t.faint)}>†</sup>}
                             </>
                           )}
