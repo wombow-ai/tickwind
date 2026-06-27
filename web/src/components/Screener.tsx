@@ -34,21 +34,31 @@ export function Screener() {
   const [status, setStatus] = useState<Status>('loading');
   const [results, setResults] = useState<ScreenResult[]>([]);
 
-  function fetchWith(params: ScreenParams, signal?: AbortSignal) {
+  function fetchWith(params: ScreenParams, signal?: AbortSignal, retriesOnEmpty = 0) {
     setStatus('loading');
     getScreen({...params, limit: 100}, signal).then(
       r => {
-        setResults(r.results ?? []);
+        const rows = r.results ?? [];
+        // An empty UNFILTERED default screen means the whole-universe quote cache is still
+        // warming (briefly empty for ~1-2 min after a backend restart) — retry shortly rather
+        // than show a misleading "no matches". User-applied filters pass retriesOnEmpty=0.
+        if (rows.length === 0 && retriesOnEmpty > 0 && !signal?.aborted) {
+          setTimeout(() => {
+            if (!signal?.aborted) fetchWith(params, signal, retriesOnEmpty - 1);
+          }, 4000);
+          return; // stay in 'loading'
+        }
+        setResults(rows);
         setStatus('ready');
       },
       () => setStatus('error'),
     );
   }
 
-  // Default screen (top gainers) on mount.
+  // Default screen (top gainers) on mount; retry an empty result a few times (cold cache).
   useEffect(() => {
     const c = new AbortController();
-    fetchWith({sort: 'change_desc'}, c.signal);
+    fetchWith({sort: 'change_desc'}, c.signal, 3);
     return () => c.abort();
   }, []);
 

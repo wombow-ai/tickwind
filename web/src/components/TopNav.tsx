@@ -65,7 +65,7 @@ function NavPill({item, pathname, t}: {item: NavItem; pathname: string; t: Token
       href={item.href}
       aria-current={active ? 'page' : undefined}
       className={cx(
-        'rounded-full px-3 py-1.5 text-[13px] font-medium hover:opacity-80',
+        'whitespace-nowrap rounded-full px-3 py-1.5 text-[13px] font-medium hover:opacity-80',
         active ? t.accentText : t.sub,
       )}
     >
@@ -138,7 +138,7 @@ export function TopNav() {
     {href: '/smart-money', label: tr('nav.smartMoney')},
     {href: '/events', label: tr('nav.materialEvents')},
     {href: '/unusual', label: tr('nav.unusual')},
-    {href: '/calendar/earnings', label: tr('nav.calendar')},
+    {href: '/calendar/macro', label: tr('nav.calendar')},
     {href: '/discussion', label: tr('nav.discussion')},
   ];
   const whatsnew: NavItem = {href: '/announcements', label: tr('nav.whatsnew')};

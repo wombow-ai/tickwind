@@ -7,9 +7,11 @@ import {
   getHot,
   getShortVolume,
   type HotStock,
+  type Quote,
   type ShortVolumeStock,
 } from '@/lib/api';
 import {useT} from '@/lib/i18n';
+import {useQuotes} from '@/lib/useQuotes';
 import {useDark} from '@/lib/theme';
 import {cx, tok} from '@/lib/ui';
 import {EmptyState, ErrorState, FeedSkeleton} from '@/components/ui/states';
@@ -43,6 +45,10 @@ export function HotList({initialBoard = 'hot'}: {initialBoard?: string}) {
   const [shortAsOf, setShortAsOf] = useState<string>('');
 
   const isShort = board === 'shortvol';
+  // Live prices: overlay an on-demand quote per buzz ticker. The snapshot price on /v1/hot
+  // comes from the universe quote cache, which is briefly empty right after a backend restart
+  // (so the list showed names with no price); useQuotes fetches each on demand, robust to that.
+  const quotes = useQuotes(stocks.map(s => s.ticker));
 
   const load = useCallback((b: string) => {
     setStatus('loading');
@@ -147,6 +153,7 @@ export function HotList({initialBoard = 'hot'}: {initialBoard?: string}) {
                 <HotRow
                   key={s.ticker}
                   s={s}
+                  quote={quotes.get(s.ticker)}
                   dark={dark}
                   t={t}
                   last={i === stocks.length - 1}
@@ -238,17 +245,28 @@ function ShortVolRow({
 
 function HotRow({
   s,
+  quote,
   dark,
   t,
   last,
 }: {
   s: HotStock;
+  quote?: Quote;
   dark: boolean;
   t: Tokens;
   last: boolean;
 }) {
   const tr = useT();
   const up = s.change >= 0;
+  // Live price (on-demand) overlaid over the buzz snapshot's price, with the day-change
+  // recomputed from the quote; both fall back to the /v1/hot snapshot when no quote is in yet.
+  const price = quote?.price ?? (typeof s.price === 'number' ? s.price : undefined);
+  const dayPct =
+    quote && quote.prev_close != null && quote.prev_close > 0
+      ? ((quote.price - quote.prev_close) / quote.prev_close) * 100
+      : typeof s.change_pct === 'number'
+        ? s.change_pct
+        : undefined;
   const pct = Math.abs(s.change * 100);
   const surging = s.change >= 0.5; // a notable riser
   const changeColor = up
@@ -286,16 +304,16 @@ function HotRow({
         {s.name && <p className={cx('truncate text-[12px]', t.sub)}>{s.name}</p>}
       </div>
 
-      {typeof s.price === 'number' && (
+      {price !== undefined && (
         <div className="hidden shrink-0 text-right sm:block">
           <div className={cx('text-[13px] font-semibold tabular-nums', t.text)}>
-            ${s.price.toFixed(2)}
+            ${price.toFixed(2)}
           </div>
-          {typeof s.change_pct === 'number' && (
+          {dayPct !== undefined && (
             <div
               className={cx(
                 'text-[11px] font-semibold tabular-nums',
-                s.change_pct >= 0
+                dayPct >= 0
                   ? dark
                     ? 'text-emerald-400'
                     : 'text-emerald-600'
@@ -304,8 +322,8 @@ function HotRow({
                     : 'text-rose-500',
               )}
             >
-              {s.change_pct >= 0 ? '+' : ''}
-              {s.change_pct.toFixed(2)}%
+              {dayPct >= 0 ? '+' : ''}
+              {dayPct.toFixed(2)}%
             </div>
           )}
         </div>
