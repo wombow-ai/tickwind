@@ -175,6 +175,30 @@ feature-flagged plugin, never on the critical path. Web only.
 - Full stack (server): `docker compose up -d --build`.
 
 ## Current state (update each iteration)
+- **2026-06-27 — 💵 Cash flow & capital returns on the Financials tab (SHIPPED + LIVE-verified).** A new "Cash flow
+  & capital returns / 现金流与资本回报" group in the financial-history table, between Margins and the Balance sheet:
+  per-fiscal-year **free cash flow · capital expenditures · buybacks · dividends**. **Backend (be `e4291ee`):** 3 new
+  `annualSeriesMerged` dollar series — capex (`PaymentsToAcquirePropertyPlantAndEquipment`), buybacks
+  (`PaymentsForRepurchaseOfCommonStock`), total cash dividends paid (`PaymentsOfDividendsCommonStock` → general
+  `PaymentsOfDividends` → `PaymentsOfOrdinaryDividends`, strict tag-priority per year — the general tag is in the set
+  for COVERAGE: Apple tags the common-specific concept only through 2017, then the umbrella one) — all stored POSITIVE
+  via a new `absYearValues` (so a sign-flipped filer can't corrupt the derived FCF). **FREE CASH FLOW is DERIVED** =
+  operating-cash-flow series − capex series, aligned by fiscal-year via `deriveFCF` (a year present in only ONE side is
+  DROPPED, never shown partial — anti-hallucination: a real subtraction of two real series, disclosed via a footnote,
+  not a fabricated number). 4 new `YearValue` fields on `FinancialsHistory` + `hasData()`; tests `TestDeriveFCF`.
+  **FE (fe `<this commit>`):** a 4th row group (annual-only, no `_q` → auto-hides in the Quarterly view, taking its
+  footnotes with it) + the FCF footnote + a dividends-basis footnote; i18n fhist.cashflow/freeCashFlow/capex/buybacks/
+  dividends/fcfNote/divNote (en+zh). **Hardened by an opus-max adversarial review (2 lenses + skeptics): 9 raised → 1
+  confirmed (LOW), fixed before deploy** — the "Dividends" line can silently switch basis (common-only → total incl.
+  preferred) for a preferred payer with a tag-vintage change; added the disclosing `divNote` footnote ("Dividends =
+  total cash dividends paid (common; includes preferred where a filer reports only the combined figure)"), mirroring
+  the codebase's disclose-derivations ethos (every value is still a real reported XBRL figure — a transparency gap, not
+  fabrication). Gates: Go gofmt/build/vet/`-race` + web tsc/build green. **LIVE-verified** (DEPLOY_DONE 14:32Z, curl
+  AAPL): all 10 years FCF = OCF − capex EXACT (FY2025 OCF $111.5B − capex $12.7B = FCF $98.8B; buybacks $90.7B;
+  dividends complete $12.0B→$15.4B, no $0 gaps — the general-tag bridge held); non-payers cleanly hide the absent rows
+  (TSLA: no buyback/dividend; SNOW/PLTR: no dividend; FCF/capex still show). **Preview-verified** (AAPL Financials tab):
+  the group renders in the right order with both footnotes + no key leak + zero console errors; the Quarterly toggle
+  correctly hides the whole annual-only cash-flow + balance groups and their footnotes.
 - **2026-06-27 — 🐞 Paid-report "P/E (TTM)" used STALE ANNUAL EPS — FIXED (opportunity-scan find).** An opus-max
   opportunity scan (run because the obvious backlog had thinned) surfaced a same-app self-contradiction: the
   indicators engine's `fundamental.pe-ttm` (`peTTM`, `internal/indicators/fundamental.go`) computed price ÷ the

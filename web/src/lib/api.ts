@@ -658,6 +658,11 @@ export interface FinancialsHistory {
   total_assets?: YearValue[];
   total_liabilities?: YearValue[];
   stockholders_equity?: YearValue[];
+  // Cash flow & capital returns (annual only). free_cash_flow is derived (OCF − capex) per year.
+  free_cash_flow?: YearValue[];
+  capex?: YearValue[];
+  buybacks?: YearValue[];
+  dividends?: YearValue[];
 }
 
 /** Fetches SEC-XBRL fundamentals (market cap, P/E, revenue, net income). Rejects (404) for non-US / no data. */

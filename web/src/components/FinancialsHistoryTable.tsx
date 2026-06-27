@@ -9,14 +9,20 @@ import {cx, fmtCompactUSD, tok} from '@/lib/ui';
 type Status = 'loading' | 'ready' | 'hidden';
 type Hist = NonNullable<Fundamentals['history']>;
 
-// The DOLLAR lines, in display order. The income-statement lines are split-immune flows; the
-// balance-sheet lines are year-END instants (annual only — no `_q`, so they hide in Quarterly).
-const ROWS: {key: keyof Hist; label: string; group: 'income' | 'balance'}[] = [
+type Group = 'income' | 'margin' | 'cashflow' | 'balance';
+
+// The DOLLAR lines, in display order. Income-statement lines are split-immune flows; cash-flow &
+// balance-sheet lines are annual only (no `_q`, so they hide in the Quarterly view).
+const ROWS: {key: keyof Hist; label: string; group: Group}[] = [
   {key: 'revenue', label: 'fhist.revenue', group: 'income'},
   {key: 'gross_profit', label: 'fhist.grossProfit', group: 'income'},
   {key: 'operating_income', label: 'fhist.operatingIncome', group: 'income'},
   {key: 'net_income', label: 'fhist.netIncome', group: 'income'},
   {key: 'operating_cash_flow', label: 'fhist.operatingCashFlow', group: 'income'},
+  {key: 'free_cash_flow', label: 'fhist.freeCashFlow', group: 'cashflow'},
+  {key: 'capex', label: 'fhist.capex', group: 'cashflow'},
+  {key: 'buybacks', label: 'fhist.buybacks', group: 'cashflow'},
+  {key: 'dividends', label: 'fhist.dividends', group: 'cashflow'},
   {key: 'total_assets', label: 'fhist.totalAssets', group: 'balance'},
   {key: 'total_liabilities', label: 'fhist.totalLiabilities', group: 'balance'},
   {key: 'stockholders_equity', label: 'fhist.equity', group: 'balance'},
@@ -130,7 +136,7 @@ export function FinancialsHistoryTable({ticker}: {ticker: string}) {
   const base = ROWS.map(r => ({
     id: r.key as string,
     label: r.label,
-    group: r.group as 'income' | 'margin' | 'balance',
+    group: r.group as Group,
     format: 'usd' as 'usd' | 'pct',
     data: seriesFor(hist, r.key, q),
   }));
@@ -152,6 +158,7 @@ export function FinancialsHistoryTable({ticker}: {ticker: string}) {
     marginOf('gross_profit', 'fhist.grossMargin'),
     marginOf('operating_income', 'fhist.operatingMargin'),
     marginOf('net_income', 'fhist.netMargin'),
+    ...base.filter(r => r.group === 'cashflow'),
     ...base.filter(r => r.group === 'balance'),
   ].filter(r => r.data.length > 0);
   // Column set = union of period keys across the kept rows, NEWEST first (YYYY-prefixed → lexical).
@@ -205,7 +212,13 @@ export function FinancialsHistoryTable({ticker}: {ticker: string}) {
               const m = new Map(r.data.map(p => [p.key, p]));
               // A group divider ("Margins" / "Balance sheet") before the first row of a new section.
               const headerKey =
-                r.group === 'margin' ? 'fhist.margins' : r.group === 'balance' ? 'fhist.balanceSheet' : null;
+                r.group === 'margin'
+                  ? 'fhist.margins'
+                  : r.group === 'cashflow'
+                    ? 'fhist.cashflow'
+                    : r.group === 'balance'
+                      ? 'fhist.balanceSheet'
+                      : null;
               const showHeader = headerKey && (idx === 0 || rows[idx - 1].group !== r.group);
               return (
                 <Fragment key={r.id}>
@@ -258,6 +271,12 @@ export function FinancialsHistoryTable({ticker}: {ticker: string}) {
       </div>
       {q && rows.some(r => r.data.some(p => p.derived)) && (
         <p className={cx('mt-2 text-[10.5px]', t.faint)}>{tr('fhist.derivedNote')}</p>
+      )}
+      {rows.some(r => r.id === 'free_cash_flow') && (
+        <p className={cx('mt-2 text-[10.5px]', t.faint)}>{tr('fhist.fcfNote')}</p>
+      )}
+      {rows.some(r => r.id === 'dividends') && (
+        <p className={cx('mt-1 text-[10.5px]', t.faint)}>{tr('fhist.divNote')}</p>
       )}
     </section>
   );
