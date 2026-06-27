@@ -19,21 +19,27 @@ import "github.com/wombow-ai/tickwind/internal/edgar"
 // available data forces an approximation it is documented here, not silently
 // changed):
 //   - pe-ttm: the catalog formula is "market cap / trailing 4-quarter net income".
-//     edgar.Fundamentals exposes the latest-FY diluted EPS, not a TTM net-income
-//     series, and per the shared contract this is computed as price / EPSDiluted
-//     (mathematically equal to market cap / (EPS·shares) when EPS is the same FY
-//     denominator). It is an annual (FY) P/E, not a strict trailing-4-quarter one.
+//     Computed as price / TRAILING-12-MONTH diluted EPS (edgar.Fundamentals'
+//     EPSDilutedTTM — annual + current-FY-to-date − prior-year-to-date), the same
+//     numerator the public fundamentals card's pe_ttm uses, so the two never disagree.
+//     Falls back to the latest-FY diluted EPS only when no TTM is computable (a filer
+//     with too thin a quarterly history) — degrades to annual, never to insufficient.
 //   - roe: the catalog formula uses AVERAGE equity attributable to parent;
 //     Fundamentals carries only the latest period-end equity, so this uses the
 //     latest equity (a point-in-time ROE), per the shared contract.
 
-// peTTM returns price / diluted EPS. ok=false when EPS is non-positive (a loss
-// or zero), for which P/E is not meaningful. Plain multiple (Unit "x").
+// peTTM returns price / TRAILING-12-MONTH diluted EPS (matching the public card's pe_ttm),
+// falling back to the latest annual diluted EPS only when no TTM is computable. ok=false when the
+// chosen EPS is non-positive (a loss or zero), for which P/E is not meaningful. Plain multiple ("x").
 func peTTM(price float64, f edgar.Fundamentals) (float64, bool) {
-	if price <= 0 || f.EPSDiluted <= 0 {
+	eps := f.EPSDilutedTTM
+	if eps == 0 { // no TTM (thin quarterly history) → fall back to the latest annual diluted EPS
+		eps = f.EPSDiluted
+	}
+	if price <= 0 || eps <= 0 {
 		return 0, false
 	}
-	return price / f.EPSDiluted, true
+	return price / eps, true
 }
 
 // pb returns market cap / equity = price·shares / equity. ok=false when price,

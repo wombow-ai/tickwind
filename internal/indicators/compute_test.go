@@ -257,6 +257,21 @@ func TestFundamentalRatios(t *testing.T) {
 	}
 }
 
+// TestPeTTM_PrefersTTM pins that pe-ttm uses the TRAILING-12-MONTH EPS when present (matching the
+// public fundamentals card's pe_ttm so the paid report and free card never disagree), falls back to
+// the latest annual EPS only when no TTM is computable, and stays insufficient for a loss TTM.
+func TestPeTTM_PrefersTTM(t *testing.T) {
+	if v, ok := peTTM(100, edgar.Fundamentals{EPSDiluted: 1, EPSDilutedTTM: 4}); !ok || !floatEq(v, 25, 1e-9) {
+		t.Errorf("with TTM: peTTM = (%v,%v), want 25 = 100/4 (TTM), not 100/1 (annual)", v, ok)
+	}
+	if v, ok := peTTM(100, edgar.Fundamentals{EPSDiluted: 5}); !ok || !floatEq(v, 20, 1e-9) {
+		t.Errorf("no TTM: peTTM = (%v,%v), want 20 = 100/5 (annual fallback)", v, ok)
+	}
+	if _, ok := peTTM(100, edgar.Fundamentals{EPSDiluted: 5, EPSDilutedTTM: -2}); ok {
+		t.Error("loss TTM: peTTM should be insufficient, not fall back to the positive annual")
+	}
+}
+
 func TestFundamentalRatios_LossMaker(t *testing.T) {
 	loss := edgar.Fundamentals{
 		Shares: 350, Revenue: 463, NetIncome: -1200, EPSDiluted: -3.5, Equity: 5000,

@@ -175,6 +175,18 @@ feature-flagged plugin, never on the critical path. Web only.
 - Full stack (server): `docker compose up -d --build`.
 
 ## Current state (update each iteration)
+- **2026-06-27 — 🐞 Paid-report "P/E (TTM)" used STALE ANNUAL EPS — FIXED (opportunity-scan find).** An opus-max
+  opportunity scan (run because the obvious backlog had thinned) surfaced a same-app self-contradiction: the
+  indicators engine's `fundamental.pe-ttm` (`peTTM`, `internal/indicators/fundamental.go`) computed price ÷ the
+  latest-FY diluted EPS (annual), while the free FundamentalsCard's `pe_ttm` (api) correctly uses `EPSDilutedTTM`
+  (the real trailing-12-month EPS, added in this session's ① TTM work). So Micron showed **P/E (TTM) ≈149 in the
+  PAID deep report but 25.5 on the free card** — and `fundamental.pe-ttm` ALSO drives the report's Valuation section
+  + the scorecard VALUE-percentile (scorecard.go:30) + the value leaderboard (all via the one indicator id), so the
+  stale value corrupted all three. **Fix:** `peTTM` now prefers `f.EPSDilutedTTM`, falling back to the latest annual
+  only when no TTM is computable (a loss TTM → insufficient, matching the card). `pe-lyr` (the distinct prior-FY
+  framing) untouched; docstring corrected. Test `TestPeTTM_PrefersTTM`; existing TTM-less fixtures stay green via the
+  fallback. Backend-only; deployed + live-verified. (Also: corrected stale [[tickwind-roadmap-r3]] — the report
+  `relative` fan-out [RS-vs-SPY + earnings-reaction percentiles] was already DONE + live; seasonality deferred.)
 - **2026-06-27 — 📐 Margins trend on the Financials tab (SHIPPED, frontend-only).** Added Gross / Operating / Net
   margin % rows to the financial-history table, under a "Margins" divider between the income statement and the
   balance sheet. Each margin is computed CLIENT-SIDE from the existing real series (gross_profit / operating_income
