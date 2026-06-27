@@ -226,6 +226,94 @@ func TestAssembleFCFFormatsAsDollars(t *testing.T) {
 	}
 }
 
+// TestAssembleFundamentalsTTMFirst asserts the report's headline revenue / net
+// income / diluted EPS use the TRAILING-TWELVE-MONTH figure when available (so
+// they reconcile with the TTM-based P/E and match the free FundamentalsCard),
+// carry a "(TTM)" label + a TTM as-of (NOT the fiscal year), and fall back to the
+// latest FY value + FY as-of + plain label when no TTM is available.
+func TestAssembleFundamentalsTTMFirst(t *testing.T) {
+	t.Run("TTM available — used + disclosed", func(t *testing.T) {
+		ind := &fakeIndicators{res: indicators.StockIndicatorsResult{
+			Indicators: []indicators.StockIndicator{okIndicator("fundamental.pe-ttm", 25.5, "x")},
+		}}
+		src := Sources{
+			Indicators: ind,
+			Fundamentals: fakeFund{f: edgar.Fundamentals{
+				Ticker: "MU", Period: "FY2025", AsOf: "2025-08-28", Shares: 1.1e9,
+				Revenue: 37378000000, NetIncome: 8539000000, EPSDiluted: 7.59,
+				RevenueTTM: 90274000000, NetIncomeTTM: 50469000000, EPSDilutedTTM: 44.24,
+				TTMAsOf: "2026-05-28", LatestQuarter: "Q3 FY2026",
+			}},
+			Quote: fakeQuote{q: store.Quote{Ticker: "MU", Price: 1129.73, Source: "alpaca", Session: "regular"}, ok: true},
+		}
+		fs := Assemble(context.Background(), "MU", "en", src)
+		for _, c := range []struct {
+			key, wantLabel string
+			wantRaw        float64
+		}{
+			{"revenue", "Revenue (TTM)", 90274000000},
+			{"net_income", "Net Income (TTM)", 50469000000},
+			{"eps_diluted", "Diluted EPS (TTM)", 44.24},
+		} {
+			f, ok := findFact(fs, c.key)
+			if !ok {
+				t.Fatalf("%s fact missing", c.key)
+			}
+			if f.Raw == nil || *f.Raw != c.wantRaw {
+				t.Errorf("%s Raw = %v, want %v (TTM, not FY)", c.key, f.Raw, c.wantRaw)
+			}
+			if f.LabelEN != c.wantLabel {
+				t.Errorf("%s LabelEN = %q, want %q", c.key, f.LabelEN, c.wantLabel)
+			}
+			if f.AsOf != "Q3 FY2026" {
+				t.Errorf("%s AsOf = %q, want the TTM stamp Q3 FY2026 (not FY2025)", c.key, f.AsOf)
+			}
+		}
+		// The headline EPS must now RECONCILE with the report's own P/E (TTM):
+		// price / EPS ≈ the pe value, not 6× off.
+		eps, _ := findFact(fs, "eps_diluted")
+		if got := 1129.73 / *eps.Raw; got < 24 || got > 27 {
+			t.Errorf("price/EPS(TTM) = %.1f, want ≈25.5 (reconciles with P/E TTM)", got)
+		}
+		// The P/E (TTM) fact's as-of must match the TTM EPS it divides by (not FY).
+		if pe, ok := findFact(fs, "pe"); ok && pe.AsOf != "Q3 FY2026" {
+			t.Errorf("pe AsOf = %q, want the TTM stamp Q3 FY2026 (matches its TTM EPS numerator)", pe.AsOf)
+		}
+	})
+
+	t.Run("no TTM — FY fallback, plain label", func(t *testing.T) {
+		ind := &fakeIndicators{res: indicators.StockIndicatorsResult{
+			Indicators: []indicators.StockIndicator{okIndicator("fundamental.roe", 30, "%")},
+		}}
+		src := Sources{
+			Indicators: ind,
+			Fundamentals: fakeFund{f: edgar.Fundamentals{
+				Ticker: "OLD", Period: "FY2025", AsOf: "2025-12-31", Shares: 1e9,
+				Revenue: 1e10, NetIncome: 5e9, EPSDiluted: 5.0, // no *TTM fields
+			}},
+			Quote: fakeQuote{q: store.Quote{Ticker: "OLD", Price: 100, Source: "alpaca", Session: "regular"}, ok: true},
+		}
+		fs := Assemble(context.Background(), "OLD", "en", src)
+		eps, ok := findFact(fs, "eps_diluted")
+		if !ok {
+			t.Fatal("eps_diluted fact missing")
+		}
+		if eps.Raw == nil || *eps.Raw != 5.0 {
+			t.Errorf("eps Raw = %v, want the FY value 5.0", eps.Raw)
+		}
+		if eps.LabelEN != "Diluted EPS" {
+			t.Errorf("eps LabelEN = %q, want the plain (non-TTM) label", eps.LabelEN)
+		}
+		if eps.AsOf != "FY2025" {
+			t.Errorf("eps AsOf = %q, want FY2025 (the fiscal-year stamp)", eps.AsOf)
+		}
+		rev, _ := findFact(fs, "revenue")
+		if rev.LabelEN != "Revenue" {
+			t.Errorf("revenue LabelEN = %q, want plain Revenue (no TTM)", rev.LabelEN)
+		}
+	})
+}
+
 // TestAssemblePELossMaker asserts a loss-maker P/E renders "亏损" (never 0): both
 // the insufficient path (the indicator's documented behaviour) and the defensive
 // non-positive-value path.

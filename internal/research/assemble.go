@@ -261,8 +261,10 @@ var valuationSpecs = map[string]indicatorFactSpec{
 // set. Revenue / NetIncome / EPSDiluted are injected separately (from edgar
 // directly). fundamental.fcf is DOLLARS despite a "" unit → unitUSD override.
 var fundamentalSpecs = map[string]indicatorFactSpec{
-	"fundamental.revenue-growth-yoy":  {key: "revenue_growth_yoy", labelZH: "营收同比增长", labelEN: "Revenue Growth (YoY)", source: srcSECXBRL, sourceURL: true, asOfFund: true},
-	"fundamental.earnings-growth-yoy": {key: "earnings_growth_yoy", labelZH: "盈利同比增长", labelEN: "Earnings Growth (YoY)", source: srcSECXBRL, sourceURL: true, asOfFund: true},
+	// The YoY-growth labels carry the FISCAL-YEAR basis so a reader never ties the
+	// FY-vs-FY growth % to the now-TTM headline revenue/EPS (FY×(1+g) ≠ TTM).
+	"fundamental.revenue-growth-yoy":  {key: "revenue_growth_yoy", labelZH: "营收同比增长(年度)", labelEN: "Revenue Growth (FY YoY)", source: srcSECXBRL, sourceURL: true, asOfFund: true},
+	"fundamental.earnings-growth-yoy": {key: "earnings_growth_yoy", labelZH: "盈利同比增长(年度)", labelEN: "Earnings Growth (FY YoY)", source: srcSECXBRL, sourceURL: true, asOfFund: true},
 	"fundamental.gpm":                 {key: "gross_margin", labelZH: "毛利率", labelEN: "Gross Margin", source: srcSECXBRL, sourceURL: true, asOfFund: true},
 	"fundamental.npm":                 {key: "net_margin", labelZH: "净利率", labelEN: "Net Margin", source: srcSECXBRL, sourceURL: true, asOfFund: true},
 	"fundamental.roe":                 {key: "roe", labelZH: "净资产收益率(ROE)", labelEN: "ROE", source: srcSECXBRL, sourceURL: true, asOfFund: true},
@@ -347,6 +349,17 @@ func Assemble(ctx context.Context, ticker, lang string, src Sources) FactSheet {
 	if fund.Period != "" {
 		fundAsOf = fund.Period // "FY2024" reads better as the freshness stamp
 	}
+	// ttmAsOf is the freshness stamp for any TRAILING-twelve-month figure (the
+	// headline revenue/NI/EPS in §1.2 + the TTM P/E in §1.1) — the latest quarter
+	// (e.g. "Q3 FY2026"), so a TTM value never reads "as of FY2025". Falls back to
+	// the TTM end-date, then the fiscal-year stamp.
+	ttmAsOf := fund.LatestQuarter
+	if ttmAsOf == "" {
+		ttmAsOf = fund.TTMAsOf
+	}
+	if ttmAsOf == "" {
+		ttmAsOf = fundAsOf
+	}
 
 	fundCitations := []Citation{{Label: secEdgarLabel, Anchor: "#fundamentals", URL: secURL}}
 
@@ -372,28 +385,58 @@ func Assemble(ctx context.Context, ticker, lang string, src Sources) FactSheet {
 		})
 	}
 	valuation.Facts = append(valuation.Facts, factsFromSpecs(valuationIDOrder, valuationSpecs, byID, fundAsOf, secURL, lang)...)
+	// P/E (TTM) divides price by the TRAILING-twelve-month EPS, so stamp it with the
+	// TTM as-of (matching the headline EPS in §1.2), not the fiscal year — its label
+	// already says "(TTM)". (P/B + dividend yield stay FY/quote-dated.)
+	if fund.EPSDilutedTTM != 0 {
+		for i := range valuation.Facts {
+			if valuation.Facts[i].Key == "pe" {
+				valuation.Facts[i].AsOf = ttmAsOf
+			}
+		}
+	}
 	addSection(&fs, valuation)
 
 	// --- §1.2 基本面 / Fundamentals ---
 	fundamentals := SectionFacts{Key: "fundamentals", TitleZH: "基本面", TitleEN: "Fundamentals", Citations: fundCitations}
 	if haveFund {
-		rev := fund.Revenue
+		// TTM-FIRST, mirroring the free FundamentalsCard's policy (FundamentalsCard.tsx)
+		// AND the TTM-based P/E in §1.1: show the trailing-twelve-month figure when
+		// available so the paid report's headline revenue / net income / EPS use the
+		// SAME basis as the card and RECONCILE with P/E (TTM). (Otherwise the report
+		// showed FY EPS next to a TTM P/E — e.g. MU EPS $7.59 beside P/E(TTM) 25.5,
+		// which implies $44.24: unreconcilable.) The trailing period is DISCLOSED via
+		// a "(TTM)" label + a TTM as-of (the latest quarter), never claiming a fiscal
+		// year for a trailing figure. A filer with no quarterly history (TTM == 0)
+		// falls back to the latest FY value + FY as-of + plain label. Every value
+		// stays a real reported XBRL figure (TTM is a genuine reported roll); nothing
+		// is fabricated. (ttmAsOf is computed once above, shared with the TTM P/E.)
+		rev, revZH, revEN, revAsOf := fund.Revenue, "营业收入", "Revenue", fundAsOf
+		if fund.RevenueTTM != 0 {
+			rev, revZH, revEN, revAsOf = fund.RevenueTTM, "营业收入(TTM)", "Revenue (TTM)", ttmAsOf
+		}
 		fundamentals.Facts = append(fundamentals.Facts, Fact{
-			Key: "revenue", LabelZH: "营业收入", LabelEN: "Revenue",
+			Key: "revenue", LabelZH: revZH, LabelEN: revEN,
 			Value: formatValue(&rev, unitUSD), Raw: &rev, Unit: unitUSD,
-			Status: StatusOK, Source: srcSECXBRL, SourceURL: secURL, AsOf: fundAsOf,
+			Status: StatusOK, Source: srcSECXBRL, SourceURL: secURL, AsOf: revAsOf,
 		})
-		ni := fund.NetIncome // can be negative (loss) — format the sign.
+		ni, niZH, niEN, niAsOf := fund.NetIncome, "净利润", "Net Income", fundAsOf // can be <0 (loss)
+		if fund.NetIncomeTTM != 0 {
+			ni, niZH, niEN, niAsOf = fund.NetIncomeTTM, "净利润(TTM)", "Net Income (TTM)", ttmAsOf
+		}
 		fundamentals.Facts = append(fundamentals.Facts, Fact{
-			Key: "net_income", LabelZH: "净利润", LabelEN: "Net Income",
+			Key: "net_income", LabelZH: niZH, LabelEN: niEN,
 			Value: formatValue(&ni, unitUSD), Raw: &ni, Unit: unitUSD,
-			Status: StatusOK, Source: srcSECXBRL, SourceURL: secURL, AsOf: fundAsOf,
+			Status: StatusOK, Source: srcSECXBRL, SourceURL: secURL, AsOf: niAsOf,
 		})
-		eps := fund.EPSDiluted
+		eps, epsZH, epsEN, epsAsOf := fund.EPSDiluted, "摊薄每股收益", "Diluted EPS", fundAsOf
+		if fund.EPSDilutedTTM != 0 {
+			eps, epsZH, epsEN, epsAsOf = fund.EPSDilutedTTM, "摊薄每股收益(TTM)", "Diluted EPS (TTM)", ttmAsOf
+		}
 		fundamentals.Facts = append(fundamentals.Facts, Fact{
-			Key: "eps_diluted", LabelZH: "摊薄每股收益", LabelEN: "Diluted EPS",
+			Key: "eps_diluted", LabelZH: epsZH, LabelEN: epsEN,
 			Value: formatPrice(eps), Raw: &eps, Unit: unitPrice,
-			Status: StatusOK, Source: srcSECXBRL, SourceURL: secURL, AsOf: fundAsOf,
+			Status: StatusOK, Source: srcSECXBRL, SourceURL: secURL, AsOf: epsAsOf,
 		})
 	}
 	fundamentals.Facts = append(fundamentals.Facts, factsFromSpecs(fundamentalIDOrder, fundamentalSpecs, byID, fundAsOf, secURL, lang)...)
