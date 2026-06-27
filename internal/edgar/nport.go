@@ -74,9 +74,13 @@ func (c *Client) ETFHoldings(ctx context.Context, ticker string, max int) ([]ETF
 	if err != nil {
 		return nil, time.Time{}, err
 	}
-	holdings, err := parseNPORTHoldings(body, max)
+	holdings, repPd, err := parseNPORTHoldings(body, max)
 	if err != nil {
 		return nil, time.Time{}, err
+	}
+	// Prefer the report PERIOD date (the holdings' true as-of) over the filing date (~60d later).
+	if t, perr := time.Parse("2006-01-02", repPd); perr == nil && !t.IsZero() {
+		asOf = t
 	}
 	return holdings, asOf, nil
 }
@@ -102,19 +106,32 @@ type nportInvst struct {
 // them by percent-of-net-assets descending (ties by value, then name — deterministic), and returns
 // the top max. A malformed position is skipped (never fabricated); a position with no name or no
 // weight is dropped. The token-stream decode matches invstOrSec by LOCAL name (namespace-robust).
-func parseNPORTHoldings(body string, max int) ([]ETFHolding, error) {
+func parseNPORTHoldings(body string, max int) ([]ETFHolding, string, error) {
 	dec := xml.NewDecoder(strings.NewReader(body))
 	out := make([]ETFHolding, 0, 128)
+	var repPdDate string // the report PERIOD date — the holdings' actual as-of (filed ~60d later)
 	for {
 		tok, err := dec.Token()
 		if err == io.EOF {
 			break
 		}
 		if err != nil {
-			return nil, err
+			return nil, "", err
 		}
 		se, ok := tok.(xml.StartElement)
-		if !ok || se.Name.Local != "invstOrSec" {
+		if !ok {
+			continue
+		}
+		if se.Name.Local == "repPdDate" {
+			if repPdDate == "" { // the genInfo one appears first; take it
+				var s string
+				if dec.DecodeElement(&s, &se) == nil {
+					repPdDate = strings.TrimSpace(s)
+				}
+			}
+			continue
+		}
+		if se.Name.Local != "invstOrSec" {
 			continue
 		}
 		var v nportInvst
@@ -150,5 +167,5 @@ func parseNPORTHoldings(body string, max int) ([]ETFHolding, error) {
 	if len(out) > max {
 		out = out[:max]
 	}
-	return out, nil
+	return out, repPdDate, nil
 }

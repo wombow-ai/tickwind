@@ -7,6 +7,7 @@ import "testing"
 // one (dropped).
 const nportFixture = `<?xml version="1.0" encoding="UTF-8"?>
 <edgarSubmission>
+  <genInfo><repPdDate>2026-03-31</repPdDate><repPdEnd>2026-09-30</repPdEnd></genInfo>
   <formData>
     <invstOrSecs>
       <invstOrSec>
@@ -31,9 +32,12 @@ const nportFixture = `<?xml version="1.0" encoding="UTF-8"?>
 </edgarSubmission>`
 
 func TestParseNPORTHoldings(t *testing.T) {
-	hs, err := parseNPORTHoldings(nportFixture, 25)
+	hs, repPd, err := parseNPORTHoldings(nportFixture, 25)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if repPd != "2026-03-31" {
+		t.Fatalf("repPdDate = %q; want 2026-03-31 (the report period date, the holdings' as-of)", repPd)
 	}
 	// Zero-weight (Tiny) and nameless positions are dropped → 2 remain.
 	if len(hs) != 2 {
@@ -51,7 +55,7 @@ func TestParseNPORTHoldings(t *testing.T) {
 	}
 
 	// Cap: top-1 is the biggest weight.
-	if one, _ := parseNPORTHoldings(nportFixture, 1); len(one) != 1 || one[0].Name != "Mega Co" {
+	if one, _, _ := parseNPORTHoldings(nportFixture, 1); len(one) != 1 || one[0].Name != "Mega Co" {
 		t.Fatalf("cap=1: got %+v; want [Mega Co]", one)
 	}
 }

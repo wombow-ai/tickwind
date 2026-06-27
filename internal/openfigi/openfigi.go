@@ -17,28 +17,40 @@ import (
 )
 
 const (
-	mapURL    = "https://api.openfigi.com/v3/mapping"
-	batchSize = 10                      // keyless cap: 10 jobs per request
-	batchGap  = 2500 * time.Millisecond // keyless cap: 25 requests/min
+	mapURL = "https://api.openfigi.com/v3/mapping"
+	// Keyless caps: 10 jobs/request, 25 requests/min. A key lifts these to 100 jobs/request and
+	// 25 requests/6s, so a keyed client sends far fewer requests with a much smaller pacing gap.
+	keylessBatch = 10
+	keylessGap   = 2500 * time.Millisecond
+	keyedBatch   = 100
+	keyedGap     = 300 * time.Millisecond
 )
 
 // Client maps CUSIPs to tickers, caching results permanently in memory.
 type Client struct {
-	http   *http.Client
-	url    string
-	apiKey string // optional; "" = keyless
+	http      *http.Client
+	url       string
+	apiKey    string // optional; "" = keyless
+	batchSize int    // jobs per request (key-dependent)
+	batchGap  time.Duration
 
 	mu    sync.Mutex
 	cache map[string]string // CUSIP → ticker ("" = looked up, no US equity match)
 }
 
-// New builds a client. apiKey may be "" for keyless access.
+// New builds a client. apiKey may be "" for keyless access; a key raises the batch size + rate.
 func New(apiKey string) *Client {
+	bs, gap := keylessBatch, keylessGap
+	if apiKey != "" {
+		bs, gap = keyedBatch, keyedGap
+	}
 	return &Client{
-		http:   &http.Client{Timeout: 20 * time.Second},
-		url:    mapURL,
-		apiKey: apiKey,
-		cache:  map[string]string{},
+		http:      &http.Client{Timeout: 20 * time.Second},
+		url:       mapURL,
+		apiKey:    apiKey,
+		batchSize: bs,
+		batchGap:  gap,
+		cache:     map[string]string{},
 	}
 }
 
@@ -68,15 +80,15 @@ func (c *Client) Map(ctx context.Context, cusips []string) (map[string]string, e
 	}
 	c.mu.Unlock()
 
-	for i := 0; i < len(todo); i += batchSize {
+	for i := 0; i < len(todo); i += c.batchSize {
 		if i > 0 {
 			select {
 			case <-ctx.Done():
 				return out, ctx.Err()
-			case <-time.After(batchGap):
+			case <-time.After(c.batchGap):
 			}
 		}
-		end := i + batchSize
+		end := i + c.batchSize
 		if end > len(todo) {
 			end = len(todo)
 		}

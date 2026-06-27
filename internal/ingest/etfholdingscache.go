@@ -17,11 +17,11 @@ const (
 	etfHoldingsTTL    = 24 * time.Hour
 	etfHoldingsNegTTL = 1 * time.Hour
 	etfHoldingsCacheN = 50
-	// etfEnrichN bounds how many top positions get an OpenFIGI ticker lookup — exactly 1 keyless
-	// batch (OpenFIGI's keyless cap is 10 jobs/request), so the cold fetch stays fast. Enriching all
-	// ~50 would be 5 batches with ~2.5s inter-batch gaps ≈ 12s on the request path; the big holdings
-	// are the ones worth a cross-link anyway.
-	etfEnrichN = 10
+	// etfEnrichN bounds how many top positions get an OpenFIGI CUSIP→ticker lookup — the panel shows
+	// 20, so enrich 20. With an OpenFIGI key that is 1 request (keyed cap 100, ~0.5s); keyless it is 2
+	// batches (~2.8s, still acceptable — far under the ~12s enriching all 50 keyless would cost). The
+	// big holdings are the ones worth a cross-link anyway.
+	etfEnrichN = 20
 )
 
 // ETFHoldingsFetcher fetches a fund/ETF's raw holdings from its N-PORT filing (satisfied by *edgar.Client).

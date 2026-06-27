@@ -291,7 +291,7 @@ func main() {
 	fundCache := ingest.NewFundamentalsCache(edgarClient)
 	// ETF/fund holdings (SEC N-PORT) served on-demand with a 24h TTL + OpenFIGI CUSIP→ticker
 	// enrichment (its own openfigi client; mega-cap CUSIPs resolve once + cache for the process life).
-	etfHoldingsCache := ingest.NewETFHoldingsCache(edgarClient, openfigi.New(""))
+	etfHoldingsCache := ingest.NewETFHoldingsCache(edgarClient, openfigi.New(cfg.OpenFIGIAPIKey))
 	// Bulk numeric signals (buzz/sentiment): one call per source per cycle.
 	// ApeWisdom is keyless; Alpha Vantage self-disables without a key. The same
 	// ApeWisdom client also drives the market-wide trending hot list.
@@ -528,7 +528,7 @@ func main() {
 	// 13F whale holdings: a curated set of famous funds' latest quarterly holdings
 	// + QoQ changes (SEC public-domain, ~45-day lag). CUSIP→ticker via keyless
 	// OpenFIGI. Slow background refresh (quarterly data).
-	thirteenFCache := thirteenf.NewCache(sec.New(cfg.EDGARUserAgent), openfigi.New(""))
+	thirteenFCache := thirteenf.NewCache(sec.New(cfg.EDGARUserAgent), openfigi.New(cfg.OpenFIGIAPIKey))
 	go thirteenFCache.Run(ctx)
 
 	// Daily Chinese pre-market briefing: one LLM generation a day from data

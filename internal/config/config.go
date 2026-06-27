@@ -177,6 +177,11 @@ type Config struct {
 	WebSearchAPIKey   string
 	WebSearchProvider string
 
+	// OpenFIGIAPIKey lifts OpenFIGI's keyless caps (10 jobs/request, 25/min) to the keyed tier
+	// (100 jobs/request, 25/6s) for CUSIP→ticker mapping (ETF holdings + 13F whales). Empty →
+	// keyless. Lives in the VPS .env only, never git.
+	OpenFIGIAPIKey string
+
 	// PaywallEnabled turns ON the user-facing Pro paywall (server-side truncation of
 	// the deep report for free viewers). Default FALSE — the paywall stays invisible
 	// (every viewer gets the full report, exactly as today) until the owner flips it
@@ -307,6 +312,7 @@ func Load() Config {
 		BillingReconcileEnabled:     envBool("BILLING_RECONCILE_ENABLED", false),
 		WebSearchAPIKey:             env("WEBSEARCH_API_KEY", ""),
 		WebSearchProvider:           env("WEBSEARCH_PROVIDER", "tavily"),
+		OpenFIGIAPIKey:              env("OPENFIGI_API_KEY", ""),
 		SupabaseURL:                 strings.TrimRight(env("SUPABASE_URL", ""), "/"),
 		SupabaseJWTSecret:           env("SUPABASE_JWT_SECRET", ""),
 		AdminUserIDs:                splitCSVRaw(env("ADMIN_USER_IDS", "")),
