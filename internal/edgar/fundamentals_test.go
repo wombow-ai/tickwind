@@ -353,6 +353,68 @@ func TestExtractFundamentals_History(t *testing.T) {
 	}
 }
 
+// TestQuarterlySeries validates the standalone single-quarter extraction on a Micron-shaped
+// off-August fiscal year: directly-reported Q1-Q3 (~90d), a DERIVED Q4 (full year − 9-month YTD),
+// and the count-back fiscal labeling anchored on the newest standalone (companyfacts fp/fy are
+// unreliable on comparative columns). Plus the only-cumulative-filer → empty guard.
+func TestQuarterlySeries(t *testing.T) {
+	gaap := map[string]xbrlConcept{
+		"Revenues": usd(
+			factPoint{Start: "2024-08-31", End: "2024-11-30", Val: 23, FY: 2025, FP: "Q1", Form: "10-Q", Filed: "2024-12-15"},
+			factPoint{Start: "2024-12-01", End: "2025-02-28", Val: 22, FY: 2025, FP: "Q2", Form: "10-Q", Filed: "2025-03-15"},
+			factPoint{Start: "2025-03-01", End: "2025-05-31", Val: 25, FY: 2025, FP: "Q3", Form: "10-Q", Filed: "2025-06-15"},
+			factPoint{Start: "2024-08-31", End: "2025-05-31", Val: 70, FY: 2025, FP: "Q3", Form: "10-Q", Filed: "2025-06-15"},  // 9-month YTD
+			factPoint{Start: "2024-08-31", End: "2025-08-30", Val: 100, FY: 2025, FP: "FY", Form: "10-K", Filed: "2025-10-01"}, // full year → Q4 = 100−70 = 30
+			factPoint{Start: "2025-08-31", End: "2025-11-30", Val: 30, FY: 2026, FP: "Q1", Form: "10-Q", Filed: "2025-12-15"},  // newest standalone → anchor
+		),
+	}
+	got := quarterlySeries(gaap, "USD", 8, "Revenues")
+	want := []QuarterValue{
+		{Label: "Q1 FY2025", End: "2024-11-30", Val: 23},
+		{Label: "Q2 FY2025", End: "2025-02-28", Val: 22},
+		{Label: "Q3 FY2025", End: "2025-05-31", Val: 25},
+		{Label: "Q4 FY2025", End: "2025-08-30", Val: 30, Derived: true},
+		{Label: "Q1 FY2026", End: "2025-11-30", Val: 30},
+	}
+	if len(got) != len(want) {
+		t.Fatalf("quarterlySeries len = %d, want %d: %+v", len(got), len(want), got)
+	}
+	for i, w := range want {
+		if got[i] != w {
+			t.Errorf("quarter[%d] = %+v, want %+v (standalone / derived-Q4 / count-back label)", i, got[i], w)
+		}
+	}
+
+	// Only-cumulative filer (no standalone 90d points) → no anchor → empty (insufficient-not-wrong).
+	cumOnly := map[string]xbrlConcept{
+		"Revenues": usd(
+			factPoint{Start: "2024-08-31", End: "2025-05-31", Val: 70, FY: 2025, FP: "Q3", Form: "10-Q", Filed: "2025-06-15"},
+			factPoint{Start: "2024-08-31", End: "2025-08-30", Val: 100, FY: 2025, FP: "FY", Form: "10-K", Filed: "2025-10-01"},
+		),
+	}
+	if q := quarterlySeries(cumOnly, "USD", 8, "Revenues"); q != nil {
+		t.Errorf("only-cumulative filer → want nil, got %+v", q)
+	}
+}
+
+// TestQuarterlySeries_TagPriority asserts the quarterly merge matches the annual one: a strictly
+// higher-priority tag wins a shared end-date even if a lower-priority tag filed later (so Annual
+// and Quarterly never disagree on which concept a period's value came from).
+func TestQuarterlySeries_TagPriority(t *testing.T) {
+	gaap := map[string]xbrlConcept{
+		"RevenueFromContractWithCustomerExcludingAssessedTax": usd(
+			factPoint{Start: "2024-08-31", End: "2024-11-30", Val: 23, FY: 2025, FP: "Q1", Form: "10-Q", Filed: "2024-12-15"},
+		),
+		"Revenues": usd( // lower priority, filed LATER — must NOT win
+			factPoint{Start: "2024-08-31", End: "2024-11-30", Val: 99, FY: 2025, FP: "Q1", Form: "10-Q", Filed: "2025-06-01"},
+		),
+	}
+	q := quarterlySeries(gaap, "USD", 8, "RevenueFromContractWithCustomerExcludingAssessedTax", "Revenues")
+	if len(q) != 1 || q[0].Val != 23 {
+		t.Errorf("tag-priority: got %+v, want the primary tag's 23 (not the later-filed lower-priority 99)", q)
+	}
+}
+
 func TestExtractFundamentals_FallbackTagAndLoss(t *testing.T) {
 	resp := factsResp{EntityName: "Loss Inc"}
 	resp.Facts.UsGaap = map[string]xbrlConcept{

@@ -3,6 +3,7 @@ package edgar
 import (
 	"context"
 	"fmt"
+	"math"
 	"sort"
 	"strings"
 	"time"
@@ -159,12 +160,36 @@ type FinancialsHistory struct {
 	GrossProfit       []YearValue `json:"gross_profit,omitempty"`
 	OperatingIncome   []YearValue `json:"operating_income,omitempty"`
 	OperatingCashFlow []YearValue `json:"operating_cash_flow,omitempty"`
+
+	// Quarterly STANDALONE single-quarter values (last ~financialsQuartersMax quarters, oldest-
+	// first), the same DOLLAR lines as above — the directly-reported ~90-day quarters plus a
+	// derived Q4 (full year − the 9-month YTD). Empty when a filer reports no standalone quarter
+	// to anchor the labeling (insufficient-not-wrong). Additive to the annual series above.
+	RevenueQ           []QuarterValue `json:"revenue_q,omitempty"`
+	NetIncomeQ         []QuarterValue `json:"net_income_q,omitempty"`
+	GrossProfitQ       []QuarterValue `json:"gross_profit_q,omitempty"`
+	OperatingIncomeQ   []QuarterValue `json:"operating_income_q,omitempty"`
+	OperatingCashFlowQ []QuarterValue `json:"operating_cash_flow_q,omitempty"`
 }
 
-// hasData reports whether any series carries at least one year.
+// QuarterValue is one STANDALONE single-quarter point. Label is the fiscal quarter (e.g.
+// "Q3 FY2026"), derived by counting back from the latest authoritative quarter — companyfacts
+// fp/fy are restamped on comparative columns, unreliable except on the newest quarter. End is the
+// period end (YYYY-MM-DD); Val is the single-quarter value; Derived is true for a Q4 computed as
+// the full year minus the 9-month YTD (10-Ks never tag a standalone Q4).
+type QuarterValue struct {
+	Label   string  `json:"label"`
+	End     string  `json:"end"`
+	Val     float64 `json:"val"`
+	Derived bool    `json:"derived,omitempty"`
+}
+
+// hasData reports whether any annual OR quarterly series carries at least one point.
 func (h FinancialsHistory) hasData() bool {
 	return len(h.Revenue) > 0 || len(h.NetIncome) > 0 || len(h.GrossProfit) > 0 ||
-		len(h.OperatingIncome) > 0 || len(h.OperatingCashFlow) > 0
+		len(h.OperatingIncome) > 0 || len(h.OperatingCashFlow) > 0 ||
+		len(h.RevenueQ) > 0 || len(h.NetIncomeQ) > 0 || len(h.GrossProfitQ) > 0 ||
+		len(h.OperatingIncomeQ) > 0 || len(h.OperatingCashFlowQ) > 0
 }
 
 // HasData reports whether any meaningful figure was extracted.
@@ -366,12 +391,23 @@ func extractFundamentals(resp factsResp) Fundamentals {
 	// financial-trend table. Concept-merged by end-year (the SAME tag priority as the snapshot
 	// figures, so the latest year matches), oldest-first; absent years are skipped, never
 	// fabricated. nil when nothing is present (ETF / non-US).
+	revTags := []string{"RevenueFromContractWithCustomerExcludingAssessedTax", "Revenues", "RevenueFromContractWithCustomerIncludingAssessedTax", "SalesRevenueNet"}
+	niTags := []string{"NetIncomeLoss", "ProfitLoss"}
+	gpTags := []string{"GrossProfit"}
+	opTags := []string{"OperatingIncomeLoss"}
+	ocfTags := []string{"NetCashProvidedByUsedInOperatingActivities", "NetCashProvidedByUsedInOperatingActivitiesContinuingOperations"}
 	if h := (FinancialsHistory{
-		Revenue:           annualSeriesMerged(gaap, "USD", financialsHistoryYears, "RevenueFromContractWithCustomerExcludingAssessedTax", "Revenues", "RevenueFromContractWithCustomerIncludingAssessedTax", "SalesRevenueNet"),
-		NetIncome:         annualSeriesMerged(gaap, "USD", financialsHistoryYears, "NetIncomeLoss", "ProfitLoss"),
-		GrossProfit:       annualSeriesMerged(gaap, "USD", financialsHistoryYears, "GrossProfit"),
-		OperatingIncome:   annualSeriesMerged(gaap, "USD", financialsHistoryYears, "OperatingIncomeLoss"),
-		OperatingCashFlow: annualSeriesMerged(gaap, "USD", financialsHistoryYears, "NetCashProvidedByUsedInOperatingActivities", "NetCashProvidedByUsedInOperatingActivitiesContinuingOperations"),
+		Revenue:           annualSeriesMerged(gaap, "USD", financialsHistoryYears, revTags...),
+		NetIncome:         annualSeriesMerged(gaap, "USD", financialsHistoryYears, niTags...),
+		GrossProfit:       annualSeriesMerged(gaap, "USD", financialsHistoryYears, gpTags...),
+		OperatingIncome:   annualSeriesMerged(gaap, "USD", financialsHistoryYears, opTags...),
+		OperatingCashFlow: annualSeriesMerged(gaap, "USD", financialsHistoryYears, ocfTags...),
+		// Quarterly single-quarter series (same concept tags, additive).
+		RevenueQ:           quarterlySeries(gaap, "USD", financialsQuartersMax, revTags...),
+		NetIncomeQ:         quarterlySeries(gaap, "USD", financialsQuartersMax, niTags...),
+		GrossProfitQ:       quarterlySeries(gaap, "USD", financialsQuartersMax, gpTags...),
+		OperatingIncomeQ:   quarterlySeries(gaap, "USD", financialsQuartersMax, opTags...),
+		OperatingCashFlowQ: quarterlySeries(gaap, "USD", financialsQuartersMax, ocfTags...),
 	}); h.hasData() {
 		f.History = &h
 	}
@@ -1048,6 +1084,139 @@ func annualSeriesMerged(gaap map[string]xbrlConcept, unit string, maxYears int, 
 	out := make([]YearValue, 0, len(years))
 	for _, y := range years {
 		out = append(out, YearValue{Year: y, FY: y + offset, Val: best[y].p.Val})
+	}
+	return out
+}
+
+// financialsQuartersMax bounds the standalone-quarter series.
+const financialsQuartersMax = 8
+
+// Duration windows for the quarterly buckets (day counts, 52/53-week-safe; validated on real
+// Micron + Apple companyfacts). A standalone single quarter is ~90d (97d in a 53-week year); the
+// 9-month YTD is ~272d (279d); the full year is ~363d (370d). The 6-month YTD (~181d) falls in the
+// dead zone between the standalone and 9-month windows and is intentionally never bucketed.
+const (
+	qStandaloneMin, qStandaloneMax = 85, 100
+	qNineMoMin, qNineMoMax         = 265, 285
+)
+
+// quarterlySeries builds the last maxQ STANDALONE single-quarter values for a flow concept: the
+// directly-reported ~90-day quarters (Q1-Q3) MERGED across the tag priority, plus a DERIVED Q4
+// (full fiscal year − the 9-month YTD of the SAME fiscal year, matched by a shared start date).
+// Each is labeled by counting back (via end-date distance, gap-robust) from the latest directly-
+// reported quarter — whose fp/fy is authoritative because the newest quarter appears ONLY in its
+// own 10-Q, never as a later filing's restamped comparative column. Oldest-first. Empty when there
+// is no standalone quarter to anchor the labeling (an only-cumulative filer → insufficient-not-wrong).
+func quarterlySeries(gaap map[string]xbrlConcept, unit string, maxQ int, tags ...string) []QuarterValue {
+	type qp struct {
+		start, end, fp, filed string
+		val                   float64
+		fy, prio              int
+	}
+	standalone, nineMo, annual := map[string]qp{}, map[string]qp{}, map[string]qp{}
+	// Per end-date: a strictly higher-priority TAG wins outright (matching annualSeriesMerged, so
+	// the two views agree on which concept a period's value comes from); WITHIN one tag the latest-
+	// FILED point wins (a restatement / the un-restamped original of a comparative).
+	put := func(m map[string]qp, p qp) {
+		if cur, ok := m[p.end]; ok {
+			if cur.prio < p.prio {
+				return // a higher-priority tag already owns this end-date
+			}
+			if cur.prio == p.prio && p.filed <= cur.filed {
+				return // same tag: keep the latest-filed point
+			}
+		}
+		m[p.end] = p
+	}
+	for prio, tag := range tags {
+		c, ok := gaap[tag]
+		if !ok {
+			continue
+		}
+		for _, pt := range c.Units[unit] {
+			if pt.Start == "" {
+				continue
+			}
+			p := qp{start: pt.Start, end: pt.End, fp: pt.FP, filed: pt.Filed, val: pt.Val, fy: fiscalYear(pt), prio: prio}
+			switch d := durationDays(pt.Start, pt.End); {
+			case d >= qStandaloneMin && d <= qStandaloneMax:
+				put(standalone, p)
+			case d >= qNineMoMin && d <= qNineMoMax:
+				put(nineMo, p)
+			case d >= 350 && d <= 380:
+				put(annual, p)
+			}
+		}
+	}
+	type quarter struct {
+		fp      string
+		val     float64
+		fy      int
+		derived bool
+	}
+	byEnd := map[string]quarter{}
+	for end, p := range standalone {
+		byEnd[end] = quarter{fp: p.fp, val: p.val, fy: p.fy}
+	}
+	// Derive Q4 = annual − 9-month YTD, the 9-month matched by the SAME fiscal-year start; a real
+	// standalone for the same end always wins over a derived one.
+	nmByStart := map[string]qp{}
+	for _, nm := range nineMo {
+		nmByStart[nm.start] = nm
+	}
+	for aend, ap := range annual {
+		if ex, ok := byEnd[aend]; ok && !ex.derived {
+			continue
+		}
+		if nm, ok := nmByStart[ap.start]; ok {
+			byEnd[aend] = quarter{val: ap.val - nm.val, fy: ap.fy, derived: true}
+		}
+	}
+	if len(byEnd) == 0 {
+		return nil
+	}
+	ends := make([]string, 0, len(byEnd))
+	for end := range byEnd {
+		ends = append(ends, end)
+	}
+	sort.Strings(ends) // oldest first (dates are YYYY-MM-DD)
+	// Anchor = the newest STANDALONE quarter carrying a usable "Qn" fp + fy (authoritative).
+	anchorEnd, anchorQ, anchorFY := "", 0, 0
+	for i := len(ends) - 1; i >= 0; i-- {
+		q := byEnd[ends[i]]
+		if !q.derived && len(q.fp) == 2 && q.fp[0] == 'Q' && q.fp[1] >= '1' && q.fp[1] <= '4' {
+			anchorEnd, anchorQ, anchorFY = ends[i], int(q.fp[1]-'0'), q.fy
+			break
+		}
+	}
+	if anchorEnd == "" {
+		return nil // only-cumulative filer / no standalone with a quarter fp
+	}
+	anchorT, _ := time.Parse("2006-01-02", anchorEnd)
+	label := func(end string) string {
+		t, err := time.Parse("2006-01-02", end)
+		if err != nil {
+			return ""
+		}
+		qb := int(math.Round(anchorT.Sub(t).Hours() / 24 / 91.3125)) // quartersBack; negative if newer than anchor
+		qi, fy := anchorQ-qb, anchorFY
+		for qi < 1 {
+			qi += 4
+			fy--
+		}
+		for qi > 4 {
+			qi -= 4
+			fy++
+		}
+		return fmt.Sprintf("Q%d FY%d", qi, fy)
+	}
+	if maxQ > 0 && len(ends) > maxQ {
+		ends = ends[len(ends)-maxQ:]
+	}
+	out := make([]QuarterValue, 0, len(ends))
+	for _, end := range ends {
+		q := byEnd[end]
+		out = append(out, QuarterValue{Label: label(end), End: end, Val: q.val, Derived: q.derived})
 	}
 	return out
 }
