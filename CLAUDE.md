@@ -175,6 +175,29 @@ feature-flagged plugin, never on the critical path. Web only.
 - Full stack (server): `docker compose up -d --build`.
 
 ## Current state (update each iteration)
+- **2026-06-27 — 📈 10-year financial history table (SHIPPED).** A per-stock multi-year (≤10 FY) financial-trend
+  table — the natural deepening of the ① TTM fundamentals. **Backend (`internal/edgar/fundamentals.go`):**
+  `annualSeriesMerged(gaap, unit, maxYears, tags...)` extracts a per-fiscal-year ANNUAL series keyed by END-DATE
+  YEAR (collision-proof vs a 10-K's restamped comparative columns) + concept-MERGED by tag priority (so revenue
+  bridges the pre/post-ASC-606 concept change). 5 split-immune DOLLAR lines — revenue · gross profit · operating
+  income · net income · operating cash flow → `Fundamentals.History` (`*FinancialsHistory`), riding the existing
+  `/v1/stocks/{t}/fundamentals` response (no new endpoint/cache). **EPS DELIBERATELY EXCLUDED** — caught via a
+  real-AAPL pre-deploy check: a decade of EPS mixes pre/post-2020-split bases (2017 $9.21 → 2018 $2.98) = phantom
+  cliff; per-share metrics are split-distorted, only split-immune dollar totals are kept (current/TTM EPS stays in
+  the snapshot card). **Frontend:** `FinancialsHistoryTable.tsx` (rows=lines × cols=years newest-first, pinned
+  label column + overflow-x-auto, missing cell = "—" never interpolated, hides for non-US/funds), placed after
+  FundamentalsCard in the Overview tab (#financials-history). i18n fhist.* (en+zh). **Hardened by an adversarial
+  review (2 lenses opus-max → synthesis): 1 HIGH + 2 cheap fixed** — (HIGH) the table's FY column label used the
+  end-date year while the snapshot card uses the company-designated fiscal year, so a Feb-FYE retailer (Target's
+  period ending 2024-02-03) read FY2024 in the table but FY2023 on the card, same tab → each YearValue now carries
+  a Go-derived `fy` (constant offset from the latest year's authoritative fy) and the table labels FY{fy}, exact
+  parity; (cheap) the FE hide-guard now gates on the same 5-line union the table renders; (docstring) corrected the
+  false "same tag-priority as the snapshot" claim (gross-profit/op-cash-flow history differ deliberately).
+  Acceptable-by-design (not fixed): the concept-merge definition-boundary step for excise filers, an FYE-shift
+  double-period collision, the duplicate /fundamentals fetch. Anti-hallucination verified clean (every value a real
+  10-K figure; "—"/absent for missing years, no interpolation). **Real-AAPL validated:** revenue 2016→2025
+  $215.6B→$416.2B spans ASC-606 cleanly. Tests: TestAnnualSeriesMerged + TestExtractFundamentals_History. Backend
+  `28ff047` + fe (next commit).
 - **2026-06-27 — 📅 ② Earnings dates: stock-page next+last chip + calendar key-companies filter (SHIPPED, frontend-only).**
   Owner batch ②. **②(a):** the per-stock `EarningsChip` now shows BOTH the NEXT upcoming earnings (Finnhub, +bmo/amc
   +est EPS) and the LAST reported date (the most recent SEC 8-K item 2.02 filing, via `getEarningsReaction`

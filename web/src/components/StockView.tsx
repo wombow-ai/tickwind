@@ -55,6 +55,7 @@ import {AlertsPanel} from '@/components/AlertsPanel';
 import {HoldingsPanel} from '@/components/HoldingsPanel';
 import {KLineChart} from '@/components/KLineChart';
 import {FundamentalsCard} from '@/components/FundamentalsCard';
+import {FinancialsHistoryTable} from '@/components/FinancialsHistoryTable';
 import {EtfHoldingsPanel} from '@/components/EtfHoldingsPanel';
 import {IndicatorsPanel} from '@/components/IndicatorsPanel';
 import {SignalsCard} from '@/components/SignalsCard';
@@ -677,6 +678,11 @@ export function StockView({ticker}: {ticker: string}) {
         {/* fundamentals: market cap / P/E / revenue / net income (SEC XBRL; hides for non-US) */}
         <div id="fundamentals" className="scroll-mt-20">
           <FundamentalsCard ticker={norm} />
+        </div>
+        {/* Multi-year financial history (≤10 FY of revenue/profit/cash-flow dollar lines from SEC
+            XBRL; hides for non-US / funds / no history) — the trend behind the snapshot above. */}
+        <div id="financials-history" className="scroll-mt-20">
+          <FinancialsHistoryTable ticker={norm} />
         </div>
         {/* ETF/fund holdings: top positions by weight (SEC Form N-PORT; hides for non-funds) — the
             primary content for an ETF, where company fundamentals are structurally absent */}

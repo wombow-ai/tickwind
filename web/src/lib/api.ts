@@ -619,6 +619,27 @@ export interface Fundamentals {
   eps_diluted_quarterly?: number;
   latest_quarter?: string; // e.g. "Q3 FY2026"
   ttm_as_of?: string;
+  history?: FinancialsHistory; // multi-year annual trend (dollar lines only)
+}
+
+/** One (fiscal-year, reported value) point in a multi-year series. */
+export interface YearValue {
+  year: number; // end-date calendar year (the series key)
+  fy: number; // company-designated fiscal year (for the display label; differs from year for an off-calendar FYE)
+  val: number;
+}
+
+/**
+ * Per-fiscal-year ANNUAL series for the headline dollar lines (the multi-year trend table). Each
+ * series is up to ~10 most-recent years, OLDEST-FIRST; a year with no filing is absent (never
+ * fabricated). Per-share metrics are excluded (split-distorted over a decade). Absent for ETFs/non-US.
+ */
+export interface FinancialsHistory {
+  revenue?: YearValue[];
+  net_income?: YearValue[];
+  gross_profit?: YearValue[];
+  operating_income?: YearValue[];
+  operating_cash_flow?: YearValue[];
 }
 
 /** Fetches SEC-XBRL fundamentals (market cap, P/E, revenue, net income). Rejects (404) for non-US / no data. */
