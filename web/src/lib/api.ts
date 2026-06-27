@@ -607,8 +607,18 @@ export interface Fundamentals {
   as_of: string;
   price: number;
   market_cap: number | null;
-  pe: number | null; // null for loss-makers
+  pe: number | null; // static P/E (last FY); null for loss-makers
+  pe_ttm: number | null; // trailing-12-month P/E
+  pe_forward: number | null; // run-rate forward P/E (latest quarter × 4)
   pb: number | null;
+  dividend_yield: number | null; // trailing cash-dividend yield (ratio); null for non-payers
+  // TTM / quarterly figures (omitted when the quarterly history is too thin to roll a TTM).
+  revenue_ttm?: number;
+  net_income_ttm?: number;
+  eps_diluted_ttm?: number;
+  eps_diluted_quarterly?: number;
+  latest_quarter?: string; // e.g. "Q3 FY2026"
+  ttm_as_of?: string;
 }
 
 /** Fetches SEC-XBRL fundamentals (market cap, P/E, revenue, net income). Rejects (404) for non-US / no data. */
