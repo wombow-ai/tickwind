@@ -463,6 +463,23 @@ func TestFillLiabilities(t *testing.T) {
 	}
 }
 
+// TestDeriveFCF asserts FCF = operating cash flow − capex per fiscal year, that a year missing
+// either side is DROPPED (never a partial figure), and that capex is magnitude-normalized.
+func TestDeriveFCF(t *testing.T) {
+	ocf := []YearValue{{Year: 2022, FY: 2022, Val: 100}, {Year: 2023, FY: 2023, Val: 120}, {Year: 2024, FY: 2024, Val: 130}}
+	capex := absYearValues([]YearValue{{Year: 2022, FY: 2022, Val: -30}, {Year: 2024, FY: 2024, Val: 40}}) // 2023 missing; 2022 sign-flipped
+	got := deriveFCF(ocf, capex)
+	want := []YearValue{{Year: 2022, FY: 2022, Val: 70}, {Year: 2024, FY: 2024, Val: 90}} // 100−30, (2023 dropped), 130−40
+	if len(got) != len(want) {
+		t.Fatalf("deriveFCF = %+v, want %+v (2023 dropped — no capex)", got, want)
+	}
+	for i, w := range want {
+		if got[i] != w {
+			t.Errorf("fcf[%d] = %+v, want %+v", i, got[i], w)
+		}
+	}
+}
+
 func TestExtractFundamentals_FallbackTagAndLoss(t *testing.T) {
 	resp := factsResp{EntityName: "Loss Inc"}
 	resp.Facts.UsGaap = map[string]xbrlConcept{

@@ -175,6 +175,13 @@ type FinancialsHistory struct {
 	TotalAssets        []YearValue `json:"total_assets,omitempty"`
 	TotalLiabilities   []YearValue `json:"total_liabilities,omitempty"`
 	StockholdersEquity []YearValue `json:"stockholders_equity,omitempty"`
+
+	// Cash-flow & capital-returns ANNUAL series (dollar flows; capex/buybacks/dividends stored
+	// POSITIVE). FreeCashFlow is DERIVED = operating cash flow − capex, per fiscal year.
+	FreeCashFlow []YearValue `json:"free_cash_flow,omitempty"`
+	CapEx        []YearValue `json:"capex,omitempty"`
+	Buybacks     []YearValue `json:"buybacks,omitempty"`
+	Dividends    []YearValue `json:"dividends,omitempty"`
 }
 
 // QuarterValue is one STANDALONE single-quarter point. Label is the fiscal quarter (e.g.
@@ -195,7 +202,8 @@ func (h FinancialsHistory) hasData() bool {
 		len(h.OperatingIncome) > 0 || len(h.OperatingCashFlow) > 0 ||
 		len(h.RevenueQ) > 0 || len(h.NetIncomeQ) > 0 || len(h.GrossProfitQ) > 0 ||
 		len(h.OperatingIncomeQ) > 0 || len(h.OperatingCashFlowQ) > 0 ||
-		len(h.TotalAssets) > 0 || len(h.TotalLiabilities) > 0 || len(h.StockholdersEquity) > 0
+		len(h.TotalAssets) > 0 || len(h.TotalLiabilities) > 0 || len(h.StockholdersEquity) > 0 ||
+		len(h.FreeCashFlow) > 0 || len(h.CapEx) > 0 || len(h.Buybacks) > 0 || len(h.Dividends) > 0
 }
 
 // HasData reports whether any meaningful figure was extracted.
@@ -411,12 +419,23 @@ func extractFundamentals(resp factsResp) Fundamentals {
 	// Total liabilities: tagged us-gaap:Liabilities, else Assets − Equity per year (the snapshot
 	// card's own rule, real reported components at the same FY-end) so the row matches the card.
 	bsLiab := fillLiabilities(annualBalanceSeries(gaap, fyEnds, "Liabilities"), bsAssets, bsEquity)
+	// Cash-flow & capital-returns annual series. CapEx / buybacks / dividends are stored POSITIVE
+	// (like the snapshot scalars). FREE CASH FLOW is derived per fiscal year = operating cash flow −
+	// capex, aligned by year (a year missing either side is dropped, never shown partial).
+	ocfS := annualSeriesMerged(gaap, "USD", financialsHistoryYears, ocfTags...)
+	capexS := absYearValues(annualSeriesMerged(gaap, "USD", financialsHistoryYears, "PaymentsToAcquirePropertyPlantAndEquipment"))
+	buybackS := absYearValues(annualSeriesMerged(gaap, "USD", financialsHistoryYears, "PaymentsForRepurchaseOfCommonStock"))
+	// Dividends-PAID cash-flow line — the GENERAL tag (total cash dividends, incl. the cash-flow
+	// statement's own line) so coverage spans filers that report only the umbrella concept (e.g.
+	// Apple tags the common-specific concept only through 2017, then the general one). This is the
+	// total-dividends display, NOT the common-only per-share yield (which lives on the snapshot card).
+	divS := absYearValues(annualSeriesMerged(gaap, "USD", financialsHistoryYears, "PaymentsOfDividendsCommonStock", "PaymentsOfDividends", "PaymentsOfOrdinaryDividends"))
 	if h := (FinancialsHistory{
 		Revenue:           annualSeriesMerged(gaap, "USD", financialsHistoryYears, revTags...),
 		NetIncome:         annualSeriesMerged(gaap, "USD", financialsHistoryYears, niTags...),
 		GrossProfit:       annualSeriesMerged(gaap, "USD", financialsHistoryYears, gpTags...),
 		OperatingIncome:   annualSeriesMerged(gaap, "USD", financialsHistoryYears, opTags...),
-		OperatingCashFlow: annualSeriesMerged(gaap, "USD", financialsHistoryYears, ocfTags...),
+		OperatingCashFlow: ocfS,
 		// Quarterly single-quarter series (same concept tags, additive).
 		RevenueQ:           quarterlySeries(gaap, "USD", financialsQuartersMax, revTags...),
 		NetIncomeQ:         quarterlySeries(gaap, "USD", financialsQuartersMax, niTags...),
@@ -426,6 +445,11 @@ func extractFundamentals(resp factsResp) Fundamentals {
 		TotalAssets:        bsAssets,
 		TotalLiabilities:   bsLiab,
 		StockholdersEquity: bsEquity,
+		// Cash flow & capital returns (annual): derived FCF + capex + buybacks + dividends.
+		FreeCashFlow: deriveFCF(ocfS, capexS),
+		CapEx:        capexS,
+		Buybacks:     buybackS,
+		Dividends:    divS,
 	}); h.hasData() {
 		f.History = &h
 	}
@@ -1200,6 +1224,34 @@ func fillLiabilities(liab, assets, equity []YearValue) []YearValue {
 	}
 	sort.Slice(liab, func(i, j int) bool { return liab[i].Year < liab[j].Year })
 	return liab
+}
+
+// absYearValues returns the series with each value's MAGNITUDE — XBRL reports capex / buybacks /
+// dividends-paid as positive, but a sign-flipped filer is normalized so a derived FCF stays correct.
+func absYearValues(s []YearValue) []YearValue {
+	out := make([]YearValue, len(s))
+	for i, v := range s {
+		v.Val = math.Abs(v.Val)
+		out[i] = v
+	}
+	return out
+}
+
+// deriveFCF builds the per-fiscal-year FREE CASH FLOW series = operating cash flow − capex, aligned
+// by year; a year present in only ONE of the two inputs is DROPPED (never a partial FCF). Capex is
+// expected POSITIVE (absYearValues). Oldest-first (follows the ocf order).
+func deriveFCF(ocf, capex []YearValue) []YearValue {
+	capByYear := make(map[int]float64, len(capex))
+	for _, c := range capex {
+		capByYear[c.Year] = c.Val
+	}
+	out := make([]YearValue, 0, len(ocf))
+	for _, o := range ocf {
+		if capVal, ok := capByYear[o.Year]; ok {
+			out = append(out, YearValue{Year: o.Year, FY: o.FY, Val: o.Val - capVal})
+		}
+	}
+	return out
 }
 
 // financialsQuartersMax bounds the standalone-quarter series.
