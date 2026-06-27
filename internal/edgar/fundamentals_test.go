@@ -275,6 +275,84 @@ func TestExtractFundamentals_CommonDividends(t *testing.T) {
 	}
 }
 
+// TestAnnualSeriesMerged covers the multi-year trend extraction: concept-MERGE across a tag
+// change (e.g. revenue's pre/post-ASC-606 tags), end-year keying, the primary-tag-wins rule when
+// both tags report a year, the newest-filed restatement tie-break, oldest-first order, and the
+// maxYears most-recent truncation.
+func TestAnnualSeriesMerged(t *testing.T) {
+	gaap := map[string]xbrlConcept{
+		"RevenueFromContractWithCustomerExcludingAssessedTax": usd(
+			factPoint{Start: "2023-01-01", End: "2023-12-31", Val: 1000, Form: "10-K", Filed: "2024-02-01"},
+			factPoint{Start: "2022-01-01", End: "2022-12-31", Val: 900, Form: "10-K", Filed: "2024-02-01"}, // comparative col
+		),
+		"Revenues": usd(
+			factPoint{Start: "2021-01-01", End: "2021-12-31", Val: 800, Form: "10-K", Filed: "2022-02-01"},
+			factPoint{Start: "2020-01-01", End: "2020-12-31", Val: 700, Form: "10-K", Filed: "2021-02-01"},
+			factPoint{Start: "2022-01-01", End: "2022-12-31", Val: 850, Form: "10-K", Filed: "2023-02-01"}, // 2022 also here → primary must win
+			factPoint{Start: "2021-01-01", End: "2021-12-31", Val: 810, Form: "10-K", Filed: "2023-02-01"}, // restated 2021 (newer filed)
+		),
+	}
+	tags := []string{"RevenueFromContractWithCustomerExcludingAssessedTax", "Revenues"}
+	got := annualSeriesMerged(gaap, "USD", 10, tags...)
+	// FY == Year here (no fy field on the fixtures → fiscalYear falls back to end-year → offset 0).
+	want := []YearValue{{2020, 2020, 700}, {2021, 2021, 810}, {2022, 2022, 900}, {2023, 2023, 1000}}
+	if len(got) != len(want) {
+		t.Fatalf("series = %+v, want %+v", got, want)
+	}
+	for i, w := range want {
+		if got[i] != w {
+			t.Errorf("series[%d] = %+v, want %+v (merge/primary-wins/restatement/order)", i, got[i], w)
+		}
+	}
+	if s2 := annualSeriesMerged(gaap, "USD", 2, tags...); len(s2) != 2 || s2[0].Year != 2022 || s2[1].Year != 2023 {
+		t.Errorf("maxYears=2 = %+v, want the 2 most-recent [{2022 900} {2023 1000}]", s2)
+	}
+
+	// Off-calendar FYE: a filer whose periods END in early Feb but are labeled the PRIOR fiscal
+	// year (fy = endYear − 1, e.g. Target). The DISPLAY FY must follow the company's fy (derived
+	// from the latest year's authoritative fy), not the end-date calendar year.
+	febFYE := map[string]xbrlConcept{
+		"Revenues": usd(
+			factPoint{Start: "2022-01-30", End: "2023-01-28", Val: 100, FY: 2022, Form: "10-K", Filed: "2023-03-01"},
+			factPoint{Start: "2023-01-29", End: "2024-02-03", Val: 110, FY: 2023, Form: "10-K", Filed: "2024-03-01"}, // latest: endYear 2024, fy 2023
+		),
+	}
+	if fs := annualSeriesMerged(febFYE, "USD", 10, "Revenues"); len(fs) != 2 ||
+		fs[0].Year != 2023 || fs[0].FY != 2022 || fs[1].Year != 2024 || fs[1].FY != 2023 {
+		t.Errorf("febFYE = %+v, want display FY = end-year − 1 (offset −1 from the latest year's fy 2023)", fs)
+	}
+}
+
+// TestExtractFundamentals_History asserts the end-to-end wiring + that an untagged line is absent
+// (never fabricated).
+func TestExtractFundamentals_History(t *testing.T) {
+	resp := factsResp{EntityName: "Trend Co"}
+	resp.Facts.UsGaap = map[string]xbrlConcept{
+		"Revenues": usd(
+			factPoint{Start: "2021-01-01", End: "2021-12-31", Val: 800, FP: "FY", Form: "10-K", Filed: "2022-02-01"},
+			factPoint{Start: "2022-01-01", End: "2022-12-31", Val: 900, FP: "FY", Form: "10-K", Filed: "2023-02-01"},
+			factPoint{Start: "2023-01-01", End: "2023-12-31", Val: 1000, FP: "FY", Form: "10-K", Filed: "2024-02-01"},
+		),
+		"NetIncomeLoss": usd(
+			factPoint{Start: "2022-01-01", End: "2022-12-31", Val: 90, FP: "FY", Form: "10-K", Filed: "2023-02-01"},
+			factPoint{Start: "2023-01-01", End: "2023-12-31", Val: 120, FP: "FY", Form: "10-K", Filed: "2024-02-01"},
+		),
+	}
+	f := extractFundamentals(resp)
+	if f.History == nil {
+		t.Fatal("History is nil, want populated")
+	}
+	if len(f.History.Revenue) != 3 || f.History.Revenue[0] != (YearValue{2021, 2021, 800}) || f.History.Revenue[2] != (YearValue{2023, 2023, 1000}) {
+		t.Errorf("History.Revenue = %+v, want 3 years oldest-first ending {2023 2023 1000}", f.History.Revenue)
+	}
+	if len(f.History.NetIncome) != 2 {
+		t.Errorf("History.NetIncome len = %d, want 2", len(f.History.NetIncome))
+	}
+	if len(f.History.GrossProfit) != 0 { // untagged → absent, NOT fabricated
+		t.Errorf("History.GrossProfit = %+v, want empty (untagged)", f.History.GrossProfit)
+	}
+}
+
 func TestExtractFundamentals_FallbackTagAndLoss(t *testing.T) {
 	resp := factsResp{EntityName: "Loss Inc"}
 	resp.Facts.UsGaap = map[string]xbrlConcept{

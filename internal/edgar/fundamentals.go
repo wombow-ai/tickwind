@@ -3,6 +3,7 @@ package edgar
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 )
@@ -117,6 +118,53 @@ type Fundamentals struct {
 	EPSDilutedQuarterly float64 `json:"eps_diluted_quarterly,omitempty"` // latest STANDALONE fiscal-quarter diluted EPS — annualized (×4) for the run-rate/forward P/E
 	LatestQuarter       string  `json:"latest_quarter,omitempty"`        // the latest standalone quarter's label, e.g. "Q3 FY2026"
 	TTMAsOf             string  `json:"ttm_as_of,omitempty"`             // the TTM period-end date (YYYY-MM-DD) — the latest quarter end
+
+	// History is the multi-year ANNUAL trend (up to ~10 fiscal years) for the headline
+	// income-statement / cash-flow lines, for a per-stock financial-history table. nil for
+	// filers with no annual XBRL series (ETFs / non-US). See FinancialsHistory.
+	History *FinancialsHistory `json:"history,omitempty"`
+}
+
+// YearValue is one (fiscal-year, reported value) point in a multi-year series. Year is the
+// END-DATE calendar year — the collision-proof SERIES KEY (see annualForEndYear). FY is the
+// company-DESIGNATED fiscal year used for the DISPLAY label: it equals Year for a Dec/Sept
+// year-end, but for an off-calendar end (e.g. a late-Jan/Feb retail FYE, where a period ending
+// 2024-02-03 is "fiscal 2023") it carries the company's own label so the table matches the
+// snapshot card's fiscalLabel. Val is the real reported 10-K figure for that year.
+type YearValue struct {
+	Year int     `json:"year"`
+	FY   int     `json:"fy"`
+	Val  float64 `json:"val"`
+}
+
+// FinancialsHistory holds the per-fiscal-year ANNUAL series for the headline financial lines —
+// the data behind the multi-year trend table. Each series is up to ~financialsHistoryYears most-
+// recent fiscal years, OLDEST-FIRST, one value per year; a year with no annual filing is simply
+// absent (NEVER interpolated/fabricated — anti-hallucination). Most series concept-MERGE across
+// the same tag-priority their snapshot sibling uses (so e.g. revenue spans the pre/post-ASC-606
+// concept change). TWO differ deliberately: GrossProfit here is the tagged us-gaap:GrossProfit
+// ONLY (no Revenue−COGS derivation the snapshot falls back to), and OperatingCashFlow adds a
+// continuing-operations fallback the snapshot omits — so a filer may show a snapshot line with no
+// matching history row (or vice-versa) WITHOUT contradiction (both insufficient-not-wrong). An
+// empty series is omitted; the whole struct is nil when nothing is present.
+//
+// Only company-level DOLLAR totals are kept — they are split-immune and comparable across a
+// decade. PER-SHARE metrics (EPS, DPS) are deliberately EXCLUDED: a multi-year series would mix
+// pre/post-stock-split bases (companyfacts restates only the ~3 years a later 10-K re-reports as
+// comparatives, leaving older years on the un-split basis), which would read as a phantom cliff.
+// The current/TTM EPS lives in the snapshot card instead.
+type FinancialsHistory struct {
+	Revenue           []YearValue `json:"revenue,omitempty"`
+	NetIncome         []YearValue `json:"net_income,omitempty"`
+	GrossProfit       []YearValue `json:"gross_profit,omitempty"`
+	OperatingIncome   []YearValue `json:"operating_income,omitempty"`
+	OperatingCashFlow []YearValue `json:"operating_cash_flow,omitempty"`
+}
+
+// hasData reports whether any series carries at least one year.
+func (h FinancialsHistory) hasData() bool {
+	return len(h.Revenue) > 0 || len(h.NetIncome) > 0 || len(h.GrossProfit) > 0 ||
+		len(h.OperatingIncome) > 0 || len(h.OperatingCashFlow) > 0
 }
 
 // HasData reports whether any meaningful figure was extracted.
@@ -312,6 +360,20 @@ func extractFundamentals(resp factsResp) Fundamentals {
 	}
 	if ttm, _, ok := trailingTwelveMonths(niPts); ok {
 		f.NetIncomeTTM = ttm
+	}
+
+	// Multi-year ANNUAL history (up to ~10 fiscal years) for the headline lines — the per-stock
+	// financial-trend table. Concept-merged by end-year (the SAME tag priority as the snapshot
+	// figures, so the latest year matches), oldest-first; absent years are skipped, never
+	// fabricated. nil when nothing is present (ETF / non-US).
+	if h := (FinancialsHistory{
+		Revenue:           annualSeriesMerged(gaap, "USD", financialsHistoryYears, "RevenueFromContractWithCustomerExcludingAssessedTax", "Revenues", "RevenueFromContractWithCustomerIncludingAssessedTax", "SalesRevenueNet"),
+		NetIncome:         annualSeriesMerged(gaap, "USD", financialsHistoryYears, "NetIncomeLoss", "ProfitLoss"),
+		GrossProfit:       annualSeriesMerged(gaap, "USD", financialsHistoryYears, "GrossProfit"),
+		OperatingIncome:   annualSeriesMerged(gaap, "USD", financialsHistoryYears, "OperatingIncomeLoss"),
+		OperatingCashFlow: annualSeriesMerged(gaap, "USD", financialsHistoryYears, "NetCashProvidedByUsedInOperatingActivities", "NetCashProvidedByUsedInOperatingActivitiesContinuingOperations"),
+	}); h.hasData() {
+		f.History = &h
 	}
 
 	// Gross profit (annual flow): prefer the reported concept; else derive
@@ -919,4 +981,73 @@ func trailingTwelveMonths(pts []factPoint) (float64, string, bool) {
 		return annual.Val, annual.End, true // no prior-year period to roll against
 	}
 	return annual.Val + cur.Val - prior.Val, cur.End, true
+}
+
+// financialsHistoryYears bounds the multi-year trend series to the most recent ~decade.
+const financialsHistoryYears = 10
+
+// annualSeriesMerged builds a per-fiscal-year ANNUAL series for a flow concept, MERGING the given
+// tags in priority order (tags[0] = highest priority) keyed by the period's END-DATE YEAR — the
+// collision-proof key (see annualForEndYear) that survives a 10-K's restamped comparative columns.
+// For each end-year the highest-priority tag that reports it wins (so a concept change, e.g.
+// revenue's pre/post-ASC-606 tags, is bridged: the new concept covers recent years, the older
+// concept fills earlier ones); within one tag, newest End then latest Filed wins (a later 10-K's
+// restated value). Only full-year (~365-day) periods qualify. Returns up to maxYears most-recent
+// years, OLDEST-FIRST; a year with no annual point is simply absent (never fabricated).
+func annualSeriesMerged(gaap map[string]xbrlConcept, unit string, maxYears int, tags ...string) []YearValue {
+	type chosen struct {
+		p    factPoint
+		rank int // tag index — lower is higher priority
+	}
+	best := map[int]chosen{}
+	for ti, tag := range tags {
+		c, ok := gaap[tag]
+		if !ok {
+			continue
+		}
+		for _, p := range c.Units[unit] {
+			if p.Start == "" {
+				continue
+			}
+			if d := durationDays(p.Start, p.End); d < 350 || d > 380 {
+				continue
+			}
+			y := endYear(p)
+			if y == 0 {
+				continue
+			}
+			if cur, exists := best[y]; exists {
+				if cur.rank < ti {
+					continue // a higher-priority tag already owns this year
+				}
+				if cur.rank == ti && !(p.End > cur.p.End || (p.End == cur.p.End && p.Filed > cur.p.Filed)) {
+					continue
+				}
+			}
+			best[y] = chosen{p: p, rank: ti}
+		}
+	}
+	years := make([]int, 0, len(best))
+	for y := range best {
+		years = append(years, y)
+	}
+	sort.Ints(years) // oldest first
+	if maxYears > 0 && len(years) > maxYears {
+		years = years[len(years)-maxYears:] // keep the most recent maxYears
+	}
+	// Fiscal-year DISPLAY offset for an off-calendar year-end (e.g. a Feb retail FYE labels a
+	// period ending 2024-02-03 as "fiscal 2023"). Derive it from the MOST RECENT year, whose
+	// chosen point is the latest 10-K's OWN primary column (no even-newer filing re-reports it as
+	// a restamped comparative), so its `fy` field is authoritative; apply the constant offset
+	// across the series so labels stay internally consistent and match fiscalLabel on the card.
+	offset := 0
+	if len(years) > 0 {
+		latest := best[years[len(years)-1]].p
+		offset = fiscalYear(latest) - endYear(latest)
+	}
+	out := make([]YearValue, 0, len(years))
+	for _, y := range years {
+		out = append(out, YearValue{Year: y, FY: y + offset, Val: best[y].p.Val})
+	}
+	return out
 }
