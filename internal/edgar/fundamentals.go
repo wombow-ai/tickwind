@@ -39,15 +39,16 @@ type Fundamentals struct {
 
 	// Additional figures for margin / leverage / cash-flow / YoY indicators.
 	// Each is 0 when the underlying concept is absent (best-effort).
-	GrossProfit        float64 `json:"gross_profit,omitempty"`         // latest-FY gross profit; us-gaap:GrossProfit, else Revenue − cost of revenue
-	TotalAssets        float64 `json:"total_assets,omitempty"`         // us-gaap:Assets (latest instant)
-	TotalLiabilities   float64 `json:"total_liabilities,omitempty"`    // us-gaap:Liabilities (latest instant), else TotalAssets − Equity
-	OperatingCashFlow  float64 `json:"operating_cash_flow,omitempty"`  // latest-FY cash from operations (can be <0)
-	CapEx              float64 `json:"capex,omitempty"`                // latest-FY capital expenditure, stored POSITIVE
-	DividendsPaid      float64 `json:"dividends_paid,omitempty"`       // latest-FY common dividends paid, stored POSITIVE; 0 for non-payers
-	DividendsPaidPrior float64 `json:"dividends_paid_prior,omitempty"` // prior-FY common dividends paid (for YoY dividend growth)
-	RevenuePrior       float64 `json:"revenue_prior,omitempty"`        // prior-FY revenue (for YoY growth)
-	NetIncomePrior     float64 `json:"net_income_prior,omitempty"`     // prior-FY net income (for YoY growth)
+	GrossProfit         float64 `json:"gross_profit,omitempty"`          // latest-FY gross profit; us-gaap:GrossProfit, else Revenue − cost of revenue
+	TotalAssets         float64 `json:"total_assets,omitempty"`          // us-gaap:Assets (latest instant)
+	TotalLiabilities    float64 `json:"total_liabilities,omitempty"`     // us-gaap:Liabilities (latest instant), else TotalAssets − Equity
+	OperatingCashFlow   float64 `json:"operating_cash_flow,omitempty"`   // latest-FY cash from operations (can be <0)
+	CapEx               float64 `json:"capex,omitempty"`                 // latest-FY capital expenditure, stored POSITIVE
+	DividendsPaid       float64 `json:"dividends_paid,omitempty"`        // latest-FY dividends paid (general concept; may include preferred), stored POSITIVE; 0 for non-payers
+	DividendsPaidPrior  float64 `json:"dividends_paid_prior,omitempty"`  // prior-FY dividends paid (for YoY dividend growth)
+	CommonDividendsPaid float64 `json:"common_dividends_paid,omitempty"` // latest-FY COMMON-only dividends paid (for the dividend yield); 0 when the filer reports only the general concept
+	RevenuePrior        float64 `json:"revenue_prior,omitempty"`         // prior-FY revenue (for YoY growth)
+	NetIncomePrior      float64 `json:"net_income_prior,omitempty"`      // prior-FY net income (for YoY growth)
 
 	// --- Increment 2 (design §1.2 Groups 1/2/4): additional XBRL concepts that
 	// unlock the income-statement, current-balance-sheet, and debt/EV ratio
@@ -102,6 +103,20 @@ type Fundamentals struct {
 	AssetsCurrentPrior      float64 `json:"assets_current_prior,omitempty"`      // prior period-end current assets; for ΔCurrentRatio
 	LiabilitiesCurrentPrior float64 `json:"liabilities_current_prior,omitempty"` // prior period-end current liabilities; for ΔCurrentRatio
 	SharesPrior             int64   `json:"shares_prior,omitempty"`              // prior period-end common shares outstanding (dei series); for the no-dilution test
+
+	// --- TTM / quarterly figures. The latest 10-K is often several quarters stale (e.g. a
+	// memory-cycle earnings boom — MU's FY2025 10-K predates its far larger FY2026 quarters);
+	// these surface the MOST RECENT reported earnings so valuation reflects current results,
+	// not a year-old annual. Each is computed from the SAME concept series its annual sibling
+	// uses (concept-consistent) and is insufficient-not-wrong: left 0/empty when the quarterly
+	// history is too thin to roll a trailing-twelve-month total (then callers fall back to the
+	// annual figure). TTM = latest full FY + current-fiscal-year-to-date − prior-year-to-date.
+	RevenueTTM          float64 `json:"revenue_ttm,omitempty"`           // trailing-12-month revenue
+	NetIncomeTTM        float64 `json:"net_income_ttm,omitempty"`        // trailing-12-month net income (can be <0)
+	EPSDilutedTTM       float64 `json:"eps_diluted_ttm,omitempty"`       // trailing-12-month diluted EPS — the TTM-P/E numerator
+	EPSDilutedQuarterly float64 `json:"eps_diluted_quarterly,omitempty"` // latest STANDALONE fiscal-quarter diluted EPS — annualized (×4) for the run-rate/forward P/E
+	LatestQuarter       string  `json:"latest_quarter,omitempty"`        // the latest standalone quarter's label, e.g. "Q3 FY2026"
+	TTMAsOf             string  `json:"ttm_as_of,omitempty"`             // the TTM period-end date (YYYY-MM-DD) — the latest quarter end
 }
 
 // HasData reports whether any meaningful figure was extracted.
@@ -276,6 +291,29 @@ func extractFundamentals(resp factsResp) Fundamentals {
 		f.EPSBasic = p.Val
 	}
 
+	// Quarterly + trailing-twelve-month figures (see the struct fields' doc). Each TTM rolls
+	// the SAME concept series its annual sibling uses, so the total is concept-consistent;
+	// each falls back gracefully (0 → callers use the annual) when the quarterly history is
+	// too thin. revPts / niPts / epsPts already hold the full concept series (annual +
+	// quarterly + year-to-date points), so no extra fetch is needed.
+	epsAnnualEnd := ""
+	if a, ok := latestAnnual(epsPts); ok {
+		epsAnnualEnd = a.End
+	}
+	if q, ok := latestQuarterly(epsPts, epsAnnualEnd); ok {
+		f.EPSDilutedQuarterly = q.Val
+		f.LatestQuarter = quarterLabel(q)
+	}
+	if ttm, asOf, ok := trailingTwelveMonths(epsPts); ok {
+		f.EPSDilutedTTM, f.TTMAsOf = ttm, asOf
+	}
+	if ttm, _, ok := trailingTwelveMonths(revPts); ok {
+		f.RevenueTTM = ttm
+	}
+	if ttm, _, ok := trailingTwelveMonths(niPts); ok {
+		f.NetIncomeTTM = ttm
+	}
+
 	// Gross profit (annual flow): prefer the reported concept; else derive
 	// Revenue − cost of revenue for the SAME fiscal period as Revenue. Keep the
 	// reported concept's series so the prior-FY gross profit can be matched
@@ -339,6 +377,17 @@ func extractFundamentals(resp factsResp) Fundamentals {
 		if pp, ok := annualForEndYear(divPts, endYear(p)-1); ok {
 			f.DividendsPaidPrior = abs(pp.Val)
 		}
+	}
+
+	// COMMON-only dividends paid — for the dividend YIELD, which divides by the common-only
+	// market cap. The general PaymentsOfDividends concept (used above) lumps in PREFERRED
+	// dividends for issuers with preferred stock (big banks), which would overstate the common
+	// yield. Restricted to the common-specific concepts (PaymentsOfDividendsCommonStock, and
+	// PaymentsOfOrdinaryDividends = ordinary/common shares); a filer that reports ONLY the
+	// general concept leaves this 0 → the yield is omitted (insufficient-not-wrong) rather than
+	// served contaminated by preferred dividends.
+	if p, ok := latestAnnual(pick(gaap, "USD", "PaymentsOfDividendsCommonStock", "PaymentsOfOrdinaryDividends")); ok {
+		f.CommonDividendsPaid = abs(p.Val)
 	}
 
 	// --- Increment 2 (design §1.2 Groups 1/2/4) ---
@@ -711,4 +760,163 @@ func durationDays(start, end string) int {
 // the end-date year as a fallback).
 func fiscalLabel(p factPoint) string {
 	return fmt.Sprintf("FY%d", fiscalYear(p))
+}
+
+// quarterLabel renders a quarterly fact's fiscal period as "Q3 FY2026" (the FP field
+// + the fiscal-year label). FP is empty → "Q? FYxxxx" (never fabricated).
+func quarterLabel(p factPoint) string {
+	fp := p.FP
+	if fp == "" {
+		fp = "Q?"
+	}
+	return fp + " " + fiscalLabel(p)
+}
+
+// latestQuarterly returns the most recent STANDALONE fiscal-quarter flow fact (period
+// duration ~90 days) ending AFTER afterEnd (the latest annual's end), newest end then latest
+// amendment. Used to annualize the latest quarter (× 4) for the run-rate / forward P/E. The
+// afterEnd guard is essential: a 10-K never tags a standalone Q4, so right after an annual
+// the newest standalone quarter (the prior FY's Q3) is OLDER than the annual — annualizing it
+// would be stale/misleading. When no standalone quarter is newer than the annual, returns
+// false → the run-rate P/E is omitted (insufficient-not-wrong) until the next 10-Q. The
+// cumulative year-to-date points (181/272-day) are excluded by the duration window.
+func latestQuarterly(pts []factPoint, afterEnd string) (factPoint, bool) {
+	var best factPoint
+	found := false
+	for _, p := range pts {
+		if p.Start == "" || p.End <= afterEnd {
+			continue
+		}
+		if d := durationDays(p.Start, p.End); d < 80 || d > 100 {
+			continue
+		}
+		if !found || p.End > best.End || (p.End == best.End && p.Filed > best.Filed) {
+			best, found = p, true
+		}
+	}
+	return best, found
+}
+
+// latestYTD returns the current fiscal-year-to-date cumulative flow fact: the LONGEST
+// non-annual period (duration 80–350 days) ending at the latest quarter-end that falls
+// after afterEnd (the latest annual's end). For Q3 it is the 9-month figure (not the
+// standalone 3-month quarter); for Q1 it is the single 3-month figure. Returns false when
+// no quarterly period is newer than the latest annual (a fresh 10-K is the most recent
+// filing → the annual itself is the trailing twelve months).
+func latestYTD(pts []factPoint, afterEnd string) (factPoint, bool) {
+	// Dates are YYYY-MM-DD so lexical comparison is chronological.
+	latestEnd := ""
+	for _, p := range pts {
+		if p.Start == "" || p.End <= afterEnd {
+			continue
+		}
+		if d := durationDays(p.Start, p.End); d < 80 || d > 350 {
+			continue
+		}
+		if p.End > latestEnd {
+			latestEnd = p.End
+		}
+	}
+	if latestEnd == "" {
+		return factPoint{}, false
+	}
+	var best factPoint
+	bestDur := 0
+	found := false
+	for _, p := range pts {
+		if p.Start == "" || p.End != latestEnd {
+			continue
+		}
+		d := durationDays(p.Start, p.End)
+		if d < 80 || d > 350 {
+			continue
+		}
+		if !found || d > bestDur || (d == bestDur && p.Filed > best.Filed) {
+			best, bestDur, found = p, d, true
+		}
+	}
+	if !found {
+		return factPoint{}, false
+	}
+	// Genuine-cumulative guard: a real fiscal-year-to-date STARTS at the FY start (≈ the day
+	// after the prior annual's end). Reject a bare standalone quarter masquerading as the YTD
+	// — its start sits mid-year — which happens when the current quarter's cumulative figure
+	// is absent (so only the 90-day standalone shares the latest end-date). The legitimate Q1
+	// case passes (its standalone IS the YTD, starting at the FY start); falling back to the
+	// annual otherwise is correct (insufficient-not-wrong, avoids a quarter-over-quarter roll).
+	if g := durationDays(afterEnd, best.Start); g < -20 || g > 20 {
+		return factPoint{}, false
+	}
+	return best, true
+}
+
+// priorYearYTD returns the same fiscal-year-to-date period one year before cur: the point
+// whose duration matches cur's (±20 days) and whose end is ~365 days before cur's (±20
+// days). It is the term subtracted to roll the trailing twelve months forward. Returns
+// false when no matching prior-year period exists (too little history).
+func priorYearYTD(pts []factPoint, cur factPoint) (factPoint, bool) {
+	curEnd, err := time.Parse("2006-01-02", cur.End)
+	if err != nil {
+		return factPoint{}, false
+	}
+	curDur := durationDays(cur.Start, cur.End)
+	target := curEnd.AddDate(-1, 0, 0)
+	const tol = 20 * 24 * time.Hour
+	var best factPoint
+	var bestGap time.Duration
+	found := false
+	for _, p := range pts {
+		if p.Start == "" {
+			continue
+		}
+		d := durationDays(p.Start, p.End)
+		if d < curDur-20 || d > curDur+20 {
+			continue
+		}
+		if d >= 350 && curDur < 350 {
+			continue // never subtract a full prior-year ANNUAL from an interim YTD (transition filings)
+		}
+		pe, err := time.Parse("2006-01-02", p.End)
+		if err != nil {
+			continue
+		}
+		gap := pe.Sub(target)
+		if gap < 0 {
+			gap = -gap
+		}
+		if gap > tol {
+			continue
+		}
+		if !found || gap < bestGap || (gap == bestGap && p.Filed > best.Filed) {
+			best, bestGap, found = p, gap, true
+		}
+	}
+	return best, found
+}
+
+// trailingTwelveMonths computes the trailing-twelve-month total of a flow concept (revenue /
+// net income / diluted EPS) from its XBRL points: the latest full fiscal year, plus the
+// current fiscal-year-to-date, minus the prior-year same-period-to-date — i.e. it rolls the
+// completed year forward by the quarters reported since. When no quarterly period is newer
+// than the latest 10-K, the annual itself IS the trailing twelve months. Returns
+// (ttm, periodEnd, ok); ok is false only when there is no annual period to anchor on.
+//
+// For dollar flows (revenue, net income) the roll is exact. For diluted EPS it sums the
+// issuer's own reported cumulative EPS figures (annual + 9-month − prior 9-month), the
+// conventional TTM-EPS — slightly approximate across share-count drift but the standard
+// basis (validated against Micron: 7.59 + 41.40 − 4.75 = 44.24 → matches the public TTM P/E).
+func trailingTwelveMonths(pts []factPoint) (float64, string, bool) {
+	annual, ok := latestAnnual(pts)
+	if !ok {
+		return 0, "", false
+	}
+	cur, ok := latestYTD(pts, annual.End)
+	if !ok {
+		return annual.Val, annual.End, true // the 10-K is the most recent filing
+	}
+	prior, ok := priorYearYTD(pts, cur)
+	if !ok {
+		return annual.Val, annual.End, true // no prior-year period to roll against
+	}
+	return annual.Val + cur.Val - prior.Val, cur.End, true
 }

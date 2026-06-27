@@ -124,6 +124,157 @@ func TestExtractFundamentals_Profitable(t *testing.T) {
 	}
 }
 
+// TestExtractFundamentals_TTM uses Micron's real FY2025/FY2026 reporting shape (the case
+// that motivated the feature: the FY2025 10-K is stale vs the far larger FY2026 quarters).
+// It asserts the trailing-twelve-month roll (annual + current-YTD − prior-YTD) for EPS,
+// revenue and net income, plus the standalone-quarter pick + labels.
+func TestExtractFundamentals_TTM(t *testing.T) {
+	resp := factsResp{EntityName: "Micron Technology, Inc."}
+	resp.Facts.UsGaap = map[string]xbrlConcept{
+		// Diluted EPS: FY2025 annual 7.59; FY2026 Q3 standalone 24.67 (90d) + 9-mo YTD 41.40
+		// (272d); FY2025 prior-year 9-mo YTD 4.75. TTM = 7.59 + 41.40 − 4.75 = 44.24.
+		"EarningsPerShareDiluted": perSh(
+			factPoint{Start: "2024-08-30", End: "2025-08-28", Val: 7.59, FY: 2025, FP: "FY", Form: "10-K", Filed: "2025-10-03"},
+			factPoint{Start: "2025-11-28", End: "2026-02-26", Val: 12.07, FY: 2026, FP: "Q2", Form: "10-Q", Filed: "2026-03-19"},
+			factPoint{Start: "2026-02-27", End: "2026-05-28", Val: 24.67, FY: 2026, FP: "Q3", Form: "10-Q", Filed: "2026-06-25"}, // latest standalone
+			factPoint{Start: "2025-08-29", End: "2026-05-28", Val: 41.40, FY: 2026, FP: "Q3", Form: "10-Q", Filed: "2026-06-25"}, // current YTD
+			factPoint{Start: "2024-08-30", End: "2025-05-29", Val: 4.75, FY: 2025, FP: "Q3", Form: "10-Q", Filed: "2025-06-26"},  // prior-year YTD
+		),
+		// Revenue (dollar flow, exact roll): FY 37380 + cur-YTD 30000 − prior-YTD 18000 = 49380.
+		"RevenueFromContractWithCustomerExcludingAssessedTax": usd(
+			factPoint{Start: "2024-08-30", End: "2025-08-28", Val: 37380, FY: 2025, FP: "FY", Form: "10-K", Filed: "2025-10-03"},
+			factPoint{Start: "2025-08-29", End: "2026-05-28", Val: 30000, FY: 2026, FP: "Q3", Form: "10-Q", Filed: "2026-06-25"},
+			factPoint{Start: "2026-02-27", End: "2026-05-28", Val: 11000, FY: 2026, FP: "Q3", Form: "10-Q", Filed: "2026-06-25"}, // standalone → not the YTD
+			factPoint{Start: "2024-08-30", End: "2025-05-29", Val: 18000, FY: 2025, FP: "Q3", Form: "10-Q", Filed: "2025-06-26"},
+		),
+		// Net income: FY 8540 + cur-YTD 9000 − prior-YTD 1500 = 16040.
+		"NetIncomeLoss": usd(
+			factPoint{Start: "2024-08-30", End: "2025-08-28", Val: 8540, FY: 2025, FP: "FY", Form: "10-K", Filed: "2025-10-03"},
+			factPoint{Start: "2025-08-29", End: "2026-05-28", Val: 9000, FY: 2026, FP: "Q3", Form: "10-Q", Filed: "2026-06-25"},
+			factPoint{Start: "2024-08-30", End: "2025-05-29", Val: 1500, FY: 2025, FP: "Q3", Form: "10-Q", Filed: "2025-06-26"},
+		),
+	}
+
+	f := extractFundamentals(resp)
+	const eps = 1e-6
+	if f.EPSDiluted != 7.59 {
+		t.Errorf("EPSDiluted (static, latest FY) = %v, want 7.59", f.EPSDiluted)
+	}
+	if abs(f.EPSDilutedTTM-44.24) > eps {
+		t.Errorf("EPSDilutedTTM = %v, want 44.24 (7.59 + 41.40 − 4.75)", f.EPSDilutedTTM)
+	}
+	if f.EPSDilutedQuarterly != 24.67 {
+		t.Errorf("EPSDilutedQuarterly = %v, want 24.67 (latest standalone Q3)", f.EPSDilutedQuarterly)
+	}
+	if f.LatestQuarter != "Q3 FY2026" {
+		t.Errorf("LatestQuarter = %q, want %q", f.LatestQuarter, "Q3 FY2026")
+	}
+	if f.TTMAsOf != "2026-05-28" {
+		t.Errorf("TTMAsOf = %q, want 2026-05-28", f.TTMAsOf)
+	}
+	if abs(f.RevenueTTM-49380) > eps {
+		t.Errorf("RevenueTTM = %v, want 49380", f.RevenueTTM)
+	}
+	if abs(f.NetIncomeTTM-16040) > eps {
+		t.Errorf("NetIncomeTTM = %v, want 16040", f.NetIncomeTTM)
+	}
+}
+
+// TestTrailingTwelveMonths_Fallbacks covers the insufficient-not-wrong edges: a fresh 10-K
+// with no newer quarter → TTM is the annual itself; a single year with no prior-year YTD →
+// TTM falls back to the annual rather than fabricating a roll.
+func TestTrailingTwelveMonths_Fallbacks(t *testing.T) {
+	annualOnly := []factPoint{
+		{Start: "2023-01-01", End: "2023-12-31", Val: 100, FY: 2023, FP: "FY", Form: "10-K", Filed: "2024-02-01"},
+		{Start: "2024-01-01", End: "2024-12-31", Val: 120, FY: 2024, FP: "FY", Form: "10-K", Filed: "2025-02-01"}, // newest, no later quarter
+	}
+	if ttm, asOf, ok := trailingTwelveMonths(annualOnly); !ok || ttm != 120 || asOf != "2024-12-31" {
+		t.Errorf("annual-only TTM = (%v, %q, %v), want (120, 2024-12-31, true)", ttm, asOf, ok)
+	}
+
+	// A current-FY quarter but NO prior-year YTD to subtract → fall back to the annual.
+	noPrior := []factPoint{
+		{Start: "2024-01-01", End: "2024-12-31", Val: 200, FY: 2024, FP: "FY", Form: "10-K", Filed: "2025-02-01"},
+		{Start: "2025-01-01", End: "2025-03-31", Val: 60, FY: 2025, FP: "Q1", Form: "10-Q", Filed: "2025-05-01"},
+	}
+	if ttm, _, ok := trailingTwelveMonths(noPrior); !ok || ttm != 200 {
+		t.Errorf("no-prior-YTD TTM = (%v, %v), want (200, true)", ttm, ok)
+	}
+
+	if _, _, ok := trailingTwelveMonths(nil); ok {
+		t.Error("empty points: ok should be false")
+	}
+}
+
+// TestExtractFundamentals_TTMGuards covers the recency/cumulative guards from the adversarial
+// review: a post-10-K stale quarter must NOT seed the run-rate P/E, and a missing current-YTD
+// must NOT produce a quarter-over-quarter "TTM".
+func TestExtractFundamentals_TTMGuards(t *testing.T) {
+	const eps = 1e-6
+
+	// (A) Post-10-K: the latest annual covers the full year; the newest standalone quarter
+	// (prior FY's Q3) ENDS BEFORE the annual → no run-rate quarter, TTM = the annual itself.
+	postAnnual := factsResp{EntityName: "Calendar Co"}
+	postAnnual.Facts.UsGaap = map[string]xbrlConcept{
+		"EarningsPerShareDiluted": perSh(
+			factPoint{Start: "2024-01-01", End: "2024-12-31", Val: 5.00, FY: 2024, FP: "FY", Form: "10-K", Filed: "2025-02-15"},
+			factPoint{Start: "2024-07-01", End: "2024-09-30", Val: 1.30, FY: 2024, FP: "Q3", Form: "10-Q", Filed: "2024-11-01"}, // older than the annual
+		),
+	}
+	a := extractFundamentals(postAnnual)
+	if a.EPSDilutedQuarterly != 0 || a.LatestQuarter != "" {
+		t.Errorf("post-10-K: want no run-rate quarter, got Q=%v label=%q", a.EPSDilutedQuarterly, a.LatestQuarter)
+	}
+	if abs(a.EPSDilutedTTM-5.00) > eps {
+		t.Errorf("post-10-K: TTM = %v, want 5.00 (the annual)", a.EPSDilutedTTM)
+	}
+
+	// (B) A current-FY Q3 standalone exists (newer than the annual → valid run-rate) but its
+	// 9-month YTD is ABSENT → TTM must fall back to the annual, NOT roll a Q-over-Q figure.
+	cumMissing := factsResp{EntityName: "Sparse Inc"}
+	cumMissing.Facts.UsGaap = map[string]xbrlConcept{
+		"EarningsPerShareDiluted": perSh(
+			factPoint{Start: "2024-08-30", End: "2025-08-28", Val: 7.59, FY: 2025, FP: "FY", Form: "10-K", Filed: "2025-10-03"},
+			factPoint{Start: "2026-02-27", End: "2026-05-28", Val: 24.67, FY: 2026, FP: "Q3", Form: "10-Q", Filed: "2026-06-25"}, // standalone, no YTD
+			factPoint{Start: "2025-02-27", End: "2025-05-29", Val: 1.68, FY: 2025, FP: "Q3", Form: "10-Q", Filed: "2025-06-26"},
+		),
+	}
+	b := extractFundamentals(cumMissing)
+	if abs(b.EPSDilutedTTM-7.59) > eps {
+		t.Errorf("cumulative-missing: TTM = %v, want 7.59 (annual fallback, not a Q-over-Q roll)", b.EPSDilutedTTM)
+	}
+	if b.EPSDilutedQuarterly != 24.67 { // the run-rate quarter IS valid (newer than the annual)
+		t.Errorf("cumulative-missing: run-rate quarter = %v, want 24.67", b.EPSDilutedQuarterly)
+	}
+}
+
+// TestExtractFundamentals_CommonDividends asserts the dividend yield uses COMMON-only dividends
+// (the general PaymentsOfDividends concept lumps in preferred for big banks → would overstate).
+func TestExtractFundamentals_CommonDividends(t *testing.T) {
+	withCommon := factsResp{EntityName: "Payer Inc"}
+	withCommon.Facts.UsGaap = map[string]xbrlConcept{
+		"NetIncomeLoss":                  usd(factPoint{Start: "2024-01-01", End: "2024-12-31", Val: 100, FY: 2024, FP: "FY", Form: "10-K"}),
+		"PaymentsOfDividends":            usd(factPoint{Start: "2024-01-01", End: "2024-12-31", Val: 30, FY: 2024, FP: "FY", Form: "10-K"}), // general (incl. preferred)
+		"PaymentsOfDividendsCommonStock": usd(factPoint{Start: "2024-01-01", End: "2024-12-31", Val: 22, FY: 2024, FP: "FY", Form: "10-K"}), // common-only
+	}
+	f := extractFundamentals(withCommon)
+	if f.CommonDividendsPaid != 22 {
+		t.Errorf("CommonDividendsPaid = %v, want 22 (common-only, drives the yield)", f.CommonDividendsPaid)
+	}
+
+	// A filer tagging ONLY the general concept (preferred+common) → CommonDividendsPaid 0 → the
+	// yield is omitted rather than overstated by the preferred fraction.
+	generalOnly := factsResp{EntityName: "Bank Inc"}
+	generalOnly.Facts.UsGaap = map[string]xbrlConcept{
+		"NetIncomeLoss":       usd(factPoint{Start: "2024-01-01", End: "2024-12-31", Val: 100, FY: 2024, FP: "FY", Form: "10-K"}),
+		"PaymentsOfDividends": usd(factPoint{Start: "2024-01-01", End: "2024-12-31", Val: 50, FY: 2024, FP: "FY", Form: "10-K"}),
+	}
+	g := extractFundamentals(generalOnly)
+	if g.CommonDividendsPaid != 0 {
+		t.Errorf("CommonDividendsPaid = %v, want 0 (general-only → yield omitted)", g.CommonDividendsPaid)
+	}
+}
+
 func TestExtractFundamentals_FallbackTagAndLoss(t *testing.T) {
 	resp := factsResp{EntityName: "Loss Inc"}
 	resp.Facts.UsGaap = map[string]xbrlConcept{

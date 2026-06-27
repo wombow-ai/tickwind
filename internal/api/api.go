@@ -1739,8 +1739,30 @@ type fundamentalsResp struct {
 	edgar.Fundamentals
 	Price     float64  `json:"price"`
 	MarketCap *float64 `json:"market_cap"`
-	PE        *float64 `json:"pe"`
+	PE        *float64 `json:"pe"`         // static P/E: price ÷ latest-FY diluted EPS
+	PETTM     *float64 `json:"pe_ttm"`     // trailing P/E: price ÷ trailing-12-month diluted EPS
+	PEForward *float64 `json:"pe_forward"` // run-rate forward P/E: price ÷ (latest standalone quarter EPS × 4)
 	PB        *float64 `json:"pb"`
+	// DividendYield is the trailing cash-dividend yield (latest-FY common dividends ÷
+	// market cap); null for non-payers. A real-data trailing figure, NOT a forward estimate.
+	DividendYield *float64 `json:"dividend_yield"`
+}
+
+// maxPlausiblePE caps the P/E ratios served: a near-zero EPS yields a 4-digit "P/E" that is
+// numerical noise, not a valuation — above this ceiling the figure is suppressed (null), so a
+// trough-earnings artifact never reads as an authoritative multiple.
+const maxPlausiblePE = 600
+
+// plausiblePE returns price ÷ eps as a P/E pointer, or nil when eps is non-positive (a loss,
+// where P/E is meaningless) or the resulting multiple exceeds maxPlausiblePE (near-zero EPS).
+func plausiblePE(price, eps float64) *float64 {
+	if eps <= 0 {
+		return nil
+	}
+	if pe := price / eps; pe <= maxPlausiblePE {
+		return &pe
+	}
+	return nil
 }
 
 // getFundamentals serves market cap + P/E + P/B (price-derived) alongside the
@@ -1773,15 +1795,21 @@ func (s *Server) getFundamentals(w http.ResponseWriter, r *http.Request) {
 			mc := resp.Price * float64(f.Shares)
 			resp.MarketCap = &mc
 		}
-		if f.EPSDiluted > 0 { // P/E only meaningful for positive earnings
-			pe := resp.Price / f.EPSDiluted
-			resp.PE = &pe
-		}
+		resp.PE = plausiblePE(resp.Price, f.EPSDiluted)                   // static P/E (latest FY)
+		resp.PETTM = plausiblePE(resp.Price, f.EPSDilutedTTM)             // trailing-12-month P/E
+		resp.PEForward = plausiblePE(resp.Price, f.EPSDilutedQuarterly*4) // run-rate (latest quarter annualized)
 		if f.Equity > 0 && f.Shares > 0 {
 			if bvps := f.Equity / float64(f.Shares); bvps > 0 {
 				pb := resp.Price / bvps
 				resp.PB = &pb
 			}
+		}
+		// Trailing dividend yield — uses COMMON-only dividends (the general concept includes
+		// preferred for some issuers, which would overstate the common yield); non-payers and
+		// filers that report only the general concept → null (insufficient-not-wrong).
+		if resp.MarketCap != nil && f.CommonDividendsPaid > 0 {
+			dy := f.CommonDividendsPaid / *resp.MarketCap
+			resp.DividendYield = &dy
 		}
 	}
 	writeJSON(w, http.StatusOK, resp)
