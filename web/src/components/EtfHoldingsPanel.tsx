@@ -1,6 +1,7 @@
 'use client';
 
 import {useEffect, useState} from 'react';
+import Link from '@/components/LocalLink';
 import {getEtfHoldings, type EtfHoldings} from '@/lib/api';
 import {useT} from '@/lib/i18n';
 import {useDark} from '@/lib/theme';
@@ -70,10 +71,19 @@ export function EtfHoldingsPanel({ticker}: {ticker: string}) {
         {data.holdings.map((h, i) => (
           <li key={h.cusip ?? `${i}-${h.name}`} className="flex items-center gap-3">
             <span className={cx('w-5 shrink-0 text-right text-[11px] tabular-nums', t.faint)}>{i + 1}</span>
-            <span className={cx('min-w-0 flex-1 truncate text-[13px]', t.text)}>
-              {h.name}
-              {h.ticker && <span className={cx('ml-1.5 text-[11px] font-semibold', t.faint)}>{h.ticker}</span>}
-            </span>
+            {h.ticker ? (
+              <Link
+                href={`/stock/${h.ticker}`}
+                className={cx('min-w-0 flex-1 truncate text-[13px] hover:underline', t.text)}
+              >
+                {h.name}
+                <span className={cx('ml-1.5 text-[11px] font-semibold', dark ? 'text-teal-400' : 'text-teal-600')}>
+                  {h.ticker}
+                </span>
+              </Link>
+            ) : (
+              <span className={cx('min-w-0 flex-1 truncate text-[13px]', t.text)}>{h.name}</span>
+            )}
             <span
               className="hidden h-1.5 w-24 shrink-0 overflow-hidden rounded-full sm:block"
               style={{background: dark ? 'rgba(255,255,255,0.08)' : 'rgba(15,23,42,0.06)'}}
