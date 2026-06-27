@@ -170,6 +170,11 @@ type FinancialsHistory struct {
 	GrossProfitQ       []QuarterValue `json:"gross_profit_q,omitempty"`
 	OperatingIncomeQ   []QuarterValue `json:"operating_income_q,omitempty"`
 	OperatingCashFlowQ []QuarterValue `json:"operating_cash_flow_q,omitempty"`
+
+	// Balance-sheet year-END series (INSTANT concepts, aligned to the income fiscal-year-ends).
+	TotalAssets        []YearValue `json:"total_assets,omitempty"`
+	TotalLiabilities   []YearValue `json:"total_liabilities,omitempty"`
+	StockholdersEquity []YearValue `json:"stockholders_equity,omitempty"`
 }
 
 // QuarterValue is one STANDALONE single-quarter point. Label is the fiscal quarter (e.g.
@@ -189,7 +194,8 @@ func (h FinancialsHistory) hasData() bool {
 	return len(h.Revenue) > 0 || len(h.NetIncome) > 0 || len(h.GrossProfit) > 0 ||
 		len(h.OperatingIncome) > 0 || len(h.OperatingCashFlow) > 0 ||
 		len(h.RevenueQ) > 0 || len(h.NetIncomeQ) > 0 || len(h.GrossProfitQ) > 0 ||
-		len(h.OperatingIncomeQ) > 0 || len(h.OperatingCashFlowQ) > 0
+		len(h.OperatingIncomeQ) > 0 || len(h.OperatingCashFlowQ) > 0 ||
+		len(h.TotalAssets) > 0 || len(h.TotalLiabilities) > 0 || len(h.StockholdersEquity) > 0
 }
 
 // HasData reports whether any meaningful figure was extracted.
@@ -396,6 +402,15 @@ func extractFundamentals(resp factsResp) Fundamentals {
 	gpTags := []string{"GrossProfit"}
 	opTags := []string{"OperatingIncomeLoss"}
 	ocfTags := []string{"NetCashProvidedByUsedInOperatingActivities", "NetCashProvidedByUsedInOperatingActivitiesContinuingOperations"}
+	// Balance-sheet year-end series — instants aligned to the income FY-ends. Accepted gaps
+	// (insufficient-not-wrong): fyEnds come from revenue, so a no-revenue filer gets no balance
+	// history; and the instant must sit at the EXACT FY-end date (a rare 1-day mismatch drops a year).
+	fyEnds := fiscalYearEnds(gaap, financialsHistoryYears, revTags...)
+	bsAssets := annualBalanceSeries(gaap, fyEnds, "Assets")
+	bsEquity := annualBalanceSeries(gaap, fyEnds, "StockholdersEquity", "StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest")
+	// Total liabilities: tagged us-gaap:Liabilities, else Assets − Equity per year (the snapshot
+	// card's own rule, real reported components at the same FY-end) so the row matches the card.
+	bsLiab := fillLiabilities(annualBalanceSeries(gaap, fyEnds, "Liabilities"), bsAssets, bsEquity)
 	if h := (FinancialsHistory{
 		Revenue:           annualSeriesMerged(gaap, "USD", financialsHistoryYears, revTags...),
 		NetIncome:         annualSeriesMerged(gaap, "USD", financialsHistoryYears, niTags...),
@@ -408,6 +423,9 @@ func extractFundamentals(resp factsResp) Fundamentals {
 		GrossProfitQ:       quarterlySeries(gaap, "USD", financialsQuartersMax, gpTags...),
 		OperatingIncomeQ:   quarterlySeries(gaap, "USD", financialsQuartersMax, opTags...),
 		OperatingCashFlowQ: quarterlySeries(gaap, "USD", financialsQuartersMax, ocfTags...),
+		TotalAssets:        bsAssets,
+		TotalLiabilities:   bsLiab,
+		StockholdersEquity: bsEquity,
 	}); h.hasData() {
 		f.History = &h
 	}
@@ -1031,6 +1049,20 @@ const financialsHistoryYears = 10
 // restated value). Only full-year (~365-day) periods qualify. Returns up to maxYears most-recent
 // years, OLDEST-FIRST; a year with no annual point is simply absent (never fabricated).
 func annualSeriesMerged(gaap map[string]xbrlConcept, unit string, maxYears int, tags ...string) []YearValue {
+	years, byYear, offset := annualChosen(gaap, unit, maxYears, tags...)
+	out := make([]YearValue, 0, len(years))
+	for _, y := range years {
+		out = append(out, YearValue{Year: y, FY: y + offset, Val: byYear[y].Val})
+	}
+	return out
+}
+
+// annualChosen is the shared core: it returns the chosen annual flow point per END-DATE YEAR (the
+// collision-proof merge — highest-priority tag wins a year, newest End then latest Filed within a
+// tag), the most-recent maxYears years OLDEST-FIRST, plus the company-FY DISPLAY offset (from the
+// latest year's authoritative fy — see annualSeriesMerged's doc). Reused by fiscalYearEnds to align
+// balance-sheet instants to the income-statement fiscal-year-ends.
+func annualChosen(gaap map[string]xbrlConcept, unit string, maxYears int, tags ...string) (years []int, byYear map[int]factPoint, fyOffset int) {
 	type chosen struct {
 		p    factPoint
 		rank int // tag index — lower is higher priority
@@ -1063,7 +1095,6 @@ func annualSeriesMerged(gaap map[string]xbrlConcept, unit string, maxYears int, 
 			best[y] = chosen{p: p, rank: ti}
 		}
 	}
-	years := make([]int, 0, len(best))
 	for y := range best {
 		years = append(years, y)
 	}
@@ -1071,21 +1102,104 @@ func annualSeriesMerged(gaap map[string]xbrlConcept, unit string, maxYears int, 
 	if maxYears > 0 && len(years) > maxYears {
 		years = years[len(years)-maxYears:] // keep the most recent maxYears
 	}
-	// Fiscal-year DISPLAY offset for an off-calendar year-end (e.g. a Feb retail FYE labels a
-	// period ending 2024-02-03 as "fiscal 2023"). Derive it from the MOST RECENT year, whose
-	// chosen point is the latest 10-K's OWN primary column (no even-newer filing re-reports it as
-	// a restamped comparative), so its `fy` field is authoritative; apply the constant offset
-	// across the series so labels stay internally consistent and match fiscalLabel on the card.
-	offset := 0
-	if len(years) > 0 {
-		latest := best[years[len(years)-1]].p
-		offset = fiscalYear(latest) - endYear(latest)
-	}
-	out := make([]YearValue, 0, len(years))
+	byYear = make(map[int]factPoint, len(years))
 	for _, y := range years {
-		out = append(out, YearValue{Year: y, FY: y + offset, Val: best[y].p.Val})
+		byYear[y] = best[y].p
+	}
+	if len(years) > 0 {
+		latest := byYear[years[len(years)-1]]
+		fyOffset = fiscalYear(latest) - endYear(latest)
+	}
+	return years, byYear, fyOffset
+}
+
+// yearEnd pairs a fiscal-year-END date with its end-year + company-designated FY label.
+type yearEnd struct {
+	End  string
+	Year int
+	FY   int
+}
+
+// fiscalYearEnds returns the END date of each of the last maxYears annual flow (income-statement)
+// periods — the fiscal-year-ends, OLDEST-FIRST — so balance-sheet instants can be aligned to true
+// year-ends (not stray quarter-ends).
+func fiscalYearEnds(gaap map[string]xbrlConcept, maxYears int, tags ...string) []yearEnd {
+	years, byYear, offset := annualChosen(gaap, "USD", maxYears, tags...)
+	out := make([]yearEnd, 0, len(years))
+	for _, y := range years {
+		out = append(out, yearEnd{End: byYear[y].End, Year: y, FY: y + offset})
 	}
 	return out
+}
+
+// pickInstantsByEnd merges INSTANT (point-in-time, no Start) USD points across tags by end-date —
+// the highest-priority tag wins, then the latest amendment (a restated balance). For balance-sheet
+// concepts (assets / liabilities / equity), which report a value AT each period-end, not over one.
+func pickInstantsByEnd(gaap map[string]xbrlConcept, tags []string) map[string]factPoint {
+	byEnd := map[string]factPoint{}
+	rank := map[string]int{}
+	for ti, tag := range tags {
+		c, ok := gaap[tag]
+		if !ok {
+			continue
+		}
+		for _, p := range c.Units["USD"] {
+			if p.Start != "" || p.End == "" {
+				continue // instants only
+			}
+			if cur, exists := byEnd[p.End]; exists {
+				if rank[p.End] < ti {
+					continue
+				}
+				if rank[p.End] == ti && p.Filed <= cur.Filed {
+					continue
+				}
+			}
+			byEnd[p.End], rank[p.End] = p, ti
+		}
+	}
+	return byEnd
+}
+
+// annualBalanceSeries returns the FISCAL-YEAR-END value of a balance-sheet (instant) concept,
+// aligned to the income-statement fiscal-year-ends (so every year is the YEAR-END balance, never a
+// stray quarter-end) — the instant reported AT each FY-end date. A year with no matching instant is
+// absent (never fabricated). Oldest-first (fyEnds order).
+func annualBalanceSeries(gaap map[string]xbrlConcept, fyEnds []yearEnd, tags ...string) []YearValue {
+	byEnd := pickInstantsByEnd(gaap, tags)
+	out := make([]YearValue, 0, len(fyEnds))
+	for _, ye := range fyEnds {
+		if p, ok := byEnd[ye.End]; ok {
+			out = append(out, YearValue{Year: ye.Year, FY: ye.FY, Val: p.Val})
+		}
+	}
+	return out
+}
+
+// fillLiabilities completes the Total-liabilities year series from Assets − Equity for any year a
+// tagged us-gaap:Liabilities instant is absent — the SAME fallback the snapshot card uses (real
+// reported components at the same fiscal-year-end), so the history row matches the card's coverage
+// and the Assets = Liabilities + Equity identity holds for the general filer, not just taggers. A
+// tagged value always wins (it is never overwritten). Result stays oldest-first.
+func fillLiabilities(liab, assets, equity []YearValue) []YearValue {
+	have := make(map[int]bool, len(liab))
+	for _, v := range liab {
+		have[v.Year] = true
+	}
+	eqByYear := make(map[int]YearValue, len(equity))
+	for _, v := range equity {
+		eqByYear[v.Year] = v
+	}
+	for _, a := range assets {
+		if have[a.Year] {
+			continue
+		}
+		if e, ok := eqByYear[a.Year]; ok {
+			liab = append(liab, YearValue{Year: a.Year, FY: a.FY, Val: a.Val - e.Val})
+		}
+	}
+	sort.Slice(liab, func(i, j int) bool { return liab[i].Year < liab[j].Year })
+	return liab
 }
 
 // financialsQuartersMax bounds the standalone-quarter series.

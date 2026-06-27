@@ -415,6 +415,54 @@ func TestQuarterlySeries_TagPriority(t *testing.T) {
 	}
 }
 
+// TestAnnualBalanceSeries asserts balance-sheet (instant) concepts are picked at the income-
+// statement FISCAL-YEAR-ENDS only — a stray quarter-end instant must NOT leak into the year series.
+func TestAnnualBalanceSeries(t *testing.T) {
+	gaap := map[string]xbrlConcept{
+		"Revenues": usd( // income statement → supplies the fiscal-year-ends
+			factPoint{Start: "2024-01-01", End: "2024-12-31", Val: 500, FY: 2024, FP: "FY", Form: "10-K", Filed: "2025-02-01"},
+			factPoint{Start: "2025-01-01", End: "2025-12-31", Val: 600, FY: 2025, FP: "FY", Form: "10-K", Filed: "2026-02-01"},
+		),
+		"Assets": usd( // INSTANTS (no Start): two year-ends + a quarter-end that must NOT be picked
+			factPoint{End: "2024-12-31", Val: 1000, Filed: "2025-02-01"},
+			factPoint{End: "2025-03-31", Val: 1050, Filed: "2025-05-01"}, // Q1 instant — not a year-end
+			factPoint{End: "2025-12-31", Val: 1100, Filed: "2026-02-01"},
+		),
+	}
+	fyEnds := fiscalYearEnds(gaap, 10, "Revenues")
+	if len(fyEnds) != 2 || fyEnds[0].End != "2024-12-31" || fyEnds[1].End != "2025-12-31" {
+		t.Fatalf("fiscalYearEnds = %+v, want the 2 revenue FY-ends oldest-first", fyEnds)
+	}
+	a := annualBalanceSeries(gaap, fyEnds, "Assets")
+	want := []YearValue{{Year: 2024, FY: 2024, Val: 1000}, {Year: 2025, FY: 2025, Val: 1100}}
+	if len(a) != len(want) {
+		t.Fatalf("annualBalanceSeries = %+v, want %+v (year-ends only, no quarter-end)", a, want)
+	}
+	for i, w := range want {
+		if a[i] != w {
+			t.Errorf("balance[%d] = %+v, want %+v", i, a[i], w)
+		}
+	}
+}
+
+// TestFillLiabilities asserts a missing Total-liabilities year is filled from Assets − Equity (the
+// snapshot card's rule), while a tagged year is kept as-is (never overwritten).
+func TestFillLiabilities(t *testing.T) {
+	assets := []YearValue{{Year: 2023, FY: 2023, Val: 1000}, {Year: 2024, FY: 2024, Val: 1100}}
+	equity := []YearValue{{Year: 2023, FY: 2023, Val: 400}, {Year: 2024, FY: 2024, Val: 450}}
+	liab := []YearValue{{Year: 2023, FY: 2023, Val: 600}} // 2024 untagged
+	got := fillLiabilities(liab, assets, equity)
+	want := []YearValue{{Year: 2023, FY: 2023, Val: 600}, {Year: 2024, FY: 2024, Val: 650}} // 2024 = 1100 − 450
+	if len(got) != len(want) {
+		t.Fatalf("fillLiabilities = %+v, want %+v", got, want)
+	}
+	for i, w := range want {
+		if got[i] != w {
+			t.Errorf("liab[%d] = %+v, want %+v (tagged kept / gap filled by Assets−Equity)", i, got[i], w)
+		}
+	}
+}
+
 func TestExtractFundamentals_FallbackTagAndLoss(t *testing.T) {
 	resp := factsResp{EntityName: "Loss Inc"}
 	resp.Facts.UsGaap = map[string]xbrlConcept{
