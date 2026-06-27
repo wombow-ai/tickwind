@@ -666,6 +666,11 @@ export function StockView({ticker}: {ticker: string}) {
             explained up top, above the standing fundamentals/digest. */}
         <MovementCard ticker={norm} />
 
+        {/* Earnings timing: next (Finnhub) + last reported (SEC 8-K 2.02) dates, up
+            top so a user sees the earnings cadence first. Owns its margin + self-hides
+            (returns null) with no data, so non-earnings tickers leave no gap. */}
+        <EarningsChip ticker={norm} />
+
         {/* Fundamentals + AI digest, each full-width, above the chart. (They were
             briefly a 2-col grid, but the AI digest's variable length left the
             fundamentals card with a tall empty gap beside it — owner 2026-06-12.) */}
@@ -747,14 +752,10 @@ export function StockView({ticker}: {ticker: string}) {
           live here; a research-citation deep-link auto-switches to this tab. Every
           card keeps its id + scroll-mt-20 so those deep-links still resolve. */}
       <div hidden={topTab !== 'Money'}>
-        {/* Next-earnings signals group: the upcoming-earnings chip + the FINRA
-            short-pressure strips read as one coherent, aligned row (equal-height
-            pills, shared gap). Each piece still self-hides when it has no data, so
-            the row collapses cleanly. The #short anchor wraps the short pills so
-            research-report deep-links still resolve. */}
+        {/* FINRA short-pressure strip (squeeze radar; self-hides when the symbol has no
+            row). The earnings-timing chip moved to the Overview tab (top) — this #short
+            anchor stays so research-report deep-links still resolve. */}
         <div className="mb-6 flex flex-wrap items-center gap-2">
-          <EarningsChip ticker={norm} />
-          {/* FINRA short pressure (squeeze radar; hides when the symbol has no row) */}
           <div id="short" className="scroll-mt-20">
             <ShortChip ticker={norm} />
           </div>

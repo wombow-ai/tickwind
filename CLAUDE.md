@@ -175,6 +175,53 @@ feature-flagged plugin, never on the critical path. Web only.
 - Full stack (server): `docker compose up -d --build`.
 
 ## Current state (update each iteration)
+- **2026-06-27 — 📅 ② Earnings dates: stock-page next+last chip + calendar key-companies filter (SHIPPED, frontend-only).**
+  Owner batch ②. **②(a):** the per-stock `EarningsChip` now shows BOTH the NEXT upcoming earnings (Finnhub, +bmo/amc
+  +est EPS) and the LAST reported date (the most recent SEC 8-K item 2.02 filing, via `getEarningsReaction`
+  events[0].date), and MOVED from the buried Money tab to the TOP of the Overview tab (after MovementCard; the Money
+  tab keeps the #short ShortChip anchor). **②(b):** the market-wide `EarningsCalendar` (Finnhub, ~1195 micro-cap-heavy
+  rows) gained a **"Key companies (24) / All (1195)"** toggle (default Key = rows the backend enriched with an
+  earnings-reaction aggregate = the tracked/notable universe), cutting the firehose. New i18n
+  earnings.last/calKeyCompanies/calAll/calKeyEmpty/calKeyEmptySub (en+zh). Frontend-only — reuses existing endpoints,
+  no backend change. **Hardened by an ultracode adversarial review (2 lenses opus-max → synthesis): 1 HIGH + 1 MED
+  fixed before deploy** — (HIGH) the chip's date `fmt` rendered the NEXT date one day EARLY in US (negative-UTC)
+  timezones because Finnhub's date is a 20-char UTC-midnight RFC3339 string that hit a `new Date(s)` UTC branch while
+  the calendar always slices to 10 → fixed by slicing BOTH dates to YYYY-MM-DD + parsing at LOCAL midnight (kills the
+  inconsistent-parse class; the UTC dev-preview had masked it); (MED) the Key default silently hid ~1195→24 rows with
+  no cue → added the counts to the toggle labels. Acceptable-by-design (not fixed): the SEC 2.02 date as "last
+  reported", today-inclusive next filter, the "Key companies" framing. Anti-hallucination confirmed clean (real dates
+  only, est-EPS labeled, no advice). **Preview-verified against the live backend:** AAPL chip "Next earnings Jul 29,
+  2026 · After-hours · Est. EPS $1.93 · Last reported Apr 30, 2026"; calendar toggle Key(24)/All(1195) flips; tsc +
+  build green, no console errors. **⇒ The ①②③ owner batch is COMPLETE:** ① TTM fundamentals LIVE · ② earnings dates
+  SHIPPED · ③ Databento real-time = stay-free verdict (no cheap redistribution-clean pre/post path; see
+  [[tickwind-realtime-data-research]]).
+- **2026-06-27 — 📊 ① Fundamentals: quarterly XBRL → TTM + 3 P/E framings + dividend yield (SHIPPED + LIVE-verified).**
+  Owner batch ①: the FundamentalsCard showed only the latest 10-K (stale — e.g. MU's FY2025 annual while it had
+  reported far larger FY2026 quarters). Now extracts the quarterly companyfacts series and computes **trailing-
+  twelve-month** revenue / net income / diluted EPS (annual + current-fiscal-year-to-date − prior-year-to-date),
+  the latest standalone quarter, and **three P/E framings**: static (last FY) · **TTM** (owner's choice as the
+  primary fresh figure) · run-rate forward (latest quarter ×4, labeled honestly — NOT an analyst estimate, since
+  we have no free/redistribution-safe forward-EPS source). Plus a trailing **dividend yield** from COMMON-only
+  dividends. New `edgar` helpers `latestQuarterly`/`latestYTD`/`priorYearYTD`/`trailingTwelveMonths`/`quarterLabel`;
+  `Fundamentals` gains `RevenueTTM`/`NetIncomeTTM`/`EPSDilutedTTM`/`EPSDilutedQuarterly`/`LatestQuarter`/`TTMAsOf`/
+  `CommonDividendsPaid`; api `fundamentalsResp` gains `pe_ttm`/`pe_forward`/`dividend_yield` + a `plausiblePE`
+  floor (maxPlausiblePE=600). **Validated on Micron real data: 7.59 + 41.40 − 4.75 = 44.24 TTM EPS → pe_ttm 25.54,
+  matching the public 市盈率TTM 25.6.** Commits be `567ce57` + fe `eb1d0cd` (DEPLOY_DONE 07:25Z). **Hardened by an
+  ultracode adversarial review (3 lenses opus-max → synthesis): 2 HIGH + 3 MED + 1 advisable, ALL fixed before
+  deploy** — (HIGH) `latestQuarterly` now requires the quarter to end AFTER the annual (a 10-K never tags a
+  standalone Q4 → post-annual the newest standalone is stale → run-rate omitted); (HIGH) dividend yield uses
+  COMMON-only `PaymentsOfDividends...CommonStock`/`...OrdinaryDividends` (the general `PaymentsOfDividends` lumps in
+  PREFERRED for big banks → would overstate; general-only filers omit the yield); (MED) `latestYTD` genuine-
+  cumulative guard (start ≈ FY start, so a missing current YTD falls back to the annual, not a Q-over-Q roll);
+  (MED) `priorYearYTD` never subtracts a full prior-year annual against an interim YTD (transition filings);
+  (MED) the run-rate caveat is now in the VISIBLE label ("P/E (run-rate)" / "市盈率(动·年化)"), not hover-only;
+  (advisable) the plausible-PE floor. New tests: `TestExtractFundamentals_TTM` (MU shape) + `_TTMGuards` (post-10-K
+  stale + cumulative-missing) + `_CommonDividends`. **LIVE-verified** (curl MU + dev-preview against the live
+  backend): card shows Market cap $1.28T · P/E (TTM) 25.5 · P/E (static) 148.8 · P/E (run-rate) 11.4 · P/B 12.67 ·
+  Div yield 0.04% · Revenue/NI/EPS (TTM) $90.27B/$50.47B/$44.24, chips "FY2025" + "TTM · Q3 FY2026"; no console
+  errors. **STILL IN THE ①②③ BATCH:** ② earnings dates (stock header next/last + calendar "key companies"); ③
+  Databento real-time pre/post — owner reports (06-27) Databento REMOVED usage-based pricing for US-equities LIVE
+  in early 2025 → now a flat subscription (re-pricing research in flight; see [[tickwind-realtime-data-research]]).
 - **2026-06-21 — 💸 Two monetization tweaks (owner) + nav + tier audit.** (a) **Free chat → weekly TOKEN budget**
   (`b94f492` backend): was a 5-msg/MONTH count; now a per-WEEK TOKEN budget (`CHAT_FREE_WEEKLY_TOKENS` default
   50,000 ≈ ~10 msgs/wk) — BOTH tiers token-based now (Pro per-month, free per-week). `chatQuotaGate` returns the

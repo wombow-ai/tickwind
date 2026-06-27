@@ -2,7 +2,7 @@
 
 import {CalendarClock} from 'lucide-react';
 import Link from '@/components/LocalLink';
-import {useEffect, useState} from 'react';
+import {useEffect, useMemo, useState} from 'react';
 import {getEarnings, type Earning} from '@/lib/api';
 import {useLang, useT} from '@/lib/i18n';
 import {useDark} from '@/lib/theme';
@@ -71,8 +71,12 @@ export function EarningsCalendar() {
   const tr = useT();
   const {lang} = useLang();
   const [status, setStatus] = useState<Status>('loading');
-  const [groups, setGroups] = useState<{day: string; rows: Earning[]}[]>([]);
+  const [earnings, setEarnings] = useState<Earning[]>([]);
   const [reload, setReload] = useState(0);
+  // "Key companies" = rows the backend enriched with an earnings-reaction aggregate
+  // (the tracked universe — notable, analyst-followed names), cutting the firehose of
+  // ~1,000 micro-cap rows. Default on; "All" reveals the full market-wide calendar.
+  const [keyOnly, setKeyOnly] = useState(true);
 
   useEffect(() => {
     const c = new AbortController();
@@ -85,13 +89,21 @@ export function EarningsCalendar() {
           const ts = Date.parse(e.date);
           return !Number.isNaN(ts) && ts >= today.getTime();
         });
-        setGroups(groupByDay(upcoming));
+        setEarnings(upcoming);
         setStatus('ready');
       },
       () => setStatus('error'),
     );
     return () => c.abort();
   }, [reload]);
+
+  const isKey = (e: Earning) => (e.reaction?.samples ?? 0) > 0;
+  const keyCount = useMemo(() => earnings.filter(isKey).length, [earnings]);
+  const hasKey = keyCount > 0;
+  const groups = useMemo(
+    () => groupByDay(keyOnly ? earnings.filter(isKey) : earnings),
+    [earnings, keyOnly],
+  );
 
   const locale = lang === 'zh' ? 'zh-CN' : 'en-US';
   const fmtDay = (day: string) =>
@@ -109,12 +121,38 @@ export function EarningsCalendar() {
           {tr('earnings.calTitle')}
         </h1>
         <p className={cx('mt-1 text-[13px]', t.sub)}>{tr('earnings.calSubtitle')}</p>
+        {status === 'ready' && (
+          <div className={cx('mt-3 inline-flex gap-1 rounded-lg border p-0.5', t.card, t.border)}>
+            {([true, false] as const).map(v => {
+              const on = v === keyOnly;
+              return (
+                <button
+                  key={String(v)}
+                  type="button"
+                  onClick={() => setKeyOnly(v)}
+                  aria-pressed={on}
+                  className={cx(
+                    'rounded-md px-2.5 py-1 text-[12px] font-semibold transition',
+                    on ? cx(t.chip, t.chipText) : t.faint,
+                  )}
+                >
+                  {tr(v ? 'earnings.calKeyCompanies' : 'earnings.calAll')}
+                  <span className="ml-1 opacity-60 tabular-nums">({v ? keyCount : earnings.length})</span>
+                </button>
+              );
+            })}
+          </div>
+        )}
       </header>
 
       {status === 'loading' && <FeedSkeleton />}
       {status === 'error' && <ErrorState onRetry={() => setReload(n => n + 1)} />}
       {status === 'ready' && groups.length === 0 && (
-        <EmptyState label={tr('earnings.calEmpty')} sub={tr('earnings.calEmptySub')} />
+        keyOnly && hasKey === false && earnings.length > 0 ? (
+          <EmptyState label={tr('earnings.calKeyEmpty')} sub={tr('earnings.calKeyEmptySub')} />
+        ) : (
+          <EmptyState label={tr('earnings.calEmpty')} sub={tr('earnings.calEmptySub')} />
+        )
       )}
 
       {status === 'ready' && groups.length > 0 && (
