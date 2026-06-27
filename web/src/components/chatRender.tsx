@@ -10,6 +10,7 @@ import {RelativeStrengthCard} from '@/components/RelativeStrengthCard';
 import {EarningsReactionCard} from '@/components/EarningsReactionCard';
 import {ScorecardCard} from '@/components/ScorecardCard';
 import Link from '@/components/LocalLink';
+import {LogoMark} from '@/components/ui/atoms';
 import {Markdown} from '@/components/Markdown';
 import {ChatPortfolioWidget} from '@/components/PortfolioWidgets';
 import {type ChatBlock} from '@/lib/api';
@@ -82,13 +83,15 @@ export function MsgRow({m, fallbackTicker, tr}: {m: Msg; fallbackTicker: string;
   const plain = (m.blocks ?? []).filter(b => b.kind === 'text').map(b => b.text ?? '').join('\n\n') || m.text || '';
   return (
     <div style={{display: 'flex', gap: 12}}>
-      <div style={{flex: 'none', width: 28, height: 28, borderRadius: 8, background: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 12, color: '#1c1404'}}>T</div>
+      <div style={{flex: 'none', width: 28, height: 28, borderRadius: 8, background: 'var(--surface2)', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center'}}>
+        <LogoMark size={18} accent="var(--accent)" />
+      </div>
       <div style={{flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 14}}>
         <div style={{display: 'flex', alignItems: 'center', gap: 8}}>
           <span style={{fontSize: 12.5, fontWeight: 600, color: 'var(--text)'}}>{tr('chat.aiName')}</span>
           <span style={{fontSize: 11, color: 'var(--text3)'}}>{tr('chat.justNow')}</span>
         </div>
-        {dedupeBlocks(m.blocks ?? []).map((b, i) => <BlockView key={i} block={b} fallbackTicker={fallbackTicker} tr={tr} />)}
+        {dedupeBlocks(m.blocks ?? []).map((b, i) => <BlockView key={i} block={b} fallbackTicker={fallbackTicker} tr={tr} streaming={m.streaming} />)}
         {!m.blocks && m.text && (
           <div style={{fontSize: 14, lineHeight: 1.62, color: 'var(--text)'}}>
             <Markdown>{m.text}</Markdown>
@@ -110,6 +113,7 @@ function CopyButton({text, tr}: {text: string; tr: (k: string) => string}) {
     <button
       type="button"
       aria-label={tr('chat.copy')}
+      className={done ? undefined : 'tw-chat-iconbtn'}
       onClick={() => {
         if (typeof navigator !== 'undefined' && navigator.clipboard) {
           void navigator.clipboard.writeText(text).then(() => {
@@ -125,10 +129,10 @@ function CopyButton({text, tr}: {text: string; tr: (k: string) => string}) {
   );
 }
 
-function BlockView({block, fallbackTicker, tr}: {block: ChatBlock; fallbackTicker: string; tr: (k: string) => string}) {
+function BlockView({block, fallbackTicker, tr, streaming}: {block: ChatBlock; fallbackTicker: string; tr: (k: string) => string; streaming?: boolean}) {
   if (block.kind === 'text') {
     return (
-      <div style={{fontSize: 14, lineHeight: 1.62, color: 'var(--text)'}} className="tw-chat-prose">
+      <div style={{fontSize: 14, lineHeight: 1.62, color: 'var(--text)'}} className={streaming ? 'tw-chat-prose tw-chat-streaming' : 'tw-chat-prose'}>
         <Markdown>{block.text ?? ''}</Markdown>
       </div>
     );

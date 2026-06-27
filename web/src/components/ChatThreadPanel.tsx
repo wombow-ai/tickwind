@@ -385,7 +385,9 @@ function WelcomeScreen({anchored, ticker, tr, onPick, composer}: {anchored: bool
 function ThinkingRow({tr}: {tr: (k: string) => string}) {
   return (
     <div style={{display: 'flex', gap: 12}}>
-      <div style={{flex: 'none', width: 28, height: 28, borderRadius: 8, background: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 12, color: '#1c1404'}}>T</div>
+      <div style={{flex: 'none', width: 28, height: 28, borderRadius: 8, background: 'var(--surface2)', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center'}}>
+        <LogoMark size={18} accent="var(--accent)" />
+      </div>
       <div style={{display: 'flex', alignItems: 'center', gap: 9}}>
         <span style={{fontSize: 12.5, fontWeight: 600, color: 'var(--text)'}}>{tr('chat.aiName')}</span>
         <span style={{display: 'flex', gap: 3, alignItems: 'center'}}>
