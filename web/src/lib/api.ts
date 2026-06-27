@@ -634,12 +634,26 @@ export interface YearValue {
  * series is up to ~10 most-recent years, OLDEST-FIRST; a year with no filing is absent (never
  * fabricated). Per-share metrics are excluded (split-distorted over a decade). Absent for ETFs/non-US.
  */
+/** One standalone single-quarter point. label e.g. "Q3 FY2026"; derived = a computed Q4. */
+export interface QuarterValue {
+  label: string;
+  end: string;
+  val: number;
+  derived?: boolean;
+}
+
 export interface FinancialsHistory {
   revenue?: YearValue[];
   net_income?: YearValue[];
   gross_profit?: YearValue[];
   operating_income?: YearValue[];
   operating_cash_flow?: YearValue[];
+  // Quarterly single-quarter series (additive to the annual ones above).
+  revenue_q?: QuarterValue[];
+  net_income_q?: QuarterValue[];
+  gross_profit_q?: QuarterValue[];
+  operating_income_q?: QuarterValue[];
+  operating_cash_flow_q?: QuarterValue[];
 }
 
 /** Fetches SEC-XBRL fundamentals (market cap, P/E, revenue, net income). Rejects (404) for non-US / no data. */

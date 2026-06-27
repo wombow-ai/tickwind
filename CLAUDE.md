@@ -175,6 +175,27 @@ feature-flagged plugin, never on the critical path. Web only.
 - Full stack (server): `docker compose up -d --build`.
 
 ## Current state (update each iteration)
+- **2026-06-27 — 📊 Financial-history feature: owner's 3-point feedback — quarterly + tab move + sparkline (SHIPPED).**
+  Owner reviewed the 10-yr table and asked: (1) add QUARTERLY (the original MU 单季 need — annual-only missed it),
+  (2) move it OFF the Overview tab, (3) add a trend visual. **#1 Quarterly (be `66e5fea`):** new
+  `quarterlySeries(gaap, unit, maxQ, tags...)` extracts STANDALONE single-quarter values — the directly-reported
+  ~90-day quarters (Q1-Q3) merged by tag priority + a DERIVED Q4 (full fiscal year − the 9-month YTD of the same
+  year, same-start-matched), each labeled by COUNTING BACK from the latest directly-reported quarter (companyfacts
+  fp/fy are restamped on comparative columns → unreliable except on the newest quarter). The algorithm was DESIGNED
+  + validated on REAL Micron+Apple companyfacts via an opus-max design Workflow and reproduces them exactly (MU Q3
+  FY2026 standalone revenue $41.46B vs the $78.96B 9-month YTD; Apple's holiday Q1s). 5 additive `*_q` fields on
+  `FinancialsHistory` (the live annual response shape is UNCHANGED). `financialsQuartersMax=8`. **#2 Tab move:** new
+  "Financials"/"财务" tab (TopTab + topTabs authed+anon + ANCHOR_TAB `financials-history`→`Financials`); the table
+  moved off Overview into it (snapshot FundamentalsCard stays on Overview as the quick glance). **#3 Sparkline:** a
+  neutral inline-SVG trend per row (oldest→newest; shows shape, not a buy/sell cue). **FE:** Annual⇄Quarterly toggle
+  in `FinancialsHistoryTable.tsx` (normalizes both series to {key,label,val}; column union newest-first; q-fallback
+  when one view is absent). i18n fhist.annual/quarterly/derivedNote + stock.tabFinancials (en+zh). **Hardened by TWO
+  opus-max passes:** the design pass de-risked the algorithm (duration windows 85-100/265-285/350-380d, 52/53-week-
+  safe; count-back via round(dayDist/91.3125); only-cumulative-filer → empty; gap-robust via date-distance); the
+  impl-review pass found + fixed (A, must) the derived Q4 was silently blended → now a `†` marker + a footnote
+  "Q4 derived = full year − 9-month YTD" DISCLOSE it (anti-hallucination: inferred vs reported), and (B, cheap) the
+  quarterly per-end merge now applies strict TAG-priority like the annual series so the two views never disagree on
+  the concept. Tests: TestQuarterlySeries (+ TagPriority). Backend deployed + real-MU-verified; fe = next commit.
 - **2026-06-27 — 📈 10-year financial history table (SHIPPED).** A per-stock multi-year (≤10 FY) financial-trend
   table — the natural deepening of the ① TTM fundamentals. **Backend (`internal/edgar/fundamentals.go`):**
   `annualSeriesMerged(gaap, unit, maxYears, tags...)` extracts a per-fiscal-year ANNUAL series keyed by END-DATE

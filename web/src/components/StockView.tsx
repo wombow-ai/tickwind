@@ -102,9 +102,10 @@ function guessMarket(ticker: string): string {
 //                        stacked as light inner sub-sections.
 //  • My (auth only)    — the personal panels (notes, alerts, holdings, saved links),
 //                        stacked. Omitted entirely when signed out.
-type TopTab = 'Overview' | 'Research' | 'Money' | 'News' | 'My';
+type TopTab = 'Overview' | 'Financials' | 'Research' | 'Money' | 'News' | 'My';
 const TOP_TAB_LABELS: Record<TopTab, string> = {
   Overview: 'stock.tabOverview',
+  Financials: 'stock.tabFinancials',
   Research: 'stock.tabResearch',
   Money: 'stock.tabMoney',
   News: 'stock.tabNews',
@@ -119,6 +120,8 @@ const ANCHOR_TAB: Record<string, TopTab> = {
   signals: 'Overview',
   fundamentals: 'Overview',
   indicators: 'Overview',
+  // Financials tab anchor
+  'financials-history': 'Financials',
   // Filings & Money anchors (the promoted former-Details cards)
   short: 'Money',
   'material-events': 'Money',
@@ -162,8 +165,8 @@ export function StockView({ticker}: {ticker: string}) {
   // Flat top-level tabs; 'My' only when signed in. Order: Overview · Research ·
   // Filings & Money · News & Discussion · (My).
   const topTabs: readonly TopTab[] = isAuthed
-    ? ['Overview', 'Research', 'Money', 'News', 'My']
-    : ['Overview', 'Research', 'Money', 'News'];
+    ? ['Overview', 'Financials', 'Research', 'Money', 'News', 'My']
+    : ['Overview', 'Financials', 'Research', 'Money', 'News'];
   const [topTab, setTopTab] = useState<TopTab>('Overview');
   // Research stays lazy: mount (and fire its LLM-backed fetch) only once its tab is
   // first opened, then keep it mounted via `hidden` so deep-links + state survive
@@ -679,11 +682,6 @@ export function StockView({ticker}: {ticker: string}) {
         <div id="fundamentals" className="scroll-mt-20">
           <FundamentalsCard ticker={norm} />
         </div>
-        {/* Multi-year financial history (≤10 FY of revenue/profit/cash-flow dollar lines from SEC
-            XBRL; hides for non-US / funds / no history) — the trend behind the snapshot above. */}
-        <div id="financials-history" className="scroll-mt-20">
-          <FinancialsHistoryTable ticker={norm} />
-        </div>
         {/* ETF/fund holdings: top positions by weight (SEC Form N-PORT; hides for non-funds) — the
             primary content for an ETF, where company fundamentals are structurally absent */}
         <div id="holdings" className="scroll-mt-20">
@@ -718,6 +716,16 @@ export function StockView({ticker}: {ticker: string}) {
         {/* pulse: Reddit buzz + news sentiment (renders nothing when empty) */}
         <div id="signals" className="scroll-mt-20">
           <PulseBar signals={signals} />
+        </div>
+      </div>
+
+      {/* ─────────────────────────── FINANCIALS TAB ───────────────────────── */}
+      {/* The company's multi-year financial statements — revenue / profit / cash-flow
+          trend (annual + quarterly) from SEC XBRL. Moved off Overview (owner) into its
+          own tab. The #financials-history anchor lives here. Public data. */}
+      <div hidden={topTab !== 'Financials'}>
+        <div id="financials-history" className="scroll-mt-20">
+          <FinancialsHistoryTable ticker={norm} />
         </div>
       </div>
 
