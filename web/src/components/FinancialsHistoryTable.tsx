@@ -1,6 +1,6 @@
 'use client';
 
-import {useEffect, useState} from 'react';
+import {Fragment, useEffect, useState} from 'react';
 import {getFundamentals, type Fundamentals, type QuarterValue, type YearValue} from '@/lib/api';
 import {useT} from '@/lib/i18n';
 import {useDark} from '@/lib/theme';
@@ -9,13 +9,17 @@ import {cx, fmtCompactUSD, tok} from '@/lib/ui';
 type Status = 'loading' | 'ready' | 'hidden';
 type Hist = NonNullable<Fundamentals['history']>;
 
-// The split-immune DOLLAR lines, in display order, with their i18n label keys.
-const ROWS: {key: keyof Hist; label: string}[] = [
-  {key: 'revenue', label: 'fhist.revenue'},
-  {key: 'gross_profit', label: 'fhist.grossProfit'},
-  {key: 'operating_income', label: 'fhist.operatingIncome'},
-  {key: 'net_income', label: 'fhist.netIncome'},
-  {key: 'operating_cash_flow', label: 'fhist.operatingCashFlow'},
+// The DOLLAR lines, in display order. The income-statement lines are split-immune flows; the
+// balance-sheet lines are year-END instants (annual only — no `_q`, so they hide in Quarterly).
+const ROWS: {key: keyof Hist; label: string; group: 'income' | 'balance'}[] = [
+  {key: 'revenue', label: 'fhist.revenue', group: 'income'},
+  {key: 'gross_profit', label: 'fhist.grossProfit', group: 'income'},
+  {key: 'operating_income', label: 'fhist.operatingIncome', group: 'income'},
+  {key: 'net_income', label: 'fhist.netIncome', group: 'income'},
+  {key: 'operating_cash_flow', label: 'fhist.operatingCashFlow', group: 'income'},
+  {key: 'total_assets', label: 'fhist.totalAssets', group: 'balance'},
+  {key: 'total_liabilities', label: 'fhist.totalLiabilities', group: 'balance'},
+  {key: 'stockholders_equity', label: 'fhist.equity', group: 'balance'},
 ];
 
 // One normalized period point: a sort/align KEY (year string for annual, end-date for quarterly —
@@ -168,40 +172,56 @@ export function FinancialsHistoryTable({ticker}: {ticker: string}) {
             </tr>
           </thead>
           <tbody>
-            {rows.map(r => {
+            {rows.map((r, idx) => {
               const m = new Map(r.data.map(p => [p.key, p]));
+              // A "Balance sheet" divider before the first visible balance-sheet row (separates
+              // the year-END instants from the income-statement flows above).
+              const showBalanceHeader =
+                r.group === 'balance' && (idx === 0 || rows[idx - 1].group !== 'balance');
               return (
-                <tr key={r.key} className={cx('border-t', t.border)}>
-                  <td className={cx(pin, 'py-1.5 pr-3 text-left font-medium', t.sub)}>
-                    <span className="flex items-center gap-2">
-                      <span className="whitespace-nowrap">{tr(r.label)}</span>
-                      <Sparkline values={r.data.map(p => p.val)} dark={dark} />
-                    </span>
-                  </td>
-                  {cols.map((k, i) => {
-                    const p = m.get(k);
-                    return (
+                <Fragment key={r.key}>
+                  {showBalanceHeader && (
+                    <tr>
                       <td
-                        key={k}
-                        title={p?.derived ? tr('fhist.derivedNote') : undefined}
-                        className={cx(
-                          'whitespace-nowrap px-2.5 py-1.5 text-right',
-                          p != null && p.val < 0 ? neg : t.text,
-                          i === 0 && 'font-semibold',
-                        )}
+                        colSpan={cols.length + 1}
+                        className={cx('pt-3 pb-1 text-left text-[10.5px] font-bold uppercase tracking-wide', t.faint)}
                       >
-                        {p == null ? (
-                          '—'
-                        ) : (
-                          <>
-                            {fmtCompactUSD(p.val)}
-                            {p.derived && <sup className={cx('ml-0.5', t.faint)}>†</sup>}
-                          </>
-                        )}
+                        {tr('fhist.balanceSheet')}
                       </td>
-                    );
-                  })}
-                </tr>
+                    </tr>
+                  )}
+                  <tr className={cx('border-t', t.border)}>
+                    <td className={cx(pin, 'py-1.5 pr-3 text-left font-medium', t.sub)}>
+                      <span className="flex items-center gap-2">
+                        <span className="whitespace-nowrap">{tr(r.label)}</span>
+                        <Sparkline values={r.data.map(p => p.val)} dark={dark} />
+                      </span>
+                    </td>
+                    {cols.map((k, i) => {
+                      const p = m.get(k);
+                      return (
+                        <td
+                          key={k}
+                          title={p?.derived ? tr('fhist.derivedNote') : undefined}
+                          className={cx(
+                            'whitespace-nowrap px-2.5 py-1.5 text-right',
+                            p != null && p.val < 0 ? neg : t.text,
+                            i === 0 && 'font-semibold',
+                          )}
+                        >
+                          {p == null ? (
+                            '—'
+                          ) : (
+                            <>
+                              {fmtCompactUSD(p.val)}
+                              {p.derived && <sup className={cx('ml-0.5', t.faint)}>†</sup>}
+                            </>
+                          )}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                </Fragment>
               );
             })}
           </tbody>

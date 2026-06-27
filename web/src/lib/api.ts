@@ -654,6 +654,10 @@ export interface FinancialsHistory {
   gross_profit_q?: QuarterValue[];
   operating_income_q?: QuarterValue[];
   operating_cash_flow_q?: QuarterValue[];
+  // Balance-sheet year-end series (annual only).
+  total_assets?: YearValue[];
+  total_liabilities?: YearValue[];
+  stockholders_equity?: YearValue[];
 }
 
 /** Fetches SEC-XBRL fundamentals (market cap, P/E, revenue, net income). Rejects (404) for non-US / no data. */

@@ -175,6 +175,23 @@ feature-flagged plugin, never on the critical path. Web only.
 - Full stack (server): `docker compose up -d --build`.
 
 ## Current state (update each iteration)
+- **2026-06-27 — 🏦 Balance-sheet history (assets / liabilities / equity) on the Financials tab (SHIPPED).** Extends
+  the financial-history feature with a per-fiscal-year BALANCE-SHEET history. **Backend (be `cead3f8`):**
+  balance-sheet concepts are INSTANTS (a value AT a period-end, not over a period), so the series aligns each
+  instant to the income-statement FISCAL-YEAR-ENDS (every year = the year-end balance, never a stray quarter-end).
+  Refactored `annualSeriesMerged` to share an `annualChosen` core (the FY-end dates come from the same selection);
+  added `fiscalYearEnds` + `pickInstantsByEnd` + `annualBalanceSeries`. 3 new YearValue fields
+  (TotalAssets/TotalLiabilities/StockholdersEquity) on FinancialsHistory. **Real-AAPL validated:** 10 years
+  FY2016-2025, FY-end aligned (FY2025 end 2025-09-27: assets $359.2B, equity $73.7B, liabilities $285.5B), and the
+  accounting identity Assets − Equity == Liabilities holds EXACTLY every year (confirms all three align to the same
+  FY-end). **Hardened by an opus-max adversarial review (no blockers):** Total liabilities now falls back to
+  Assets − Equity for any year us-gaap:Liabilities is untagged (the snapshot card's own rule, real reported
+  components at the same FY-end) so the history row matches the card's coverage and the identity holds for the
+  general filer, not only taggers (`fillLiabilities` + test). Accepted gaps recorded in comments
+  (insufficient-not-wrong): fyEnds from revenue (a no-revenue filer gets no balance history); exact FY-end-date
+  alignment. **FE (fe `<next>`):** 3 balance rows added to FinancialsHistoryTable with a "Balance sheet" divider;
+  ANNUAL-ONLY (no `_q`) so they auto-hide in the Quarterly view. i18n fhist.balanceSheet/totalAssets/
+  totalLiabilities/equity (en+zh). Tests: TestAnnualBalanceSeries + TestFillLiabilities.
 - **2026-06-27 — 📊 Financial-history feature: owner's 3-point feedback — quarterly + tab move + sparkline (SHIPPED).**
   Owner reviewed the 10-yr table and asked: (1) add QUARTERLY (the original MU 单季 need — annual-only missed it),
   (2) move it OFF the Overview tab, (3) add a trend visual. **#1 Quarterly (be `66e5fea`):** new
