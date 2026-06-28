@@ -39,9 +39,8 @@ const maxThreadHistoryTokens = 9000
 // returns a clean "try again" rather than hanging.
 const chatTurnTimeout = 90 * time.Second
 
-// chatModeOf narrows the request's mode to the closed set the prompt understands; anything else
-// (absent / bogus / an old client) → "" = the adaptive default. Mode is a DEPTH/shape dial only —
-// it never reaches the no-advice firewall (rules + the finish→filterAdvice backstop run in every mode).
+// chatModeOf narrows the request's mode to {"", "focused", "explore"}; anything else
+// (absent / bogus / an old client) → "" = adaptive. Mode is a DEPTH/length dial only.
 func chatModeOf(m string) string {
 	switch strings.ToLower(strings.TrimSpace(m)) {
 	case "focused":

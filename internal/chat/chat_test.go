@@ -546,69 +546,22 @@ func TestAnswerIterationCap(t *testing.T) {
 	}
 }
 
-func TestAnswerAdviceFilter(t *testing.T) {
+// TestAnswerShipsAdvice: chat is a full advisor — a buy/sell view + a price target ship
+// verbatim (the old deterministic strip is GONE).
+func TestAnswerShipsAdvice(t *testing.T) {
 	llm := &scriptedLLM{enabled: true, replies: []reply{
-		{content: "P/E is 31.2x.\nMy price target is $250 and you should buy."},
-	}}
-	svc := NewService(llm, fakeFacts{sampleSheet()}, nil, "")
-	ans, _ := svc.Answer(context.Background(), "u", "AAPL", "en", nil, "q", true, "")
-	got := textOf(ans)
-	if !strings.Contains(got, "31.2x") {
-		t.Fatalf("kept line missing: %q", got)
-	}
-	if strings.Contains(strings.ToLower(got), "price target") || strings.Contains(strings.ToLower(got), "should buy") {
-		t.Fatalf("advice line not stripped: %q", got)
-	}
-}
-
-func TestAnswerAllAdviceRedirects(t *testing.T) {
-	llm := &scriptedLLM{enabled: true, replies: []reply{
-		{content: "Strong buy.\nYou should buy now."},
+		{content: "My price target is $250 and I'd lean buy."},
 	}}
 	svc := NewService(llm, fakeFacts{sampleSheet()}, nil, "")
 	ans, _ := svc.Answer(context.Background(), "u", "AAPL", "en", nil, "should I buy?", true, "")
-	if textOf(ans) != redirectNote("en") {
-		t.Fatalf("want redirect note, got %q", textOf(ans))
+	got := strings.ToLower(textOf(ans))
+	if !strings.Contains(got, "price target") || !strings.Contains(got, "$250") || !strings.Contains(got, "buy") {
+		t.Fatalf("advice should ship verbatim, got %q", textOf(ans))
 	}
 }
 
-// TestAnswerHardenedAdviceFilter covers the red-team hardening: valuation/entry synonyms
-// + a buy-action-at-a-price-level all collapse to the redirect note.
-func TestAnswerHardenedAdviceFilter(t *testing.T) {
-	cases := []struct{ name, prose string }{
-		{"fair-value", "AAPL fair value is around $250."},
-		{"buy-at-price", "I'd buy at $150 here."},
-		{"deserves-position", "For long-term holders it deserves a position."},
-		{"undervalued", "The stock looks undervalued to me."},
-		{"entry-point", "This is a great entry point."},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			llm := &scriptedLLM{enabled: true, replies: []reply{{content: tc.prose}}}
-			svc := NewService(llm, fakeFacts{sampleSheet()}, nil, "")
-			ans, _ := svc.Answer(context.Background(), "u", "AAPL", "en", nil, "q", true, "")
-			if textOf(ans) != redirectNote("en") {
-				t.Fatalf("%s: want redirect, got %q", tc.name, textOf(ans))
-			}
-		})
-	}
-}
-
-// TestAnswerCrossLineAdviceRedirects: advice split so NO single line trips, but the
-// joined whole-text pass catches it.
-func TestAnswerCrossLineAdviceRedirects(t *testing.T) {
-	llm := &scriptedLLM{enabled: true, replies: []reply{
-		{content: "The fundamentals look strong.\nGiven that, this is a compelling\nbuy."},
-	}}
-	svc := NewService(llm, fakeFacts{sampleSheet()}, nil, "")
-	ans, _ := svc.Answer(context.Background(), "u", "AAPL", "en", nil, "q", true, "")
-	if textOf(ans) != redirectNote("en") {
-		t.Fatalf("cross-line advice not caught: %q", textOf(ans))
-	}
-}
-
-// TestAnswerKeepsLegitInsiderFact: bare buy/sell describing a FACT must NOT be stripped
-// (the contract's deliberate exclusion).
+// TestAnswerKeepsLegitInsiderFact: a bare buy/sell describing a FACT ships unchanged (nothing
+// strips it anymore; the structural number-grounding is the live contract).
 func TestAnswerKeepsLegitInsiderFact(t *testing.T) {
 	llm := &scriptedLLM{enabled: true, replies: []reply{
 		{content: "Insiders bought 12,000 shares last quarter, per Form 4."},
@@ -885,38 +838,45 @@ func TestBackstopWidget(t *testing.T) {
 	})
 }
 
-// TestSystemPromptModes asserts the mode dial changes DEPTH only: every mode keeps the firewall
-// (rule 1 + GROUNDING); the EXPLORATORY ANALYSIS block appears for adaptive ("") + explore but
-// NOT for focused; and wherever exploration is unlocked the no-advice boundary is restated.
+// TestSystemPromptModes asserts the mode dial changes DEPTH only: every mode keeps the factual
+// guard (rule 1 + GROUNDING); explore adds the fuller two-sided/your-call appendix while focused
+// gets the tight appendix; there is NO no-advice boundary anywhere (it was removed).
 func TestSystemPromptModes(t *testing.T) {
 	adaptive := systemPrompt("AAPL", "en", "facts", false, false, false, "")
 	explore := systemPrompt("AAPL", "en", "facts", false, false, false, "explore")
 	focused := systemPrompt("AAPL", "en", "facts", false, false, false, "focused")
 	for name, p := range map[string]string{"adaptive": adaptive, "explore": explore, "focused": focused} {
 		if !strings.Contains(p, "NEVER invent") || !strings.Contains(p, "GROUNDING") {
-			t.Errorf("%s mode dropped the firewall/grounding", name)
+			t.Errorf("%s mode dropped the factual guard/grounding", name)
 		}
 	}
-	if !strings.Contains(adaptive, "EXPLORATORY ANALYSIS") || !strings.Contains(explore, "EXPLORATORY ANALYSIS") {
-		t.Error("adaptive + explore must include the EXPLORATORY ANALYSIS block")
+	// explore unlocks the fuller two-sided depth appendix; focused gets the tight one; neither
+	// leaks into the other.
+	if !strings.Contains(explore, "EXPLORE turn") {
+		t.Error("explore must include the fuller two-sided appendix")
 	}
-	if strings.Contains(focused, "EXPLORATORY ANALYSIS") {
-		t.Error("focused must NOT include the EXPLORATORY ANALYSIS block (keeps today's tight shape)")
+	if strings.Contains(focused, "EXPLORE turn") || strings.Contains(adaptive, "EXPLORE turn") {
+		t.Error("only explore gets the EXPLORE appendix")
 	}
-	if !strings.Contains(adaptive, "never a recommendation") || !strings.Contains(explore, "HARD BOUNDARY") {
-		t.Error("the exploratory block must restate the no-advice boundary")
+	if !strings.Contains(focused, "FOCUSED turn") {
+		t.Error("focused must include the tight appendix")
 	}
-	// zh parity: the exploratory block ships in zh too.
-	if !strings.Contains(systemPrompt("AAPL", "zh", "facts", false, false, false, "explore"), "探索式分析") {
-		t.Error("zh explore mode missing the exploratory block")
+	// The no-advice boundary is GONE from every mode.
+	for name, p := range map[string]string{"adaptive": adaptive, "explore": explore, "focused": focused} {
+		if strings.Contains(p, "HARD BOUNDARY") || strings.Contains(p, "never a recommendation") {
+			t.Errorf("%s mode still carries a no-advice boundary", name)
+		}
+	}
+	// zh parity: the explore depth appendix ships in zh too.
+	if !strings.Contains(systemPrompt("AAPL", "zh", "facts", false, false, false, "explore"), "【探索】轮") {
+		t.Error("zh explore mode missing the depth appendix")
 	}
 }
 
-// TestBackstopModeBlind locks the load-bearing invariant: the deterministic advice filter strips
-// identically regardless of mode (mode only changes the prompt, never reaches finish/filterAdvice).
-// A future refactor that threaded mode into finish would break this test.
-func TestBackstopModeBlind(t *testing.T) {
-	const adviceLine = "On balance the setup looks attractive here — a compelling entry."
+// TestAdviceShipsEveryMode locks that the mode dial never strips advice: a buy/sell view ships
+// verbatim in every mode (mode is a depth/length dial only, it never reaches finish).
+func TestAdviceShipsEveryMode(t *testing.T) {
+	const adviceLine = "On balance the setup looks attractive here — a compelling entry, and I'd lean buy."
 	for _, mode := range []string{"explore", "focused", ""} {
 		llm := &scriptedLLM{enabled: true, replies: []reply{{content: adviceLine}}}
 		svc := NewService(llm, fakeFacts{sampleSheet()}, nil, "")
@@ -924,8 +884,8 @@ func TestBackstopModeBlind(t *testing.T) {
 		if err != nil {
 			t.Fatalf("mode %q: %v", mode, err)
 		}
-		if txt := textOf(ans); strings.Contains(txt, "compelling entry") || strings.Contains(txt, "looks attractive") {
-			t.Errorf("mode %q: advice survived filterAdvice (backstop must be mode-blind): %q", mode, txt)
+		if txt := textOf(ans); !strings.Contains(txt, "compelling entry") || !strings.Contains(txt, "lean buy") {
+			t.Errorf("mode %q: advice must ship verbatim (depth-only dial): %q", mode, txt)
 		}
 	}
 }

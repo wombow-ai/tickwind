@@ -59,33 +59,36 @@ func TestFormatWebResults_NewlineForgery(t *testing.T) {
 	}
 }
 
-// TestFormatWebResults_AdviceDropped: a hit carrying an analyst price-target / rating is
-// dropped at the source; a benign sibling survives.
-func TestFormatWebResults_AdviceDropped(t *testing.T) {
+// TestFormatWebResults_AdviceSurvives: chat is a full advisor — a quoted, sourced street
+// target now flows through as ATTRIBUTED context (no longer dropped), inside the envelope.
+func TestFormatWebResults_AdviceSurvives(t *testing.T) {
 	out := formatWebResults([]websearch.Result{
 		{Title: "Morgan Stanley raises target to $250", URL: "https://reuters.com/a", Snippet: "The bank lifted its price target."},
 		{Title: "Earnings recap", URL: "https://reuters.com/b", Snippet: "Revenue grew on strong demand."},
 	}, "en")
 
-	if strings.Contains(out, "$250") || strings.Contains(out, "target") {
-		t.Fatalf("advice/target hit was NOT dropped:\n%s", out)
+	if !strings.Contains(out, "$250") || !strings.Contains(out, "target") {
+		t.Fatalf("sourced target should survive as attributed context:\n%s", out)
 	}
-	if !strings.Contains(out, "Earnings recap") {
-		t.Fatalf("benign hit was dropped:\n%s", out)
+	if !strings.Contains(out, "[reuters.com]") {
+		t.Fatalf("the surviving target hit must keep its source attribution:\n%s", out)
 	}
-	if n := strings.Count(out, "\n  · "); n != 1 {
-		t.Fatalf("want 1 surviving hit, got %d:\n%s", n, out)
+	if n := strings.Count(out, "\n  · "); n != 2 {
+		t.Fatalf("want both hits, got %d:\n%s", n, out)
 	}
 }
 
-// TestFormatWebResults_AllAdvice: when every hit is advice, the model gets a benign
-// "no usable context" line — never an empty/leaky envelope.
-func TestFormatWebResults_AllAdvice(t *testing.T) {
+// TestFormatWebResults_AdviceStaysFenced: even an all-advice result set is delivered inside
+// the untrusted-data fence (attributed context, never bare instructions).
+func TestFormatWebResults_AdviceStaysFenced(t *testing.T) {
 	out := formatWebResults([]websearch.Result{
 		{Title: "Buy rating reiterated", URL: "https://x.com/a", Snippet: "Analyst keeps a $400 target."},
 	}, "en")
-	if out != "No usable web context found." {
-		t.Fatalf("all-advice result = %q; want the no-usable-context line", out)
+	if !strings.HasPrefix(out, "BEGIN UNTRUSTED WEB SNIPPETS") || !strings.Contains(out, "END UNTRUSTED WEB SNIPPETS") {
+		t.Fatalf("advice content must stay inside the untrusted-data fence:\n%s", out)
+	}
+	if !strings.Contains(out, "$400") || !strings.Contains(out, "[x.com]") {
+		t.Fatalf("the advice hit should flow through attributed:\n%s", out)
 	}
 }
 

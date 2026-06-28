@@ -6,18 +6,18 @@ import (
 	"strings"
 
 	"github.com/wombow-ai/tickwind/internal/chat"
-	"github.com/wombow-ai/tickwind/internal/research"
 	"github.com/wombow-ai/tickwind/internal/websearch"
 )
 
 // chatWebSearch implements chat.WebSearcher over the websearch client: it runs a search
 // and formats the hits as ATTRIBUTED context inside an explicit UNTRUSTED-DATA envelope.
 // Web snippets are OPEN-WEB, attacker-controllable text (unlike the platform's own ingested
-// news corpus), so the firewall is hardened at the source: each Title/Snippet is flattened
-// to a single line (an embedded newline can't forge an extra bullet or a fake "[source]"
-// tag), advice / price-target hits are DROPPED outright, and the block is fenced so the
-// model reads it as data — never as instructions. The chat firewall (systemPrompt rule 3)
-// additionally forbids treating any of it as fact or deriving a number from it.
+// news corpus), so the INJECTION firewall is hardened at the source: each Title/Snippet is
+// flattened to a single line (an embedded newline can't forge an extra bullet or a fake
+// "[source]" tag) and the block is fenced so the model reads it as data — never as instructions.
+// Chat is a full advisor, so advice / price-target content is NO LONGER dropped — a quoted,
+// sourced street target is allowed attributed context; the chat firewall (systemPrompt rule 3)
+// still forbids treating any of it as fact or deriving a number from it.
 type chatWebSearch struct{ ws *websearch.Client }
 
 // NewChatWebSearch returns the chat.WebSearcher, or nil when web search is disabled (no
@@ -41,12 +41,11 @@ func (c chatWebSearch) Search(ctx context.Context, query, lang string) string {
 // It is a pure function (no I/O) so the firewall behavior is unit-testable. Defenses, in
 // order: (1) flatten Title/Snippet so one hit = exactly one line — kills newline-based
 // bullet/source-tag forgery (the same collapse corpusContext already applies to UGC bodies);
-// (2) DROP any hit whose flattened title or snippet trips research.HasAdvice — an analyst
-// target / rating that evades the final-prose advice filter never enters the model context;
-// (3) wrap the survivors in a BEGIN/END fence with each hit indented, labeled as data not
-// instructions. Numbers in plain qualitative snippets are KEPT (the model may quote WITH the
-// source; rule 3 forbids treating them as fact or deriving from them), matching the accepted
-// get_news_context / corpusContext attributed-context design.
+// (2) cap the snippet at 280 runes; (3) wrap the survivors in a BEGIN/END fence with each hit
+// indented, labeled as data not instructions. Advice / price-target content now flows through as
+// attributed background (chat is a full advisor); numbers in qualitative snippets are KEPT (the
+// model may quote WITH the source; rule 3 forbids treating them as fact or deriving from them),
+// matching the accepted get_news_context / corpusContext attributed-context design.
 func formatWebResults(results []websearch.Result, lang string) string {
 	var hits []string
 	for _, r := range results {
@@ -56,11 +55,6 @@ func formatWebResults(results []websearch.Result, lang string) string {
 			snip = string(rs[:280]) + "…"
 		}
 		if title == "" && snip == "" {
-			continue
-		}
-		// Drop advice / price-target / rating hits at the source — they breach the no-advice
-		// contract if the model quotes them, and the final-prose filter can miss analyst phrasing.
-		if research.HasAdvice(title) || research.HasAdvice(snip) {
 			continue
 		}
 		hits = append(hits, fmt.Sprintf("  · %s — %s [%s]", title, snip, hostOf(r.URL)))
