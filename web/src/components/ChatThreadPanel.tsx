@@ -75,19 +75,6 @@ export function ChatThreadPanel({source, onActivity, onMeter, onCreated}: {sourc
   // the "New Chat" screen until the messages arrive.
   const [threadLoading, setThreadLoading] = useState(false);
   const [steps, setSteps] = useState<ExecStep[]>([]); // live ReAct execution chain (ephemeral)
-  // Answer-DEPTH dial (per-message): auto = adaptive, focused = tight, explore = deep two-sided
-  // analysis. Persisted across the session; never relaxes the no-advice firewall (server-side).
-  const [mode, setMode] = useState<'auto' | 'focused' | 'explore'>('auto');
-  useEffect(() => {
-    try {
-      const m = localStorage.getItem('tw-chat-mode');
-      if (m === 'focused' || m === 'explore' || m === 'auto') setMode(m);
-    } catch {}
-  }, []);
-  const pickMode = (m: 'auto' | 'focused' | 'explore') => {
-    setMode(m);
-    try { localStorage.setItem('tw-chat-mode', m); } catch {}
-  };
   const [err, setErr] = useState(false);
   const [meter, setMeter] = useState<{used: number; limit: number} | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
@@ -164,11 +151,10 @@ export function ChatThreadPanel({source, onActivity, onMeter, onCreated}: {sourc
       });
       try {
         const token = await getToken();
-        const apiMode = mode === 'auto' ? undefined : mode; // 'auto' → backend adaptive default
         let res: ChatResponse;
         let createdConvId: string | null = null;
         if (source.kind === 'stock') {
-          res = await postChat(source.ticker, msg, token, lang, undefined, apiMode);
+          res = await postChat(source.ticker, msg, token, lang);
         } else {
           // conversation OR draft → stream to a conversation. A draft creates the
           // conversation lazily on this first send (anchored to its ticker when present),
@@ -212,7 +198,7 @@ export function ChatThreadPanel({source, onActivity, onMeter, onCreated}: {sourc
           // Each tool action streams in as a gray execution-chain step (Go-owned label).
           const onStep = (st: ExecStep) => setSteps(s => [...s, st]);
           try {
-            res = await postConvChatStream(convId, msg, token, lang, onTok, undefined, onStep, apiMode);
+            res = await postConvChatStream(convId, msg, token, lang, onTok, undefined, onStep);
           } catch {
             // A dropped stream (e.g. a Cloudflare tunnel idle-cut) cancels the server turn before
             // it persists, so ONE retry on the same conversation is safe — and now that the server
@@ -222,7 +208,7 @@ export function ChatThreadPanel({source, onActivity, onMeter, onCreated}: {sourc
             setSteps([]);
             // Re-push a fresh placeholder so the retried steps + answer still stream inline.
             setMessages(m => [...m, {role: 'assistant' as const, streaming: true, blocks: []}]);
-            res = await postConvChatStream(convId, msg, token, lang, onTok, undefined, onStep, apiMode);
+            res = await postConvChatStream(convId, msg, token, lang, onTok, undefined, onStep);
           }
         }
         setMessages(m => {
@@ -258,7 +244,7 @@ export function ChatThreadPanel({source, onActivity, onMeter, onCreated}: {sourc
         setSteps([]); // clear the live steps; the persisted trace block now carries them
       }
     },
-    [key, lang, sending, mode, getToken, onActivity, onMeter, onCreated], // eslint-disable-line react-hooks/exhaustive-deps
+    [key, lang, sending, getToken, onActivity, onMeter, onCreated], // eslint-disable-line react-hooks/exhaustive-deps
   );
 
   const resetStockThread = useCallback(async () => {
@@ -311,22 +297,7 @@ export function ChatThreadPanel({source, onActivity, onMeter, onCreated}: {sourc
           </button>
         </div>
       </form>
-      <div style={{display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginTop: 7, flexWrap: 'wrap'}}>
-        <div style={{display: 'inline-flex', gap: 2, background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 9, padding: 2}} role="group" aria-label={tr('chat.mode.label')}>
-          {(['auto', 'focused', 'explore'] as const).map(m => (
-            <button
-              key={m}
-              type="button"
-              onClick={() => pickMode(m)}
-              aria-pressed={mode === m}
-              title={tr('chat.mode.' + m + 'Hint')}
-              className="tw-chat-iconbtn"
-              style={{fontSize: 11, fontWeight: 600, padding: '3px 9px', borderRadius: 7, border: 'none', cursor: 'pointer', background: mode === m ? 'var(--accent-fill)' : 'transparent', color: mode === m ? 'var(--accent2)' : 'var(--text3)'}}
-            >
-              {tr('chat.mode.' + m)}
-            </button>
-          ))}
-        </div>
+      <div style={{display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 10, marginTop: 7, flexWrap: 'wrap'}}>
         <span style={{fontSize: 10.5, color: 'var(--text3)'}}>{tr('chat.disclaimer')}</span>
       </div>
     </>
