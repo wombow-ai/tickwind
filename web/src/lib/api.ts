@@ -1557,16 +1557,23 @@ export interface ChatHistoryMessage {
  * upgrade CTA. The monthly-cap / busy soft states return HTTP 200 with the note in
  * `blocks` + the matching flag set.
  */
+// The chat DEPTH dial. The mode is sent only when explicit (focused | explore); absent → the
+// backend's adaptive default. Keeping the field out when unset keeps the request body stable.
+function modeBody(mode?: string): {mode?: string} {
+  return mode === 'focused' || mode === 'explore' ? {mode} : {};
+}
+
 export async function postChat(
   ticker: string,
   message: string,
   token: string | null,
   lang?: string,
   signal?: AbortSignal,
+  mode?: string,
 ): Promise<ChatResponse> {
   return postJson<ChatResponse>(
     `/v1/stocks/${encodeURIComponent(normalizeTicker(ticker))}/chat`,
-    {message, lang: lang === 'zh' ? 'zh' : 'en'},
+    {message, lang: lang === 'zh' ? 'zh' : 'en', ...modeBody(mode)},
     signal,
     token,
   );
@@ -1642,10 +1649,11 @@ export async function postConvChat(
   token: string | null,
   lang?: string,
   signal?: AbortSignal,
+  mode?: string,
 ): Promise<ChatResponse> {
   return postJson<ChatResponse>(
     `/v1/conversations/${encodeURIComponent(id)}/chat`,
-    {message, lang: lang === 'zh' ? 'zh' : 'en'},
+    {message, lang: lang === 'zh' ? 'zh' : 'en', ...modeBody(mode)},
     signal,
     token,
   );
@@ -1667,6 +1675,7 @@ export async function postConvChatStream(
   onToken: (text: string) => void,
   signal?: AbortSignal,
   onStep?: (step: {kind: string; label: string}) => void,
+  mode?: string,
 ): Promise<ChatResponse> {
   let res: Response;
   try {
@@ -1676,7 +1685,7 @@ export async function postConvChatStream(
         'Content-Type': 'application/json',
         ...(token ? {Authorization: `Bearer ${token}`} : {}),
       },
-      body: JSON.stringify({message, lang: lang === 'zh' ? 'zh' : 'en'}),
+      body: JSON.stringify({message, lang: lang === 'zh' ? 'zh' : 'en', ...modeBody(mode)}),
       signal,
     });
   } catch {
