@@ -800,6 +800,10 @@ export const dict: Record<Lang, Record<string, string>> = {
     'states.errorTitle': 'The wind dropped for a moment',
     'states.errorSub': "We couldn't load this feed. Check your connection and try again.",
     'states.retry': 'Try again',
+    'boundary.panelTitle': "This section couldn't load",
+    'boundary.panelSub': 'The rest of the page is fine — try reloading just this part.',
+    'boundary.routeSub': 'Something went wrong on this page. Your data is safe — try again.',
+    'boundary.home': 'Go to homepage',
     // hot list / leaderboards
     'hot.surging': 'Surging',
     'hot.blurbHot':
@@ -1838,6 +1842,10 @@ export const dict: Record<Lang, Record<string, string>> = {
     'states.errorTitle': '信号中断了一下',
     'states.errorSub': '未能加载此内容，请检查网络连接后重试。',
     'states.retry': '重试',
+    'boundary.panelTitle': '该模块加载失败',
+    'boundary.panelSub': '页面其它部分正常 —— 可单独重新加载此模块。',
+    'boundary.routeSub': '此页面出现问题。你的数据是安全的 —— 请重试。',
+    'boundary.home': '返回首页',
     // hot list / leaderboards
     'hot.surging': '飙升',
     'hot.blurbHot': '当前 Reddit 上讨论最多的美股 —— 按热度与势头排名。',

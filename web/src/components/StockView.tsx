@@ -47,6 +47,7 @@ import {
   Sparkline,
 } from '@/components/ui/atoms';
 import {EmptyState, ErrorState, FeedSkeleton} from '@/components/ui/states';
+import {PanelBoundary} from '@/components/ErrorBoundary';
 import {useToast} from '@/components/ui/Toast';
 import {TimelineItem} from '@/components/TimelineItem';
 import {PulseBar} from '@/components/PulseBar';
@@ -663,59 +664,74 @@ export function StockView({ticker}: {ticker: string}) {
           Details (see ANCHOR_TAB). */}
       {/* The anchored cards keep their id + scroll-mt-20 so research-citation
           deep-links still resolve once this tab is active. */}
+      {/* Each heavy data panel is wrapped in its own PanelBoundary so one bad-data
+          card degrades to a compact "couldn't load" note instead of white-screening
+          the whole Overview tab. Anchor <div>s stay OUTSIDE the boundary so
+          research-citation deep-links still resolve even if the panel errors. */}
       <div hidden={topTab !== 'Overview'}>
-        {/* Move-explainer: a move-triggered, evidence-grounded explanation of TODAY's
-            notable move (|change| >= 5%). Shows only on a significant day (hides itself
-            on a quiet day / 404 / sub-threshold) — placed first so a big move is
-            explained up top, above the standing fundamentals/digest. */}
-        <MovementCard ticker={norm} />
-
-        {/* Earnings timing: next (Finnhub) + last reported (SEC 8-K 2.02) dates, up
-            top so a user sees the earnings cadence first. Owns its margin + self-hides
-            (returns null) with no data, so non-earnings tickers leave no gap. */}
-        <EarningsChip ticker={norm} />
+        {/* Move-explainer + earnings chip: tiny self-hiding chips, grouped under one
+            boundary. Move-explainer is move-triggered (|change| >= 5%); earnings shows
+            next (Finnhub) + last reported (SEC 8-K 2.02) dates. */}
+        <PanelBoundary resetKey={norm}>
+          <MovementCard ticker={norm} />
+          <EarningsChip ticker={norm} />
+        </PanelBoundary>
 
         {/* Fundamentals + AI digest, each full-width, above the chart. (They were
             briefly a 2-col grid, but the AI digest's variable length left the
             fundamentals card with a tall empty gap beside it — owner 2026-06-12.) */}
         {/* fundamentals: market cap / P/E / revenue / net income (SEC XBRL; hides for non-US) */}
         <div id="fundamentals" className="scroll-mt-20">
-          <FundamentalsCard ticker={norm} />
+          <PanelBoundary resetKey={norm}>
+            <FundamentalsCard ticker={norm} />
+          </PanelBoundary>
         </div>
         {/* ETF/fund holdings: top positions by weight (SEC Form N-PORT; hides for non-funds) — the
             primary content for an ETF, where company fundamentals are structurally absent */}
         <div id="holdings" className="scroll-mt-20">
-          <EtfHoldingsPanel ticker={norm} />
+          <PanelBoundary resetKey={norm}>
+            <EtfHoldingsPanel ticker={norm} />
+          </PanelBoundary>
         </div>
         {/* dividend profile: yield / payout / DPS / FCF coverage / YoY growth (SEC annual figures;
             hides for non-payers) — the income-investor lens */}
         <div id="dividends" className="scroll-mt-20">
-          <DividendCard ticker={norm} />
+          <PanelBoundary resetKey={norm}>
+            <DividendCard ticker={norm} />
+          </PanelBoundary>
         </div>
         {/* AI digest: daily-cached bullets from news+social (hides when LLM off/empty) */}
-        <AISummaryCard ticker={norm} onOpen={() => setTopTab('Research')} />
+        <PanelBoundary resetKey={norm}>
+          <AISummaryCard ticker={norm} onOpen={() => setTopTab('Research')} />
+        </PanelBoundary>
 
         {/* K-line candlestick chart + indicators — the price-and-indicators anchor */}
         <div className="mb-6">
-          <KLineChart ticker={norm} quote={quote} />
+          <PanelBoundary resetKey={norm}>
+            <KLineChart ticker={norm} quote={quote} />
+          </PanelBoundary>
         </div>
 
         {/* Computed per-stock indicators (latest values, grouped by domain) — the
             readout companion to the chart's client-side overlays + FundamentalsCard;
             hides entirely when no indicators are computable */}
         <div id="indicators" className="scroll-mt-20">
-          <IndicatorsPanel ticker={norm} />
-          <SignalsCard ticker={norm} />
-          <BacktestWidget ticker={norm} />
-          <RelativeStrengthCard ticker={norm} />
-          <EarningsReactionCard ticker={norm} />
-          <ScorecardCard ticker={norm} />
-          <SeasonalityCard ticker={norm} />
+          <PanelBoundary resetKey={norm}>
+            <IndicatorsPanel ticker={norm} />
+            <SignalsCard ticker={norm} />
+            <BacktestWidget ticker={norm} />
+            <RelativeStrengthCard ticker={norm} />
+            <EarningsReactionCard ticker={norm} />
+            <ScorecardCard ticker={norm} />
+            <SeasonalityCard ticker={norm} />
+          </PanelBoundary>
         </div>
 
         {/* pulse: Reddit buzz + news sentiment (renders nothing when empty) */}
         <div id="signals" className="scroll-mt-20">
-          <PulseBar signals={signals} />
+          <PanelBoundary resetKey={norm}>
+            <PulseBar signals={signals} />
+          </PanelBoundary>
         </div>
       </div>
 
@@ -725,7 +741,9 @@ export function StockView({ticker}: {ticker: string}) {
           own tab. The #financials-history anchor lives here. Public data. */}
       <div hidden={topTab !== 'Financials'}>
         <div id="financials-history" className="scroll-mt-20">
-          <FinancialsHistoryTable ticker={norm} />
+          <PanelBoundary resetKey={norm}>
+            <FinancialsHistoryTable ticker={norm} />
+          </PanelBoundary>
         </div>
       </div>
 
@@ -755,7 +773,11 @@ export function StockView({ticker}: {ticker: string}) {
         {/* The AI Deep Research report lives HERE, inline (one home, no page round-trip).
             The standalone /stock/{t}/research page is kept only for PDF export/share.
             Lazy: mounted on first open since it fires an LLM-backed fetch. */}
-        {researchSeen && <DeepResearchView ticker={norm} inline />}
+        {researchSeen && (
+          <PanelBoundary resetKey={norm}>
+            <DeepResearchView ticker={norm} inline />
+          </PanelBoundary>
+        )}
       </div>
 
       {/* ─────────────────────── FILINGS & MONEY TAB ──────────────────────── */}
@@ -771,7 +793,9 @@ export function StockView({ticker}: {ticker: string}) {
             anchor stays so research-report deep-links still resolve. */}
         <div className="mb-6 flex flex-wrap items-center gap-2">
           <div id="short" className="scroll-mt-20">
-            <ShortChip ticker={norm} />
+            <PanelBoundary resetKey={norm}>
+              <ShortChip ticker={norm} />
+            </PanelBoundary>
           </div>
         </div>
 
@@ -782,24 +806,32 @@ export function StockView({ticker}: {ticker: string}) {
             tag. Pure structured data (no LLM) — Go owns every number. Hides on an
             unknown symbol; shows a subtle empty line when a known company has none. */}
         <div id="insider-activity" className="scroll-mt-20">
-          <InsiderActivityCard ticker={norm} />
+          <PanelBoundary resetKey={norm}>
+            <InsiderActivityCard ticker={norm} />
+          </PanelBoundary>
         </div>
 
         {/* Congress trades in this ticker (House Clerk PTRs; hides when none) —
             each member links to their /congress/member/{slug} detail page */}
         <div id="congress" className="scroll-mt-20">
-          <CongressChip ticker={norm} />
+          <PanelBoundary resetKey={norm}>
+            <CongressChip ticker={norm} />
+          </PanelBoundary>
         </div>
 
         {/* Which famous 13F funds hold this ticker (reverse whale lookup; hides
             when none) — each fund links to its /fund/{slug} page */}
         <div id="whales" className="scroll-mt-20">
-          <WhalesChip ticker={norm} />
+          <PanelBoundary resetKey={norm}>
+            <WhalesChip ticker={norm} />
+          </PanelBoundary>
         </div>
 
         {/* Options overview: delayed Cboe P/C, max pain, OI leaders (hides for non-US/no options) */}
         <div id="options" className="scroll-mt-20">
-          <OptionsCard ticker={norm} />
+          <PanelBoundary resetKey={norm}>
+            <OptionsCard ticker={norm} />
+          </PanelBoundary>
         </div>
 
         {/* 8-K material events (current reports) + optional AI summary — moved BELOW the
@@ -808,7 +840,9 @@ export function StockView({ticker}: {ticker: string}) {
             when LLM off / source too thin). Hides on an unknown symbol; shows a subtle empty
             line when a known company has no recent 8-Ks. */}
         <div id="material-events" className="scroll-mt-20">
-          <FilingsCard ticker={norm} />
+          <PanelBoundary resetKey={norm}>
+            <FilingsCard ticker={norm} />
+          </PanelBoundary>
         </div>
 
         {/* SEC company filings feed (10-K/10-Q/8-K/… newest-first) — formerly the
@@ -868,7 +902,9 @@ export function StockView({ticker}: {ticker: string}) {
 
         <div>
           <SectionLabel label={tr('comments.tab')} dark={dark} t={t} />
-          <CommentsPanel ticker={norm} />
+          <PanelBoundary resetKey={norm}>
+            <CommentsPanel ticker={norm} />
+          </PanelBoundary>
         </div>
       </div>
 
@@ -882,17 +918,23 @@ export function StockView({ticker}: {ticker: string}) {
           <div className="grid items-start gap-6 lg:grid-cols-2">
           <div>
             <SectionLabel label={tr('nav.notes')} dark={dark} t={t} />
-            <NotesPanel ticker={norm} />
+            <PanelBoundary resetKey={norm}>
+              <NotesPanel ticker={norm} />
+            </PanelBoundary>
           </div>
 
           <div>
             <SectionLabel label={tr('alerts.title')} dark={dark} t={t} />
-            <AlertsPanel ticker={norm} />
+            <PanelBoundary resetKey={norm}>
+              <AlertsPanel ticker={norm} />
+            </PanelBoundary>
           </div>
 
           <div>
             <SectionLabel label={tr('holdings.title')} dark={dark} t={t} />
-            <HoldingsPanel ticker={norm} quote={quote} cur={cur} />
+            <PanelBoundary resetKey={norm}>
+              <HoldingsPanel ticker={norm} quote={quote} cur={cur} />
+            </PanelBoundary>
           </div>
 
           <div>
