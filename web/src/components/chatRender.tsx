@@ -1,6 +1,6 @@
 'use client';
 
-import {ArrowRight, BarChart3, Check, ChevronDown, ChevronRight, Copy, Eye, FileText, Globe, type LucideIcon, Newspaper, PenLine, StickyNote, Wallet} from 'lucide-react';
+import {ArrowRight, BarChart3, Check, Copy, Eye, FileText, Globe, type LucideIcon, Newspaper, PenLine, StickyNote, Wallet} from 'lucide-react';
 import {useState} from 'react';
 import {FundamentalsCard} from '@/components/FundamentalsCard';
 import {IndicatorHistoryChart} from '@/components/IndicatorHistoryChart';
@@ -82,8 +82,8 @@ const KIND_ICON: Record<string, LucideIcon> = {
  * prose), so this surface is anti-hallucination-safe by construction.
  */
 // ExecStepRow renders ONE gray chain row (a Go-owned tool-step label). `current` pulses the icon
-// (the live action); otherwise a gold check (done). Shared by ExecChain (the collapsed trace) and
-// the interleaved live stream.
+// (the live action); otherwise a gold check (done). Shared by ExecChain (the persisted inline
+// trace groups) and the interleaved live stream.
 export function ExecStepRow({step, current}: {step: ExecStep; current: boolean}) {
   const Icon = KIND_ICON[step.kind];
   return (
@@ -112,33 +112,6 @@ export function ExecChain({steps, running = true, bare = false}: {steps: ExecSte
         <LogoMark size={18} accent="var(--accent)" />
       </div>
       {rows}
-    </div>
-  );
-}
-
-// TraceBlock renders the PERSISTED execution chain on reloaded history: a quiet, collapsed
-// "Steps · N" toggle that expands to the (all-done) chain. Display-only — the server never feeds
-// these labels back to the model.
-function TraceBlock({steps, tr}: {steps: ExecStep[]; tr: (k: string) => string}) {
-  const [open, setOpen] = useState(false);
-  if (!steps || steps.length === 0) return null;
-  return (
-    <div>
-      <button
-        type="button"
-        onClick={() => setOpen(o => !o)}
-        aria-expanded={open}
-        className="tw-chat-iconbtn"
-        style={{display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11.5, fontWeight: 500, color: 'var(--text3)', border: 'none', background: 'transparent', cursor: 'pointer', padding: '2px 7px', borderRadius: 7}}
-      >
-        {open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
-        {tr('chat.trace')} · {steps.length}
-      </button>
-      {open && (
-        <div style={{marginTop: 5, marginLeft: 5}}>
-          <ExecChain steps={steps} running={false} bare />
-        </div>
-      )}
     </div>
   );
 }
@@ -214,7 +187,7 @@ export function MsgRow({m, fallbackTicker, tr, liveItems}: {m: Msg; fallbackTick
             )}
           </div>
         ) : (
-          // DONE / reloaded: the collapsed "Steps · N" trace + the final answer + any widgets.
+          // DONE / reloaded: the persisted blocks in order (narration / inline trace / answer / widgets).
           <>
             {blocks.map((b, i) => <BlockView key={i} block={b} fallbackTicker={fallbackTicker} tr={tr} streaming={false} />)}
             {!m.blocks && m.text && (
@@ -264,8 +237,18 @@ function BlockView({block, fallbackTicker, tr, streaming}: {block: ChatBlock; fa
       </div>
     );
   }
+  // A persisted preamble chunk (the model's narration before a tool call) — plain prose, no caret.
+  if (block.kind === 'narration') {
+    return (
+      <div style={{fontSize: 14, lineHeight: 1.62, color: 'var(--text)'}} className="tw-chat-prose">
+        <Markdown>{block.text ?? ''}</Markdown>
+      </div>
+    );
+  }
+  // A group of tool steps — rendered INLINE (gray rows, done checks) at its position in the turn,
+  // so a reloaded conversation keeps the Claude-style interleave instead of collapsing to the top.
   if (block.kind === 'trace') {
-    return <TraceBlock steps={block.steps ?? []} tr={tr} />;
+    return <ExecChain steps={block.steps ?? []} running={false} bare />;
   }
   const ticker = block.params?.ticker || fallbackTicker;
   return <ChatWidget widget={block.widget ?? ''} ticker={ticker} indicatorId={block.params?.indicator} range={block.params?.range} tr={tr} />;

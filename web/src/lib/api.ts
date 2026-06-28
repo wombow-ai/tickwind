@@ -1527,12 +1527,13 @@ export async function createPortal(token: string | null, signal?: AbortSignal): 
  * UI renders from the real store (the chat layer never ships a widget's numbers).
  */
 export interface ChatBlock {
-  kind: 'text' | 'widget' | 'trace';
+  // 'narration' = a chunk of the model's preamble between tool calls; 'trace' = a group of tool
+  // steps. Both are display-only (the server never feeds them back to the model) and are persisted
+  // INTERLEAVED with the answer so a reloaded turn shows the same Claude-style order it streamed in.
+  kind: 'text' | 'widget' | 'trace' | 'narration';
   text?: string;
   widget?: string;
   params?: Record<string, string>;
-  // Only on a 'trace' block: the persisted execution chain (display-only; the server never feeds
-  // it back to the model). Rendered as a collapsed, expandable trace on reloaded history.
   steps?: {kind: string; label: string}[];
 }
 
