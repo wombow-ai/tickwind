@@ -56,6 +56,11 @@ export type Msg = {role: 'user' | 'assistant'; blocks?: ChatBlock[]; text?: stri
 // (i18n done server-side); the frontend renders it verbatim — never a number, never model text.
 export type ExecStep = {kind: string; label: string};
 
+// LiveItem is one entry of the INTERLEAVED live stream: either a chunk of the model's narration
+// (text, between/after tool calls) or a tool step — rendered in chronological order (Claude-style:
+// narration → action → narration → … → final answer), instead of stacking all steps above the prose.
+export type LiveItem = {kind: 'text'; text: string} | {kind: 'step'; step: ExecStep};
+
 const KIND_ICON: Record<string, LucideIcon> = {
   facts: FileText,
   news: Newspaper,
@@ -76,25 +81,28 @@ const KIND_ICON: Record<string, LucideIcon> = {
  * the live role to the streaming caret. Each label is a Go-owned string (no numbers, no model
  * prose), so this surface is anti-hallucination-safe by construction.
  */
+// ExecStepRow renders ONE gray chain row (a Go-owned tool-step label). `current` pulses the icon
+// (the live action); otherwise a gold check (done). Shared by ExecChain (the collapsed trace) and
+// the interleaved live stream.
+export function ExecStepRow({step, current}: {step: ExecStep; current: boolean}) {
+  const Icon = KIND_ICON[step.kind];
+  return (
+    <div className={'tw-exec-row tw-exec-row-in' + (current ? ' current' : '')}>
+      <span className={'tw-exec-icon' + (current ? ' tw-exec-pulse' : '')}>
+        {current ? Icon ? <Icon size={13} /> : <span style={{width: 5, height: 5, borderRadius: '50%', background: 'currentColor'}} /> : <Check size={13} className="tw-exec-check" />}
+      </span>
+      <span>{step.label}</span>
+    </div>
+  );
+}
+
 export function ExecChain({steps, running = true, bare = false}: {steps: ExecStep[]; running?: boolean; bare?: boolean}) {
   if (steps.length === 0) return null;
   const rows = (
     <div style={{flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 5, paddingTop: bare ? 0 : 4}}>
-      {steps.map((st, i) => {
-          // While the tools run, the last row is the live action (pulses). Once the answer is
-          // streaming (running=false), every row is done (a gold check) so nothing competes with
-          // the streaming caret below.
-          const current = running && i === steps.length - 1;
-          const Icon = KIND_ICON[st.kind];
-          return (
-            <div key={i} className={'tw-exec-row tw-exec-row-in' + (current ? ' current' : '')}>
-              <span className={'tw-exec-icon' + (current ? ' tw-exec-pulse' : '')}>
-                {current ? Icon ? <Icon size={13} /> : <span style={{width: 5, height: 5, borderRadius: '50%', background: 'currentColor'}} /> : <Check size={13} className="tw-exec-check" />}
-              </span>
-              <span>{st.label}</span>
-            </div>
-          );
-        })}
+      {/* While the tools run, the last row is the live action (pulses); once the answer streams
+          (running=false) every row is done (a gold check). */}
+      {steps.map((st, i) => <ExecStepRow key={i} step={st} current={running && i === steps.length - 1} />)}
     </div>
   );
   if (bare) return rows; // inside a persisted message (avatar already shown) → just the rows
@@ -165,7 +173,7 @@ function ThinkingDots() {
   );
 }
 
-export function MsgRow({m, fallbackTicker, tr, liveSteps}: {m: Msg; fallbackTicker: string; tr: (k: string) => string; liveSteps?: ExecStep[]}) {
+export function MsgRow({m, fallbackTicker, tr, liveItems}: {m: Msg; fallbackTicker: string; tr: (k: string) => string; liveItems?: LiveItem[]}) {
   if (m.role === 'user') {
     return (
       <div style={{display: 'flex', justifyContent: 'flex-end'}}>
@@ -177,8 +185,8 @@ export function MsgRow({m, fallbackTicker, tr, liveSteps}: {m: Msg; fallbackTick
   }
   const blocks = dedupeBlocks(m.blocks ?? []);
   const plain = blocks.filter(b => b.kind === 'text').map(b => b.text ?? '').join('\n\n') || m.text || '';
-  const hasContent = plain.trim().length > 0;
-  const hasLive = !!liveSteps && liveSteps.length > 0;
+  const live = m.streaming ? (liveItems ?? []) : [];
+  const lastLive = live.length - 1;
   return (
     <div style={{display: 'flex', gap: 12}}>
       <div style={{flex: 'none', width: 28, height: 28, borderRadius: 8, background: 'var(--surface2)', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center'}}>
@@ -189,22 +197,36 @@ export function MsgRow({m, fallbackTicker, tr, liveSteps}: {m: Msg; fallbackTick
           <span style={{fontSize: 12.5, fontWeight: 600, color: 'var(--text)'}}>{tr('chat.aiName')}</span>
           <span style={{fontSize: 11, color: 'var(--text3)'}}>{tr('chat.justNow')}</span>
         </div>
-        {/* The execution steps render INLINE inside the message (gray, Claude-Code style), above
-            the answer — NOT as a separate row pinned at the top. While streaming they're live
-            (last row pulses); on done a persisted "trace" block takes over (collapsed). */}
-        {hasLive && <ExecChain steps={liveSteps!} running={!!m.streaming} bare />}
-        {m.streaming && !hasLive && !hasContent && <ThinkingDots />}
-        {blocks.map((b, i) => <BlockView key={i} block={b} fallbackTicker={fallbackTicker} tr={tr} streaming={m.streaming} />)}
-        {!m.blocks && m.text && (
-          <div style={{fontSize: 14, lineHeight: 1.62, color: 'var(--text)'}}>
-            <Markdown>{m.text}</Markdown>
+        {m.streaming ? (
+          // LIVE: narration chunks + tool steps INTERLEAVED in chronological order (Claude-style:
+          // a step, its narration, the next step, …, then the final answer). The last item is the
+          // live one — a step pulses, a text chunk carries the streaming caret.
+          <div style={{display: 'flex', flexDirection: 'column', gap: 9}}>
+            {live.length === 0 && <ThinkingDots />}
+            {live.map((it, i) =>
+              it.kind === 'step' ? (
+                <ExecStepRow key={i} step={it.step} current={i === lastLive} />
+              ) : (
+                <div key={i} className={i === lastLive ? 'tw-chat-prose tw-chat-streaming' : 'tw-chat-prose'} style={{fontSize: 14, lineHeight: 1.62, color: 'var(--text)'}}>
+                  <Markdown>{it.text}</Markdown>
+                </div>
+              ),
+            )}
           </div>
-        )}
-        {(!m.streaming || hasContent) && (
-          <div style={{display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', paddingTop: 8, borderTop: '1px solid var(--border)'}}>
-            <span style={{fontSize: 10.5, color: 'var(--text3)', lineHeight: 1.4}}>{tr('chat.disclaimer')}</span>
-            <CopyButton text={plain} tr={tr} />
-          </div>
+        ) : (
+          // DONE / reloaded: the collapsed "Steps · N" trace + the final answer + any widgets.
+          <>
+            {blocks.map((b, i) => <BlockView key={i} block={b} fallbackTicker={fallbackTicker} tr={tr} streaming={false} />)}
+            {!m.blocks && m.text && (
+              <div style={{fontSize: 14, lineHeight: 1.62, color: 'var(--text)'}} className="tw-chat-prose">
+                <Markdown>{m.text}</Markdown>
+              </div>
+            )}
+            <div style={{display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', paddingTop: 8, borderTop: '1px solid var(--border)'}}>
+              <span style={{fontSize: 10.5, color: 'var(--text3)', lineHeight: 1.4}}>{tr('chat.disclaimer')}</span>
+              <CopyButton text={plain} tr={tr} />
+            </div>
+          </>
         )}
       </div>
     </div>

@@ -693,6 +693,9 @@ export interface EtfHoldings {
   as_of: string;
   count: number;
   holdings: EtfHolding[];
+  // True for a KNOWN ETF with no SEC N-PORT filing yet (a brand-new fund) — the panel shows a
+  // brief "holdings appear after the fund's first SEC filing" note instead of hiding.
+  no_filing?: boolean;
 }
 
 /**

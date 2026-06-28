@@ -93,6 +93,7 @@ export const dict: Record<Lang, Record<string, string>> = {
     'etf.title': 'Top holdings',
     'etf.source': 'SEC Form N-PORT',
     'etf.note': 'Largest positions from the fund’s most recent SEC Form N-PORT filing (reported quarterly, filed with a lag). Percentages are of net assets.',
+    'etf.noFiling': 'Holdings will appear here once this fund files its first SEC Form N-PORT portfolio report. Brand-new ETFs typically file within a few months of launch.',
     // per-stock indicators panel
     'ind2.title': 'Indicators',
     'ind2.asOf': 'as of {d}',
@@ -1143,6 +1144,7 @@ export const dict: Record<Lang, Record<string, string>> = {
     'etf.title': '主要持仓',
     'etf.source': 'SEC N-PORT 申报',
     'etf.note': '来自该基金最新的 SEC N-PORT 季度持仓申报(按季披露,申报有滞后);百分比为占基金净值比例。',
+    'etf.noFiling': '该基金向 SEC 提交首份 N-PORT 持仓申报后,持仓将显示在这里。全新 ETF 通常在上市后几个月内首次申报。',
     // per-stock indicators panel
     'ind2.title': '指标',
     'ind2.asOf': '数据截至 {d}',

@@ -7,7 +7,7 @@ import {useT} from '@/lib/i18n';
 import {useDark} from '@/lib/theme';
 import {cx, tok} from '@/lib/ui';
 
-type Status = 'loading' | 'ready' | 'hidden';
+type Status = 'loading' | 'ready' | 'hidden' | 'note';
 
 /**
  * Top-holdings panel for an ETF/fund detail page: the largest positions (name + % of net
@@ -28,18 +28,28 @@ export function EtfHoldingsPanel({ticker}: {ticker: string}) {
     getEtfHoldings(ticker, c.signal).then(
       d => {
         if (!d.holdings || d.holdings.length === 0) {
-          setStatus('hidden');
+          // A KNOWN ETF with no SEC filing yet → show a brief note; otherwise hide.
+          setStatus(d.no_filing ? 'note' : 'hidden');
           return;
         }
         setData(d);
         setStatus('ready');
       },
-      () => setStatus('hidden'), // 404 (not a fund) / no data → hide the panel
+      () => setStatus('hidden'), // 404 (not a fund) / error → hide the panel
     );
     return () => c.abort();
   }, [ticker]);
 
   if (status === 'hidden') return null;
+
+  if (status === 'note') {
+    return (
+      <section className={cx('mb-6 rounded-2xl border p-4', t.card, t.border, t.soft)}>
+        <h2 className={cx('mb-1.5 text-[14px] font-bold', t.text)}>{tr('etf.title')}</h2>
+        <p className={cx('text-[12.5px] leading-relaxed', t.faint)}>{tr('etf.noFiling')}</p>
+      </section>
+    );
+  }
 
   if (status === 'loading' || !data) {
     return (

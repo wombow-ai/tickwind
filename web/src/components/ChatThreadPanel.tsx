@@ -2,7 +2,7 @@
 
 import {Activity, BarChart3, Eye, type LucideIcon, Plus, Scale, Send, TrendingDown, TrendingUp, Wallet} from 'lucide-react';
 import {useCallback, useEffect, useRef, useState} from 'react';
-import {type ExecStep, MsgRow, type Msg} from '@/components/chatRender';
+import {type ExecStep, type LiveItem, MsgRow, type Msg} from '@/components/chatRender';
 import {BrandLoader} from '@/components/ui/BrandLoader';
 import {LogoMark} from '@/components/ui/atoms';
 import {type ChatResponse, clearChat, createConversation, getChatHistory, getConvHistory, postChat, postConvChatStream} from '@/lib/api';
@@ -74,7 +74,10 @@ export function ChatThreadPanel({source, onActivity, onMeter, onCreated}: {sourc
   // skeleton instead of the new-chat welcome — otherwise switching to a history thread flashes
   // the "New Chat" screen until the messages arrive.
   const [threadLoading, setThreadLoading] = useState(false);
-  const [steps, setSteps] = useState<ExecStep[]>([]); // live ReAct execution chain (ephemeral)
+  // Live, ordered ReAct stream (ephemeral): narration chunks + tool steps interleaved as they
+  // arrive, so the message renders Claude-style (action → narration → … → answer) instead of all
+  // steps stacked above the prose. Reconciled to the persisted blocks on `done`.
+  const [liveItems, setLiveItems] = useState<LiveItem[]>([]);
   const [err, setErr] = useState(false);
   const [meter, setMeter] = useState<{used: number; limit: number} | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
@@ -132,7 +135,7 @@ export function ChatThreadPanel({source, onActivity, onMeter, onCreated}: {sourc
   useEffect(() => {
     const el = listRef.current;
     if (el) el.scrollTop = el.scrollHeight;
-  }, [messages, sending, steps]);
+  }, [messages, sending, liveItems]);
 
   const send = useCallback(
     async (raw: string) => {
@@ -140,7 +143,7 @@ export function ChatThreadPanel({source, onActivity, onMeter, onCreated}: {sourc
       if (!msg || sending) return;
       setErr(false);
       setSending(true);
-      setSteps([]);
+      setLiveItems([]);
       setInput('');
       setMessages(m => {
         const withUser = [...m, {role: 'user' as const, text: msg}];
@@ -170,22 +173,16 @@ export function ChatThreadPanel({source, onActivity, onMeter, onCreated}: {sourc
           } else {
             convId = source.id;
           }
-          // Stream: append tokens to a live assistant message; `done` reconciles with the
-          // authoritative advice-filtered blocks (so the anti-hallucination filter wins).
+          // Stream: build an ORDERED liveItems list as narration tokens + tool steps arrive, so the
+          // message renders interleaved (Claude-style). `done` reconciles with the authoritative
+          // persisted blocks (collapsed trace + final answer + widgets).
           const onTok = (tok: string) => {
-            setMessages(m => {
-              const next = [...m];
-              const last = next[next.length - 1];
-              // Accumulate the live tokens into a single text BLOCK (not the `text` field) so the
-              // streaming render and the final render use the SAME path (BlockView → Markdown) —
-              // `done` then updates that block in place instead of remounting the prose (no flash).
-              if (last && last.role === 'assistant' && last.streaming) {
-                const prev = last.blocks?.[0]?.text ?? '';
-                next[next.length - 1] = {role: 'assistant', streaming: true, blocks: [{kind: 'text', text: prev + tok}]};
-              } else {
-                next.push({role: 'assistant', streaming: true, blocks: [{kind: 'text', text: tok}]});
+            setLiveItems(items => {
+              const last = items[items.length - 1];
+              if (last && last.kind === 'text') {
+                return [...items.slice(0, -1), {kind: 'text', text: last.text + tok}];
               }
-              return next;
+              return [...items, {kind: 'text', text: tok}];
             });
           };
           const popStreaming = () =>
@@ -195,8 +192,8 @@ export function ChatThreadPanel({source, onActivity, onMeter, onCreated}: {sourc
               if (last && last.role === 'assistant' && last.streaming) next.pop();
               return next;
             });
-          // Each tool action streams in as a gray execution-chain step (Go-owned label).
-          const onStep = (st: ExecStep) => setSteps(s => [...s, st]);
+          // Each tool action streams in as a gray execution-chain step (Go-owned label), in order.
+          const onStep = (st: ExecStep) => setLiveItems(items => [...items, {kind: 'step', step: st}]);
           try {
             res = await postConvChatStream(convId, msg, token, lang, onTok, undefined, onStep);
           } catch {
@@ -205,7 +202,7 @@ export function ChatThreadPanel({source, onActivity, onMeter, onCreated}: {sourc
             // heartbeats to keep the connection alive, it almost always succeeds. Clear the partial
             // streamed placeholder + the partial chain first so the retry starts clean.
             popStreaming();
-            setSteps([]);
+            setLiveItems([]);
             // Re-push a fresh placeholder so the retried steps + answer still stream inline.
             setMessages(m => [...m, {role: 'assistant' as const, streaming: true, blocks: []}]);
             res = await postConvChatStream(convId, msg, token, lang, onTok, undefined, onStep);
@@ -241,7 +238,7 @@ export function ChatThreadPanel({source, onActivity, onMeter, onCreated}: {sourc
         });
       } finally {
         setSending(false);
-        setSteps([]); // clear the live steps; the persisted trace block now carries them
+        setLiveItems([]); // clear the live stream; the persisted trace block now carries the steps
       }
     },
     [key, lang, sending, getToken, onActivity, onMeter, onCreated], // eslint-disable-line react-hooks/exhaustive-deps
@@ -335,11 +332,11 @@ export function ChatThreadPanel({source, onActivity, onMeter, onCreated}: {sourc
         ) : (
           <div style={{maxWidth: 760, margin: '0 auto', padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: 22}}>
             {messages.map((m, i) => {
-              // The live execution steps render INLINE inside the streaming assistant message
+              // The live, interleaved ReAct stream (steps + narration) renders inside the streaming assistant message
               // (its placeholder is pushed on send), so they read as part of the answer, not a
               // separate row pinned above it. On done, a collapsed "trace" block takes over.
-              const live = m.streaming && i === messages.length - 1 ? steps : undefined;
-              return <MsgRow key={i} m={m} fallbackTicker={fallbackTicker} tr={tr} liveSteps={live} />;
+              const live = m.streaming && i === messages.length - 1 ? liveItems : undefined;
+              return <MsgRow key={i} m={m} fallbackTicker={fallbackTicker} tr={tr} liveItems={live} />;
             })}
             {err && <p style={{fontSize: 12.5, color: 'var(--down)'}}>{tr('chat.error')}</p>}
           </div>
