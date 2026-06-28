@@ -30,3 +30,30 @@ func TestDeriveChatTitle(t *testing.T) {
 		t.Errorf("CJK truncation = %d runes, want 49", len([]rune(got)))
 	}
 }
+
+// TestAssistantProseSkipsTrace locks the critical invariant for the persisted execution chain:
+// a stored assistant message's display-only "trace" block (the gray ReAct steps) is NEVER fed
+// back to the model on a later turn — assistantProse joins ONLY the "text" blocks.
+func TestAssistantProseSkipsTrace(t *testing.T) {
+	// A stored assistant message: a trace block (steps) + a widget + the prose.
+	stored := `[{"kind":"trace","steps":[{"kind":"facts","label":"Reading AAPL valuation"},{"kind":"web","label":"Searching the web for NVDA earnings"}]},{"kind":"widget","widget":"valuation_table","params":{"ticker":"AAPL"}},{"kind":"text","text":"P/E (TTM) is 34.2x."}]`
+	got := assistantProse(stored)
+	if got != "P/E (TTM) is 34.2x." {
+		t.Fatalf("assistantProse = %q, want only the text block", got)
+	}
+	// The step labels must NOT leak into the LLM context.
+	for _, bad := range []string{"Reading AAPL", "Searching the web", "valuation_table"} {
+		if contains(got, bad) {
+			t.Errorf("trace/widget content leaked into LLM context: %q", got)
+		}
+	}
+}
+
+func contains(s, sub string) bool {
+	for i := 0; i+len(sub) <= len(s); i++ {
+		if s[i:i+len(sub)] == sub {
+			return true
+		}
+	}
+	return false
+}

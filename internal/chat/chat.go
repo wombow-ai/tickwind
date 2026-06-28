@@ -224,10 +224,14 @@ func (s *Service) Enabled() bool { return s.llm != nil && s.llm.Enabled() }
 // Block is one ordered piece of an assistant answer: prose text or a rendered widget
 // reference (the frontend draws the real widget from the store). Persisted as JSON.
 type Block struct {
-	Kind   string            `json:"kind"` // "text" | "widget"
+	Kind   string            `json:"kind"` // "text" | "widget" | "trace"
 	Text   string            `json:"text,omitempty"`
 	Widget string            `json:"widget,omitempty"`
 	Params map[string]string `json:"params,omitempty"`
+	// Steps is set only on a "trace" block — the persisted execution chain for reloaded history.
+	// It is DISPLAY-ONLY: assistantProse reads only "text" blocks, so a trace never re-enters the
+	// model's context on a later turn (the gray labels are not content/instructions to the LLM).
+	Steps []Step `json:"steps,omitempty"`
 }
 
 // Answer is the assistant's reply: ordered blocks (prose then any surfaced widgets) plus
@@ -385,6 +389,17 @@ func (s *Service) AnswerStream(ctx context.Context, userID, anchorTicker, lang s
 	tools := toolSpecs(lang, general, hasUserData, hasWeb, hasETF)
 	ts := &turnState{}
 	var total enrich.Usage
+	var trace []Step
+	// finishStream wraps finish() and PREPENDS the persisted execution-chain trace (a display-only
+	// "trace" block) so a reloaded conversation can show what the assistant did. assistantProse
+	// reads only "text" blocks, so the trace NEVER re-enters the model's context on a later turn.
+	finishStream := func(content string) Answer {
+		a := s.finish(content, ts, total, lang)
+		if len(trace) > 0 {
+			a.Blocks = append([]Block{{Kind: "trace", Steps: trace}}, a.Blocks...)
+		}
+		return a
+	}
 
 	for iter := 0; iter < maxToolIters; iter++ {
 		content, calls, usage, err := s.llm.ChatStream(ctx, msgs, tools, s.model, onToken)
@@ -393,16 +408,17 @@ func (s *Service) AnswerStream(ctx context.Context, userID, anchorTicker, lang s
 			return Answer{}, err
 		}
 		if len(calls) == 0 {
-			return s.finish(content, ts, total, lang), nil
+			return finishStream(content), nil
 		}
 		msgs = append(msgs, enrich.ChatMessage{Role: "assistant", Content: content, ToolCalls: calls})
 		for _, c := range calls {
 			// Surface the tool action as a live execution-chain step BEFORE it runs (shows the
 			// intent; no tool result exists yet, so nothing can leak). Unknown tool → no step.
-			if onStep != nil {
-				if st, ok := stepFor(c, anchorTicker, lang); ok {
+			if st, ok := stepFor(c, anchorTicker, lang); ok {
+				if onStep != nil {
 					onStep(st)
 				}
+				trace = append(trace, st) // also collect for the persisted (reloadable) trace
 			}
 			msgs = append(msgs, enrich.ChatMessage{
 				Role:       "tool",
@@ -417,7 +433,7 @@ func (s *Service) AnswerStream(ctx context.Context, userID, anchorTicker, lang s
 	if err != nil {
 		return Answer{}, err
 	}
-	return s.finish(content, ts, total, lang), nil
+	return finishStream(content), nil
 }
 
 // finish assembles the final answer: the advice-filtered prose (or a redirect when the

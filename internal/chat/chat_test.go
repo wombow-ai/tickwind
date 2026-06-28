@@ -929,3 +929,32 @@ func TestBackstopModeBlind(t *testing.T) {
 		}
 	}
 }
+
+// TestAnswerStreamTrace asserts the streaming path PERSISTS the execution chain as a leading,
+// display-only "trace" block (so reloaded history can show what the assistant did).
+func TestAnswerStreamTrace(t *testing.T) {
+	llm := &scriptedLLM{enabled: true, replies: []reply{
+		{calls: []enrich.ChatToolCall{{ID: "c1", Name: "get_facts", Arguments: `{"section":"valuation"}`}}},
+		{content: "P/E is 31.2x."},
+	}}
+	svc := NewService(llm, fakeFacts{sampleSheet()}, nil, "")
+	ans, err := svc.AnswerStream(context.Background(), "u", "AAPL", "en", nil, "valuation?", true, "", nil, nil)
+	if err != nil {
+		t.Fatalf("AnswerStream: %v", err)
+	}
+	if len(ans.Blocks) == 0 || ans.Blocks[0].Kind != "trace" || len(ans.Blocks[0].Steps) != 1 {
+		t.Fatalf("want a leading trace block with 1 step, got %+v", ans.Blocks)
+	}
+	if ans.Blocks[0].Steps[0].Kind != "facts" {
+		t.Errorf("trace step kind = %q, want facts", ans.Blocks[0].Steps[0].Kind)
+	}
+	// A direct (no-tool) answer has NO trace block.
+	llm2 := &scriptedLLM{enabled: true, replies: []reply{{content: "hi"}}}
+	svc2 := NewService(llm2, fakeFacts{sampleSheet()}, nil, "")
+	ans2, _ := svc2.AnswerStream(context.Background(), "u", "AAPL", "en", nil, "hi", true, "", nil, nil)
+	for _, b := range ans2.Blocks {
+		if b.Kind == "trace" {
+			t.Error("a no-tool answer must not carry a trace block")
+		}
+	}
+}
