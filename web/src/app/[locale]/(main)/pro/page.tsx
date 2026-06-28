@@ -4,6 +4,7 @@ import {ArrowRight, Check, Crown, Loader2, Settings as SettingsIcon, ShieldCheck
 import {useEffect, useState} from 'react';
 import Link from '@/components/LocalLink';
 import {createCheckout, createPortal, trackEvent} from '@/lib/api';
+import {DEMO_REPORT_PATH} from '@/lib/config';
 import {useAuth} from '@/lib/auth';
 import {useEntitlement} from '@/lib/entitlement';
 import {useT} from '@/lib/i18n';
@@ -177,6 +178,11 @@ export default function ProPage() {
           </Link>
         )}
         {err && <p className={cx('mt-2 text-center text-[12px]', dark ? 'text-rose-400' : 'text-rose-500')}>{tr('pro.err')}</p>}
+        {/* Let a prospect read one COMPLETE deep report (the AAPL demo) before paying. */}
+        <Link href={DEMO_REPORT_PATH} className={cx('mt-3 flex items-center justify-center gap-1 text-[12.5px] font-semibold', dark ? 'text-teal-300' : 'text-teal-600')}>
+          {tr('pro.demo')}
+          <ArrowRight size={13} />
+        </Link>
         <p className={cx('mt-3 text-center text-[11px]', t.faint)}>{tr('pro.cancel')}</p>
       </section>
       )}

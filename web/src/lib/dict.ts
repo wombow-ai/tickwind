@@ -363,6 +363,7 @@ export const dict: Record<Lang, Record<string, string>> = {
     'deep.paywall.title': 'Unlock the full deep report',
     'deep.paywall.body': "You're viewing the free preview — the overview and one section. Tickwind Pro unlocks every section, the bull & bear verdict, on-demand refresh, and PDF export. Every figure stays sourced from public data — Pro just opens the full read.",
     'deep.paywall.cta': 'See Pro plans',
+    'deep.paywall.demo': 'See a full example (AAPL)',
     // Product B — personalized AI chat
     'chat.entry': 'Ask your own question',
     'chat.entry.sub': 'Pro · personalized AI analysis grounded in {t}',
@@ -455,6 +456,7 @@ export const dict: Record<Lang, Record<string, string>> = {
     'pro.feat6': 'Backtest any signal rule — historical win rate & average forward return',
     'pro.trust': 'AI writes the analysis; it never invents a number — every figure is drawn from public filings and sourced.',
     'pro.cta': 'Subscribe',
+    'pro.demo': 'See a full example report first (AAPL)',
     'pro.ctaLogin': 'Log in to subscribe',
     'pro.err': "Couldn't start checkout — please try again.",
     'pro.cancel': 'Cancel anytime.',
@@ -1410,6 +1412,7 @@ export const dict: Record<Lang, Record<string, string>> = {
     'deep.paywall.title': '解锁完整深度研报',
     'deep.paywall.body': '你正在看免费预览——概览 + 一个板块。Tickwind Pro 解锁全部板块、多空双向解读、按需刷新和 PDF 导出。每个数字依旧来自公开数据有出处——Pro 只是为你打开完整阅读。',
     'deep.paywall.cta': '查看 Pro 方案',
+    'deep.paywall.demo': '看一份完整示例(AAPL)',
     // Product B — 个性化 AI 对话
     'chat.entry': '生成个性化 AI 分析',
     'chat.entry.sub': 'Pro · 基于 {t} 的个性化 AI 分析',
@@ -1502,6 +1505,7 @@ export const dict: Record<Lang, Record<string, string>> = {
     'pro.feat6': '回测任意信号规则——历史胜率与平均后续收益',
     'pro.trust': 'AI 只负责分析、从不编造数字——每个数字都源自公开披露、有出处。',
     'pro.cta': '订阅',
+    'pro.demo': '先看一份完整示例报告(AAPL)',
     'pro.ctaLogin': '登录后订阅',
     'pro.err': '无法发起结账——请重试。',
     'pro.cancel': '随时可取消。',

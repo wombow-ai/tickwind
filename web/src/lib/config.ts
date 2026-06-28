@@ -1,6 +1,19 @@
 /** Static app configuration. */
 
 /**
+ * Evergreen DEMO deep reports — mega-caps whose deep research report is fully unlocked to
+ * EVERYONE (incl. anon prospects), so the FE fetches it even when logged out. Must mirror the
+ * backend's demoReportTickers (internal/api/api.go). A mismatch only degrades gracefully (an
+ * anon fetch of a non-demo ticker just 401s → the anon login gate). Exactly one by design.
+ */
+const DEMO_REPORT_TICKERS = new Set(['AAPL']);
+export function isDemoReportTicker(ticker: string): boolean {
+  return DEMO_REPORT_TICKERS.has((ticker || '').toUpperCase().trim());
+}
+/** The canonical demo report URL (path only; prefix with the locale where needed). */
+export const DEMO_REPORT_PATH = '/stock/AAPL/research';
+
+/**
  * Popular US tickers shown on the public board to anonymous visitors, so the
  * entry page is data-first (no marketing page). Keep this in sync with the
  * backend's default `WATCHLIST` env so every tile has live data to show.

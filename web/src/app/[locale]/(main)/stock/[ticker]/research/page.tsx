@@ -1,6 +1,6 @@
 import type {Metadata} from 'next';
 import {ApiError, getStock, type Security} from '@/lib/api';
-import {SITE_URL, langAlternates} from '@/lib/config';
+import {SITE_URL, isDemoReportTicker, langAlternates} from '@/lib/config';
 import {isLocale, LOCALES} from '@/lib/locale';
 import {popularTickers} from '@/lib/pseo';
 import {DeepResearchView} from '@/components/DeepResearchView';
@@ -48,18 +48,23 @@ export async function generateMetadata({params}: Params): Promise<Metadata> {
   const loc = isLocale(locale) ? locale : 'en';
   const sec = await fetchSecurity(t);
   const name = sec?.name && sec.name !== t ? sec.name : t;
+  const demo = isDemoReportTicker(t); // the evergreen free example report — indexable + no login copy
   const title =
     loc === 'zh' ? `${name} · AI 深度研报` : `${name} · AI Deep Research`;
+  const description = demo
+    ? loc === 'zh'
+      ? `${name} 的 AI 深度研报(完整示例,免费):估值、基本面、技术、资金面与情绪面,数字均来自公开数据。非投资建议。`
+      : `A complete AI deep-research example for ${name}: valuation, fundamentals, technicals, smart-money and sentiment — every figure from public data, free to read. Not investment advice.`
+    : loc === 'zh'
+      ? `${name} 的 AI 深度研报:估值、基本面、技术、资金面与情绪面分析,数字均来自公开数据。登录解锁。非投资建议。`
+      : `AI deep-research report for ${name}: valuation, fundamentals, technicals, smart-money and sentiment — every figure from public data. Log in to unlock. Not investment advice.`;
   return {
     title,
-    description:
-      loc === 'zh'
-        ? `${name} 的 AI 深度研报:估值、基本面、技术、资金面与情绪面分析,数字均来自公开数据。登录解锁。非投资建议。`
-        : `AI deep-research report for ${name}: valuation, fundamentals, technicals, smart-money and sentiment — every figure from public data. Log in to unlock. Not investment advice.`,
+    description,
     alternates: langAlternates(`/stock/${encodeURIComponent(t)}/research`, loc),
-    // Gated, login-required, per-user content — keep it out of the index but let
-    // crawlers follow the link back to the public stock page.
-    robots: {index: false, follow: true},
+    // The demo report is a complete public example → indexable (a showcase SEO page). Every
+    // other report is gated/per-user → noindex,follow (crawlers still reach the stock page).
+    robots: demo ? {index: true, follow: true} : {index: false, follow: true},
   };
 }
 

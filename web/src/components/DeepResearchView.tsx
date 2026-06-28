@@ -21,6 +21,7 @@ import {
   type ResearchSection,
   trackEvent,
 } from '@/lib/api';
+import {DEMO_REPORT_PATH, isDemoReportTicker} from '@/lib/config';
 import {useAuth} from '@/lib/auth';
 import {useEntitlement} from '@/lib/entitlement';
 import {useLang, useT} from '@/lib/i18n';
@@ -118,8 +119,8 @@ export function DeepResearchView({ticker, inline = false}: {ticker: string; inli
       setState('auth-wait');
       return;
     }
-    if (!user) {
-      setState('anon'); // do NOT call the gated endpoint when logged out
+    if (!user && !isDemoReportTicker(ticker)) {
+      setState('anon'); // do NOT call the gated endpoint when logged out (except the demo report)
       return;
     }
 
@@ -424,16 +425,23 @@ function PaywallBanner({dark, t, tr}: {dark: boolean; t: Tokens; tr: (key: strin
         {tr('deep.paywall.title')}
       </h2>
       <p className={cx('mt-1.5 text-[12.5px]', t.sub)}>{tr('deep.paywall.body')}</p>
-      <Link
-        href="/pro"
-        className={cx(
-          'mt-3 inline-flex items-center gap-1 rounded-full px-4 py-1.5 text-[12.5px] font-semibold',
-          btnPrimary(dark),
-        )}
-      >
-        {tr('deep.paywall.cta')}
-        <ArrowRight size={13} />
-      </Link>
+      <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2">
+        <Link
+          href="/pro"
+          className={cx(
+            'inline-flex items-center gap-1 rounded-full px-4 py-1.5 text-[12.5px] font-semibold',
+            btnPrimary(dark),
+          )}
+        >
+          {tr('deep.paywall.cta')}
+          <ArrowRight size={13} />
+        </Link>
+        {/* Let a prospect read ONE complete report (the AAPL demo) before deciding. */}
+        <Link href={DEMO_REPORT_PATH} className={cx('inline-flex items-center gap-1 text-[12.5px] font-semibold', dark ? 'text-violet-300' : 'text-violet-600')}>
+          {tr('deep.paywall.demo')}
+          <ArrowRight size={13} />
+        </Link>
+      </div>
     </section>
   );
 }
