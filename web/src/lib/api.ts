@@ -1738,9 +1738,20 @@ export async function postConvChatStream(
   return done;
 }
 
-/** Current monthly chat TOKEN usage (GET /v1/chat/usage) for the hub quota bar on load. */
-export async function getChatUsage(token: string | null, signal?: AbortSignal): Promise<{used: number; limit: number}> {
-  return getJson<{used: number; limit: number}>('/v1/chat/usage', signal, token);
+/** Chat TOKEN usage for the hub quota bar: tier-aware used/limit + the window reset date,
+ *  plus (Pro) the subscription renewal/expiry date so a lapsing Pro gets a renew hint. */
+export interface ChatUsage {
+  used: number;
+  limit: number;
+  tier?: 'pro' | 'free';
+  period?: 'month' | 'week';
+  reset_at?: string; // RFC3339 — when the quota window rolls over
+  subscription_end?: string; // Pro: current period end (RFC3339)
+  cancel_at_period_end?: boolean; // Pro: set to cancel → reverts to free at period end
+}
+
+export async function getChatUsage(token: string | null, signal?: AbortSignal): Promise<ChatUsage> {
+  return getJson<ChatUsage>('/v1/chat/usage', signal, token);
 }
 
 /** A conversation's persisted messages (GET /v1/conversations/{id}/chat). */

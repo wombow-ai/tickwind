@@ -8,6 +8,7 @@ import Link from '@/components/LocalLink';
 import {BrandLoader} from '@/components/ui/BrandLoader';
 import {LogoMark} from '@/components/ui/atoms';
 import {
+  type ChatUsage,
   type Conversation,
   deleteConversation,
   getChatUsage,
@@ -75,7 +76,13 @@ export function ChatHub() {
   const [loading, setLoading] = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [query, setQuery] = useState('');
-  const [meter, setMeter] = useState<{used: number; limit: number} | null>(null);
+  const [meter, setMeter] = useState<ChatUsage | null>(null);
+  // The per-turn meter (from the stream's done event) carries only {used,limit}; merge it so the
+  // window reset date + Pro subscription dates (fetched once on load) survive across messages.
+  const mergeMeter = useCallback(
+    (m: {used: number; limit: number}) => setMeter((prev) => (prev ? {...prev, ...m} : m)),
+    [],
+  );
   // selectedId === null → a NEW-chat DRAFT (the default landing). draftAnchor anchors it to a
   // stock when arriving from a stock page (?ticker=); the conversation is created on first send.
   const [draftAnchor, setDraftAnchor] = useState('');
@@ -100,7 +107,7 @@ export function ChatHub() {
         const list = await listConversations(token);
         // Quota is tier-aware server-side (Pro → monthly bucket for the meter; free → weekly
         // bucket for the low-quota nudge), so fetch it for both tiers on load.
-        let usage: {used: number; limit: number} | null = null;
+        let usage: ChatUsage | null = null;
         try {
           usage = await getChatUsage(token);
         } catch {
@@ -289,15 +296,30 @@ export function ChatHub() {
             {/* AI-quota bar is Pro-only — free users chat on a small hidden taste. */}
             {isPro && meter && (() => {
               const pct = Math.min(100, Math.round((meter.used / Math.max(1, meter.limit)) * 100));
+              const fmtDate = (iso?: string) =>
+                iso ? new Date(iso).toLocaleDateString(locale === 'zh' ? 'zh-CN' : 'en-US', {month: 'short', day: 'numeric'}) : '';
+              const ending = !!meter.cancel_at_period_end && !!meter.subscription_end;
               return (
-                <div title={`${meter.used} / ${meter.limit}`}>
-                  <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6}}>
-                    <span style={{fontSize: 11.5, color: 'var(--text2)'}}>{tr('chat.hub.usage')}</span>
-                    <span style={{fontSize: 11.5, fontFamily: CHAT_MONO, color: pct >= 100 ? 'var(--down)' : 'var(--text)', fontWeight: 500}}>{tr('chat.hub.usedPct').replace('{p}', String(pct))}</span>
+                <div style={{display: 'flex', flexDirection: 'column', gap: 6}}>
+                  <div title={`${meter.used} / ${meter.limit}`}>
+                    <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6}}>
+                      <span style={{fontSize: 11.5, color: 'var(--text2)'}}>{tr('chat.hub.usage')}</span>
+                      <span style={{fontSize: 11.5, fontFamily: CHAT_MONO, color: pct >= 100 ? 'var(--down)' : 'var(--text)', fontWeight: 500}}>{tr('chat.hub.usedPct').replace('{p}', String(pct))}</span>
+                    </div>
+                    <div style={{height: 5, borderRadius: 4, background: 'var(--surface2)', overflow: 'hidden'}}>
+                      <div style={{height: '100%', width: `${pct}%`, borderRadius: 4, background: pct >= 100 ? 'var(--down)' : 'var(--accent)'}} />
+                    </div>
                   </div>
-                  <div style={{height: 5, borderRadius: 4, background: 'var(--surface2)', overflow: 'hidden'}}>
-                    <div style={{height: '100%', width: `${pct}%`, borderRadius: 4, background: pct >= 100 ? 'var(--down)' : 'var(--accent)'}} />
-                  </div>
+                  {meter.reset_at && (
+                    <span style={{fontSize: 10.5, color: 'var(--text3)'}}>{tr('chat.hub.resets').replace('{d}', fmtDate(meter.reset_at))}</span>
+                  )}
+                  {ending ? (
+                    <Link href={localizedPath(locale, '/settings#subscription')} onClick={() => setSidebarOpen(false)} style={{fontSize: 10.5, lineHeight: 1.4, color: 'var(--accent2)', textDecoration: 'none', fontWeight: 600}}>
+                      {tr('chat.hub.proEnding').replace('{d}', fmtDate(meter.subscription_end))}
+                    </Link>
+                  ) : meter.subscription_end ? (
+                    <span style={{fontSize: 10.5, color: 'var(--text3)'}}>{tr('chat.hub.proRenews').replace('{d}', fmtDate(meter.subscription_end))}</span>
+                  ) : null}
                 </div>
               );
             })()}
@@ -338,11 +360,11 @@ export function ChatHub() {
           <div style={{flex: 1, minHeight: 0, overflow: 'hidden'}}>
             <div style={{height: '100%'}}>
               {selected ? (
-                <ChatThreadPanel source={{kind: 'conversation', id: selected.id, anchorTicker: selected.anchor_ticker}} onActivity={refresh} onMeter={setMeter} />
+                <ChatThreadPanel source={{kind: 'conversation', id: selected.id, anchorTicker: selected.anchor_ticker}} onActivity={refresh} onMeter={mergeMeter}/>
               ) : (
                 // NEW-chat draft: shows the suggestion chips + composer (no auto-asked question,
                 // no auto-opened thread); the conversation is created on the first send.
-                <ChatThreadPanel source={{kind: 'draft', anchorTicker: draftAnchor || undefined}} onMeter={setMeter} onCreated={onDraftCreated} />
+                <ChatThreadPanel source={{kind: 'draft', anchorTicker: draftAnchor || undefined}} onMeter={mergeMeter} onCreated={onDraftCreated} />
               )}
             </div>
           </div>
