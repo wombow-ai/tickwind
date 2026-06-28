@@ -144,7 +144,7 @@ func (c *Client) lookup(ctx context.Context, ticker string) (tickerInfo, error) 
 			return info, nil
 		}
 	}
-	return tickerInfo{}, fmt.Errorf("edgar: ticker %q not found (US-listed only)", ticker)
+	return tickerInfo{}, fmt.Errorf("edgar: ticker %q not found (US-listed only): %w", ticker, ErrTickerNotFound)
 }
 
 // dotToHyphen converts the canonical dot class/preferred suffix back to the

@@ -1692,6 +1692,10 @@ type etfHoldingsResp struct {
 	AsOf     time.Time          `json:"as_of"`
 	Count    int                `json:"count"`
 	Holdings []edgar.ETFHolding `json:"holdings"`
+	// NoFiling is true for a KNOWN ETF/fund that has no SEC N-PORT holdings filing yet (e.g. a
+	// brand-new fund SEC hasn't mapped). The frontend shows a brief "holdings appear after the
+	// fund's first SEC filing" note instead of hiding the panel (a clean state, not a 502).
+	NoFiling bool `json:"no_filing,omitempty"`
 }
 
 // getETFHoldings serves a fund/ETF's largest disclosed positions (SEC Form N-PORT-P). Facts only —
@@ -1704,8 +1708,9 @@ func (s *Server) getETFHoldings(w http.ResponseWriter, r *http.Request) {
 	}
 	ticker := strings.ToUpper(strings.TrimSpace(r.PathValue("ticker")))
 	// Cheap pre-check: only funds/ETFs file N-PORT. If the symbol directory KNOWS this exact ticker
-	// and it is not an ETF, skip the SEC round-trip. An unknown ticker falls through (the fetch
-	// self-guards with ErrNoNPORT).
+	// and it is not an ETF, skip the SEC round-trip. A ticker the directory KNOWS is an ETF sets
+	// knownETF, so a "no filing yet" outcome returns a clean note (not a 404/502).
+	knownETF := false
 	if s.symbols != nil {
 		for _, h := range s.symbols.Search(ticker, 5) {
 			if strings.ToUpper(h.Ticker) == ticker {
@@ -1713,6 +1718,7 @@ func (s *Server) getETFHoldings(w http.ResponseWriter, r *http.Request) {
 					writeJSON(w, http.StatusNotFound, errBody(ticker+" is not an ETF"))
 					return
 				}
+				knownETF = true
 				break
 			}
 		}
@@ -1723,7 +1729,14 @@ func (s *Server) getETFHoldings(w http.ResponseWriter, r *http.Request) {
 	}
 	holdings, asOf, err := s.etf.ETFHoldings(r.Context(), ticker, limit)
 	if err != nil {
-		if errors.Is(err, edgar.ErrNoNPORT) {
+		// No N-PORT on file, or the ticker isn't in SEC's directory yet (a brand-new ETF like
+		// DRAM): nothing to show. For a KNOWN ETF, return a clean 200 no_filing note so the panel
+		// can say "holdings appear after the first SEC filing" instead of erroring (a 502).
+		if errors.Is(err, edgar.ErrNoNPORT) || errors.Is(err, edgar.ErrTickerNotFound) {
+			if knownETF {
+				writeJSON(w, http.StatusOK, etfHoldingsResp{Ticker: ticker, Holdings: []edgar.ETFHolding{}, NoFiling: true})
+				return
+			}
 			writeJSON(w, http.StatusNotFound, errBody("no holdings filing for "+ticker))
 			return
 		}

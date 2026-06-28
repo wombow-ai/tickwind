@@ -17,6 +17,11 @@ import (
 // Callers map it to a 404 (nothing to show), distinct from a transient fetch error (502).
 var ErrNoNPORT = errors.New("edgar: no N-PORT holdings filing")
 
+// ErrTickerNotFound is returned (wrapped) by lookup when a ticker isn't in SEC's company_tickers
+// directory at all — e.g. a brand-new ETF (DRAM and other recent Roundhill funds) that SEC hasn't
+// mapped yet. Callers treat it like ErrNoNPORT (no holdings to show), NOT a transient gateway error.
+var ErrTickerNotFound = errors.New("edgar: ticker not found")
+
 // ETFHolding is one position from a fund/ETF's most recent SEC Form N-PORT-P portfolio report.
 // Every field is parsed VERBATIM from the filing (anti-hallucination-safe — nothing derived or
 // guessed). Ticker is set ONLY when the filing carries a ticker identifier (N-PORT positions often
