@@ -44,6 +44,7 @@ type Store struct {
 	cmtLikes  map[string]map[string]bool          // commentID -> set of userIDs who liked
 	subs      map[string]store.Subscription       // userID -> Stripe-synced entitlement
 	stripeEv  map[string]bool                     // Stripe webhook event id -> seen (idempotency)
+	funnel    []store.FunnelEvent                 // append-only conversion-funnel events
 }
 
 func New() *Store {
@@ -977,6 +978,34 @@ func (s *Store) MarkAlertTriggered(_ context.Context, id string, at time.Time) e
 		}
 	}
 	return nil
+}
+
+func (s *Store) SaveFunnelEvent(_ context.Context, ev store.FunnelEvent) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if ev.CreatedAt.IsZero() {
+		ev.CreatedAt = time.Now()
+	}
+	s.funnel = append(s.funnel, ev)
+	return nil
+}
+
+func (s *Store) FunnelSummary(_ context.Context, sinceDays int) ([]store.FunnelStat, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	cutoff := time.Now().AddDate(0, 0, -sinceDays)
+	counts := map[[2]string]int{}
+	for _, ev := range s.funnel {
+		if ev.CreatedAt.Before(cutoff) {
+			continue
+		}
+		counts[[2]string{ev.Event, ev.Surface}]++
+	}
+	out := make([]store.FunnelStat, 0, len(counts))
+	for k, n := range counts {
+		out = append(out, store.FunnelStat{Event: k[0], Surface: k[1], Count: n})
+	}
+	return out, nil
 }
 
 func (s *Store) SaveComment(_ context.Context, c store.Comment) error {

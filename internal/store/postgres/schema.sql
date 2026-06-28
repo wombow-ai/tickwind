@@ -423,3 +423,17 @@ CREATE TABLE IF NOT EXISTS conversation (
 CREATE INDEX IF NOT EXISTS conversation_user_idx ON conversation (user_id, updated_at DESC);
 ALTER TABLE chat_message ADD COLUMN IF NOT EXISTS conversation_id text;
 CREATE INDEX IF NOT EXISTS chat_message_conv_idx ON chat_message (conversation_id, id);
+
+-- First-party conversion-funnel events (paywall views, /pro views, checkout starts, plan
+-- activations). Append-only analytics; durable (Market store) so funnel history survives a VPS
+-- reset. event/surface are a CLOSED enum validated at the API; user_id is '' for anon.
+CREATE TABLE IF NOT EXISTS funnel_events (
+    id         bigserial PRIMARY KEY,
+    user_id    text NOT NULL DEFAULT '',
+    event      text NOT NULL,
+    surface    text NOT NULL DEFAULT '',
+    lang       text NOT NULL DEFAULT '',
+    tier       text NOT NULL DEFAULT '',
+    created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS funnel_events_time_idx ON funnel_events (created_at DESC);

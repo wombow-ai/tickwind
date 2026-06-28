@@ -306,6 +306,14 @@ func (s Split) StripeEventSeen(ctx context.Context, eventID string) (bool, error
 	return s.Market.StripeEventSeen(ctx, eventID)
 }
 
+// Funnel analytics → the durable Market store (the conversion history is worth keeping).
+func (s Split) SaveFunnelEvent(ctx context.Context, ev FunnelEvent) error {
+	return s.Market.SaveFunnelEvent(ctx, ev)
+}
+func (s Split) FunnelSummary(ctx context.Context, sinceDays int) ([]FunnelStat, error) {
+	return s.Market.FunnelSummary(ctx, sinceDays)
+}
+
 // Comments are public, valuable community content → the durable Market store.
 
 func (s Split) SaveComment(ctx context.Context, c Comment) error {

@@ -718,6 +718,8 @@ func New(st store.Store, hub QuoteStream, enricher enrich.Enricher, verifier *au
 	mux.HandleFunc("POST /v1/conversations/{id}/chat/stream", s.postConvChatStream)
 	mux.HandleFunc("GET /v1/chat/usage", s.getChatUsage)
 	mux.HandleFunc("GET /v1/conversations/{id}/chat", s.getConvHistory)
+	mux.HandleFunc("POST /v1/event", s.postEvent)       // first-party funnel events (public, fire-and-forget)
+	mux.HandleFunc("GET /v1/admin/funnel", s.getFunnel) // funnel aggregate (admin-gated)
 	mux.HandleFunc("GET /v1/stocks/{ticker}/movement", s.getMovement)
 	mux.HandleFunc("GET /v1/stocks/{ticker}/material-events", s.getMaterialEvents)
 	mux.HandleFunc("GET /v1/material-feed", s.getMaterialFeed)

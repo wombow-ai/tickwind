@@ -1416,6 +1416,34 @@ func (s *Store) StripeEventSeen(ctx context.Context, eventID string) (bool, erro
 	return seen, nil
 }
 
+func (s *Store) SaveFunnelEvent(ctx context.Context, ev store.FunnelEvent) error {
+	const q = `INSERT INTO funnel_events (user_id, event, surface, lang, tier) VALUES ($1,$2,$3,$4,$5)`
+	if _, err := s.pool.Exec(ctx, q, ev.UserID, ev.Event, ev.Surface, ev.Lang, ev.Tier); err != nil {
+		return fmt.Errorf("postgres: save funnel event: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) FunnelSummary(ctx context.Context, sinceDays int) ([]store.FunnelStat, error) {
+	const q = `SELECT event, surface, count(*) FROM funnel_events
+WHERE created_at >= now() - make_interval(days => $1)
+GROUP BY event, surface ORDER BY count(*) DESC`
+	rows, err := s.pool.Query(ctx, q, sinceDays)
+	if err != nil {
+		return nil, fmt.Errorf("postgres: funnel summary: %w", err)
+	}
+	defer rows.Close()
+	var out []store.FunnelStat
+	for rows.Next() {
+		var st store.FunnelStat
+		if err := rows.Scan(&st.Event, &st.Surface, &st.Count); err != nil {
+			return nil, fmt.Errorf("postgres: funnel summary scan: %w", err)
+		}
+		out = append(out, st)
+	}
+	return out, rows.Err()
+}
+
 // SaveComment inserts a public comment (empty ticker → NULL = global board)
 // together with its cashtag mention rows ($TICKER fan-out).
 func (s *Store) SaveComment(ctx context.Context, c store.Comment) error {

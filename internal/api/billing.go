@@ -131,7 +131,14 @@ func (s *Server) handleStripeEvent(ctx context.Context, ev billing.Event) error 
 				s.log.Warn("stripe webhook: checkout subscription customer mismatch — skipping recovery", "checkout", cs.ID, "subscription", cs.Subscription, "sub_customer", ss.Customer, "session_customer", cs.Customer)
 			}
 		}
-		return s.store.UpsertSubscription(ctx, sub)
+		if err := s.store.UpsertSubscription(ctx, sub); err != nil {
+			return err
+		}
+		// Funnel: a checkout that lands the user on an active/trialing plan is a conversion.
+		if sub.Status == "active" || sub.Status == "trialing" {
+			_ = s.store.SaveFunnelEvent(ctx, store.FunnelEvent{UserID: sub.UserID, Event: "subscription_active", Surface: "webhook"})
+		}
+		return nil
 
 	case "customer.subscription.created", "customer.subscription.updated", "customer.subscription.deleted":
 		var ss billing.Subscription

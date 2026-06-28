@@ -590,3 +590,39 @@ func TestConversationFlow(t *testing.T) {
 		t.Fatal("delete should drop messages")
 	}
 }
+
+func TestFunnelEvents(t *testing.T) {
+	s := New()
+	ctx := context.Background()
+	for _, ev := range []store.FunnelEvent{
+		{Event: "paywall_view", Surface: "deep_research", UserID: "u1"},
+		{Event: "paywall_view", Surface: "deep_research"},
+		{Event: "paywall_view", Surface: "backtest", UserID: "u2"},
+		{Event: "subscription_active", Surface: "webhook", UserID: "u1"},
+	} {
+		if err := s.SaveFunnelEvent(ctx, ev); err != nil {
+			t.Fatalf("SaveFunnelEvent: %v", err)
+		}
+	}
+	stats, err := s.FunnelSummary(ctx, 30)
+	if err != nil {
+		t.Fatalf("FunnelSummary: %v", err)
+	}
+	got := map[[2]string]int{}
+	for _, st := range stats {
+		got[[2]string{st.Event, st.Surface}] = st.Count
+	}
+	if got[[2]string{"paywall_view", "deep_research"}] != 2 {
+		t.Errorf("deep_research paywall_view = %d, want 2", got[[2]string{"paywall_view", "deep_research"}])
+	}
+	if got[[2]string{"paywall_view", "backtest"}] != 1 || got[[2]string{"subscription_active", "webhook"}] != 1 {
+		t.Errorf("unexpected aggregate: %+v", got)
+	}
+	// A far-past window excludes everything (events are stamped ~now).
+	old, _ := s.FunnelSummary(ctx, 0)
+	for _, st := range old {
+		if st.Count != 0 {
+			t.Errorf("days=0 window should be empty, got %+v", st)
+		}
+	}
+}

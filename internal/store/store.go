@@ -256,6 +256,24 @@ type Earning struct {
 // board (Ticker == ""). Unlike notes/clips it's visible to everyone, so it
 // carries a public Author display name. IP is captured for moderation but is
 // never serialized to clients (json:"-").
+// FunnelEvent is one first-party conversion-funnel event. UserID is the Supabase uuid, or ""
+// for an anonymous visitor. Event + Surface are a CLOSED enum validated at the API layer.
+type FunnelEvent struct {
+	UserID    string
+	Event     string
+	Surface   string
+	Lang      string
+	Tier      string
+	CreatedAt time.Time
+}
+
+// FunnelStat is one (event, surface) aggregate row for the admin funnel summary.
+type FunnelStat struct {
+	Event   string `json:"event"`
+	Surface string `json:"surface"`
+	Count   int    `json:"count"`
+}
+
 type Comment struct {
 	ID        string     `json:"id"`
 	UserID    string     `json:"user_id"`
@@ -483,6 +501,12 @@ type Store interface {
 	// IncrBacktestFreeUsed records one. Best-effort (read fails OPEN), routed to the User store.
 	GetBacktestFreeUsed(ctx context.Context, userID string) (int, error)
 	IncrBacktestFreeUsed(ctx context.Context, userID string) error
+
+	// Conversion-funnel analytics (append-only, durable Market store). SaveFunnelEvent records
+	// one event (a paywall view, /pro view, checkout start, or activation); FunnelSummary returns
+	// (event, surface) counts over the last sinceDays for the admin funnel view.
+	SaveFunnelEvent(ctx context.Context, ev FunnelEvent) error
+	FunnelSummary(ctx context.Context, sinceDays int) ([]FunnelStat, error)
 
 	// Comments are PUBLIC user posts on a stock (Ticker) or the global board
 	// (Ticker == ""). Durable (Market store). List excludes soft-deleted rows;
