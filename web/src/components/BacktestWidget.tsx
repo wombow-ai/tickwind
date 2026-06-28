@@ -3,7 +3,7 @@
 import {ArrowRight, FlaskConical} from 'lucide-react';
 import Link from '@/components/LocalLink';
 import {useEffect, useState} from 'react';
-import {getBacktest, type SignalBacktestResponse} from '@/lib/api';
+import {getBacktest, type SignalBacktestResponse, trackEvent} from '@/lib/api';
 import {useAuth} from '@/lib/auth';
 import {useEntitlement} from '@/lib/entitlement';
 import {useT} from '@/lib/i18n';
@@ -90,6 +90,11 @@ export function BacktestWidget({ticker}: {ticker: string}) {
       c.abort();
     };
   }, [ticker, rule, horizon, getToken, isPro, ran, entLoading]);
+
+  // Funnel: a free viewer hit the backtest Pro wall.
+  useEffect(() => {
+    if (data?.paywall_locked) void (async () => trackEvent('paywall_view', 'backtest', await getToken()))();
+  }, [data?.paywall_locked, getToken]);
 
   if (hidden) return null;
 

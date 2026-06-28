@@ -1,9 +1,9 @@
 'use client';
 
 import {ArrowRight, Check, Crown, Loader2, Settings as SettingsIcon, ShieldCheck, Sparkles} from 'lucide-react';
-import {useState} from 'react';
+import {useEffect, useState} from 'react';
 import Link from '@/components/LocalLink';
-import {createCheckout, createPortal} from '@/lib/api';
+import {createCheckout, createPortal, trackEvent} from '@/lib/api';
 import {useAuth} from '@/lib/auth';
 import {useEntitlement} from '@/lib/entitlement';
 import {useT} from '@/lib/i18n';
@@ -26,11 +26,17 @@ export default function ProPage() {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(false);
 
+  // Funnel: a /pro view (the conversion mid-point). Fire once on mount, with the token if signed in.
+  useEffect(() => {
+    void (async () => trackEvent('pro_view', 'pro_page', await getToken()))();
+  }, [getToken]);
+
   const onSubscribe = async () => {
     setBusy(true);
     setErr(false);
     try {
       const token = await getToken();
+      trackEvent('checkout_started', 'checkout', token); // funnel: subscribe intent (keepalive survives the redirect)
       const url = await createCheckout(interval, token);
       window.location.assign(url);
     } catch {

@@ -8,6 +8,7 @@ import {
   getIndicatorSignals,
   type IndicatorSignal,
   type IndicatorSignalsResponse,
+  trackEvent,
 } from '@/lib/api';
 import {useAuth} from '@/lib/auth';
 import {useT} from '@/lib/i18n';
@@ -87,6 +88,11 @@ export function SignalsCard({ticker}: {ticker: string}) {
       c.abort();
     };
   }, [ticker, getToken]);
+
+  // Funnel: a free viewer hit the indicator-signals Pro wall.
+  useEffect(() => {
+    if (data?.paywall_locked) void (async () => trackEvent('paywall_view', 'indicators', await getToken()))();
+  }, [data?.paywall_locked, getToken]);
 
   if (status === 'hidden') return null;
 

@@ -8,6 +8,7 @@ import {
   getScreenSignals,
   type IndicatorSignal,
   type ScreenSignalsResponse,
+  trackEvent,
 } from '@/lib/api';
 import {useAuth} from '@/lib/auth';
 import {useT} from '@/lib/i18n';
@@ -106,6 +107,11 @@ export function SignalsScreen({
       c.abort();
     };
   }, [direction, sigType, getToken]);
+
+  // Funnel: a free viewer hit the signal-screener Pro wall.
+  useEffect(() => {
+    if (data?.paywall_locked) void (async () => trackEvent('paywall_view', 'screener', await getToken()))();
+  }, [data?.paywall_locked, getToken]);
 
   const locked = data?.paywall_locked ?? false;
   const results = data?.results ?? [];

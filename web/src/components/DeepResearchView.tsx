@@ -19,6 +19,7 @@ import {
   getResearch,
   type ResearchReportResponse,
   type ResearchSection,
+  trackEvent,
 } from '@/lib/api';
 import {useAuth} from '@/lib/auth';
 import {useEntitlement} from '@/lib/entitlement';
@@ -205,6 +206,11 @@ export function DeepResearchView({ticker, inline = false}: {ticker: string; inli
       if (timer) clearTimeout(timer); // clear the pending poll timer
     };
   }, [ticker, lang, user, authLoading, getToken, reload, repoll]);
+
+  // Funnel: a free viewer hit the deep-research Pro wall (the flagship paywall surface).
+  useEffect(() => {
+    if (data?.paywall_locked) void (async () => trackEvent('paywall_view', 'deep_research', await getToken()))();
+  }, [data?.paywall_locked, getToken]);
 
   // ---- chrome: a header that's shared across every state ----
   const header = (

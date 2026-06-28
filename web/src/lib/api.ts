@@ -1749,6 +1749,39 @@ export async function getChatUsage(token: string | null, signal?: AbortSignal): 
   return getJson<ChatUsage>('/v1/chat/usage', signal, token);
 }
 
+export interface FunnelStat {
+  event: string;
+  surface: string;
+  count: number;
+}
+
+/** Admin-only conversion-funnel aggregate (GET /v1/admin/funnel?days=N). 403 for non-admins. */
+export async function getFunnel(token: string | null, days = 30): Promise<{days: number; stats: FunnelStat[]}> {
+  return getJson<{days: number; stats: FunnelStat[]}>(`/v1/admin/funnel?days=${days}`, undefined, token);
+}
+
+/**
+ * Fire ONE first-party conversion-funnel event (POST /v1/event). Fire-and-forget: never awaited,
+ * never throws, never blocks the UI — analytics must not break the page. `keepalive` lets a
+ * checkout_started event survive the immediate redirect to Stripe. The server validates the
+ * event/surface against a closed enum and attaches the user + tier when the token is present.
+ */
+export function trackEvent(event: string, surface?: string, token?: string | null): void {
+  try {
+    const lang = typeof document !== 'undefined' && document.documentElement.lang === 'zh' ? 'zh' : 'en';
+    const headers: Record<string, string> = {'Content-Type': 'application/json'};
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    void fetch(`${API_BASE}/v1/event`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({event, surface: surface ?? '', lang}),
+      keepalive: true,
+    }).catch(() => {});
+  } catch {
+    /* analytics is best-effort */
+  }
+}
+
 /** A conversation's persisted messages (GET /v1/conversations/{id}/chat). */
 export async function getConvHistory(id: string, token: string | null, signal?: AbortSignal): Promise<ChatHistoryMessage[]> {
   const {messages} = await getJson<{messages: ChatHistoryMessage[]}>(

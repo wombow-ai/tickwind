@@ -14,6 +14,7 @@ import {
   getChatUsage,
   listConversations,
   renameConversation,
+  trackEvent,
 } from '@/lib/api';
 import {useAuth} from '@/lib/auth';
 import {chatVars, CHAT_MONO} from '@/lib/chatTheme';
@@ -128,6 +129,13 @@ export function ChatHub() {
       active = false;
     };
   }, [user, isPro, getToken]);
+
+  // Funnel: a free user is running low on the chat taste (the chat upgrade nudge surface).
+  useEffect(() => {
+    if (!isPro && meter && meter.used / Math.max(1, meter.limit) >= 0.75) {
+      void (async () => trackEvent('paywall_view', 'chat', await getToken()))();
+    }
+  }, [isPro, meter, getToken]);
 
   // Restore the open conversation FROM THE URL (?c=) — reactively, so a fresh mount, a hard
   // reload, and back/forward all reopen the right thread. Gated on convsFetched so the
