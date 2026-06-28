@@ -423,6 +423,10 @@ func (s *Server) chatTurnStream(w http.ResponseWriter, r *http.Request, u auth.U
 	defer cancel()
 	ans, err := s.chatSvc.AnswerStream(ctx, u.ID, anchorTicker, lang, llmHist, msg, s.chatPersonalDataAllowed(ctx, u.ID), func(tok string) {
 		send(map[string]any{"type": "token", "text": tok})
+	}, func(st chat.Step) {
+		// Each deterministic tool action becomes a gray execution-chain step (interstitial,
+		// before the final prose). Rides the same send()/sendMu serializer as token/done.
+		send(map[string]any{"type": "step", "kind": st.Kind, "label": st.Label})
 	})
 	stopHeartbeat() // answer ready (or errored) — no more keep-alive pings
 	if err != nil {

@@ -181,7 +181,10 @@ func TestAnswerStream(t *testing.T) {
 	}}
 	svc := NewService(llm, fakeFacts{sampleSheet()}, nil, "")
 	var streamed strings.Builder
-	ans, err := svc.AnswerStream(context.Background(), "u", "AAPL", "en", nil, "what's the P/E?", true, func(tok string) { streamed.WriteString(tok) })
+	var steps []Step
+	ans, err := svc.AnswerStream(context.Background(), "u", "AAPL", "en", nil, "what's the P/E?", true,
+		func(tok string) { streamed.WriteString(tok) },
+		func(st Step) { steps = append(steps, st) })
 	if err != nil {
 		t.Fatalf("AnswerStream: %v", err)
 	}
@@ -190,6 +193,10 @@ func TestAnswerStream(t *testing.T) {
 	}
 	if streamed.String() != "Apple trades at 31.2x earnings." {
 		t.Fatalf("streamed tokens = %q, want the final answer only (no tokens for the tool turn)", streamed.String())
+	}
+	// The get_facts tool action is surfaced as one execution-chain step (before it runs).
+	if len(steps) != 1 || steps[0].Kind != "facts" {
+		t.Fatalf("steps = %+v, want exactly one facts step", steps)
 	}
 }
 
@@ -746,4 +753,127 @@ func TestAnswerNotFoundAndDisabled(t *testing.T) {
 	if _, err := off.Answer(context.Background(), "u", "AAPL", "en", nil, "q", true); err != enrich.ErrDisabled {
 		t.Fatalf("err = %v, want ErrDisabled", err)
 	}
+}
+
+// TestStepFor asserts each tool maps to its execution-chain step kind (the label is Go-owned;
+// an unknown tool yields no step, and a get_stock_facts with no ticker falls back to the anchor).
+func TestStepFor(t *testing.T) {
+	tests := []struct {
+		name, toolName, args, wantKind string
+		ok                             bool
+		wantInLabel                    string
+	}{
+		{"get_facts", "get_facts", `{"section":"valuation"}`, "facts", true, "AAPL valuation"},
+		{"get_stock_facts other", "get_stock_facts", `{"ticker":"msft","section":"fundamentals"}`, "facts", true, "MSFT fundamentals"},
+		{"get_stock_facts default anchor", "get_stock_facts", `{"section":"technical"}`, "facts", true, "AAPL"},
+		{"news", "get_news_context", `{}`, "news", true, "news"},
+		{"web", "search_web", `{"query":"secret"}`, "web", true, "Searching the web"},
+		{"widget", "surface_widget", `{"type":"kline"}`, "widget", true, "chart"},
+		{"watchlist", "get_watchlist", `{}`, "watchlist", true, "watchlist"},
+		{"unknown", "frobnicate", `{}`, "", false, ""},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			st, ok := stepFor(enrich.ChatToolCall{Name: tc.toolName, Arguments: tc.args}, "AAPL", "en")
+			if ok != tc.ok {
+				t.Fatalf("ok = %v, want %v", ok, tc.ok)
+			}
+			if !tc.ok {
+				return
+			}
+			if st.Kind != tc.wantKind {
+				t.Errorf("kind = %q, want %q", st.Kind, tc.wantKind)
+			}
+			if !strings.Contains(st.Label, tc.wantInLabel) {
+				t.Errorf("label = %q, want to contain %q", st.Label, tc.wantInLabel)
+			}
+			// The web step must NEVER echo the model's query (locked decision).
+			if tc.toolName == "search_web" && strings.Contains(st.Label, "secret") {
+				t.Errorf("web step leaked the query: %q", st.Label)
+			}
+		})
+	}
+}
+
+// TestBackstopWidget covers the deterministic auto-surface: it fires for exactly one stock's
+// topical facts, picks the highest-priority section's widget, refuses the fundamentals family
+// for an ETF (kline allowed), and skips multi-ticker / redirect / already-surfaced / non-topical.
+func TestBackstopWidget(t *testing.T) {
+	svc := NewService(&scriptedLLM{enabled: true}, fakeFacts{sampleSheet()}, nil, "")
+	svc.SetSymbols(fakeSymbols{m: map[string]symbols.Symbol{
+		"DRAM": {Ticker: "DRAM", Name: "Roundhill Memory ETF", ETF: true},
+		"AAPL": {Ticker: "AAPL", Name: "Apple Inc.", ETF: false},
+	}})
+
+	t.Run("fundamentals surfaces fundamentals_table", func(t *testing.T) {
+		ts := &turnState{}
+		ts.recordTopical("AAPL", "fundamentals")
+		b, ok := svc.backstopWidget(ts, "en", "Apple is profitable.")
+		if !ok || b.Widget != "fundamentals_table" || b.Params["ticker"] != "AAPL" {
+			t.Fatalf("got %+v ok=%v, want fundamentals_table/AAPL", b, ok)
+		}
+		if len(b.Params) != 1 {
+			t.Errorf("backstop widget carries %d params, want only ticker", len(b.Params))
+		}
+	})
+	t.Run("valuation outranks fundamentals", func(t *testing.T) {
+		ts := &turnState{}
+		ts.recordTopical("AAPL", "fundamentals")
+		ts.recordTopical("AAPL", "valuation")
+		b, ok := svc.backstopWidget(ts, "en", "x")
+		if !ok || b.Widget != "valuation_table" {
+			t.Fatalf("got %+v ok=%v, want valuation_table (higher priority)", b, ok)
+		}
+	})
+	t.Run("technical surfaces kline", func(t *testing.T) {
+		ts := &turnState{}
+		ts.recordTopical("AAPL", "technical")
+		b, ok := svc.backstopWidget(ts, "en", "x")
+		if !ok || b.Widget != "kline" {
+			t.Fatalf("got %+v ok=%v, want kline", b, ok)
+		}
+	})
+	t.Run("ETF refuses fundamentals family", func(t *testing.T) {
+		ts := &turnState{}
+		ts.recordTopical("DRAM", "fundamentals")
+		if b, ok := svc.backstopWidget(ts, "en", "x"); ok {
+			t.Fatalf("ETF should not get a fundamentals widget, got %+v", b)
+		}
+	})
+	t.Run("ETF still gets a price chart", func(t *testing.T) {
+		ts := &turnState{}
+		ts.recordTopical("DRAM", "technical")
+		if b, ok := svc.backstopWidget(ts, "en", "x"); !ok || b.Widget != "kline" {
+			t.Fatalf("ETF kline should be allowed, got %+v ok=%v", b, ok)
+		}
+	})
+	t.Run("multi-ticker aborts", func(t *testing.T) {
+		ts := &turnState{}
+		ts.recordTopical("AAPL", "valuation")
+		ts.recordTopical("MSFT", "fundamentals")
+		if _, ok := svc.backstopWidget(ts, "en", "x"); ok {
+			t.Fatal("a 2-stock comparison must not auto-surface a widget")
+		}
+	})
+	t.Run("already-surfaced aborts", func(t *testing.T) {
+		ts := &turnState{Widgets: []Block{{Kind: "widget", Widget: "kline"}}}
+		ts.recordTopical("AAPL", "valuation")
+		if _, ok := svc.backstopWidget(ts, "en", "x"); ok {
+			t.Fatal("must not add a widget when the model already surfaced one")
+		}
+	})
+	t.Run("redirect prose aborts", func(t *testing.T) {
+		ts := &turnState{}
+		ts.recordTopical("AAPL", "valuation")
+		if _, ok := svc.backstopWidget(ts, "en", redirectNote("en")); ok {
+			t.Fatal("must not decorate a stripped-to-redirect answer")
+		}
+	})
+	t.Run("no topical facts aborts", func(t *testing.T) {
+		ts := &turnState{}
+		ts.recordTopical("AAPL", "sentiment") // non-topical → not recorded
+		if _, ok := svc.backstopWidget(ts, "en", "x"); ok {
+			t.Fatal("a sentiment-only / general turn must not auto-surface a widget")
+		}
+	})
 }

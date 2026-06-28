@@ -237,6 +237,57 @@ type Answer struct {
 	Usage  enrich.Usage `json:"-"`
 }
 
+// Step is ONE deterministic tool action surfaced as gray execution-chain narration (a
+// streaming-only affordance). Label is a Go-AUTHORED, already-localized present-progressive
+// string built from the model's VALIDATED args (a section enum / a ticker symbol / a widget
+// enum) — it describes the Go ACTION, never model reasoning, and never carries a number (the
+// step is emitted BEFORE the tool runs, so no result exists to leak). Ephemeral: never
+// persisted, so a gray line can never re-enter the model's context on a later turn.
+type Step struct {
+	Kind  string `json:"kind"`
+	Label string `json:"label"`
+}
+
+// turnState accumulates, for ONE user turn, the widgets the model surfaced plus which TOPICAL
+// fact sections it actually pulled (per ticker, highest-priority kept). The latter drives the
+// deterministic backstop in finish(): when the model fetched a stock's valuation/fundamentals/
+// technical/relative facts but surfaced no widget, Go auto-surfaces the matching card.
+type turnState struct {
+	Widgets []Block
+	Topical map[string]string // TICKER -> highest-priority topical section pulled this turn
+}
+
+// topicalRank orders the topical sections for the backstop (higher = preferred widget). A
+// non-topical section returns 0 (never recorded). valuation > fundamentals > technical > relative.
+func topicalRank(section string) int {
+	switch section {
+	case "valuation":
+		return 4
+	case "fundamentals":
+		return 3
+	case "technical":
+		return 2
+	case "relative":
+		return 1
+	}
+	return 0
+}
+
+// recordTopical notes that the model pulled a topical section for ticker, keeping the
+// highest-priority one (so a turn that read both valuation and fundamentals backstops to the
+// valuation table). No-op for a non-topical section or an empty ticker.
+func (ts *turnState) recordTopical(ticker, section string) {
+	if ticker == "" || topicalRank(section) == 0 {
+		return
+	}
+	if ts.Topical == nil {
+		ts.Topical = map[string]string{}
+	}
+	if topicalRank(section) > topicalRank(ts.Topical[ticker]) {
+		ts.Topical[ticker] = section
+	}
+}
+
 // ErrNotFound is returned when the ticker has no fact sheet (unknown / no data).
 var ErrNotFound = errors.New("chat: no facts for ticker")
 
@@ -269,7 +320,7 @@ func (s *Service) Answer(ctx context.Context, userID, anchorTicker, lang string,
 	msgs = append(msgs, enrich.ChatMessage{Role: "user", Content: question})
 
 	tools := toolSpecs(lang, general, hasUserData, hasWeb, hasETF)
-	var widgets []Block
+	ts := &turnState{}
 	var total enrich.Usage
 
 	for iter := 0; iter < maxToolIters; iter++ {
@@ -279,7 +330,7 @@ func (s *Service) Answer(ctx context.Context, userID, anchorTicker, lang string,
 			return Answer{}, err
 		}
 		if len(calls) == 0 {
-			return s.finish(content, widgets, total, lang), nil
+			return s.finish(content, ts, total, lang), nil
 		}
 		// Record the assistant's tool-call turn, then append each tool result.
 		msgs = append(msgs, enrich.ChatMessage{Role: "assistant", Content: content, ToolCalls: calls})
@@ -287,7 +338,7 @@ func (s *Service) Answer(ctx context.Context, userID, anchorTicker, lang string,
 			msgs = append(msgs, enrich.ChatMessage{
 				Role:       "tool",
 				ToolCallID: c.ID,
-				Content:    s.execTool(ctx, c, userID, anchorTicker, fs, lang, hasUserData, &widgets),
+				Content:    s.execTool(ctx, c, userID, anchorTicker, fs, lang, hasUserData, ts),
 			})
 		}
 	}
@@ -298,7 +349,7 @@ func (s *Service) Answer(ctx context.Context, userID, anchorTicker, lang string,
 	if err != nil {
 		return Answer{}, err
 	}
-	return s.finish(content, widgets, total, lang), nil
+	return s.finish(content, ts, total, lang), nil
 }
 
 // AnswerStream is the streaming variant of Answer: it runs the SAME bounded tool loop, but
@@ -308,7 +359,7 @@ func (s *Service) Answer(ctx context.Context, userID, anchorTicker, lang string,
 // the client reconciles the streamed text with the filtered blocks. The anti-hallucination
 // contract is unchanged (Go owns every number; finish() runs the advice filter on the full
 // text). onToken may be nil (then it behaves like Answer over the streaming transport).
-func (s *Service) AnswerStream(ctx context.Context, userID, anchorTicker, lang string, history []enrich.ChatMessage, question string, allowUserData bool, onToken func(string)) (Answer, error) {
+func (s *Service) AnswerStream(ctx context.Context, userID, anchorTicker, lang string, history []enrich.ChatMessage, question string, allowUserData bool, onToken func(string), onStep func(Step)) (Answer, error) {
 	if !s.Enabled() {
 		return Answer{}, enrich.ErrDisabled
 	}
@@ -332,7 +383,7 @@ func (s *Service) AnswerStream(ctx context.Context, userID, anchorTicker, lang s
 	msgs = append(msgs, enrich.ChatMessage{Role: "user", Content: question})
 
 	tools := toolSpecs(lang, general, hasUserData, hasWeb, hasETF)
-	var widgets []Block
+	ts := &turnState{}
 	var total enrich.Usage
 
 	for iter := 0; iter < maxToolIters; iter++ {
@@ -342,14 +393,21 @@ func (s *Service) AnswerStream(ctx context.Context, userID, anchorTicker, lang s
 			return Answer{}, err
 		}
 		if len(calls) == 0 {
-			return s.finish(content, widgets, total, lang), nil
+			return s.finish(content, ts, total, lang), nil
 		}
 		msgs = append(msgs, enrich.ChatMessage{Role: "assistant", Content: content, ToolCalls: calls})
 		for _, c := range calls {
+			// Surface the tool action as a live execution-chain step BEFORE it runs (shows the
+			// intent; no tool result exists yet, so nothing can leak). Unknown tool → no step.
+			if onStep != nil {
+				if st, ok := stepFor(c, anchorTicker, lang); ok {
+					onStep(st)
+				}
+			}
 			msgs = append(msgs, enrich.ChatMessage{
 				Role:       "tool",
 				ToolCallID: c.ID,
-				Content:    s.execTool(ctx, c, userID, anchorTicker, fs, lang, hasUserData, &widgets),
+				Content:    s.execTool(ctx, c, userID, anchorTicker, fs, lang, hasUserData, ts),
 			})
 		}
 	}
@@ -359,18 +417,26 @@ func (s *Service) AnswerStream(ctx context.Context, userID, anchorTicker, lang s
 	if err != nil {
 		return Answer{}, err
 	}
-	return s.finish(content, widgets, total, lang), nil
+	return s.finish(content, ts, total, lang), nil
 }
 
 // finish assembles the final answer: the advice-filtered prose (or a redirect when the
 // whole answer was stripped) followed by any widgets the model surfaced, in order.
-func (s *Service) finish(prose string, widgets []Block, usage enrich.Usage, lang string) Answer {
+func (s *Service) finish(prose string, ts *turnState, usage enrich.Usage, lang string) Answer {
 	prose = filterAdvice(prose)
 	if strings.TrimSpace(prose) == "" {
 		prose = redirectNote(lang)
 	}
 	blocks := []Block{{Kind: "text", Text: prose}}
-	blocks = append(blocks, dedupeWidgets(widgets)...)
+	widgets := dedupeWidgets(ts.Widgets)
+	if len(widgets) == 0 {
+		// No model-surfaced widget — auto-surface the matching card when the turn pulled exactly
+		// ONE stock's topical facts (a data answer shown, not just told). Conservative + ETF-safe.
+		if b, ok := s.backstopWidget(ts, lang, prose); ok {
+			widgets = append(widgets, b)
+		}
+	}
+	blocks = append(blocks, widgets...)
 	return Answer{Blocks: blocks, Usage: usage}
 }
 
@@ -420,10 +486,169 @@ func dedupeWidgets(widgets []Block) []Block {
 	return out
 }
 
+// tl picks the English or Chinese label for the execution chain (EN is the default).
+func tl(lang, en, zh string) string {
+	if lang == "zh" {
+		return zh
+	}
+	return en
+}
+
+// sectionLabel is the human name of a fact section for the execution chain (the closed set of
+// FactSectionKeys). An unknown key falls back to the raw section (never fabricated).
+func sectionLabel(section, lang string) string {
+	switch section {
+	case "valuation":
+		return tl(lang, "valuation", "估值")
+	case "fundamentals":
+		return tl(lang, "fundamentals", "基本面")
+	case "technical":
+		return tl(lang, "the technical picture", "技术面")
+	case "relative":
+		return tl(lang, "the market-relative ranking", "相对市场排名")
+	case "flows":
+		return tl(lang, "smart-money flows", "资金面")
+	case "sentiment":
+		return tl(lang, "sentiment", "情绪面")
+	}
+	return section
+}
+
+// widgetStepLabel is the short human name of a widget for the execution chain (kept in sync
+// with chatRender.tsx WIDGET_LABEL). An unknown widget renders its raw type, never fabricated.
+func widgetStepLabel(widget, lang string) string {
+	switch widget {
+	case "kline":
+		return tl(lang, "chart", "K 线图")
+	case "indicators":
+		return tl(lang, "indicator chart", "指标图")
+	case "valuation_table":
+		return tl(lang, "valuation table", "估值表")
+	case "fundamentals_table":
+		return tl(lang, "fundamentals table", "基本面表")
+	case "indicator_history":
+		return tl(lang, "indicator history", "指标历史")
+	case "seasonality":
+		return tl(lang, "seasonality", "季节性")
+	case "relative_strength":
+		return tl(lang, "relative-strength chart", "相对强弱图")
+	case "earnings_reaction":
+		return tl(lang, "earnings-reaction chart", "财报反应图")
+	case "scorecard":
+		return tl(lang, "factor scorecard", "因子评分卡")
+	case "flows_summary":
+		return tl(lang, "smart-money flows", "资金面")
+	case "whales":
+		return tl(lang, "institutional holders", "机构持仓")
+	case "options":
+		return tl(lang, "options", "期权")
+	case "insider":
+		return tl(lang, "insider activity", "内部交易")
+	case "watchlist_summary":
+		return tl(lang, "watchlist", "自选股")
+	case "holdings_pnl":
+		return tl(lang, "holdings P&L", "持仓盈亏")
+	case "portfolio_heatmap":
+		return tl(lang, "portfolio heatmap", "组合热力图")
+	}
+	return widget
+}
+
+// stepFor builds the execution-chain Step for a tool call the model committed to — a Go-owned,
+// present-progressive label keyed on the CLOSED tool name + its validated args. It returns
+// ok=false for an unknown tool (fail-safe: no step rather than a wrong label). It never reads
+// a tool RESULT (it runs before the tool), so no number can leak.
+func stepFor(c enrich.ChatToolCall, anchorTicker, lang string) (Step, bool) {
+	tickerOr := func(t string) string {
+		t = strings.ToUpper(strings.TrimSpace(t))
+		if t == "" {
+			return anchorTicker
+		}
+		return t
+	}
+	switch c.Name {
+	case "get_facts":
+		var a struct {
+			Section string `json:"section"`
+		}
+		_ = json.Unmarshal([]byte(c.Arguments), &a)
+		s := sectionLabel(a.Section, lang)
+		return Step{Kind: "facts", Label: tl(lang, "Reading "+anchorTicker+" "+s, "正在读取 "+anchorTicker+" 的"+s)}, true
+	case "get_stock_facts":
+		var a struct {
+			Ticker  string `json:"ticker"`
+			Section string `json:"section"`
+		}
+		_ = json.Unmarshal([]byte(c.Arguments), &a)
+		t := tickerOr(a.Ticker)
+		s := sectionLabel(a.Section, lang)
+		return Step{Kind: "facts", Label: tl(lang, "Reading "+t+" "+s, "正在读取 "+t+" 的"+s)}, true
+	case "get_news_context":
+		return Step{Kind: "news", Label: tl(lang, "Checking recent news", "正在查看近期资讯")}, true
+	case "search_web":
+		return Step{Kind: "web", Label: tl(lang, "Searching the web", "正在联网搜索")}, true
+	case "get_etf_holdings":
+		var a struct {
+			Ticker string `json:"ticker"`
+		}
+		_ = json.Unmarshal([]byte(c.Arguments), &a)
+		t := tickerOr(a.Ticker)
+		return Step{Kind: "etf", Label: tl(lang, "Reading "+t+" fund holdings", "正在读取 "+t+" 的基金持仓")}, true
+	case "surface_widget":
+		var a struct {
+			Type string `json:"type"`
+		}
+		_ = json.Unmarshal([]byte(c.Arguments), &a)
+		w := widgetStepLabel(a.Type, lang)
+		return Step{Kind: "widget", Label: tl(lang, "Preparing the "+w, "正在准备"+w)}, true
+	case "get_watchlist":
+		return Step{Kind: "watchlist", Label: tl(lang, "Reading your watchlist", "正在读取你的自选股")}, true
+	case "get_holdings":
+		return Step{Kind: "holdings", Label: tl(lang, "Reading your holdings", "正在读取你的持仓")}, true
+	case "get_my_notes":
+		return Step{Kind: "notes", Label: tl(lang, "Reading your notes", "正在读取你的笔记")}, true
+	}
+	return Step{}, false
+}
+
+// backstopWidget is the deterministic widget fallback: when the model pulled exactly ONE
+// stock's TOPICAL facts this turn but surfaced no widget, Go auto-surfaces the matching card so
+// a data answer is shown, not just told. It is conservative — exactly one ticker, a real
+// topical section, the fundamentals-family targets refused for an ETF (same guard execTool
+// uses), and never decorating a stripped-to-redirect answer. The card carries ONLY a ticker
+// (numbers render client-side; nothing enters the model).
+func (s *Service) backstopWidget(ts *turnState, lang, prose string) (Block, bool) {
+	if len(ts.Widgets) != 0 || len(ts.Topical) != 1 || prose == redirectNote(lang) {
+		return Block{}, false
+	}
+	var tk, section string
+	for k, v := range ts.Topical {
+		tk, section = k, v
+	}
+	widget := map[string]string{
+		"valuation":    "valuation_table",
+		"fundamentals": "fundamentals_table",
+		"technical":    "kline",
+		"relative":     "scorecard",
+	}[section]
+	if widget == "" || tk == "" {
+		return Block{}, false
+	}
+	// A basket fund has no company fundamentals — never auto-surface a fundamentals/valuation/
+	// scorecard table for it (a price chart is fine). Mirrors execTool's surface_widget guard.
+	if widget != "kline" {
+		if _, etf := s.describeTicker(tk, lang); etf {
+			return Block{}, false
+		}
+	}
+	return Block{Kind: "widget", Widget: widget, Params: map[string]string{"ticker": tk}}, true
+}
+
 // execTool runs one closed tool against the Go fact sheet and returns its (string) result.
-// surface_widget also records a widget block in widgets; its numbers never enter the
-// model's context (the result is only a confirmation string).
-func (s *Service) execTool(ctx context.Context, c enrich.ChatToolCall, userID, anchorTicker string, fs research.FactSheet, lang string, hasUserData bool, widgets *[]Block) string {
+// surface_widget also records a widget block in ts.Widgets; its numbers never enter the
+// model's context (the result is only a confirmation string). A successful TOPICAL fact pull
+// is recorded in ts.Topical to drive the backstop widget.
+func (s *Service) execTool(ctx context.Context, c enrich.ChatToolCall, userID, anchorTicker string, fs research.FactSheet, lang string, hasUserData bool, ts *turnState) string {
 	switch c.Name {
 	case "get_facts":
 		var args struct {
@@ -441,6 +666,7 @@ func (s *Service) execTool(ctx context.Context, c enrich.ChatToolCall, userID, a
 			}
 			return "No such section here. Valid sections: " + strings.Join(research.FactSectionKeys(), ", ") + ". For a DIFFERENT stock use get_stock_facts(ticker, section)."
 		}
+		ts.recordTopical(anchorTicker, args.Section) // drives the backstop widget
 		return out
 	case "get_stock_facts":
 		var args struct {
@@ -470,6 +696,7 @@ func (s *Service) execTool(ctx context.Context, c enrich.ChatToolCall, userID, a
 			}
 			return t + " has no such section. Valid sections: " + strings.Join(research.FactSectionKeys(), ", ")
 		}
+		ts.recordTopical(t, args.Section) // drives the backstop widget
 		return out
 	case "get_watchlist":
 		if !hasUserData || s.userData == nil {
@@ -506,7 +733,7 @@ func (s *Service) execTool(ctx context.Context, c enrich.ChatToolCall, userID, a
 				return "Portfolio widgets are unavailable (personal-data access is off)."
 			}
 			// Portfolio widgets render the user's OWN data (no ticker).
-			*widgets = append(*widgets, Block{Kind: "widget", Widget: args.Type})
+			ts.Widgets = append(ts.Widgets, Block{Kind: "widget", Widget: args.Type})
 			return "rendered: " + args.Type
 		}
 		params := map[string]string{}
@@ -524,7 +751,7 @@ func (s *Service) execTool(ctx context.Context, c enrich.ChatToolCall, userID, a
 		// Defense-in-depth: an ETF has no company fundamentals, so a fundamentals/valuation
 		// table would render empty. Refuse it deterministically (regardless of the prompt) and
 		// ground WHY instead, so the model can't show an empty table for a basket fund.
-		if args.Type == "fundamentals_table" || args.Type == "valuation_table" {
+		if args.Type == "fundamentals_table" || args.Type == "valuation_table" || args.Type == "scorecard" {
 			if d, etf := s.describeTicker(tk, lang); etf {
 				return d
 			}
@@ -554,7 +781,7 @@ func (s *Service) execTool(ctx context.Context, c enrich.ChatToolCall, userID, a
 		if args.Type == "scorecard" && tk == "" {
 			return "scorecard needs a ticker."
 		}
-		*widgets = append(*widgets, Block{Kind: "widget", Widget: args.Type, Params: params})
+		ts.Widgets = append(ts.Widgets, Block{Kind: "widget", Widget: args.Type, Params: params})
 		// Numbers NEVER enter the model context — only a confirmation.
 		return "rendered: " + args.Type + " " + tk + " " + rng
 	case "get_news_context":
@@ -820,8 +1047,8 @@ func systemPrompt(ticker, lang, material string, general, hasUserData, hasWeb bo
 			"- get_watchlist() / get_holdings() / get_my_notes(ticker?): the user's own watchlist/holdings/notes.\n- surface_widget(watchlist_summary/holdings_pnl/portfolio_heatmap): show the user's own portfolio inline (no ticker).\n"))
 	}
 	b.WriteString("\n")
-	b.WriteString(d("展示控件:当用户问某只股票的基本面/估值、且该股票确实有这些数据时,先用 get_facts/get_stock_facts 取事实,再调用 surface_widget(fundamentals_table 或 valuation_table[, ticker]) 让用户看到真实表格,而不是只罗列数字;问价格/技术面时同理用 kline。若用户问某个技术指标随时间的走势(\"RSI 这一年怎么走的\"\"看下 MACD 历史\"),用 surface_widget(indicator_history, indicator=rsi|macd|sma|ema|bollinger|atr|kdj[, ticker]) 画出该指标的历史折线。若问某股票的季节性/月度规律(\"它一般几月份表现好\"\"季节性怎么样\"),用 surface_widget(seasonality[, ticker]) 展示按自然月的历史平均收益(已披露的历史统计,不是预测)。若问某股票相对大盘/标普500的表现(\"跑赢大盘了吗\"\"相对强弱怎么样\"\"和 SPY 比呢\"),用 surface_widget(relative_strength[, ticker]) 展示其 1M/3M/6M/1Y 对 SPY 的超额收益(已披露的历史统计,不是预测)。若问某股票财报后通常怎么走/历史财报反应(\"财报后一般涨还是跌\"\"财报波动大吗\"),用 surface_widget(earnings_reaction[, ticker]) 展示其历次财报前后的历史波动(已披露的历史统计,不是预测)。若问某股票相对全市场强不强/各因子怎么样(\"它价值/成长/质量/动量如何\"\"和大盘比贵不贵\"\"因子打分\"),用 surface_widget(scorecard[, ticker]) 展示价值/成长/质量/动量相对追踪股池的百分位(描述性统计,不是评级或建议)。控件只返回确认,不返回数据 —— 正常。**每次回答最多 surface 一个最相关的控件**;不要在更具体的分析控件(相对强弱/季节性/财报反应/基本面)之外再叠一个 K 线图——那会让界面先画出图再跳成另一个控件。但若事实工具说某股票没有公司基本面(例如 ETF),就不要再 surface fundamentals_table/valuation_table —— 说明工具讲了什么,并改提供 K 线/技术图。\n",
-		"SHOWING WIDGETS: when the user asks about a stock's fundamentals or valuation AND that data exists, first pull the facts with get_facts/get_stock_facts, then call surface_widget(fundamentals_table | valuation_table[, ticker]) so they see the real table instead of a list of numbers; likewise use kline for a price/technicals question. If the user asks how ONE technical indicator moved over time (\"how has RSI trended this year\", \"show MACD history\"), call surface_widget(indicator_history, indicator=rsi|macd|sma|ema|bollinger|atr|kdj[, ticker]) to chart that indicator's history line. If the user asks about a stock's seasonality / month-of-year pattern (\"which months does it usually do well\"), call surface_widget(seasonality[, ticker]) to show its historical average return by calendar month (a disclosed statistic, not a forecast). If the user asks how a stock has done versus the market / S&P 500 (\"is it beating the market\", \"relative strength\", \"how does it compare to SPY\"), call surface_widget(relative_strength[, ticker]) to show its 1M/3M/6M/1Y excess return vs SPY (a disclosed statistic, not a forecast). If the user asks how a stock usually trades after earnings / its earnings-reaction history (\"does it pop or drop on earnings\", \"how volatile is it around earnings\"), call surface_widget(earnings_reaction[, ticker]) to show its historical move around past earnings (a disclosed statistic, not a forecast). If the user asks how a stock stacks up on factors / vs the market (\"how's its value/growth/quality/momentum\", \"is it cheap vs the market\", \"factor score\"), call surface_widget(scorecard[, ticker]) to show its value/growth/quality/momentum PERCENTILES vs the tracked universe (a descriptive statistic, NOT a rating or recommendation). The widget returns only a confirmation, not data — that's expected. **Surface AT MOST ONE, the single most relevant, widget per answer** — do NOT also add a price chart (kline) when a more specific analytic widget (relative_strength / seasonality / earnings_reaction / fundamentals) already answers the question (stacking them makes the UI draw the chart first then jump to the other). BUT if a fact tool says a stock has no company fundamentals (e.g. an ETF), do NOT surface fundamentals_table/valuation_table — explain what the tool said and offer the kline/technical chart instead.\n"))
+	b.WriteString(d("展示控件:当用户问某只股票的基本面/估值、且该股票确实有这些数据时,先用 get_facts/get_stock_facts 取事实,再调用 surface_widget(fundamentals_table 或 valuation_table[, ticker]) 让用户看到真实表格,而不是只罗列数字;问价格/技术面时同理用 kline。若用户问某个技术指标随时间的走势(\"RSI 这一年怎么走的\"\"看下 MACD 历史\"),用 surface_widget(indicator_history, indicator=rsi|macd|sma|ema|bollinger|atr|kdj[, ticker]) 画出该指标的历史折线。若问某股票的季节性/月度规律(\"它一般几月份表现好\"\"季节性怎么样\"),用 surface_widget(seasonality[, ticker]) 展示按自然月的历史平均收益(已披露的历史统计,不是预测)。若问某股票相对大盘/标普500的表现(\"跑赢大盘了吗\"\"相对强弱怎么样\"\"和 SPY 比呢\"),用 surface_widget(relative_strength[, ticker]) 展示其 1M/3M/6M/1Y 对 SPY 的超额收益(已披露的历史统计,不是预测)。若问某股票财报后通常怎么走/历史财报反应(\"财报后一般涨还是跌\"\"财报波动大吗\"),用 surface_widget(earnings_reaction[, ticker]) 展示其历次财报前后的历史波动(已披露的历史统计,不是预测)。若问某股票相对全市场强不强/各因子怎么样(\"它价值/成长/质量/动量如何\"\"和大盘比贵不贵\"\"因子打分\"),用 surface_widget(scorecard[, ticker]) 展示价值/成长/质量/动量相对追踪股池的百分位(描述性统计,不是评级或建议)。控件只返回确认,不返回数据 —— 正常。**每次回答最多 surface 一个最相关的控件**;不要在更具体的分析控件(相对强弱/季节性/财报反应/基本面)之外再叠一个 K 线图——那会让界面先画出图再跳成另一个控件。默认要『展示』而不仅是『讲述』:只要你的回答主要是关于某一只股票的估值、基本面、价格/技术面或因子排名(包括像『那它毛利率呢』『市净率多少』这种仍在同一只股票上的简短追问),就 surface 那只股票最相关的那个控件(估值→valuation_table,基本面→fundamentals_table,价格/技术面→kline,因子排名→scorecard),即使用户没明说『看一下』或『画个图』。仍然最多一个控件;ETF 或多只股票对比时仍不要 surface 基本面/估值/scorecard 控件。但若事实工具说某股票没有公司基本面(例如 ETF),就不要再 surface fundamentals_table/valuation_table —— 说明工具讲了什么,并改提供 K 线/技术图。\n",
+		"SHOWING WIDGETS: when the user asks about a stock's fundamentals or valuation AND that data exists, first pull the facts with get_facts/get_stock_facts, then call surface_widget(fundamentals_table | valuation_table[, ticker]) so they see the real table instead of a list of numbers; likewise use kline for a price/technicals question. If the user asks how ONE technical indicator moved over time (\"how has RSI trended this year\", \"show MACD history\"), call surface_widget(indicator_history, indicator=rsi|macd|sma|ema|bollinger|atr|kdj[, ticker]) to chart that indicator's history line. If the user asks about a stock's seasonality / month-of-year pattern (\"which months does it usually do well\"), call surface_widget(seasonality[, ticker]) to show its historical average return by calendar month (a disclosed statistic, not a forecast). If the user asks how a stock has done versus the market / S&P 500 (\"is it beating the market\", \"relative strength\", \"how does it compare to SPY\"), call surface_widget(relative_strength[, ticker]) to show its 1M/3M/6M/1Y excess return vs SPY (a disclosed statistic, not a forecast). If the user asks how a stock usually trades after earnings / its earnings-reaction history (\"does it pop or drop on earnings\", \"how volatile is it around earnings\"), call surface_widget(earnings_reaction[, ticker]) to show its historical move around past earnings (a disclosed statistic, not a forecast). If the user asks how a stock stacks up on factors / vs the market (\"how's its value/growth/quality/momentum\", \"is it cheap vs the market\", \"factor score\"), call surface_widget(scorecard[, ticker]) to show its value/growth/quality/momentum PERCENTILES vs the tracked universe (a descriptive statistic, NOT a rating or recommendation). The widget returns only a confirmation, not data — that's expected. **Surface AT MOST ONE, the single most relevant, widget per answer** — do NOT also add a price chart (kline) when a more specific analytic widget (relative_strength / seasonality / earnings_reaction / fundamentals) already answers the question (stacking them makes the UI draw the chart first then jump to the other). DEFAULT TO SHOWING, not just telling: whenever your answer is primarily about ONE stock's valuation, fundamentals, price/technicals, or factor ranking (including a short follow-up that stays on the same stock, e.g. \"and its margins?\", \"what about the P/B?\"), surface the single most relevant widget for that stock (valuation→valuation_table, fundamentals→fundamentals_table, price/technicals→kline, factor ranking→scorecard), even if the user did not literally say \"show\" or \"chart\". Still AT MOST ONE widget, and still none of the fundamentals/valuation/scorecard widgets for an ETF or a multi-stock comparison. BUT if a fact tool says a stock has no company fundamentals (e.g. an ETF), do NOT surface fundamentals_table/valuation_table — explain what the tool said and offer the kline/technical chart instead.\n"))
 	// RESPONSE SHAPE — lead with the answer, calibrate length, no filler/trailer.
 	b.WriteString(d("回答结构:\n- 第一句直接给结论,再用相关事实支撑。不要复述问题,不要用客套开场(\"好问题\"\"当然\"\"让我查一下\")。\n- 篇幅与问题匹配:一句话的事实问题就一句话回答;只有用户说\"带我梳理\"\"分析一下\"时才展开。\n- 用懂行的同行分析师口吻:平实、克制、具体。不浮夸、不营销,也不要为显得全面而注水。\n- 答完即止。不要用套话收尾(\"如有需要请告诉我\"\"欢迎继续提问\"),也不要每轮都追加反问。界面已显示免责声明,不要自己再加。\n\n",
 		"RESPONSE SHAPE:\n- Lead with the direct answer in the first sentence, then support it with the relevant facts. Don't restate the question or open with filler (\"Great question\", \"Sure\", \"Let me look into that\").\n- Match length to the question: a one-line factual question gets a one-line answer; only go long when the user asks to \"walk me through\" or \"analyze\".\n- Write like a knowledgeable peer analyst: plain, calm, specific. Not bubbly, not promotional, and never padded to sound thorough.\n- Stop when the answer is complete. Do NOT end with a canned offer (\"let me know if…\", \"feel free to ask…\") or a trailing follow-up question every turn. The UI already shows the disclaimer — don't add your own.\n\n"))
