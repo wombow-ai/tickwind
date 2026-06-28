@@ -4,6 +4,7 @@ import {SITE_URL, langAlternates} from '@/lib/config';
 import {isLocale, LOCALES} from '@/lib/locale';
 import {popularTickers} from '@/lib/pseo';
 import {StockView} from '@/components/StockView';
+import {RelatedStocks} from '@/components/RelatedStocks';
 
 interface Params {
   params: Promise<{locale: string; ticker: string}>;
@@ -164,6 +165,7 @@ export default async function StockPage({params}: Params) {
         />
       ))}
       <StockView ticker={t} />
+      <RelatedStocks ticker={t} locale={loc} />
     </>
   );
 }

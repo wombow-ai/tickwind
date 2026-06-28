@@ -7,16 +7,80 @@
  * and the page never declares a "winner" (just the figures, side by side).
  */
 
-/** Curated, frequently-searched comparisons — prerendered + cross-linked from the hub. */
+/**
+ * Curated, frequently-searched comparisons — prerendered (both locales) + cross-linked from the
+ * hub, the sitemap, and per-stock "Related" footers. The compare page does NO server-side fetch
+ * (numbers stream client-side), so prerendering this whole list is cheap static generation; any
+ * other parseable pair still renders on-demand via ISR. Tickers are real, currently US-listed
+ * common stocks. Keep pairs as genuine same-sector/theme rivalries (better search intent + the
+ * side-by-side is meaningful).
+ */
 export const COMPARE_PAIRS: readonly (readonly [string, string])[] = [
+  // Big tech / internet
   ['AAPL', 'MSFT'],
-  ['NVDA', 'AMD'],
   ['GOOGL', 'META'],
   ['AMZN', 'GOOGL'],
-  ['TSLA', 'NVDA'],
   ['MSFT', 'GOOGL'],
-  ['AVGO', 'AMD'],
   ['META', 'NFLX'],
+  ['ORCL', 'MSFT'],
+  ['ADBE', 'CRM'],
+  ['UBER', 'LYFT'],
+  ['SHOP', 'AMZN'],
+  // Semiconductors / AI hardware
+  ['NVDA', 'AMD'],
+  ['TSLA', 'NVDA'],
+  ['AVGO', 'AMD'],
+  ['INTC', 'AMD'],
+  ['TSM', 'INTC'],
+  ['QCOM', 'AVGO'],
+  ['ARM', 'QCOM'],
+  ['AMAT', 'LRCX'],
+  ['MU', 'AVGO'],
+  ['ANET', 'CSCO'],
+  ['DELL', 'HPE'],
+  // Software / cloud / security
+  ['CRM', 'NOW'],
+  ['SNOW', 'DDOG'],
+  ['PLTR', 'SNOW'],
+  ['CRWD', 'PANW'],
+  ['NET', 'DDOG'],
+  // Payments / financials
+  ['V', 'MA'],
+  ['MA', 'AXP'],
+  ['PYPL', 'V'],
+  ['JPM', 'BAC'],
+  ['BAC', 'WFC'],
+  ['GS', 'MS'],
+  // Consumer / retail
+  ['KO', 'PEP'],
+  ['MCD', 'SBUX'],
+  ['NKE', 'LULU'],
+  ['WMT', 'TGT'],
+  ['COST', 'WMT'],
+  ['HD', 'LOW'],
+  ['PG', 'CL'],
+  // Healthcare / pharma
+  ['LLY', 'NVO'],
+  ['PFE', 'MRK'],
+  ['ABBV', 'JNJ'],
+  ['UNH', 'CVS'],
+  ['ISRG', 'SYK'],
+  ['AMGN', 'GILD'],
+  // Energy
+  ['XOM', 'CVX'],
+  ['COP', 'OXY'],
+  // Autos / EV
+  ['F', 'GM'],
+  ['RIVN', 'LCID'],
+  // Media / telecom
+  ['NFLX', 'DIS'],
+  ['DIS', 'CMCSA'],
+  ['T', 'VZ'],
+  ['VZ', 'TMUS'],
+  // Industrials / airlines
+  ['CAT', 'DE'],
+  ['BA', 'RTX'],
+  ['DAL', 'UAL'],
 ];
 
 /** A ticker as it appears in a compare slug: letters/digits plus `.`/`-` (e.g. BRK.B). */
