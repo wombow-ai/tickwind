@@ -1,6 +1,6 @@
 'use client';
 
-import {ArrowRight, BarChart3, Check, Copy, Eye, FileText, Globe, type LucideIcon, Newspaper, PenLine, StickyNote, Wallet} from 'lucide-react';
+import {ArrowRight, BarChart3, Check, ChevronDown, ChevronRight, Copy, Eye, FileText, Globe, type LucideIcon, Newspaper, PenLine, StickyNote, Wallet} from 'lucide-react';
 import {useState} from 'react';
 import {FundamentalsCard} from '@/components/FundamentalsCard';
 import {IndicatorHistoryChart} from '@/components/IndicatorHistoryChart';
@@ -229,6 +229,31 @@ function CopyButton({text, tr}: {text: string; tr: (k: string) => string}) {
   );
 }
 
+// TraceGroup renders ONE persisted group of tool steps (one ReAct iteration) IN POSITION. A single
+// step shows as its own row; ≥2 steps collapse to a one-line "N steps" toggle (default collapsed)
+// that expands to the full chain — so a reloaded turn stays interleaved AND tidy (Claude-style).
+function TraceGroup({steps, tr}: {steps: ExecStep[]; tr: (k: string) => string}) {
+  const [open, setOpen] = useState(false);
+  if (!steps || steps.length === 0) return null;
+  if (steps.length === 1) return <ExecChain steps={steps} running={false} bare />;
+  return (
+    <div style={{display: 'flex', flexDirection: 'column', gap: 5}}>
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        aria-expanded={open}
+        className="tw-chat-iconbtn"
+        style={{display: 'inline-flex', alignItems: 'center', gap: 5, width: 'fit-content', fontSize: 11.5, fontWeight: 500, color: 'var(--text3)', border: 'none', background: 'transparent', cursor: 'pointer', padding: '2px 7px', borderRadius: 7}}
+      >
+        {open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+        <Check size={12} className="tw-exec-check" />
+        {tr('chat.stepsN').replace('{n}', String(steps.length))}
+      </button>
+      {open && <ExecChain steps={steps} running={false} bare />}
+    </div>
+  );
+}
+
 function BlockView({block, fallbackTicker, tr, streaming}: {block: ChatBlock; fallbackTicker: string; tr: (k: string) => string; streaming?: boolean}) {
   if (block.kind === 'text') {
     return (
@@ -245,10 +270,10 @@ function BlockView({block, fallbackTicker, tr, streaming}: {block: ChatBlock; fa
       </div>
     );
   }
-  // A group of tool steps — rendered INLINE (gray rows, done checks) at its position in the turn,
-  // so a reloaded conversation keeps the Claude-style interleave instead of collapsing to the top.
+  // A group of tool steps — collapsed to one line by default (expandable), IN POSITION, so a
+  // reloaded turn keeps the interleave but stays tidy (a long group doesn't flood the message).
   if (block.kind === 'trace') {
-    return <ExecChain steps={block.steps ?? []} running={false} bare />;
+    return <TraceGroup steps={block.steps ?? []} tr={tr} />;
   }
   const ticker = block.params?.ticker || fallbackTicker;
   return <ChatWidget widget={block.widget ?? ''} ticker={ticker} indicatorId={block.params?.indicator} range={block.params?.range} tr={tr} />;
