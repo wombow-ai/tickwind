@@ -1524,10 +1524,13 @@ export async function createPortal(token: string | null, signal?: AbortSignal): 
  * UI renders from the real store (the chat layer never ships a widget's numbers).
  */
 export interface ChatBlock {
-  kind: 'text' | 'widget';
+  kind: 'text' | 'widget' | 'trace';
   text?: string;
   widget?: string;
   params?: Record<string, string>;
+  // Only on a 'trace' block: the persisted execution chain (display-only; the server never feeds
+  // it back to the model). Rendered as a collapsed, expandable trace on reloaded history.
+  steps?: {kind: string; label: string}[];
 }
 
 /** The POST /chat response: the assistant's blocks + a meter readout + soft-state flags. */

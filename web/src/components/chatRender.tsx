@@ -1,6 +1,6 @@
 'use client';
 
-import {ArrowRight, BarChart3, Check, Copy, Eye, FileText, Globe, type LucideIcon, Newspaper, PenLine, StickyNote, Wallet} from 'lucide-react';
+import {ArrowRight, BarChart3, Check, ChevronDown, ChevronRight, Copy, Eye, FileText, Globe, type LucideIcon, Newspaper, PenLine, StickyNote, Wallet} from 'lucide-react';
 import {useState} from 'react';
 import {FundamentalsCard} from '@/components/FundamentalsCard';
 import {IndicatorHistoryChart} from '@/components/IndicatorHistoryChart';
@@ -76,15 +76,11 @@ const KIND_ICON: Record<string, LucideIcon> = {
  * the live role to the streaming caret. Each label is a Go-owned string (no numbers, no model
  * prose), so this surface is anti-hallucination-safe by construction.
  */
-export function ExecChain({steps, running = true}: {steps: ExecStep[]; running?: boolean}) {
+export function ExecChain({steps, running = true, bare = false}: {steps: ExecStep[]; running?: boolean; bare?: boolean}) {
   if (steps.length === 0) return null;
-  return (
-    <div style={{display: 'flex', gap: 12}}>
-      <div style={{flex: 'none', width: 28, height: 28, borderRadius: 8, background: 'var(--surface2)', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center'}}>
-        <LogoMark size={18} accent="var(--accent)" />
-      </div>
-      <div style={{flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 5, paddingTop: 4}}>
-        {steps.map((st, i) => {
+  const rows = (
+    <div style={{flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 5, paddingTop: bare ? 0 : 4}}>
+      {steps.map((st, i) => {
           // While the tools run, the last row is the live action (pulses). Once the answer is
           // streaming (running=false), every row is done (a gold check) so nothing competes with
           // the streaming caret below.
@@ -99,7 +95,42 @@ export function ExecChain({steps, running = true}: {steps: ExecStep[]; running?:
             </div>
           );
         })}
+    </div>
+  );
+  if (bare) return rows; // inside a persisted message (avatar already shown) → just the rows
+  return (
+    <div style={{display: 'flex', gap: 12}}>
+      <div style={{flex: 'none', width: 28, height: 28, borderRadius: 8, background: 'var(--surface2)', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center'}}>
+        <LogoMark size={18} accent="var(--accent)" />
       </div>
+      {rows}
+    </div>
+  );
+}
+
+// TraceBlock renders the PERSISTED execution chain on reloaded history: a quiet, collapsed
+// "Steps · N" toggle that expands to the (all-done) chain. Display-only — the server never feeds
+// these labels back to the model.
+function TraceBlock({steps, tr}: {steps: ExecStep[]; tr: (k: string) => string}) {
+  const [open, setOpen] = useState(false);
+  if (!steps || steps.length === 0) return null;
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        aria-expanded={open}
+        className="tw-chat-iconbtn"
+        style={{display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11.5, fontWeight: 500, color: 'var(--text3)', border: 'none', background: 'transparent', cursor: 'pointer', padding: '2px 7px', borderRadius: 7}}
+      >
+        {open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+        {tr('chat.trace')} · {steps.length}
+      </button>
+      {open && (
+        <div style={{marginTop: 5, marginLeft: 5}}>
+          <ExecChain steps={steps} running={false} bare />
+        </div>
+      )}
     </div>
   );
 }
@@ -188,6 +219,9 @@ function BlockView({block, fallbackTicker, tr, streaming}: {block: ChatBlock; fa
         <Markdown>{block.text ?? ''}</Markdown>
       </div>
     );
+  }
+  if (block.kind === 'trace') {
+    return <TraceBlock steps={block.steps ?? []} tr={tr} />;
   }
   const ticker = block.params?.ticker || fallbackTicker;
   return <ChatWidget widget={block.widget ?? ''} ticker={ticker} indicatorId={block.params?.indicator} range={block.params?.range} tr={tr} />;
