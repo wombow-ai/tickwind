@@ -12,6 +12,7 @@ import {
   Sparkles,
 } from 'lucide-react';
 import Link from '@/components/LocalLink';
+import {AnnualSaveHint} from '@/components/AnnualSaveHint';
 import {useCallback, useEffect, useState} from 'react';
 import {
   ApiError,
@@ -442,6 +443,7 @@ function PaywallBanner({dark, t, tr}: {dark: boolean; t: Tokens; tr: (key: strin
           <ArrowRight size={13} />
         </Link>
       </div>
+      <AnnualSaveHint className="mt-2.5" />
     </section>
   );
 }

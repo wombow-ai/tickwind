@@ -2,6 +2,7 @@
 
 import {ArrowRight, FlaskConical} from 'lucide-react';
 import Link from '@/components/LocalLink';
+import {AnnualSaveHint} from '@/components/AnnualSaveHint';
 import {useEffect, useState} from 'react';
 import {getBacktest, type SignalBacktestResponse, trackEvent} from '@/lib/api';
 import {useAuth} from '@/lib/auth';
@@ -250,6 +251,7 @@ function ProLock({dark, t, tr}: {dark: boolean; t: Tokens; tr: (k: string) => st
         {tr('backtest.locked.cta')}
         <ArrowRight size={13} />
       </Link>
+      <AnnualSaveHint className="mt-2.5" />
     </div>
   );
 }

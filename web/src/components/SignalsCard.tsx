@@ -3,6 +3,7 @@
 import {Activity, ArrowRight, Minus, TrendingDown, TrendingUp} from 'lucide-react';
 import type {LucideIcon} from 'lucide-react';
 import Link from '@/components/LocalLink';
+import {AnnualSaveHint} from '@/components/AnnualSaveHint';
 import {useEffect, useState} from 'react';
 import {
   getIndicatorSignals,
@@ -180,6 +181,7 @@ export function SignalsCard({ticker}: {ticker: string}) {
               : tr('deep.paywall.cta')}
             <ArrowRight size={13} />
           </Link>
+          <AnnualSaveHint className="mt-2" />
         </div>
       )}
     </section>

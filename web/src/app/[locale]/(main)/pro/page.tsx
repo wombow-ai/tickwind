@@ -3,6 +3,7 @@
 import {ArrowRight, Check, Crown, Loader2, Settings as SettingsIcon, ShieldCheck, Sparkles} from 'lucide-react';
 import {useEffect, useState} from 'react';
 import Link from '@/components/LocalLink';
+import {AnnualSaveHint} from '@/components/AnnualSaveHint';
 import {createCheckout, createPortal, trackEvent} from '@/lib/api';
 import {DEMO_REPORT_PATH} from '@/lib/config';
 import {useAuth} from '@/lib/auth';
@@ -133,6 +134,7 @@ export default function ProPage() {
           <p className={cx('mt-1 text-[12.5px]', t.faint)}>
             {interval === 'year' ? tr('pro.billedAnnually') : tr('pro.billedMonthly')}
           </p>
+          <AnnualSaveHint className="mt-1.5" />
         </div>
 
         {/* unlocks */}

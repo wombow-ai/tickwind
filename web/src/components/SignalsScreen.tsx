@@ -3,6 +3,7 @@
 import {ArrowRight, Minus, ScanLine, TrendingDown, TrendingUp} from 'lucide-react';
 import type {LucideIcon} from 'lucide-react';
 import Link from '@/components/LocalLink';
+import {AnnualSaveHint} from '@/components/AnnualSaveHint';
 import {useEffect, useState} from 'react';
 import {
   getScreenSignals,
@@ -263,6 +264,7 @@ function ProLock({
         {tr('sigscreen.locked.cta')}
         <ArrowRight size={13} />
       </Link>
+      <AnnualSaveHint className="mt-2.5" />
     </section>
   );
 }
