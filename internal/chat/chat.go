@@ -247,7 +247,7 @@ func (s *Service) Enabled() bool { return s.llm != nil && s.llm.Enabled() }
 // Block is one ordered piece of an assistant answer: prose text or a rendered widget
 // reference (the frontend draws the real widget from the store). Persisted as JSON.
 type Block struct {
-	Kind   string            `json:"kind"` // "text" | "widget" | "trace"
+	Kind   string            `json:"kind"` // "text" | "narration" | "widget" | "trace"
 	Text   string            `json:"text,omitempty"`
 	Widget string            `json:"widget,omitempty"`
 	Params map[string]string `json:"params,omitempty"`
@@ -412,14 +412,16 @@ func (s *Service) AnswerStream(ctx context.Context, userID, anchorTicker, lang s
 	tools := toolSpecs(lang, general, hasUserData, hasWeb, hasETF)
 	ts := &turnState{}
 	var total enrich.Usage
-	var trace []Step
-	// finishStream wraps finish() and PREPENDS the persisted execution-chain trace (a display-only
-	// "trace" block) so a reloaded conversation can show what the assistant did. assistantProse
-	// reads only "text" blocks, so the trace NEVER re-enters the model's context on a later turn.
+	// pre accumulates the INTERLEAVED execution preamble — the model's narration between tool calls
+	// PLUS the tool steps, in chronological order — so a reloaded conversation shows the SAME
+	// Claude-style interleave (narration → steps → … → answer) the live stream showed, instead of a
+	// trace collapsed at the top. Narration is kind "narration" (display-only) and steps kind
+	// "trace"; assistantProse reads ONLY "text" blocks, so NEITHER re-enters the model on a later turn.
+	var pre []Block
 	finishStream := func(content string) Answer {
 		a := s.finish(content, ts, total, lang)
-		if len(trace) > 0 {
-			a.Blocks = append([]Block{{Kind: "trace", Steps: trace}}, a.Blocks...)
+		if len(pre) > 0 {
+			a.Blocks = append(append([]Block{}, pre...), a.Blocks...)
 		}
 		return a
 	}
@@ -433,7 +435,13 @@ func (s *Service) AnswerStream(ctx context.Context, userID, anchorTicker, lang s
 		if len(calls) == 0 {
 			return finishStream(content), nil
 		}
+		// This iteration's content is a PREAMBLE (the model's narration before the tools) — persist
+		// it inline so the interleave survives a reload.
+		if strings.TrimSpace(content) != "" {
+			pre = append(pre, Block{Kind: "narration", Text: content})
+		}
 		msgs = append(msgs, enrich.ChatMessage{Role: "assistant", Content: content, ToolCalls: calls})
+		var group []Step
 		for _, c := range calls {
 			// Surface the tool action as a live execution-chain step BEFORE it runs (shows the
 			// intent; no tool result exists yet, so nothing can leak). Unknown tool → no step.
@@ -441,13 +449,16 @@ func (s *Service) AnswerStream(ctx context.Context, userID, anchorTicker, lang s
 				if onStep != nil {
 					onStep(st)
 				}
-				trace = append(trace, st) // also collect for the persisted (reloadable) trace
+				group = append(group, st) // collect THIS iteration's steps as one inline group
 			}
 			msgs = append(msgs, enrich.ChatMessage{
 				Role:       "tool",
 				ToolCallID: c.ID,
 				Content:    s.execTool(ctx, c, userID, anchorTicker, fs, lang, hasUserData, ts),
 			})
+		}
+		if len(group) > 0 {
+			pre = append(pre, Block{Kind: "trace", Steps: group})
 		}
 	}
 

@@ -734,9 +734,11 @@ func (l *llm) ComposeDeepReport(ctx context.Context, material, lang string) (map
 	return parseSectionProse(out.Choices[0].Message.Content)
 }
 
-// chatMaxTokens caps a single conversational turn. A grounded answer over pre-formatted
-// facts is short; this bounds cost and latency (the meter + per-user cap bound the rest).
-const chatMaxTokens = 1500
+// chatMaxTokens caps a single conversational turn. As a full advisor the chat now gives
+// multi-section answers (bull/bear + action tiers + targets + a risk note), so 1500 truncated
+// them mid-sentence; 2800 lets a thorough "deep analysis" turn finish. Cost/latency stay bounded
+// by the per-thread token cap + the per-user meter; a short factual turn still ends early.
+const chatMaxTokens = 2800
 
 // Chat — see the interface doc. One round-trip to the chat client (chatBaseURL/chatAPIKey),
 // default chatModel unless model overrides. Sends messages (already including the system

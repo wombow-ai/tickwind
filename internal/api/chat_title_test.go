@@ -35,16 +35,17 @@ func TestDeriveChatTitle(t *testing.T) {
 // a stored assistant message's display-only "trace" block (the gray ReAct steps) is NEVER fed
 // back to the model on a later turn — assistantProse joins ONLY the "text" blocks.
 func TestAssistantProseSkipsTrace(t *testing.T) {
-	// A stored assistant message: a trace block (steps) + a widget + the prose.
-	stored := `[{"kind":"trace","steps":[{"kind":"facts","label":"Reading AAPL valuation"},{"kind":"web","label":"Searching the web for NVDA earnings"}]},{"kind":"widget","widget":"valuation_table","params":{"ticker":"AAPL"}},{"kind":"text","text":"P/E (TTM) is 34.2x."}]`
+	// A stored assistant message with the INTERLEAVED structure: a narration preamble + a trace
+	// group + a widget + the final prose answer. Only the final answer ("text") may re-enter the model.
+	stored := `[{"kind":"narration","text":"Let me pull the valuation."},{"kind":"trace","steps":[{"kind":"facts","label":"Reading AAPL valuation"},{"kind":"web","label":"Searching the web for NVDA earnings"}]},{"kind":"widget","widget":"valuation_table","params":{"ticker":"AAPL"}},{"kind":"text","text":"P/E (TTM) is 34.2x."}]`
 	got := assistantProse(stored)
 	if got != "P/E (TTM) is 34.2x." {
 		t.Fatalf("assistantProse = %q, want only the text block", got)
 	}
-	// The step labels must NOT leak into the LLM context.
-	for _, bad := range []string{"Reading AAPL", "Searching the web", "valuation_table"} {
+	// The narration, step labels, and widget refs must NOT leak into the LLM context.
+	for _, bad := range []string{"Let me pull", "Reading AAPL", "Searching the web", "valuation_table"} {
 		if contains(got, bad) {
-			t.Errorf("trace/widget content leaked into LLM context: %q", got)
+			t.Errorf("narration/trace/widget content leaked into LLM context: %q", got)
 		}
 	}
 }

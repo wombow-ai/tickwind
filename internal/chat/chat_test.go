@@ -919,3 +919,28 @@ func TestAnswerStreamTrace(t *testing.T) {
 		}
 	}
 }
+
+// TestAnswerStreamInterleaved locks the persisted INTERLEAVE: when the model narrates BEFORE its
+// tool call (a preamble), the stored blocks are [narration][trace][text] in order — so a reloaded
+// turn shows the Claude-style interleave, not a trace collapsed at the top. The preamble is kind
+// "narration" (display-only); only the final answer is "text".
+func TestAnswerStreamInterleaved(t *testing.T) {
+	llm := &scriptedLLM{enabled: true, replies: []reply{
+		{content: "Let me pull that.", calls: []enrich.ChatToolCall{{ID: "c1", Name: "get_facts", Arguments: `{"section":"valuation"}`}}},
+		{content: "P/E is 31.2x."},
+	}}
+	svc := NewService(llm, fakeFacts{sampleSheet()}, nil, "")
+	ans, err := svc.AnswerStream(context.Background(), "u", "AAPL", "en", nil, "valuation?", true, "", nil, nil)
+	if err != nil {
+		t.Fatalf("AnswerStream: %v", err)
+	}
+	if len(ans.Blocks) < 3 || ans.Blocks[0].Kind != "narration" || ans.Blocks[1].Kind != "trace" || ans.Blocks[2].Kind != "text" {
+		t.Fatalf("want [narration][trace][text] in order, got %+v", ans.Blocks)
+	}
+	if ans.Blocks[0].Text != "Let me pull that." {
+		t.Errorf("narration text = %q, want the preamble", ans.Blocks[0].Text)
+	}
+	if ans.Blocks[2].Text != "P/E is 31.2x." {
+		t.Errorf("answer text = %q, want the final answer", ans.Blocks[2].Text)
+	}
+}
