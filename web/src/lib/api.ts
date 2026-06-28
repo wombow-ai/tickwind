@@ -1666,6 +1666,7 @@ export async function postConvChatStream(
   lang: string | undefined,
   onToken: (text: string) => void,
   signal?: AbortSignal,
+  onStep?: (step: {kind: string; label: string}) => void,
 ): Promise<ChatResponse> {
   let res: Response;
   try {
@@ -1701,7 +1702,7 @@ export async function postConvChatStream(
         if (!s.startsWith('data:')) continue;
         const data = s.slice(5).trim();
         if (!data) continue;
-        let ev: {type?: string; text?: string} & Partial<ChatResponse>;
+        let ev: {type?: string; text?: string; kind?: string; label?: string} & Partial<ChatResponse>;
         try {
           ev = JSON.parse(data);
         } catch {
@@ -1709,6 +1710,9 @@ export async function postConvChatStream(
         }
         if (ev.type === 'token') {
           if (ev.text) onToken(ev.text);
+        } else if (ev.type === 'step') {
+          // A deterministic tool-execution step (gray chain). Label is Go-owned; no numbers.
+          if (ev.label) onStep?.({kind: ev.kind ?? '', label: ev.label});
         } else if (ev.type === 'error') {
           throw new ApiError('chat stream error', 502);
         } else if (ev.type === 'done') {

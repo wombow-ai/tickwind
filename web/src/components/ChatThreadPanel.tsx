@@ -1,8 +1,8 @@
 'use client';
 
 import {Activity, BarChart3, Eye, type LucideIcon, Plus, Scale, Send, TrendingDown, TrendingUp, Wallet} from 'lucide-react';
-import {useCallback, useEffect, useRef, useState} from 'react';
-import {MsgRow, type Msg} from '@/components/chatRender';
+import {Fragment, useCallback, useEffect, useRef, useState} from 'react';
+import {ExecChain, type ExecStep, MsgRow, type Msg} from '@/components/chatRender';
 import {BrandLoader} from '@/components/ui/BrandLoader';
 import {LogoMark} from '@/components/ui/atoms';
 import {type ChatResponse, clearChat, createConversation, getChatHistory, getConvHistory, postChat, postConvChatStream} from '@/lib/api';
@@ -75,6 +75,7 @@ export function ChatThreadPanel({source, onActivity, onMeter, onCreated}: {sourc
   // the "New Chat" screen until the messages arrive.
   const [threadLoading, setThreadLoading] = useState(false);
   const [streamStarted, setStreamStarted] = useState(false);
+  const [steps, setSteps] = useState<ExecStep[]>([]); // live ReAct execution chain (ephemeral)
   const [err, setErr] = useState(false);
   const [meter, setMeter] = useState<{used: number; limit: number} | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
@@ -132,7 +133,7 @@ export function ChatThreadPanel({source, onActivity, onMeter, onCreated}: {sourc
   useEffect(() => {
     const el = listRef.current;
     if (el) el.scrollTop = el.scrollHeight;
-  }, [messages, sending]);
+  }, [messages, sending, steps]);
 
   const send = useCallback(
     async (raw: string) => {
@@ -141,6 +142,7 @@ export function ChatThreadPanel({source, onActivity, onMeter, onCreated}: {sourc
       setErr(false);
       setSending(true);
       setStreamStarted(false);
+      setSteps([]);
       setInput('');
       setMessages(m => {
         const next = [...m, {role: 'user' as const, text: msg}];
@@ -194,16 +196,19 @@ export function ChatThreadPanel({source, onActivity, onMeter, onCreated}: {sourc
               if (last && last.role === 'assistant' && last.streaming) next.pop();
               return next;
             });
+          // Each tool action streams in as a gray execution-chain step (Go-owned label).
+          const onStep = (st: ExecStep) => setSteps(s => [...s, st]);
           try {
-            res = await postConvChatStream(convId, msg, token, lang, onTok);
+            res = await postConvChatStream(convId, msg, token, lang, onTok, undefined, onStep);
           } catch {
             // A dropped stream (e.g. a Cloudflare tunnel idle-cut) cancels the server turn before
             // it persists, so ONE retry on the same conversation is safe — and now that the server
             // heartbeats to keep the connection alive, it almost always succeeds. Clear the partial
-            // streamed placeholder first so the retried tokens don't pile onto it.
+            // streamed placeholder + the partial chain first so the retry starts clean.
             popStreaming();
             setStreamStarted(false);
-            res = await postConvChatStream(convId, msg, token, lang, onTok);
+            setSteps([]);
+            res = await postConvChatStream(convId, msg, token, lang, onTok, undefined, onStep);
           }
         }
         setMessages(m => {
@@ -330,8 +335,20 @@ export function ChatThreadPanel({source, onActivity, onMeter, onCreated}: {sourc
           </div>
         ) : (
           <div style={{maxWidth: 760, margin: '0 auto', padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: 22}}>
-            {messages.map((m, i) => <MsgRow key={i} m={m} fallbackTicker={fallbackTicker} tr={tr} />)}
-            {sending && !streamStarted && <ThinkingRow tr={tr} />}
+            {messages.map((m, i) => {
+              // Once the answer is streaming, keep the (now all-done) execution chain visible
+              // ABOVE the streaming message — so a preamble token can't kill it and the user sees
+              // what was looked up. running=false → no pulse, it defers to the streaming caret.
+              const chainAbove = m.streaming && i === messages.length - 1 && steps.length > 0;
+              return (
+                <Fragment key={i}>
+                  {chainAbove && <ExecChain steps={steps} running={false} />}
+                  <MsgRow m={m} fallbackTicker={fallbackTicker} tr={tr} />
+                </Fragment>
+              );
+            })}
+            {/* Before the answer starts streaming: the live chain (or the thinking dots). */}
+            {sending && !streamStarted && (steps.length > 0 ? <ExecChain steps={steps} /> : <ThinkingRow tr={tr} />)}
             {err && <p style={{fontSize: 12.5, color: 'var(--down)'}}>{tr('chat.error')}</p>}
           </div>
         )}

@@ -347,6 +347,10 @@ html.dark .tw-load {
   .tw-chat-streaming .tw-md > p:last-child::after {
     animation: none;
   }
+  .tw-exec-row-in,
+  .tw-exec-pulse {
+    animation: none;
+  }
 }
 
 /* ------------------------------ scrollbar ------------------------------ */
@@ -414,6 +418,16 @@ html.dark .tw-load {
 /* Quiet icon buttons (copy) warm to gold on hover; the !important beats the inline base color. */
 .tw-chat-iconbtn { transition: background .15s ease, color .15s ease; }
 .tw-chat-iconbtn:hover { background: var(--accent-soft, rgba(207,154,51,.12)); color: var(--accent2, #9c6f18) !important; }
+/* ReAct execution chain — gray tool-step rows; current row pulses, finished rows get a gold check. */
+.tw-exec-row { display: flex; gap: 8px; align-items: center; font-size: 13px; line-height: 1.5; color: var(--text2); }
+.tw-exec-row.current { color: var(--text); }
+.tw-exec-icon { flex: none; width: 14px; height: 14px; color: var(--text3); display: flex; align-items: center; justify-content: center; border-radius: 50%; }
+.tw-exec-row.current .tw-exec-icon { color: var(--accent2); }
+.tw-exec-check { color: var(--accent2); }
+.tw-exec-row-in { animation: tw-exec-rowin 0.22s ease both; }
+@keyframes tw-exec-rowin { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+.tw-exec-pulse { animation: tw-exec-pulse 1.4s ease-in-out infinite; }
+@keyframes tw-exec-pulse { 0%, 100% { box-shadow: 0 0 0 0 var(--accent-soft, rgba(207,154,51,.3)); } 50% { box-shadow: 0 0 0 5px transparent; } }
 
 /* ----------------------- bilingual SSR content ------------------------ */
 /* Server-rendered blocks (e.g. the home intro + board directory) can't use the

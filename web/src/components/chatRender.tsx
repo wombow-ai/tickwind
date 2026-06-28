@@ -1,6 +1,6 @@
 'use client';
 
-import {ArrowRight, Check, Copy} from 'lucide-react';
+import {ArrowRight, BarChart3, Check, Copy, Eye, FileText, Globe, type LucideIcon, Newspaper, PenLine, StickyNote, Wallet} from 'lucide-react';
 import {useState} from 'react';
 import {FundamentalsCard} from '@/components/FundamentalsCard';
 import {IndicatorHistoryChart} from '@/components/IndicatorHistoryChart';
@@ -51,6 +51,58 @@ function dedupeBlocks(blocks: ChatBlock[]): ChatBlock[] {
 // path (BlockView → Markdown): on `done` the block is updated in place rather than the prose
 // node being unmounted and re-parsed, which is what made the message visibly "re-flash".
 export type Msg = {role: 'user' | 'assistant'; blocks?: ChatBlock[]; text?: string; streaming?: boolean};
+
+// One deterministic tool-execution step in the gray ReAct chain. Label is Go-authored
+// (i18n done server-side); the frontend renders it verbatim — never a number, never model text.
+export type ExecStep = {kind: string; label: string};
+
+const KIND_ICON: Record<string, LucideIcon> = {
+  facts: FileText,
+  news: Newspaper,
+  web: Globe,
+  etf: Wallet,
+  widget: BarChart3,
+  watchlist: Eye,
+  holdings: Wallet,
+  notes: StickyNote,
+  writing: PenLine,
+};
+
+/**
+ * The live execution chain: a gray, Claude-style trace of the deterministic tool steps the
+ * assistant ran (Reading AAPL fundamentals, Searching the web, ...), shown while the answer is
+ * still being prepared. The LAST row is the current action (its icon pulses); earlier rows are
+ * done (a gold check). Ephemeral — it unmounts the moment the answer starts streaming, handing
+ * the live role to the streaming caret. Each label is a Go-owned string (no numbers, no model
+ * prose), so this surface is anti-hallucination-safe by construction.
+ */
+export function ExecChain({steps, running = true}: {steps: ExecStep[]; running?: boolean}) {
+  if (steps.length === 0) return null;
+  return (
+    <div style={{display: 'flex', gap: 12}}>
+      <div style={{flex: 'none', width: 28, height: 28, borderRadius: 8, background: 'var(--surface2)', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center'}}>
+        <LogoMark size={18} accent="var(--accent)" />
+      </div>
+      <div style={{flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 5, paddingTop: 4}}>
+        {steps.map((st, i) => {
+          // While the tools run, the last row is the live action (pulses). Once the answer is
+          // streaming (running=false), every row is done (a gold check) so nothing competes with
+          // the streaming caret below.
+          const current = running && i === steps.length - 1;
+          const Icon = KIND_ICON[st.kind];
+          return (
+            <div key={i} className={'tw-exec-row tw-exec-row-in' + (current ? ' current' : '')}>
+              <span className={'tw-exec-icon' + (current ? ' tw-exec-pulse' : '')}>
+                {current ? Icon ? <Icon size={13} /> : <span style={{width: 5, height: 5, borderRadius: '50%', background: 'currentColor'}} /> : <Check size={13} className="tw-exec-check" />}
+              </span>
+              <span>{st.label}</span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 
 const WIDGET_ANCHOR: Record<string, string> = {
   flows_summary: '#short',
