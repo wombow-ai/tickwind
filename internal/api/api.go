@@ -4465,6 +4465,36 @@ func researchWeek() string {
 	return fmt.Sprintf("%04d-W%02d", y, w)
 }
 
+// etLocation returns America/New_York (UTC on load failure) — the timezone all the quota
+// windows are keyed to (researchMonth / researchWeek / the reset helpers below).
+func etLocation() *time.Location {
+	loc, err := time.LoadLocation("America/New_York")
+	if err != nil {
+		return time.UTC
+	}
+	return loc
+}
+
+// nextMonthResetET is the first instant of next month in ET — when the per-month token quota
+// (researchMonth) rolls over. The UI shows it as "resets {date}".
+func nextMonthResetET() time.Time {
+	now := time.Now().In(etLocation())
+	first := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
+	return first.AddDate(0, 1, 0)
+}
+
+// nextWeekResetET is next Monday 00:00 ET — when the per-week token quota (researchWeek, an ISO
+// week starting Monday) rolls over. Always the NEXT Monday, never today.
+func nextWeekResetET() time.Time {
+	now := time.Now().In(etLocation())
+	days := (int(time.Monday) - int(now.Weekday()) + 7) % 7
+	if days == 0 {
+		days = 7
+	}
+	midnight := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	return midnight.AddDate(0, 0, days)
+}
+
 // getSummary returns the ticker's AI digest in the requested language. The digest is
 // generated at most once per (ticker, ET day, lang) and served from memory + a durable
 // store (restart-survival); concurrent first requests are deduped.

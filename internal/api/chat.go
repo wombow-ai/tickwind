@@ -307,17 +307,45 @@ func (s *Server) chatTurn(w http.ResponseWriter, r *http.Request, u auth.User, c
 // the per-turn meter only arrives with a reply. It mirrors chatQuotaGate: Pro is metered per
 // ET-month on the high cap, the free taste per ET-week on the small cap. Reporting the monthly
 // bucket for a free user (the old behavior) misstated their weekly allowance.
+// chatUsageResp is the chat-quota meter the hub renders: the tier-aware used/limit plus the
+// window RESET timestamp (so the UI can show "resets {date}") and, for Pro, the subscription's
+// renewal/expiry date + cancel flag — so a lapsing Pro sees a renew hint before access drops to
+// free (the revert itself is automatic via tierOf reading the Stripe sub status). used/limit stay
+// in place; the rest is additive (old clients ignore it).
+type chatUsageResp struct {
+	Used              int    `json:"used"`
+	Limit             int    `json:"limit"`
+	Tier              string `json:"tier"`                           // "pro" | "free"
+	Period            string `json:"period"`                         // "month" (Pro) | "week" (free taste)
+	ResetAt           string `json:"reset_at"`                       // RFC3339 — when the quota window rolls over
+	SubscriptionEnd   string `json:"subscription_end,omitempty"`     // Pro: current period end (RFC3339)
+	CancelAtPeriodEnd bool   `json:"cancel_at_period_end,omitempty"` // Pro: set to cancel → reverts to free at period end
+}
+
 func (s *Server) getChatUsage(w http.ResponseWriter, r *http.Request) {
 	u, ok := s.requireUser(w, r)
 	if !ok {
 		return
 	}
-	period, limit := researchMonth(), s.chatMonthlyTokenLimit
-	if s.tierOf(r.Context(), u.ID) != tierPro {
-		period, limit = researchWeek(), s.chatFreeWeeklyTokens
+	resp := chatUsageResp{Tier: tierFree, Period: "week"}
+	var bucket string
+	if s.tierOf(r.Context(), u.ID) == tierPro {
+		resp.Tier, resp.Period = tierPro, "month"
+		bucket, resp.Limit = researchMonth(), s.chatMonthlyTokenLimit
+		resp.ResetAt = nextMonthResetET().Format(time.RFC3339)
+		// Surface the subscription lifecycle so the UI can warn a lapsing Pro to renew.
+		if sub, found, err := s.store.GetSubscription(r.Context(), u.ID); err == nil && found {
+			if !sub.CurrentPeriodEnd.IsZero() {
+				resp.SubscriptionEnd = sub.CurrentPeriodEnd.UTC().Format(time.RFC3339)
+			}
+			resp.CancelAtPeriodEnd = sub.CancelAtPeriodEnd
+		}
+	} else {
+		bucket, resp.Limit = researchWeek(), s.chatFreeWeeklyTokens
+		resp.ResetAt = nextWeekResetET().Format(time.RFC3339)
 	}
-	used, _ := s.store.GetChatTokensUsed(r.Context(), u.ID, period)
-	writeJSON(w, http.StatusOK, map[string]int{"used": used, "limit": limit})
+	resp.Used, _ = s.store.GetChatTokensUsed(r.Context(), u.ID, bucket)
+	writeJSON(w, http.StatusOK, resp)
 }
 
 // chatTurnStream is the SSE (streaming) variant of chatTurn: it streams the final answer's

@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/wombow-ai/tickwind/internal/store"
 	"github.com/wombow-ai/tickwind/internal/store/memory"
@@ -44,5 +45,25 @@ func TestChatQuotaGate_FreeAndPro(t *testing.T) {
 	_, blocked, pro, _, used, _ = s.chatQuotaGate(ctx, "pro", "en")
 	if !pro || !blocked || used < 1000 {
 		t.Fatalf("pro over token cap: pro=%v blocked=%v used=%d; want pro + blocked + used>=1000", pro, blocked, used)
+	}
+}
+
+// TestQuotaResetHelpers locks the quota-window reset timestamps the chat usage meter exposes:
+// the monthly reset is the 1st of a future month; the weekly reset is a future Monday within 7d.
+func TestQuotaResetHelpers(t *testing.T) {
+	now := time.Now()
+	m := nextMonthResetET()
+	if m.Day() != 1 {
+		t.Errorf("monthly reset not on the 1st: %v", m)
+	}
+	if !m.After(now) {
+		t.Errorf("monthly reset not in the future: %v", m)
+	}
+	w := nextWeekResetET()
+	if w.Weekday() != time.Monday {
+		t.Errorf("weekly reset not a Monday: %v", w)
+	}
+	if !w.After(now) || w.After(now.Add(7*24*time.Hour+time.Hour)) {
+		t.Errorf("weekly reset not within the next 7 days: %v (now %v)", w, now)
 	}
 }
