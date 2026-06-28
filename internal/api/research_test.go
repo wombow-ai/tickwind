@@ -443,7 +443,7 @@ func TestGetResearch_DeepColdScorecardDefersGen(t *testing.T) {
 	sc := &togglableScorecard{} // empty population → cold
 	srv, st := serverWithResearchScorecardStore(fake, sc)
 	defer srv.Close()
-	url := srv.URL + "/v1/stocks/AAPL/research?depth=deep"
+	url := srv.URL + "/v1/stocks/MSFT/research?depth=deep"
 
 	// COLD: deep request → "generating", but the gen is DEFERRED — no ComposeDeep, no charge.
 	_, body := getResearchAs(t, url, "user-1")
@@ -543,7 +543,7 @@ func TestGetResearch_DeepAsyncFlow(t *testing.T) {
 	}
 	srv, st := serverWithResearchStore(fake)
 	defer srv.Close()
-	url := srv.URL + "/v1/stocks/AAPL/research?depth=deep"
+	url := srv.URL + "/v1/stocks/MSFT/research?depth=deep"
 
 	// First deep request → INSTANT data-only + "generating"; the bg gen is started.
 	resp, body := getResearchAs(t, url, "user-1")
@@ -617,7 +617,7 @@ func TestGetResearch_DeepAnon401(t *testing.T) {
 	defer srv.Close()
 
 	// Anonymous deep → 401, and NO compose ran (gated before generation).
-	resp, _ := getResearchAs(t, srv.URL+"/v1/stocks/AAPL/research?depth=deep", "")
+	resp, _ := getResearchAs(t, srv.URL+"/v1/stocks/MSFT/research?depth=deep", "")
 	if resp.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("anon deep status = %d; want 401", resp.StatusCode)
 	}
@@ -645,10 +645,11 @@ func TestGetResearch_DeepQuotaExhausted(t *testing.T) {
 	defer srv.Close()
 	// Default deep limit is 1 (the owner spec); the test server uses that default.
 
-	// user-1's first deep generation: kicks off async, then polls to ready, charging once.
-	body := pollDeepUntilReady(t, srv.URL+"/v1/stocks/AAPL/research?depth=deep", "user-1")
+	// user-1's first deep generation (a non-demo ticker, distinct from the MSFT one below):
+	// kicks off async, then polls to ready, charging the single monthly slot once.
+	body := pollDeepUntilReady(t, srv.URL+"/v1/stocks/NVDA/research?depth=deep", "user-1")
 	if !body.LLM || body.Model != "deep-x" {
-		t.Fatalf("user-1 AAPL ready: llm=%v model=%q; want true / deep-x", body.LLM, body.Model)
+		t.Fatalf("user-1 NVDA ready: llm=%v model=%q; want true / deep-x", body.LLM, body.Model)
 	}
 	if fake.deepComposeCount() != 1 {
 		t.Fatalf("ComposeDeep ran %d times; want 1", fake.deepComposeCount())
@@ -732,7 +733,7 @@ func TestGetResearch_DeepFailedGenNoCharge(t *testing.T) {
 	fake.failDeep.Store(true)
 	srv, st := serverWithResearchStore(fake)
 	defer srv.Close()
-	url := srv.URL + "/v1/stocks/AAPL/research?depth=deep"
+	url := srv.URL + "/v1/stocks/MSFT/research?depth=deep"
 
 	// First deep request → generating; the bg gen runs but produces NO prose (fails).
 	_, body := getResearchAs(t, url, "user-1")
@@ -776,7 +777,7 @@ func TestGetResearch_DeepConcurrentSingleFlight(t *testing.T) {
 	}
 	srv, st := serverWithResearchStore(fake)
 	defer srv.Close()
-	url := srv.URL + "/v1/stocks/AAPL/research?depth=deep"
+	url := srv.URL + "/v1/stocks/MSFT/research?depth=deep"
 
 	const racers = 12
 	var wg sync.WaitGroup
@@ -830,5 +831,27 @@ func TestGetResearch_DisabledDataOnly(t *testing.T) {
 	}
 	if len(body.Sections) != 1 || body.Sections[0].Prose != "" {
 		t.Errorf("want one prose-less section; got %+v", body.Sections)
+	}
+}
+
+// TestGetResearch_DemoReportAnonQuotaFree: AAPL is the evergreen demo report — an anonymous
+// visitor can view it (NOT 401'd like a non-demo deep report), it reaches "ready", and it
+// charges NO per-user quota (a marketing asset; the global daily cap still bounds cost).
+func TestGetResearch_DemoReportAnonQuotaFree(t *testing.T) {
+	fake := &fakeResearch{fs: sampleSheet(), enabled: true, deepModel: "deep-x", prose: map[string]string{"valuation": "ok"}}
+	srv, st := serverWithResearchStore(fake)
+	defer srv.Close()
+	url := srv.URL + "/v1/stocks/AAPL/research?depth=deep"
+
+	resp, _ := getResearchAs(t, url, "") // anon — no token
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("anon demo status = %d; want 200 (the demo is anon-viewable, unlike a gated report)", resp.StatusCode)
+	}
+	body := pollDeepUntilReady(t, url, "") // anon polls the demo to ready
+	if !body.LLM {
+		t.Errorf("demo report never became a real (llm) report for anon")
+	}
+	if used := deepQuotaUsed(t, st, ""); used != 0 {
+		t.Errorf("demo charged quota to anon: used=%d; want 0 (quota-free)", used)
 	}
 }

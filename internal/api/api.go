@@ -2972,12 +2972,22 @@ func (s *Server) SetDeepResearchLimitPro(n int) {
 // truncation). Off by default → full report for everyone (current behavior).
 func (s *Server) SetPaywallEnabled(on bool) { s.paywallEnabled = on }
 
+// demoReportTickers are the evergreen DEMO deep reports: a small set of mega-caps whose deep
+// report is ALWAYS served in full to anyone (anon/free/Pro), regardless of PAYWALL_ENABLED, and
+// generated quota-free — so a prospect can see one complete report before paying (the highest-
+// converting honest sales asset + a top SEO page). Exactly one by design (the scan's call).
+var demoReportTickers = map[string]bool{"AAPL": true}
+
+func isDemoReport(ticker string) bool {
+	return demoReportTickers[strings.ToUpper(strings.TrimSpace(ticker))]
+}
+
 // serveDeepReady writes a READY deep report, applying the free-tier paywall truncation
 // when PAYWALL_ENABLED and the requester is not Pro. The shared cache entry is never
 // mutated — truncation works on a serve-time copy, so Pro viewers (and a paywall-off
-// deployment) always get the full report.
-func (s *Server) serveDeepReady(w http.ResponseWriter, r *http.Request, e researchEntry) {
-	if s.paywallEnabled && e.llm {
+// deployment) always get the full report. A demo ticker is NEVER truncated.
+func (s *Server) serveDeepReady(w http.ResponseWriter, r *http.Request, e researchEntry, ticker string) {
+	if s.paywallEnabled && e.llm && !isDemoReport(ticker) {
 		u, _ := auth.UserFrom(r.Context())
 		if s.tierOf(r.Context(), u.ID) != tierPro {
 			e = truncateDeepForFree(e)
@@ -3293,12 +3303,19 @@ func (s *Server) getResearchSync(w http.ResponseWriter, r *http.Request, ticker,
 // instant response returning (which cancels r.Context()) can't kill the generation; the
 // inflight entry is always cleared (no goroutine / map leak).
 func (s *Server) getResearchDeep(w http.ResponseWriter, r *http.Request, ticker, lang string) {
+	demo := isDemoReport(ticker) // an evergreen demo report: anon-viewable + generated quota-free
 	u, ok := auth.UserFrom(r.Context())
-	if !ok {
+	if !ok && !demo {
 		writeJSON(w, http.StatusUnauthorized, errBody("登录后才能生成深度研报 / login required for deep research"))
 		return
 	}
+	// A demo gen is quota-FREE (it's a marketing asset, not the viewer's own report): use an
+	// empty genUserID so the per-user quota check + charge are skipped (the global daily cap
+	// still bounds cost). A non-demo report uses the real user id.
 	userID := u.ID
+	if demo {
+		userID = ""
+	}
 	period := researchMonth() // per-user QUOTA period: ET calendar month (free 1/user/month)
 	day := summaryDay()       // global-cap day, shared with the normal path / digest cache
 	// The deep report caches AND single-flights per (ticker, ET-MONTH, lang) so a
@@ -3314,7 +3331,7 @@ func (s *Server) getResearchDeep(w http.ResponseWriter, r *http.Request, ticker,
 	s.researchMu.Lock()
 	if e, ok := s.researchCache[key]; ok && e.llm {
 		s.researchMu.Unlock()
-		s.serveDeepReady(w, r, e)
+		s.serveDeepReady(w, r, e, ticker)
 		return
 	}
 	s.researchMu.Unlock()
@@ -3331,7 +3348,7 @@ func (s *Server) getResearchDeep(w http.ResponseWriter, r *http.Request, ticker,
 			s.researchMu.Lock()
 			s.researchCache[key] = e
 			s.researchMu.Unlock()
-			s.serveDeepReady(w, r, e)
+			s.serveDeepReady(w, r, e, ticker)
 			return
 		}
 	}
@@ -3361,7 +3378,7 @@ func (s *Server) getResearchDeep(w http.ResponseWriter, r *http.Request, ticker,
 	// A racing request may have finished a gen between our cache check and here.
 	if e, ok := s.researchCache[key]; ok && e.llm {
 		s.researchMu.Unlock()
-		s.serveDeepReady(w, r, e)
+		s.serveDeepReady(w, r, e, ticker)
 		return
 	}
 	if _, busy := s.researchInflight[key]; busy {
@@ -3396,17 +3413,20 @@ func (s *Server) getResearchDeep(w http.ResponseWriter, r *http.Request, ticker,
 	// limit so upgrading actually lifts the cap (the limit-reached upsell's promise);
 	// free gets the base limit. Read fails OPEN (a backend hiccup never locks a user
 	// out). Over quota with nothing cached → graceful data-only "quota_exhausted"
-	// (replaces the old hard 429).
-	monthlyLimit := s.deepResearchLimit
-	if s.tierOf(r.Context(), userID) == tierPro {
-		monthlyLimit = s.deepResearchLimitPro
-	}
-	if used, err := s.store.GetDeepQuotaUsed(r.Context(), userID, period); err != nil {
-		s.log.Debug("deep-research quota read failed — failing open (allow)", "user", userID, "period", period, "err", err)
-	} else if used >= monthlyLimit {
-		s.researchMu.Unlock()
-		s.writeResearchStatus(w, dataOnly, proseStatusQuotaExhausted)
-		return
+	// (replaces the old hard 429). A DEMO report skips the per-user quota entirely
+	// (quota-free marketing asset; the global daily cap above still bounds cost).
+	if !demo {
+		monthlyLimit := s.deepResearchLimit
+		if s.tierOf(r.Context(), userID) == tierPro {
+			monthlyLimit = s.deepResearchLimitPro
+		}
+		if used, err := s.store.GetDeepQuotaUsed(r.Context(), userID, period); err != nil {
+			s.log.Debug("deep-research quota read failed — failing open (allow)", "user", userID, "period", period, "err", err)
+		} else if used >= monthlyLimit {
+			s.researchMu.Unlock()
+			s.writeResearchStatus(w, dataOnly, proseStatusQuotaExhausted)
+			return
+		}
 	}
 	// We are the SOLE generator for this key: reserve the global-cap slot + mark the
 	// inflight gate, then spawn the detached bg goroutine and return data-only NOW.
@@ -3466,11 +3486,12 @@ func (s *Server) composeDeepBackground(ticker, lang, key, day, period, userID, d
 	cancel()
 	hasProse := factSheetHasProse(composed)
 
-	if hasProse {
+	if hasProse && userID != "" {
 		// Charge the monthly quota EXACTLY ONCE for this successful generation, then
 		// cache the prose'd report so every later view (any user) is a free "ready".
 		// The increment is best-effort: an error is logged, not fatal (the user got
 		// their report; worst case they keep an extra slot this month — fail open).
+		// A demo gen passes userID="" (quota-free) → no charge.
 		qctx, qcancel := context.WithTimeout(context.Background(), 5*time.Second)
 		if err := s.store.IncrDeepQuotaUsed(qctx, userID, period); err != nil {
 			s.log.Debug("deep-research quota increment failed (non-fatal)", "user", userID, "period", period, "err", err)
