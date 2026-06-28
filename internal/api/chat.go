@@ -39,6 +39,19 @@ const maxThreadHistoryTokens = 9000
 // returns a clean "try again" rather than hanging.
 const chatTurnTimeout = 90 * time.Second
 
+// chatModeOf narrows the request's mode to the closed set the prompt understands; anything else
+// (absent / bogus / an old client) → "" = the adaptive default. Mode is a DEPTH/shape dial only —
+// it never reaches the no-advice firewall (rules + the finish→filterAdvice backstop run in every mode).
+func chatModeOf(m string) string {
+	switch strings.ToLower(strings.TrimSpace(m)) {
+	case "focused":
+		return "focused"
+	case "explore":
+		return "explore"
+	}
+	return ""
+}
+
 // estTokens is a cheap (chars/4) token estimate for the thread-budget check.
 func estTokens(msgs []enrich.ChatMessage) int {
 	chars := 0
@@ -186,6 +199,7 @@ func (s *Server) chatTurn(w http.ResponseWriter, r *http.Request, u auth.User, c
 	var req struct {
 		Message string `json:"message"`
 		Lang    string `json:"lang"`
+		Mode    string `json:"mode"` // "" adaptive (default) | "focused" | "explore" — DEPTH dial only
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 8<<10)).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, errBody("bad request"))
@@ -245,7 +259,7 @@ func (s *Server) chatTurn(w http.ResponseWriter, r *http.Request, u auth.User, c
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), chatTurnTimeout)
 	defer cancel()
-	ans, err := s.chatSvc.Answer(ctx, u.ID, anchorTicker, lang, llmHist, msg, s.chatPersonalDataAllowed(ctx, u.ID))
+	ans, err := s.chatSvc.Answer(ctx, u.ID, anchorTicker, lang, llmHist, msg, s.chatPersonalDataAllowed(ctx, u.ID), chatModeOf(req.Mode))
 	if err != nil {
 		switch {
 		case errors.Is(err, chat.ErrNotFound):
@@ -316,6 +330,7 @@ func (s *Server) chatTurnStream(w http.ResponseWriter, r *http.Request, u auth.U
 	var req struct {
 		Message string `json:"message"`
 		Lang    string `json:"lang"`
+		Mode    string `json:"mode"` // "" adaptive (default) | "focused" | "explore" — DEPTH dial only
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 8<<10)).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, errBody("bad request"))
@@ -421,7 +436,7 @@ func (s *Server) chatTurnStream(w http.ResponseWriter, r *http.Request, u auth.U
 
 	ctx, cancel := context.WithTimeout(r.Context(), chatTurnTimeout)
 	defer cancel()
-	ans, err := s.chatSvc.AnswerStream(ctx, u.ID, anchorTicker, lang, llmHist, msg, s.chatPersonalDataAllowed(ctx, u.ID), func(tok string) {
+	ans, err := s.chatSvc.AnswerStream(ctx, u.ID, anchorTicker, lang, llmHist, msg, s.chatPersonalDataAllowed(ctx, u.ID), chatModeOf(req.Mode), func(tok string) {
 		send(map[string]any{"type": "token", "text": tok})
 	}, func(st chat.Step) {
 		// Each deterministic tool action becomes a gray execution-chain step (interstitial,

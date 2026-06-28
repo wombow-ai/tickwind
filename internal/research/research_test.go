@@ -607,6 +607,61 @@ func TestHasAdviceAnalystTargets(t *testing.T) {
 	}
 }
 
+// TestHasAdviceSoftAdvice locks the Explore-mode firewall hardening: the soft "...therefore
+// it's a good position" verdicts the keyword net used to miss are now caught, while the deep
+// two-sided ANALYSIS that Explore mode is meant to produce still SURVIVES (so the relaxation
+// can't be undone by over-blocking).
+func TestHasAdviceSoftAdvice(t *testing.T) {
+	// Aggregate desirability verdicts on the security — must be CAUGHT.
+	advice := []string{
+		"on balance this looks like a compelling entry",
+		"the setup looks attractive here",
+		"the risk/reward skews favorably from here",
+		"it's the best opportunity in the sector",
+		"a high-conviction top pick",
+		"worth owning at these levels",
+		"poised to outperform the market",
+		"the stock looks cheap on these numbers",
+		"limited downside with asymmetric upside",
+		"投资者可以建仓",
+		"目前性价比很高,很有吸引力",
+		"是该板块的最佳机会,有望跑赢",
+		"建议逢低布局,这是个好的买点",
+		"上行空间大于下行,值得拥有",
+		"the chart is begging to break out",
+		"the path of least resistance is higher",
+		"it checks every box for the bulls",
+		"数据会说话,目前上涨是大概率",
+	}
+	for _, p := range advice {
+		if !hasAdvice(p) {
+			t.Errorf("hasAdvice(%q) = false, want true (soft advice must be caught)", p)
+		}
+	}
+	// Deep two-sided ANALYSIS — descriptive, never a recommendation — must SURVIVE.
+	compliant := []string{
+		"the bear case is the more compelling of the two readings",      // bare 'compelling', not 'compelling entry'
+		"dividend yield is attractive vs the sector at the disclosed %", // bare 'attractive', not 'looks attractive'
+		"ranks in the 91st percentile for quality",
+		"gross margin expanded to 46.9% year over year",
+		"catalysts to watch: the Q3 earnings print and the next 10-Q",  // 'to watch', not 'worth watching'
+		"the next earnings print is the key event to watch this month", // ditto
+		"if margins hold at the disclosed 46.9%, the quality percentile stays top-decile",
+		"bull case: revenue accelerating; bear case: 20th-percentile value",
+		"an insider initiated a new stake last quarter, per Form 4", // past-tense position FACT
+		"RSI sits at 72, overbought by the standard threshold",
+		"该催化剂值得关注,临近财报",                                              // '值得关注' is NOT in the list (catalyst-level, legit)
+		"从风险收益比的角度,看多看空各有支撑",                                         // bare '风险收益比' concept is NOT in the list
+		"the coverage ratio leaves limited downside to the dividend", // 'limited downside' is anchored → coverage fact survives
+		"best-in-class operating margins of 46.9%",                   // 'best-in-class' ≠ 'best opportunity'
+	}
+	for _, p := range compliant {
+		if hasAdvice(p) {
+			t.Errorf("hasAdvice(%q) = true, want false (compliant two-sided analysis over-stripped)", p)
+		}
+	}
+}
+
 // TestComposeScrubsAdviceFromProse asserts the deterministic advice backstop now also
 // covers the report BODY (section prose + overview), not just bull/bear points: an advice
 // line in the overview is dropped (clean lines kept), and an all-advice section paragraph

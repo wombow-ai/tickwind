@@ -134,6 +134,35 @@ var advicePhrases = []string{
 	"recommend buy", "recommend sell", "must buy", "fair value", "intrinsic value",
 	"fairly valued", "undervalued", "overvalued", "entry point", "good entry", "buy the dip",
 	"compelling buy", "worth buying", "a buy here", "buy here", "deserves a position",
+	// EN SOFT-advice — aggregate desirability verdicts on the security as a position (added
+	// 2026-06-28 with the Explore-mode relaxation; the prompt lets the model do deep two-sided
+	// ANALYSIS, so the deterministic backstop must catch the "...therefore it's a good buy"
+	// summary judgments the keyword net missed). All PHRASE-anchored so factual/two-sided prose
+	// survives ("the bear case is the more compelling reading", "dividend yield is attractive vs
+	// the sector" both pass). Deliberately NOT added: "worth watching"/"one to watch" — a
+	// catalyst is legitimately "to watch" and the Explore prompt surfaces it; the stock-level
+	// recommendation-by-implication is handled by the prompt boundary instead.
+	"compelling entry", "compelling setup", "attractive entry", "attractive setup",
+	"attractive here", "attractive at these levels", "attractive at current", "looks attractive",
+	"screens attractive", "risk/reward skews", "risk-reward skews", "skews favorably",
+	"skews favorable", "favorable risk/reward", "favorable risk-reward", "favorable setup",
+	"reward outweighs the risk", "limited downside from here", "limited downside at these",
+	"asymmetric upside", "favorable asymmetry", "best opportunity", "best opportunities",
+	"top pick", "high-conviction", "worth owning", "worth a position", "poised to outperform",
+	"poised to rally", "set up to outperform", "looks cheap", "looks expensive", "buyable",
+	"a buyer here", "start a position", "initiate a position", "get long here",
+	// EN buy/sell-BY-METAPHOR. The keyword net is a FLOOR, not a wall — the model can paraphrase
+	// endlessly, so the EXPLORATORY HARD BOUNDARY (ban the ACT) is the primary control; these are a
+	// high-precision net for the worst offenders (none strip two-sided factual prose).
+	"begging to break out", "path of least resistance", "checks every box", "hard to bet against",
+	"the data is doing the talking", "hard to ignore at", "flashing green",
+	// ZH SOFT-advice (phrase-anchored; position-fact-adjacent tokens kept as 可以建仓/适合建仓/
+	// 逢低布局/好的买点, NOT bare 建仓/布局/买点, so an insider-buy or 13F position FACT survives).
+	"很有吸引力", "颇具吸引力", "吸引力较大", "赔率不错", "赔率很好", "性价比很高", "性价比突出",
+	"值得拥有", "值得持有", "值得买", "最佳机会", "首选", "重点推荐", "上行空间大于下行", "下行有限",
+	"看好后市", "有望跑赢", "可以建仓", "适合建仓", "逢低布局", "好的买点",
+	// ZH buy-by-metaphor net (high-precision; the prompt ACT-ban is the primary control).
+	"呼之欲出", "上涨是大概率", "多头逻辑依然完整", "样样都占", "数据会说话",
 }
 
 // adviceRe catches a buy-side action tied to a PRICE LEVEL ("buy at $150", "accumulate

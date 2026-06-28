@@ -97,7 +97,7 @@ func textOf(a Answer) string {
 func TestAnswerDirect(t *testing.T) {
 	llm := &scriptedLLM{enabled: true, replies: []reply{{content: "Apple trades at 31.2x earnings."}}}
 	svc := NewService(llm, fakeFacts{sampleSheet()}, nil, "")
-	ans, err := svc.Answer(context.Background(), "u", "AAPL", "en", nil, "what's the P/E?", true)
+	ans, err := svc.Answer(context.Background(), "u", "AAPL", "en", nil, "what's the P/E?", true, "")
 	if err != nil {
 		t.Fatalf("Answer: %v", err)
 	}
@@ -120,7 +120,7 @@ func TestAnswerGetFactsToolRoundTrip(t *testing.T) {
 		{content: "Per the valuation facts, P/E is 31.2x."},
 	}}
 	svc := NewService(llm, fakeFacts{sampleSheet()}, nil, "")
-	ans, err := svc.Answer(context.Background(), "u", "AAPL", "en", nil, "pull valuation", true)
+	ans, err := svc.Answer(context.Background(), "u", "AAPL", "en", nil, "pull valuation", true, "")
 	if err != nil {
 		t.Fatalf("Answer: %v", err)
 	}
@@ -158,7 +158,7 @@ func TestAnswerGetFactsCarriesAsOf(t *testing.T) {
 		{content: "Berkshire holds 22%."},
 	}}
 	svc := NewService(llm, fakeFacts{sheet}, nil, "")
-	if _, err := svc.Answer(context.Background(), "u", "AAPL", "en", nil, "who holds it?", true); err != nil {
+	if _, err := svc.Answer(context.Background(), "u", "AAPL", "en", nil, "who holds it?", true, ""); err != nil {
 		t.Fatalf("Answer: %v", err)
 	}
 	var toolMsg string
@@ -182,7 +182,7 @@ func TestAnswerStream(t *testing.T) {
 	svc := NewService(llm, fakeFacts{sampleSheet()}, nil, "")
 	var streamed strings.Builder
 	var steps []Step
-	ans, err := svc.AnswerStream(context.Background(), "u", "AAPL", "en", nil, "what's the P/E?", true,
+	ans, err := svc.AnswerStream(context.Background(), "u", "AAPL", "en", nil, "what's the P/E?", true, "",
 		func(tok string) { streamed.WriteString(tok) },
 		func(st Step) { steps = append(steps, st) })
 	if err != nil {
@@ -210,7 +210,7 @@ func TestAnswerSearchWeb(t *testing.T) {
 	}}
 	svc := NewService(llm, fakeFacts{sampleSheet()}, nil, "")
 	svc.SetWebSearch(fakeWeb{result: "Web search results (attributed):\n- Apple unveils X — snippet [reuters.com]"})
-	if _, err := svc.Answer(context.Background(), "u", "AAPL", "en", nil, "any news?", true); err != nil {
+	if _, err := svc.Answer(context.Background(), "u", "AAPL", "en", nil, "any news?", true, ""); err != nil {
 		t.Fatalf("Answer: %v", err)
 	}
 	if !hasTool(llm.lastTools, "search_web") {
@@ -231,7 +231,7 @@ func TestAnswerSearchWeb(t *testing.T) {
 func TestSearchWebNotOfferedWithoutWebSearcher(t *testing.T) {
 	llm := &scriptedLLM{enabled: true, replies: []reply{{content: "ok"}}}
 	svc := NewService(llm, fakeFacts{sampleSheet()}, nil, "") // no SetWebSearch
-	if _, err := svc.Answer(context.Background(), "u", "AAPL", "en", nil, "hi", true); err != nil {
+	if _, err := svc.Answer(context.Background(), "u", "AAPL", "en", nil, "hi", true, ""); err != nil {
 		t.Fatalf("Answer: %v", err)
 	}
 	if hasTool(llm.lastTools, "search_web") {
@@ -245,7 +245,7 @@ func TestAnswerSurfaceWidget(t *testing.T) {
 		{content: "Here is the 1-year chart."},
 	}}
 	svc := NewService(llm, fakeFacts{sampleSheet()}, nil, "")
-	ans, err := svc.Answer(context.Background(), "u", "AAPL", "en", nil, "show me the chart", true)
+	ans, err := svc.Answer(context.Background(), "u", "AAPL", "en", nil, "show me the chart", true, "")
 	if err != nil {
 		t.Fatalf("Answer: %v", err)
 	}
@@ -276,7 +276,7 @@ func TestAnswerIndicatorHistoryWidget(t *testing.T) {
 		{content: "Here is the RSI history."},
 	}}
 	svc := NewService(llm, fakeFacts{sampleSheet()}, nil, "")
-	ans, err := svc.Answer(context.Background(), "u", "AAPL", "en", nil, "show me RSI over the last year", true)
+	ans, err := svc.Answer(context.Background(), "u", "AAPL", "en", nil, "show me RSI over the last year", true, "")
 	if err != nil {
 		t.Fatalf("Answer: %v", err)
 	}
@@ -311,7 +311,7 @@ func TestAnswerSeasonalityWidget(t *testing.T) {
 		{content: "Here is AAPL's seasonality."},
 	}}
 	svc := NewService(llm, fakeFacts{sampleSheet()}, nil, "")
-	ans, err := svc.Answer(context.Background(), "u", "AAPL", "en", nil, "what's AAPL's seasonality", true)
+	ans, err := svc.Answer(context.Background(), "u", "AAPL", "en", nil, "what's AAPL's seasonality", true, "")
 	if err != nil {
 		t.Fatalf("Answer: %v", err)
 	}
@@ -342,7 +342,7 @@ func TestAnswerRelativeStrengthWidget(t *testing.T) {
 		{content: "Here is how AAPL has done versus the market."},
 	}}
 	svc := NewService(llm, fakeFacts{sampleSheet()}, nil, "")
-	ans, err := svc.Answer(context.Background(), "u", "AAPL", "en", nil, "is AAPL beating the market", true)
+	ans, err := svc.Answer(context.Background(), "u", "AAPL", "en", nil, "is AAPL beating the market", true, "")
 	if err != nil {
 		t.Fatalf("Answer: %v", err)
 	}
@@ -417,7 +417,7 @@ func TestAnswerEarningsReactionWidget(t *testing.T) {
 		{content: "Here is how AAPL has historically moved around earnings."},
 	}}
 	svc := NewService(llm, fakeFacts{sampleSheet()}, nil, "")
-	ans, err := svc.Answer(context.Background(), "u", "AAPL", "en", nil, "how does AAPL move on earnings", true)
+	ans, err := svc.Answer(context.Background(), "u", "AAPL", "en", nil, "how does AAPL move on earnings", true, "")
 	if err != nil {
 		t.Fatalf("Answer: %v", err)
 	}
@@ -448,7 +448,7 @@ func TestAnswerScorecardWidget(t *testing.T) {
 		{content: "Here is how AAPL ranks on the factors."},
 	}}
 	svc := NewService(llm, fakeFacts{sampleSheet()}, nil, "")
-	ans, err := svc.Answer(context.Background(), "u", "AAPL", "en", nil, "how's AAPL's value and quality vs the market", true)
+	ans, err := svc.Answer(context.Background(), "u", "AAPL", "en", nil, "how's AAPL's value and quality vs the market", true, "")
 	if err != nil {
 		t.Fatalf("Answer: %v", err)
 	}
@@ -479,7 +479,7 @@ func TestAnswerIndicatorHistoryRejectsUnknownIndicator(t *testing.T) {
 		{content: "ok"},
 	}}
 	svc := NewService(llm, fakeFacts{sampleSheet()}, nil, "")
-	ans, err := svc.Answer(context.Background(), "u", "AAPL", "en", nil, "chart the foobar indicator", true)
+	ans, err := svc.Answer(context.Background(), "u", "AAPL", "en", nil, "chart the foobar indicator", true, "")
 	if err != nil {
 		t.Fatalf("Answer: %v", err)
 	}
@@ -499,7 +499,7 @@ func TestAnswerUnknownWidgetAndSectionGraceful(t *testing.T) {
 		{content: "ok"},
 	}}
 	svc := NewService(llm, fakeFacts{sampleSheet()}, nil, "")
-	ans, err := svc.Answer(context.Background(), "u", "AAPL", "en", nil, "junk", true)
+	ans, err := svc.Answer(context.Background(), "u", "AAPL", "en", nil, "junk", true, "")
 	if err != nil {
 		t.Fatalf("Answer: %v", err)
 	}
@@ -531,7 +531,7 @@ func TestAnswerIterationCap(t *testing.T) {
 	loop = append(loop, reply{content: "final forced answer"})
 	llm := &scriptedLLM{enabled: true, replies: loop}
 	svc := NewService(llm, fakeFacts{sampleSheet()}, nil, "")
-	ans, err := svc.Answer(context.Background(), "u", "AAPL", "en", nil, "loop forever", true)
+	ans, err := svc.Answer(context.Background(), "u", "AAPL", "en", nil, "loop forever", true, "")
 	if err != nil {
 		t.Fatalf("Answer: %v", err)
 	}
@@ -551,7 +551,7 @@ func TestAnswerAdviceFilter(t *testing.T) {
 		{content: "P/E is 31.2x.\nMy price target is $250 and you should buy."},
 	}}
 	svc := NewService(llm, fakeFacts{sampleSheet()}, nil, "")
-	ans, _ := svc.Answer(context.Background(), "u", "AAPL", "en", nil, "q", true)
+	ans, _ := svc.Answer(context.Background(), "u", "AAPL", "en", nil, "q", true, "")
 	got := textOf(ans)
 	if !strings.Contains(got, "31.2x") {
 		t.Fatalf("kept line missing: %q", got)
@@ -566,7 +566,7 @@ func TestAnswerAllAdviceRedirects(t *testing.T) {
 		{content: "Strong buy.\nYou should buy now."},
 	}}
 	svc := NewService(llm, fakeFacts{sampleSheet()}, nil, "")
-	ans, _ := svc.Answer(context.Background(), "u", "AAPL", "en", nil, "should I buy?", true)
+	ans, _ := svc.Answer(context.Background(), "u", "AAPL", "en", nil, "should I buy?", true, "")
 	if textOf(ans) != redirectNote("en") {
 		t.Fatalf("want redirect note, got %q", textOf(ans))
 	}
@@ -586,7 +586,7 @@ func TestAnswerHardenedAdviceFilter(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			llm := &scriptedLLM{enabled: true, replies: []reply{{content: tc.prose}}}
 			svc := NewService(llm, fakeFacts{sampleSheet()}, nil, "")
-			ans, _ := svc.Answer(context.Background(), "u", "AAPL", "en", nil, "q", true)
+			ans, _ := svc.Answer(context.Background(), "u", "AAPL", "en", nil, "q", true, "")
 			if textOf(ans) != redirectNote("en") {
 				t.Fatalf("%s: want redirect, got %q", tc.name, textOf(ans))
 			}
@@ -601,7 +601,7 @@ func TestAnswerCrossLineAdviceRedirects(t *testing.T) {
 		{content: "The fundamentals look strong.\nGiven that, this is a compelling\nbuy."},
 	}}
 	svc := NewService(llm, fakeFacts{sampleSheet()}, nil, "")
-	ans, _ := svc.Answer(context.Background(), "u", "AAPL", "en", nil, "q", true)
+	ans, _ := svc.Answer(context.Background(), "u", "AAPL", "en", nil, "q", true, "")
 	if textOf(ans) != redirectNote("en") {
 		t.Fatalf("cross-line advice not caught: %q", textOf(ans))
 	}
@@ -614,7 +614,7 @@ func TestAnswerKeepsLegitInsiderFact(t *testing.T) {
 		{content: "Insiders bought 12,000 shares last quarter, per Form 4."},
 	}}
 	svc := NewService(llm, fakeFacts{sampleSheet()}, nil, "")
-	ans, _ := svc.Answer(context.Background(), "u", "AAPL", "en", nil, "q", true)
+	ans, _ := svc.Answer(context.Background(), "u", "AAPL", "en", nil, "q", true, "")
 	if !strings.Contains(textOf(ans), "Insiders bought") {
 		t.Fatalf("legit insider fact was wrongly stripped: %q", textOf(ans))
 	}
@@ -631,7 +631,7 @@ func TestAnswerETFGroundsNoFundamentals(t *testing.T) {
 	}}
 	svc := NewService(llm, fakeFacts{research.FactSheet{}}, nil, "") // empty sheet for any ticker
 	svc.SetSymbols(fakeSymbols{m: map[string]symbols.Symbol{"DRAM": {Ticker: "DRAM", Name: "Roundhill Memory ETF", ETF: true}}})
-	if _, err := svc.Answer(context.Background(), "u", "", "en", nil, "show DRAM fundamentals", true); err != nil {
+	if _, err := svc.Answer(context.Background(), "u", "", "en", nil, "show DRAM fundamentals", true, ""); err != nil {
 		t.Fatalf("Answer: %v", err)
 	}
 	var toolMsg string
@@ -668,7 +668,7 @@ func TestAnswerETFEmptySectionGrounded(t *testing.T) {
 	}}
 	svc := NewService(llm, fakeFacts{etfSheet}, nil, "")
 	svc.SetSymbols(fakeSymbols{m: map[string]symbols.Symbol{"DRAM": {Ticker: "DRAM", Name: "Roundhill Memory ETF", ETF: true}}})
-	if _, err := svc.Answer(context.Background(), "u", "DRAM", "en", nil, "what are DRAM's fundamentals?", true); err != nil {
+	if _, err := svc.Answer(context.Background(), "u", "DRAM", "en", nil, "what are DRAM's fundamentals?", true, ""); err != nil {
 		t.Fatalf("Answer: %v", err)
 	}
 	var toolMsg string
@@ -696,7 +696,7 @@ func TestAnswerNonETFEmptySectionStaysGeneric(t *testing.T) {
 	sheet := research.FactSheet{Ticker: "AAPL", Name: "Apple", AsOf: "2026-06-20", Sections: []research.SectionFacts{{Key: "valuation", TitleEN: "Valuation"}}}
 	svc := NewService(llm, fakeFacts{sheet}, nil, "")
 	svc.SetSymbols(fakeSymbols{m: map[string]symbols.Symbol{"AAPL": {Ticker: "AAPL", Name: "Apple Inc.", ETF: false}}})
-	if _, err := svc.Answer(context.Background(), "u", "", "en", nil, "AAPL fundamentals?", true); err != nil {
+	if _, err := svc.Answer(context.Background(), "u", "", "en", nil, "AAPL fundamentals?", true, ""); err != nil {
 		t.Fatalf("Answer: %v", err)
 	}
 	var toolMsg string
@@ -721,7 +721,7 @@ func TestAnswerETFRefusesFundamentalsWidget(t *testing.T) {
 	}}
 	svc := NewService(llm, fakeFacts{sampleSheet()}, nil, "") // anchor AAPL sheet non-empty
 	svc.SetSymbols(fakeSymbols{m: map[string]symbols.Symbol{"DRAM": {Ticker: "DRAM", Name: "Roundhill Memory ETF", ETF: true}}})
-	ans, err := svc.Answer(context.Background(), "u", "AAPL", "en", nil, "show DRAM's fundamentals table", true)
+	ans, err := svc.Answer(context.Background(), "u", "AAPL", "en", nil, "show DRAM's fundamentals table", true, "")
 	if err != nil {
 		t.Fatalf("Answer: %v", err)
 	}
@@ -745,12 +745,12 @@ func TestAnswerNotFoundAndDisabled(t *testing.T) {
 	// Empty fact sheet → ErrNotFound.
 	llm := &scriptedLLM{enabled: true}
 	svc := NewService(llm, fakeFacts{research.FactSheet{}}, nil, "")
-	if _, err := svc.Answer(context.Background(), "u", "ZZZZ", "en", nil, "q", true); err != ErrNotFound {
+	if _, err := svc.Answer(context.Background(), "u", "ZZZZ", "en", nil, "q", true, ""); err != ErrNotFound {
 		t.Fatalf("err = %v, want ErrNotFound", err)
 	}
 	// LLM disabled → ErrDisabled.
 	off := NewService(&scriptedLLM{enabled: false}, fakeFacts{sampleSheet()}, nil, "")
-	if _, err := off.Answer(context.Background(), "u", "AAPL", "en", nil, "q", true); err != enrich.ErrDisabled {
+	if _, err := off.Answer(context.Background(), "u", "AAPL", "en", nil, "q", true, ""); err != enrich.ErrDisabled {
 		t.Fatalf("err = %v, want ErrDisabled", err)
 	}
 }
@@ -767,7 +767,8 @@ func TestStepFor(t *testing.T) {
 		{"get_stock_facts other", "get_stock_facts", `{"ticker":"msft","section":"fundamentals"}`, "facts", true, "MSFT fundamentals"},
 		{"get_stock_facts default anchor", "get_stock_facts", `{"section":"technical"}`, "facts", true, "AAPL"},
 		{"news", "get_news_context", `{}`, "news", true, "news"},
-		{"web", "search_web", `{"query":"secret"}`, "web", true, "Searching the web"},
+		{"web shows query", "search_web", `{"query":"NVDA earnings"}`, "web", true, "Searching the web for NVDA earnings"},
+		{"web newline collapsed", "search_web", `{"query":"line one\nline two"}`, "web", true, "Searching the web for line one line two"},
 		{"widget", "surface_widget", `{"type":"kline"}`, "widget", true, "chart"},
 		{"watchlist", "get_watchlist", `{}`, "watchlist", true, "watchlist"},
 		{"unknown", "frobnicate", `{}`, "", false, ""},
@@ -787,11 +788,17 @@ func TestStepFor(t *testing.T) {
 			if !strings.Contains(st.Label, tc.wantInLabel) {
 				t.Errorf("label = %q, want to contain %q", st.Label, tc.wantInLabel)
 			}
-			// The web step must NEVER echo the model's query (locked decision).
-			if tc.toolName == "search_web" && strings.Contains(st.Label, "secret") {
-				t.Errorf("web step leaked the query: %q", st.Label)
+			// The web step's query echo must NEVER contain a raw newline (layout-safety).
+			if strings.ContainsAny(st.Label, "\n\r") {
+				t.Errorf("step label has a raw newline: %q", st.Label)
 			}
 		})
+	}
+	// A long query is rune-truncated with an ellipsis so the chain row stays bounded.
+	long := strings.Repeat("alpha ", 30)
+	st, _ := stepFor(enrich.ChatToolCall{Name: "search_web", Arguments: `{"query":"` + long + `"}`}, "AAPL", "en")
+	if !strings.HasSuffix(st.Label, "…") || len([]rune(st.Label)) > 80 {
+		t.Errorf("long web query not truncated: %q (%d runes)", st.Label, len([]rune(st.Label)))
 	}
 }
 
@@ -876,4 +883,49 @@ func TestBackstopWidget(t *testing.T) {
 			t.Fatal("a sentiment-only / general turn must not auto-surface a widget")
 		}
 	})
+}
+
+// TestSystemPromptModes asserts the mode dial changes DEPTH only: every mode keeps the firewall
+// (rule 1 + GROUNDING); the EXPLORATORY ANALYSIS block appears for adaptive ("") + explore but
+// NOT for focused; and wherever exploration is unlocked the no-advice boundary is restated.
+func TestSystemPromptModes(t *testing.T) {
+	adaptive := systemPrompt("AAPL", "en", "facts", false, false, false, "")
+	explore := systemPrompt("AAPL", "en", "facts", false, false, false, "explore")
+	focused := systemPrompt("AAPL", "en", "facts", false, false, false, "focused")
+	for name, p := range map[string]string{"adaptive": adaptive, "explore": explore, "focused": focused} {
+		if !strings.Contains(p, "NEVER invent") || !strings.Contains(p, "GROUNDING") {
+			t.Errorf("%s mode dropped the firewall/grounding", name)
+		}
+	}
+	if !strings.Contains(adaptive, "EXPLORATORY ANALYSIS") || !strings.Contains(explore, "EXPLORATORY ANALYSIS") {
+		t.Error("adaptive + explore must include the EXPLORATORY ANALYSIS block")
+	}
+	if strings.Contains(focused, "EXPLORATORY ANALYSIS") {
+		t.Error("focused must NOT include the EXPLORATORY ANALYSIS block (keeps today's tight shape)")
+	}
+	if !strings.Contains(adaptive, "never a recommendation") || !strings.Contains(explore, "HARD BOUNDARY") {
+		t.Error("the exploratory block must restate the no-advice boundary")
+	}
+	// zh parity: the exploratory block ships in zh too.
+	if !strings.Contains(systemPrompt("AAPL", "zh", "facts", false, false, false, "explore"), "探索式分析") {
+		t.Error("zh explore mode missing the exploratory block")
+	}
+}
+
+// TestBackstopModeBlind locks the load-bearing invariant: the deterministic advice filter strips
+// identically regardless of mode (mode only changes the prompt, never reaches finish/filterAdvice).
+// A future refactor that threaded mode into finish would break this test.
+func TestBackstopModeBlind(t *testing.T) {
+	const adviceLine = "On balance the setup looks attractive here — a compelling entry."
+	for _, mode := range []string{"explore", "focused", ""} {
+		llm := &scriptedLLM{enabled: true, replies: []reply{{content: adviceLine}}}
+		svc := NewService(llm, fakeFacts{sampleSheet()}, nil, "")
+		ans, err := svc.Answer(context.Background(), "u", "AAPL", "en", nil, "is it a buy?", true, mode)
+		if err != nil {
+			t.Fatalf("mode %q: %v", mode, err)
+		}
+		if txt := textOf(ans); strings.Contains(txt, "compelling entry") || strings.Contains(txt, "looks attractive") {
+			t.Errorf("mode %q: advice survived filterAdvice (backstop must be mode-blind): %q", mode, txt)
+		}
+	}
 }
