@@ -107,10 +107,10 @@ func TestAnswerDirect(t *testing.T) {
 	if len(ans.Blocks) != 1 {
 		t.Fatalf("want 1 block, got %d", len(ans.Blocks))
 	}
-	// The system prompt must carry the per-ticker facts (grounding) + the firewall.
+	// The system prompt must carry the per-ticker facts (grounding) + the number-discipline rule.
 	sys := llm.gotMessages[0][0]
-	if sys.Role != "system" || !strings.Contains(sys.Content, "31.2x") || !strings.Contains(sys.Content, "NEVER invent") {
-		t.Fatalf("system prompt missing facts or firewall: %q", sys.Content)
+	if sys.Role != "system" || !strings.Contains(sys.Content, "31.2x") || !strings.Contains(sys.Content, "never invent") {
+		t.Fatalf("system prompt missing facts or grounding rule: %q", sys.Content)
 	}
 }
 
@@ -842,34 +842,35 @@ func TestBackstopWidget(t *testing.T) {
 // guard (rule 1 + GROUNDING); explore adds the fuller two-sided/your-call appendix while focused
 // gets the tight appendix; there is NO no-advice boundary anywhere (it was removed).
 func TestSystemPromptModes(t *testing.T) {
-	adaptive := systemPrompt("AAPL", "en", "facts", false, false, false, "")
-	explore := systemPrompt("AAPL", "en", "facts", false, false, false, "explore")
-	focused := systemPrompt("AAPL", "en", "facts", false, false, false, "focused")
-	for name, p := range map[string]string{"adaptive": adaptive, "explore": explore, "focused": focused} {
-		if !strings.Contains(p, "NEVER invent") || !strings.Contains(p, "GROUNDING") {
-			t.Errorf("%s mode dropped the factual guard/grounding", name)
+	// The Auto/Focused/Explore toggle was removed → mode is INERT: every mode value produces the
+	// SAME prompt, and no explore/focused depth appendix remains.
+	base := systemPrompt("AAPL", "en", "facts", false, false, true, "")
+	for _, mode := range []string{"", "focused", "explore"} {
+		if got := systemPrompt("AAPL", "en", "facts", false, false, true, mode); got != base {
+			t.Errorf("mode %q changed the prompt — mode must be inert", mode)
 		}
 	}
-	// explore unlocks the fuller two-sided depth appendix; focused gets the tight one; neither
-	// leaks into the other.
-	if !strings.Contains(explore, "EXPLORE turn") {
-		t.Error("explore must include the fuller two-sided appendix")
+	if strings.Contains(base, "EXPLORE turn") || strings.Contains(base, "FOCUSED turn") {
+		t.Error("the explore/focused depth appendix must be gone")
 	}
-	if strings.Contains(focused, "EXPLORE turn") || strings.Contains(adaptive, "EXPLORE turn") {
-		t.Error("only explore gets the EXPLORE appendix")
+	// RULE ZERO (resourceful tool use, never refuse without searching) leads, and is hasWeb-gated.
+	noWeb := systemPrompt("AAPL", "en", "facts", false, false, false, "")
+	if !strings.Contains(base, "RULE ZERO") || !strings.Contains(noWeb, "RULE ZERO") {
+		t.Error("RULE ZERO must be present in every prompt")
 	}
-	if !strings.Contains(focused, "FOCUSED turn") {
-		t.Error("focused must include the tight appendix")
+	if !strings.Contains(base, "search_web") {
+		t.Error("the hasWeb prompt must point the model at search_web")
 	}
-	// The no-advice boundary is GONE from every mode.
-	for name, p := range map[string]string{"adaptive": adaptive, "explore": explore, "focused": focused} {
-		if strings.Contains(p, "HARD BOUNDARY") || strings.Contains(p, "never a recommendation") {
-			t.Errorf("%s mode still carries a no-advice boundary", name)
-		}
+	if strings.Contains(noWeb, "search_web") {
+		t.Error("the keyless prompt must NOT promise search_web")
 	}
-	// zh parity: the explore depth appendix ships in zh too.
-	if !strings.Contains(systemPrompt("AAPL", "zh", "facts", false, false, false, "explore"), "【探索】轮") {
-		t.Error("zh explore mode missing the depth appendix")
+	// Factual-number grounding survives the minimal rewrite.
+	if !strings.Contains(base, "never invent") {
+		t.Error("the factual-number grounding rule must survive the rewrite")
+	}
+	// zh parity: the resourcefulness rule ships in zh too.
+	if !strings.Contains(systemPrompt("AAPL", "zh", "facts", false, false, true, ""), "首要规则") {
+		t.Error("zh prompt missing the resourcefulness rule (首要规则)")
 	}
 }
 
