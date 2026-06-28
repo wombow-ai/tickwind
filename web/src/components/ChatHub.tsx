@@ -1,7 +1,7 @@
 'use client';
 
 import {ArrowRight, Lock, Menu, Pencil, Plus, Search, Settings as SettingsIcon, Trash2, X} from 'lucide-react';
-import {usePathname, useRouter, useSearchParams} from 'next/navigation';
+import {usePathname, useSearchParams} from 'next/navigation';
 import {useCallback, useEffect, useMemo, useState} from 'react';
 import {ChatThreadPanel} from '@/components/ChatThreadPanel';
 import Link from '@/components/LocalLink';
@@ -37,7 +37,6 @@ export function ChatHub() {
   const {user, loading: authLoading, getToken} = useAuth();
   const {isPro, loading: entLoading} = useEntitlement();
   const sp = useSearchParams();
-  const router = useRouter();
   const pathname = usePathname();
   const locale: Lang = (() => {
     const seg = pathname.slice(1).split('/', 1)[0];
@@ -58,9 +57,16 @@ export function ChatHub() {
   const writeUrl = useCallback(
     (convId: string | null, mode: 'push' | 'replace') => {
       const href = localizedPath(locale, convId ? `/chat?c=${convId}` : '/chat');
-      router[mode](href, {scroll: false});
+      if (typeof window === 'undefined') return;
+      // Use the NATIVE History API, NOT router.push/replace: a router navigation refetches the
+      // route's RSC payload, which flashes/"refreshes" the page after an answer (a draft adopting
+      // its new conversation) AND churns the sidebar so the optimistic conversation list is lost.
+      // Next syncs useSearchParams/usePathname with pushState/replaceState, so ?c= restore +
+      // back/forward still work, with NO refetch.
+      if (mode === 'push') window.history.pushState(null, '', href);
+      else window.history.replaceState(null, '', href);
     },
-    [router, locale],
+    [locale],
   );
 
   const [convs, setConvs] = useState<Conversation[]>([]);

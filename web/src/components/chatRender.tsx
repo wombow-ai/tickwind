@@ -153,7 +153,19 @@ const WIDGET_LABEL: Record<string, string> = {
   fundamentals_table: 'fundamentals',
 };
 
-export function MsgRow({m, fallbackTicker, tr}: {m: Msg; fallbackTicker: string; tr: (k: string) => string}) {
+// ThinkingDots — a quiet inline pulse shown inside the assistant message before any step or
+// token arrives (replaces the old separate ThinkingRow; the chain/answer fill in below it).
+function ThinkingDots() {
+  return (
+    <span style={{display: 'inline-flex', gap: 4, alignItems: 'center', height: 16}}>
+      {[0, 0.15, 0.3].map((d, i) => (
+        <span key={i} className="tw-chat-dot" style={{width: 5, height: 5, borderRadius: '50%', background: 'var(--accent)', animation: `tw-chat-pulse 1.2s infinite ${d}s`}} />
+      ))}
+    </span>
+  );
+}
+
+export function MsgRow({m, fallbackTicker, tr, liveSteps}: {m: Msg; fallbackTicker: string; tr: (k: string) => string; liveSteps?: ExecStep[]}) {
   if (m.role === 'user') {
     return (
       <div style={{display: 'flex', justifyContent: 'flex-end'}}>
@@ -163,7 +175,10 @@ export function MsgRow({m, fallbackTicker, tr}: {m: Msg; fallbackTicker: string;
       </div>
     );
   }
-  const plain = (m.blocks ?? []).filter(b => b.kind === 'text').map(b => b.text ?? '').join('\n\n') || m.text || '';
+  const blocks = dedupeBlocks(m.blocks ?? []);
+  const plain = blocks.filter(b => b.kind === 'text').map(b => b.text ?? '').join('\n\n') || m.text || '';
+  const hasContent = plain.trim().length > 0;
+  const hasLive = !!liveSteps && liveSteps.length > 0;
   return (
     <div style={{display: 'flex', gap: 12}}>
       <div style={{flex: 'none', width: 28, height: 28, borderRadius: 8, background: 'var(--surface2)', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center'}}>
@@ -174,16 +189,23 @@ export function MsgRow({m, fallbackTicker, tr}: {m: Msg; fallbackTicker: string;
           <span style={{fontSize: 12.5, fontWeight: 600, color: 'var(--text)'}}>{tr('chat.aiName')}</span>
           <span style={{fontSize: 11, color: 'var(--text3)'}}>{tr('chat.justNow')}</span>
         </div>
-        {dedupeBlocks(m.blocks ?? []).map((b, i) => <BlockView key={i} block={b} fallbackTicker={fallbackTicker} tr={tr} streaming={m.streaming} />)}
+        {/* The execution steps render INLINE inside the message (gray, Claude-Code style), above
+            the answer — NOT as a separate row pinned at the top. While streaming they're live
+            (last row pulses); on done a persisted "trace" block takes over (collapsed). */}
+        {hasLive && <ExecChain steps={liveSteps!} running={!!m.streaming} bare />}
+        {m.streaming && !hasLive && !hasContent && <ThinkingDots />}
+        {blocks.map((b, i) => <BlockView key={i} block={b} fallbackTicker={fallbackTicker} tr={tr} streaming={m.streaming} />)}
         {!m.blocks && m.text && (
           <div style={{fontSize: 14, lineHeight: 1.62, color: 'var(--text)'}}>
             <Markdown>{m.text}</Markdown>
           </div>
         )}
-        <div style={{display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', paddingTop: 8, borderTop: '1px solid var(--border)'}}>
-          <span style={{fontSize: 10.5, color: 'var(--text3)', lineHeight: 1.4}}>{tr('chat.disclaimer')}</span>
-          <CopyButton text={plain} tr={tr} />
-        </div>
+        {(!m.streaming || hasContent) && (
+          <div style={{display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', paddingTop: 8, borderTop: '1px solid var(--border)'}}>
+            <span style={{fontSize: 10.5, color: 'var(--text3)', lineHeight: 1.4}}>{tr('chat.disclaimer')}</span>
+            <CopyButton text={plain} tr={tr} />
+          </div>
+        )}
       </div>
     </div>
   );

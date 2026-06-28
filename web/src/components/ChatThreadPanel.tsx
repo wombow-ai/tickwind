@@ -1,8 +1,8 @@
 'use client';
 
 import {Activity, BarChart3, Eye, type LucideIcon, Plus, Scale, Send, TrendingDown, TrendingUp, Wallet} from 'lucide-react';
-import {Fragment, useCallback, useEffect, useRef, useState} from 'react';
-import {ExecChain, type ExecStep, MsgRow, type Msg} from '@/components/chatRender';
+import {useCallback, useEffect, useRef, useState} from 'react';
+import {type ExecStep, MsgRow, type Msg} from '@/components/chatRender';
 import {BrandLoader} from '@/components/ui/BrandLoader';
 import {LogoMark} from '@/components/ui/atoms';
 import {type ChatResponse, clearChat, createConversation, getChatHistory, getConvHistory, postChat, postConvChatStream} from '@/lib/api';
@@ -74,7 +74,6 @@ export function ChatThreadPanel({source, onActivity, onMeter, onCreated}: {sourc
   // skeleton instead of the new-chat welcome — otherwise switching to a history thread flashes
   // the "New Chat" screen until the messages arrive.
   const [threadLoading, setThreadLoading] = useState(false);
-  const [streamStarted, setStreamStarted] = useState(false);
   const [steps, setSteps] = useState<ExecStep[]>([]); // live ReAct execution chain (ephemeral)
   // Answer-DEPTH dial (per-message): auto = adaptive, focused = tight, explore = deep two-sided
   // analysis. Persisted across the session; never relaxes the no-advice firewall (server-side).
@@ -154,13 +153,14 @@ export function ChatThreadPanel({source, onActivity, onMeter, onCreated}: {sourc
       if (!msg || sending) return;
       setErr(false);
       setSending(true);
-      setStreamStarted(false);
       setSteps([]);
       setInput('');
       setMessages(m => {
-        const next = [...m, {role: 'user' as const, text: msg}];
-        threadCache.set(key, next);
-        return next;
+        const withUser = [...m, {role: 'user' as const, text: msg}];
+        threadCache.set(key, withUser); // cache WITHOUT the transient streaming placeholder
+        // Push an assistant PLACEHOLDER now so the execution steps + answer stream INLINE inside
+        // one message (Claude-Code style), not as a separate row pinned above it.
+        return [...withUser, {role: 'assistant' as const, streaming: true, blocks: []}];
       });
       try {
         const token = await getToken();
@@ -187,7 +187,6 @@ export function ChatThreadPanel({source, onActivity, onMeter, onCreated}: {sourc
           // Stream: append tokens to a live assistant message; `done` reconciles with the
           // authoritative advice-filtered blocks (so the anti-hallucination filter wins).
           const onTok = (tok: string) => {
-            setStreamStarted(true);
             setMessages(m => {
               const next = [...m];
               const last = next[next.length - 1];
@@ -220,8 +219,9 @@ export function ChatThreadPanel({source, onActivity, onMeter, onCreated}: {sourc
             // heartbeats to keep the connection alive, it almost always succeeds. Clear the partial
             // streamed placeholder + the partial chain first so the retry starts clean.
             popStreaming();
-            setStreamStarted(false);
             setSteps([]);
+            // Re-push a fresh placeholder so the retried steps + answer still stream inline.
+            setMessages(m => [...m, {role: 'assistant' as const, streaming: true, blocks: []}]);
             res = await postConvChatStream(convId, msg, token, lang, onTok, undefined, onStep, apiMode);
           }
         }
@@ -255,7 +255,7 @@ export function ChatThreadPanel({source, onActivity, onMeter, onCreated}: {sourc
         });
       } finally {
         setSending(false);
-        setStreamStarted(false);
+        setSteps([]); // clear the live steps; the persisted trace block now carries them
       }
     },
     [key, lang, sending, mode, getToken, onActivity, onMeter, onCreated], // eslint-disable-line react-hooks/exhaustive-deps
@@ -364,19 +364,12 @@ export function ChatThreadPanel({source, onActivity, onMeter, onCreated}: {sourc
         ) : (
           <div style={{maxWidth: 760, margin: '0 auto', padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: 22}}>
             {messages.map((m, i) => {
-              // Once the answer is streaming, keep the (now all-done) execution chain visible
-              // ABOVE the streaming message — so a preamble token can't kill it and the user sees
-              // what was looked up. running=false → no pulse, it defers to the streaming caret.
-              const chainAbove = m.streaming && i === messages.length - 1 && steps.length > 0;
-              return (
-                <Fragment key={i}>
-                  {chainAbove && <ExecChain steps={steps} running={false} />}
-                  <MsgRow m={m} fallbackTicker={fallbackTicker} tr={tr} />
-                </Fragment>
-              );
+              // The live execution steps render INLINE inside the streaming assistant message
+              // (its placeholder is pushed on send), so they read as part of the answer, not a
+              // separate row pinned above it. On done, a collapsed "trace" block takes over.
+              const live = m.streaming && i === messages.length - 1 ? steps : undefined;
+              return <MsgRow key={i} m={m} fallbackTicker={fallbackTicker} tr={tr} liveSteps={live} />;
             })}
-            {/* Before the answer starts streaming: the live chain (or the thinking dots). */}
-            {sending && !streamStarted && (steps.length > 0 ? <ExecChain steps={steps} /> : <ThinkingRow tr={tr} />)}
             {err && <p style={{fontSize: 12.5, color: 'var(--down)'}}>{tr('chat.error')}</p>}
           </div>
         )}
@@ -427,21 +420,3 @@ function WelcomeScreen({anchored, ticker, tr, onPick, composer}: {anchored: bool
   );
 }
 
-function ThinkingRow({tr}: {tr: (k: string) => string}) {
-  return (
-    <div style={{display: 'flex', gap: 12}}>
-      <div style={{flex: 'none', width: 28, height: 28, borderRadius: 8, background: 'var(--surface2)', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center'}}>
-        <LogoMark size={18} accent="var(--accent)" />
-      </div>
-      <div style={{display: 'flex', alignItems: 'center', gap: 9}}>
-        <span style={{fontSize: 12.5, fontWeight: 600, color: 'var(--text)'}}>{tr('chat.aiName')}</span>
-        <span style={{display: 'flex', gap: 3, alignItems: 'center'}}>
-          {[0, 0.15, 0.3].map((d, i) => (
-            <span key={i} style={{width: 5, height: 5, borderRadius: '50%', background: 'var(--accent)', animation: `tw-chat-pulse 1.2s infinite ${d}s`}} />
-          ))}
-        </span>
-        <span style={{fontSize: 11.5, color: 'var(--text3)'}}>{tr('chat.thinking')}</span>
-      </div>
-    </div>
-  );
-}
