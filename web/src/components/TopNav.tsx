@@ -180,7 +180,9 @@ export function TopNav() {
         </button>
 
         <Link href="/" aria-label="Tickwind home">
-          <Logo size={28} />
+          {/* glyph-only on narrow phones so the nav row never overflows the
+              viewport (the wordmark + actions exceeded ~375px); wordmark from sm up */}
+          <Logo size={28} wordmarkClassName="hidden sm:inline" />
         </Link>
 
         <SearchBox

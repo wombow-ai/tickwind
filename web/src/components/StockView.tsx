@@ -631,7 +631,10 @@ export function StockView({ticker}: {ticker: string}) {
           role="tablist"
           aria-label="Stock view"
           className={cx(
-            'inline-flex items-center gap-1 overflow-x-auto rounded-xl border p-1',
+            // `flex` (block-level) + max-w-full on mobile so overflow-x-auto actually
+            // engages and the tab row scrolls instead of widening the page; the pill
+            // shrink-wraps via inline-flex from sm up (the tabs fit there, no scroll).
+            'flex max-w-full items-center gap-1 overflow-x-auto rounded-xl border p-1 sm:inline-flex sm:max-w-none',
             t.border,
             t.surf2,
           )}

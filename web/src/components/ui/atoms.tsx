@@ -33,8 +33,10 @@ export function LogoMark({size = 30, accent = '#00C08B'}: {size?: number; accent
   );
 }
 
-/** The Tickwind wordmark + streams mark. */
-export function Logo({size = 30}: {size?: number}) {
+/** The Tickwind wordmark + streams mark. `wordmarkClassName` lets a caller hide
+ *  the wordmark responsively (e.g. glyph-only on a narrow nav) without affecting
+ *  other Logo usages like the Footer. */
+export function Logo({size = 30, wordmarkClassName}: {size?: number; wordmarkClassName?: string}) {
   const dark = useDark();
   return (
     <div className="flex select-none items-center gap-2">
@@ -43,6 +45,7 @@ export function Logo({size = 30}: {size?: number}) {
         className={cx(
           'text-[17px] font-semibold tracking-tight',
           dark ? 'text-slate-100' : 'text-slate-900',
+          wordmarkClassName,
         )}
       >
         Tick<span className={dark ? 'text-teal-300' : 'text-teal-600'}>wind</span>

@@ -109,13 +109,13 @@ export function SentimentChip() {
 
   return (
     <div className={cx('mb-5 rounded-2xl border', t.card, t.border, t.soft)}>
-      <div className="flex items-center">
+      <div className="flex flex-wrap items-center">
         <button
           type="button"
           onClick={() => canExpand && setOpen(o => !o)}
           aria-expanded={canExpand ? open : undefined}
           className={cx(
-            'flex flex-1 items-center gap-3 px-4 py-3 text-left',
+            'flex min-w-0 flex-1 items-center gap-3 px-4 py-3 text-left',
             canExpand && 'cursor-pointer',
           )}
         >
@@ -151,8 +151,10 @@ export function SentimentChip() {
           />
         )}
         </button>
-        {/* propagation organ: save today's mood as a branded card */}
-        <div className="shrink-0 pr-3">
+        {/* propagation organ: save today's mood as a branded card. On a narrow
+            viewport the buttons wrap to their own right-aligned row (the gauge +
+            score keep the full first line); inline on the right from sm up. */}
+        <div className="flex w-full shrink-0 justify-end px-4 pb-3 sm:w-auto sm:justify-normal sm:px-0 sm:pr-3 sm:pb-0">
           <ShareCardButton card={shareCard} />
         </div>
       </div>
