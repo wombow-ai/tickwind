@@ -357,7 +357,11 @@ func main() {
 	// guru rail starts so the rail can validate the bare "(RDDT)" tickers it extracts
 	// against the real universe (no dead $chips); SetSymbols before Run is race-free.
 	symbolCache := symbols.NewCache()
-	go ingest.NewSymbolIngestor(symbolCache, cfg.EDGARUserAgent, 24*time.Hour, log).Run(ctx)
+	// Refresh the symbol directory every 6h (was 24h) so a newly-listed ETF/stock —
+	// already in the daily Nasdaq-Trader file the day it starts trading — becomes
+	// searchable within hours instead of up to a day. A deploy/restart also forces
+	// an immediate refresh (SymbolIngestor.Run loads once before it starts ticking).
+	go ingest.NewSymbolIngestor(symbolCache, cfg.EDGARUserAgent, 6*time.Hour, log).Run(ctx)
 
 	guruIngestor.SetSymbols(symbolCache)
 	go guruIngestor.Run(ctx)
@@ -565,7 +569,19 @@ func main() {
 		// fallback (source="daily") for names with no live IEX print. The former
 		// Yahoo consolidated extended-hours overlay was removed; the extended-hours
 		// prev_close anchor still works off the Alpaca daily-bar regular close.
-		poller := ingest.NewPricePoller(st, priceClient, ingestTickers, cfg.PricePollEvery, hub.Publish, log)
+		// Index ETF proxies for the homepage "Markets today" strip (SPY/DIA/QQQ).
+		// They were never priced live — the poller only covers ingestTickers
+		// (watchlist ∪ seeds), and the WS streamer that the on-demand subscribe path
+		// relies on delivers no ticks — so the cards showed a frozen snapshot. Give
+		// the poller its own ticker source unioning the proxies with ingestTickers so
+		// they refresh on the same cadence as every other quote, WITHOUT widening the
+		// news/EDGAR scheduler or WS base (both still read ingestTickers — ETFs have
+		// no useful filings). 3 extra symbols in the existing bulk snapshot = negligible.
+		indexProxySeed := []string{"SPY", "DIA", "QQQ"}
+		pollTickers := func(ctx context.Context) []string {
+			return append(append([]string{}, indexProxySeed...), ingestTickers(ctx)...)
+		}
+		poller := ingest.NewPricePoller(st, priceClient, pollTickers, cfg.PricePollEvery, hub.Publish, log)
 		poller.SetAdapters(marketAdapters) // route .TW/.TWO to the TWSE/TPEx adapter
 		go poller.Run(ctx)
 		bars = ingest.NewBarCache(priceClient, 30, time.Hour)
