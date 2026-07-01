@@ -834,6 +834,7 @@ const lockedTeasers: Record<string, string> = {
   relative: 'deep.teaser.relative',
   flows: 'deep.teaser.flows',
   sentiment: 'deep.teaser.sentiment',
+  catalysts: 'deep.teaser.catalysts',
 };
 
 function DeepSection({
