@@ -76,7 +76,7 @@ const maxIngestTickers = 200
 // usSymbols keeps only US tickers (drops foreign-suffixed ones like .HK/.TW/.KS),
 // since the Alpaca IEX WebSocket streams US equities only.
 func usSymbols(tickers []string) []string {
-	foreign := []string{".HK", ".TW", ".TWO", ".KS", ".KQ"}
+	foreign := []string{".HK", ".TW", ".TWO", ".KS", ".KQ", ".SA"}
 	out := make([]string, 0, len(tickers))
 	for _, t := range tickers {
 		u := strings.ToUpper(strings.TrimSpace(t))

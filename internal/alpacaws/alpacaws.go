@@ -145,13 +145,28 @@ func (s *Streamer) Subscribe(ticker string) {
 	}
 }
 
-// desired returns the full set to be subscribed (base ∪ viewed, disjoint).
+// desired returns the full set to subscribe (base ∪ viewed), UPPER-cased, de-duped,
+// and with empty / foreign-suffix symbols dropped. The foreign filter is load-bearing:
+// Alpaca IEX is US-only and rejects the ENTIRE subscribe batch with 400 "invalid
+// syntax" if it contains even one non-US symbol (e.g. a Brazil `.SA` seed), which
+// would silence every base symbol. Filtering here (not just upstream) makes the WS
+// self-defending against any foreign symbol reaching the wire.
 func (s *Streamer) desired() []string {
 	s.submu.Lock()
 	defer s.submu.Unlock()
 	out := make([]string, 0, len(s.base)+len(s.viewed))
-	out = append(out, s.base...)
-	out = append(out, s.viewed...)
+	seen := make(map[string]struct{}, len(s.base)+len(s.viewed))
+	for _, t := range append(append([]string{}, s.base...), s.viewed...) {
+		u := strings.ToUpper(strings.TrimSpace(t))
+		if u == "" || isForeignSuffix(u) {
+			continue
+		}
+		if _, ok := seen[u]; ok {
+			continue
+		}
+		seen[u] = struct{}{}
+		out = append(out, u)
+	}
 	return out
 }
 
@@ -173,7 +188,7 @@ func lruAdd(lru []string, ticker string, max int) []string {
 
 // isForeignSuffix reports whether a ticker is non-US (Alpaca IEX is US-only).
 func isForeignSuffix(t string) bool {
-	for _, sfx := range []string{".HK", ".TW", ".TWO", ".KS", ".KQ"} {
+	for _, sfx := range []string{".HK", ".TW", ".TWO", ".KS", ".KQ", ".SA"} {
 		if strings.HasSuffix(t, sfx) {
 			return true
 		}

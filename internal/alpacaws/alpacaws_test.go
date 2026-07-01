@@ -64,6 +64,18 @@ func TestNewCapsSymbols(t *testing.T) {
 	}
 }
 
+func TestDesiredDropsForeignAndEmpty(t *testing.T) {
+	// A base with a Brazil .SA seed, an empty, a dup, and a mixed-case ticker — desired()
+	// must drop foreign/empty, de-dup, and upper-case so Alpaca never 400s the whole batch.
+	s := New("ws://x", "k", "s",
+		[]string{"SPY", "PETR4.SA", "", "aapl", "AAPL", "VALE3.SA", "DIA"},
+		nil, func(_ time.Time) string { return "regular" }, nil, nil, nil)
+	got := join(s.desired())
+	if got != "SPY,AAPL,DIA" {
+		t.Fatalf("desired = %q, want SPY,AAPL,DIA (foreign/empty/dup dropped, upper-cased)", got)
+	}
+}
+
 func TestLruAdd(t *testing.T) {
 	// Most-recent goes to the end; re-adding bumps it; oldest is trimmed at max.
 	lru := lruAdd(nil, "A", 3)
