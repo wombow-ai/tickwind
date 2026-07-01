@@ -773,6 +773,10 @@ func main() {
 			RSRanker:       rsScan,                // relative-strength-vs-SPY percentile → a second "relative" lens
 			ReactionRanker: earningsReactionCache, // earnings-day move-magnitude percentile → a third "relative" lens
 
+			// 前瞻 / catalysts providers (the forward "what to watch" section).
+			Earnings:       st,          // next scheduled earnings (Finnhub calendar in the store)
+			MaterialEvents: edgarClient, // recent notable 8-Ks (Go-owned item labels, no LLM)
+
 			// 资金面 / flows providers.
 			Congress:  congressCache,
 			ThirteenF: thirteenFCache,

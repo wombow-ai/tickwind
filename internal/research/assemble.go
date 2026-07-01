@@ -46,6 +46,21 @@ type RSPercentiler interface {
 	RSPercentile(ctx context.Context, ticker, window string) (pct float64, n int, asOf time.Time, ok bool)
 }
 
+// EarningsReader reads the earnings calendar over a FORWARD window; the assembler filters to this
+// ticker and picks the earliest for the catalysts section. Reading forward (NOT the oldest-first
+// per-ticker slice `ListEarningsForTicker`) is what keeps "next earnings" correct on the append-only,
+// unpruned earnings table — a long-tracked ticker's future row would otherwise fall past the oldest-N
+// (the exact pitfall the alert evaluator documents). Satisfied by the store; nil → no earnings fact.
+type EarningsReader interface {
+	ListEarnings(ctx context.Context, from, to time.Time) ([]store.Earning, error)
+}
+
+// MaterialEventsReader returns a ticker's recent 8-K current-report filings with Go-owned item labels
+// (no LLM). Satisfied by the edgar client. nil → the catalysts section omits recent filings.
+type MaterialEventsReader interface {
+	MaterialEventsN(ctx context.Context, ticker string, max int) ([]edgar.MaterialEvent, error)
+}
+
 // ReactionPercentiler yields a ticker's earnings-reaction PERCENTILE vs the tracked universe — how big
 // its typical ~2-session move around earnings is, ranked against peers (0–100, higher = a bigger
 // earnings mover) — a third "relative to market" lens alongside relative-strength + the scorecard
@@ -168,6 +183,10 @@ type Sources struct {
 	Scorecard      ScorecardProvider   // factor-percentile population → the "relative to market" section
 	RSRanker       RSPercentiler       // relative-strength-vs-SPY percentile → a second "relative" lens
 	ReactionRanker ReactionPercentiler // earnings-day move-magnitude percentile → a third "relative" lens
+
+	// 前瞻 / catalysts providers (the forward "what to watch" section). Both nil-safe.
+	Earnings       EarningsReader       // next scheduled earnings date/timing/est-EPS
+	MaterialEvents MaterialEventsReader // recent notable 8-K current reports (Go-owned item labels)
 
 	// 资金面 / flows providers.
 	Congress  CongressProvider
@@ -473,6 +492,7 @@ func Assemble(ctx context.Context, ticker, lang string, src Sources) FactSheet {
 
 	// --- §1.5 情绪面 / Sentiment ---
 	addSection(&fs, assembleSentiment(ctx, ticker, src, lang))
+	addSection(&fs, assembleCatalysts(ctx, ticker, src, lang))
 
 	return fs
 }
@@ -558,6 +578,139 @@ func reactionPercentileFact(pct float64, n int, asOf time.Time, lang string) Fac
 		Raw:    &pr,
 		Status: StatusOK, Source: source, AsOf: asOfStr,
 	}
+}
+
+// catalystMaxFilings caps how many recent 8-Ks the catalysts section lists (after the earnings fact).
+const catalystMaxFilings = 3
+
+// catalystEarningsLeadDays is the forward window for "next earnings" — matches the earnings ingestor's
+// +45d fetch horizon (the store holds no calendar rows beyond it, so a wider window gains nothing).
+const catalystEarningsLeadDays = 45
+
+// assembleCatalysts builds the forward "看点 / What to Watch" section — Go-owned upcoming/recent events
+// a reader should have on the radar: the next SCHEDULED earnings (date · session · consensus est-EPS)
+// and the most recent notable 8-K current reports (each with Go-owned item labels). It is purely
+// DESCRIPTIVE — dates + what's scheduled/filed, NEVER an outcome/direction/price prediction (the LLM
+// prose is bounded by the no-advice prompt + ScrubAdvice). Self-omits (addSection drops a zero-ok-fact
+// section) when there is no upcoming earnings AND no recent filing. Every value is Go-owned.
+func assembleCatalysts(ctx context.Context, ticker string, src Sources, lang string) SectionFacts {
+	sec := SectionFacts{Key: "catalysts", TitleZH: "看点", TitleEN: "What to Watch"}
+
+	// Next scheduled earnings — the single most-watched forward catalyst. Read the calendar over a
+	// forward window (today..+lead) and pick this ticker's earliest — correct on the append-only table.
+	if src.Earnings != nil {
+		today := time.Now().UTC().Truncate(24 * time.Hour)
+		if es, err := src.Earnings.ListEarnings(ctx, today, today.AddDate(0, 0, catalystEarningsLeadDays)); err == nil {
+			if f, ok := nextEarningsFact(es, ticker, lang); ok {
+				sec.Facts = append(sec.Facts, f)
+			}
+		}
+	}
+
+	// Recent notable 8-K current reports (Go owns the item labels). Backward in time but forward-
+	// relevant: an officer change / M&A / restatement is an ongoing situation worth watching. ≤3.
+	if src.MaterialEvents != nil {
+		if evs, err := src.MaterialEvents.MaterialEventsN(ctx, ticker, 6); err == nil {
+			added := 0
+			for i, ev := range evs {
+				if added >= catalystMaxFilings {
+					break
+				}
+				if f, ok := materialEventFact(ev, i, lang); ok {
+					sec.Facts = append(sec.Facts, f)
+					added++
+				}
+			}
+			if added > 0 {
+				sec.Citations = append(sec.Citations, Citation{Label: secEdgarLabel, Anchor: "#material-events", URL: secEdgarURL(ticker)})
+			}
+		}
+	}
+	return sec
+}
+
+// nextEarningsFact renders the next SCHEDULED earnings as a Fact (date · session · est-EPS) from a
+// FORWARD-windowed calendar slice: it filters to `ticker` and picks the earliest row. Returns ok=false
+// when this ticker has no upcoming row. Every value is Go-owned (Finnhub date/hour, consensus EPS).
+func nextEarningsFact(es []store.Earning, ticker, lang string) (Fact, bool) {
+	tk := strings.ToUpper(strings.TrimSpace(ticker))
+	var next *store.Earning
+	for i := range es {
+		if es[i].Date.IsZero() || !strings.EqualFold(strings.TrimSpace(es[i].Ticker), tk) {
+			continue
+		}
+		if next == nil || es[i].Date.Before(next.Date) {
+			next = &es[i]
+		}
+	}
+	if next == nil {
+		return Fact{}, false
+	}
+	parts := []string{next.Date.Format("Jan 2, 2006")}
+	if s := earningsSessionLabel(next.Hour, lang); s != "" {
+		parts = append(parts, s)
+	}
+	if next.EPSEstimate != nil {
+		parts = append(parts, pickLang(lang, "est. EPS ", "预期 EPS ")+formatPrice(*next.EPSEstimate))
+	}
+	return Fact{
+		Key: "next_earnings", LabelZH: "下次财报", LabelEN: "Next earnings",
+		Value:  strings.Join(parts, " · "),
+		Status: StatusOK,
+		Source: pickLang(lang, "Finnhub earnings calendar", "Finnhub 财报日历"),
+		AsOf:   next.Date.Format("2006-01-02"),
+	}, true
+}
+
+// earningsSessionLabel maps Finnhub's hour code to a readable session label ("" when unknown/blank).
+func earningsSessionLabel(hour, lang string) string {
+	switch strings.ToLower(strings.TrimSpace(hour)) {
+	case "bmo":
+		return pickLang(lang, "Before open", "盘前")
+	case "amc":
+		return pickLang(lang, "After close", "盘后")
+	case "dmh":
+		return pickLang(lang, "During market", "盘中")
+	}
+	return ""
+}
+
+// materialEventFact renders one recent 8-K as a Fact (item labels · filed date). Go owns the item
+// labels (edgar.itemLabels); the LLM never decides what a code means. ok=false when the filing has no
+// parsed items AND no date (nothing meaningful to show).
+func materialEventFact(ev edgar.MaterialEvent, idx int, lang string) (Fact, bool) {
+	var labels []string
+	for _, it := range ev.Items {
+		l := it.LabelEN
+		if lang != "en" && it.LabelZH != "" {
+			l = it.LabelZH
+		}
+		if l != "" {
+			labels = append(labels, l)
+		}
+	}
+	date := ev.FiledDate
+	if date == "" {
+		date = ev.ReportDate
+	}
+	if len(labels) == 0 && date == "" {
+		return Fact{}, false
+	}
+	val := strings.Join(labels, "; ")
+	if val == "" {
+		val = ev.Form
+	}
+	if date != "" {
+		val += " · " + date
+	}
+	return Fact{
+		Key: "recent_8k_" + strconv.Itoa(idx+1), LabelZH: "近期 8-K", LabelEN: "Recent 8-K",
+		Value:     val,
+		Status:    StatusOK,
+		Source:    "SEC 8-K",
+		SourceURL: ev.AccessionURL,
+		AsOf:      date,
+	}, true
 }
 
 // relativeSection turns a Go-computed Scorecard into the report's "relative" SectionFacts (4 factor
