@@ -575,11 +575,17 @@ func main() {
 		// relies on delivers no ticks — so the cards showed a frozen snapshot. Give
 		// the poller its own ticker source unioning the proxies with ingestTickers so
 		// they refresh on the same cadence as every other quote, WITHOUT widening the
-		// news/EDGAR scheduler or WS base (both still read ingestTickers — ETFs have
-		// no useful filings). 3 extra symbols in the existing bulk snapshot = negligible.
+		// news/EDGAR scheduler (which still reads ingestTickers — ETFs have no useful
+		// filings). 3 extra symbols in the existing bulk snapshot = negligible.
 		indexProxySeed := []string{"SPY", "DIA", "QQQ"}
 		pollTickers := func(ctx context.Context) []string {
 			return append(append([]string{}, indexProxySeed...), ingestTickers(ctx)...)
+		}
+		// wsBase front-loads the index proxies into the WS base (US-only) so SPY/DIA/QQQ
+		// also stream sub-second, not just via the ~10s poller. Front-loaded so capBase
+		// keeps them; the WS subscribe now works after the handshake fix (alpacaws).
+		wsBase := func(ctx context.Context) []string {
+			return usSymbols(append(append([]string{}, indexProxySeed...), ingestTickers(ctx)...))
 		}
 		poller := ingest.NewPricePoller(st, priceClient, pollTickers, cfg.PricePollEvery, hub.Publish, log)
 		poller.SetAdapters(marketAdapters) // route .TW/.TWO to the TWSE/TPEx adapter
@@ -591,7 +597,7 @@ func main() {
 		// watchlist US set (≤30, free-tier cap); the REST poller covers breadth +
 		// seeds prev/regular-close. Quotes flow to the same SSE hub + store.
 		if cfg.AlpacaWSEnabled {
-			wsSyms := usSymbols(ingestTickers(ctx))
+			wsSyms := wsBase(ctx)
 			streamer := alpacaws.New(cfg.AlpacaWSURL, cfg.AlpacaKeyID, cfg.AlpacaSecret, wsSyms,
 				priceClient, priceClient.SessionAt, hub.Publish, st, log)
 			liveSub = streamer // viewed-ticker live subscription (#2b)
@@ -606,7 +612,7 @@ func main() {
 					case <-ctx.Done():
 						return
 					case <-tk.C:
-						streamer.RefreshBase(usSymbols(ingestTickers(ctx)))
+						streamer.RefreshBase(wsBase(ctx))
 					}
 				}
 			}()
