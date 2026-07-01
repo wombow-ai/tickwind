@@ -225,11 +225,16 @@ func (s *Streamer) session(parent context.Context) error {
 	defer conn.Close(websocket.StatusNormalClosure, "")
 	conn.SetReadLimit(8 << 20)
 
+	// Handshake channels: the reader (this goroutine) closes them when Alpaca's
+	// control messages arrive, and the writer awaits them before auth/subscribe.
+	connected, authed := make(chan struct{}), make(chan struct{})
+	var connOnce, authOnce sync.Once
+
 	// The writer goroutine owns ALL WS writes (auth, (un)subscribe, ping) —
 	// coder/websocket forbids concurrent writes, and Subscribe() fires from
 	// request goroutines. Read happens here; Read+Write concurrency is allowed.
 	go func() {
-		if err := s.writer(ctx, conn); err != nil && ctx.Err() == nil {
+		if err := s.writer(ctx, conn, connected, authed); err != nil && ctx.Err() == nil {
 			s.log.Warn("alpacaws: writer ended", "err", err)
 			cancel() // unblock Read → reconnect
 		}
@@ -240,15 +245,56 @@ func (s *Streamer) session(parent context.Context) error {
 		if err != nil {
 			return fmt.Errorf("read: %w", err)
 		}
-		s.handle(ctx, data)
+		trades, controls := parseMessages(data)
+		for _, c := range controls {
+			switch {
+			case c.Type == "success" && strings.Contains(c.Msg, "connect"):
+				connOnce.Do(func() { close(connected) })
+			case c.Type == "success" && strings.Contains(c.Msg, "authenticat"):
+				authOnce.Do(func() { close(authed) })
+			case c.Type == "error":
+				// A rejected subscribe/auth lands here — surface the CODE (400 invalid
+				// syntax / 401 not authenticated / 409 insufficient sub) so the failure
+				// is diagnosable instead of a silent "server message".
+				s.log.Warn("alpacaws: server error", "code", c.Code, "msg", c.Msg)
+			case c.Type == "subscription":
+				s.log.Info("alpacaws: subscription ack", "msg", c.Msg)
+			}
+		}
+		s.publishTrades(ctx, trades)
+	}
+}
+
+// waitSig blocks until ch is closed, the timeout elapses, or ctx is cancelled.
+func waitSig(ctx context.Context, ch <-chan struct{}, timeout time.Duration) error {
+	t := time.NewTimer(timeout)
+	defer t.Stop()
+	select {
+	case <-ch:
+		return nil
+	case <-t.C:
+		return fmt.Errorf("timeout after %s", timeout)
+	case <-ctx.Done():
+		return ctx.Err()
 	}
 }
 
 // writer authenticates, subscribes the desired set, then keeps subscriptions in
 // sync (on resync nudges) and the connection alive (ping). Sole WS writer.
-func (s *Streamer) writer(ctx context.Context, conn *websocket.Conn) error {
+func (s *Streamer) writer(ctx context.Context, conn *websocket.Conn, connected, authed <-chan struct{}) error {
+	// Alpaca sends {"T":"success","msg":"connected"} FIRST; sending ANYTHING before
+	// it (incl. auth) draws a 400 "invalid syntax". Then auth, then wait for
+	// {"T":"success","msg":"authenticated"} before subscribing — a subscribe sent
+	// before that ack is rejected. This handshake is why the initial base subscribe
+	// failed ("invalid syntax") while later viewed-resyncs (sent post-handshake) worked.
+	if err := waitSig(ctx, connected, 15*time.Second); err != nil {
+		return fmt.Errorf("await connected: %w", err)
+	}
 	if err := s.writeJSON(ctx, conn, map[string]any{"action": "auth", "key": s.keyID, "secret": s.secret}); err != nil {
 		return fmt.Errorf("auth: %w", err)
+	}
+	if err := waitSig(ctx, authed, 15*time.Second); err != nil {
+		return fmt.Errorf("await authenticated: %w", err)
 	}
 	subscribed := make(map[string]bool)
 	if err := s.sync(ctx, conn, subscribed); err != nil {
@@ -305,6 +351,7 @@ func (s *Streamer) sync(ctx context.Context, conn *websocket.Conn, subscribed ma
 	}
 	if len(add) > 0 {
 		s.reseed(ctx, add) // seed prev/regular-close before the live price streams in
+		s.log.Info("alpacaws: subscribe", "n", len(add), "syms", add)
 		if err := s.writeJSON(ctx, conn, map[string]any{"action": "subscribe", "trades": add}); err != nil {
 			return err
 		}
@@ -325,13 +372,10 @@ func (s *Streamer) writeJSON(ctx context.Context, conn *websocket.Conn, v any) e
 	return conn.Write(wctx, websocket.MessageText, b)
 }
 
-// handle parses a message batch (Alpaca sends JSON arrays) and republishes trades,
-// throttled per symbol (publish ≤2/s, store upsert ≤1/5s).
-func (s *Streamer) handle(ctx context.Context, data []byte) {
-	trades, note := parseTrades(data)
-	if note != "" {
-		s.log.Info("alpacaws: server message", "msg", note)
-	}
+// publishTrades republishes a batch of trades, throttled per symbol (publish ≤2/s,
+// store upsert ≤1/5s). Control messages (auth/subscription/error) are handled by the
+// read loop in session — this only sees trade rows.
+func (s *Streamer) publishTrades(ctx context.Context, trades []trade) {
 	now := time.Now()
 	for _, tr := range trades {
 		if tr.Symbol == "" || tr.Price <= 0 {
@@ -403,39 +447,44 @@ func (s *Streamer) reseed(ctx context.Context, symbols []string) {
 	s.mu.Unlock()
 }
 
-// parseTrades extracts trade messages from a batch (Alpaca frames are JSON arrays
-// of objects). Non-trade control messages (success/error/subscription) are joined
-// into a note string for logging. Pure — unit-tested.
+// control is a non-trade Alpaca message (success / error / subscription). Code is
+// the Alpaca error code (0 for non-errors) — load-bearing for diagnosing a rejected
+// subscribe (400 invalid syntax vs 401 not authenticated vs 409 insufficient sub).
+type control struct {
+	Type string // "success" | "error" | "subscription"
+	Code int
+	Msg  string
+}
+
+// parseMessages extracts trade + control messages from a batch (Alpaca frames are
+// JSON arrays of objects). Pure — unit-tested.
 //
 // The row struct deliberately carries BOTH the "T" (type) and "t" (timestamp)
 // fields: trade messages contain both keys, and encoding/json only does
 // case-insensitive fallback when there's no exact-case field — so omitting the
 // "t" field would let the timestamp clobber Type. With both present each key
 // exact-matches its own field.
-func parseTrades(data []byte) ([]trade, string) {
+func parseMessages(data []byte) ([]trade, []control) {
 	var rows []struct {
 		Type   string    `json:"T"`
 		Symbol string    `json:"S"`
 		Price  float64   `json:"p"`
 		Time   time.Time `json:"t"`
+		Code   int       `json:"code"`
 		Msg    string    `json:"msg"`
 	}
 	if err := json.Unmarshal(data, &rows); err != nil {
-		return nil, ""
+		return nil, nil
 	}
 	var trades []trade
-	var notes []string
+	var controls []control
 	for _, r := range rows {
 		switch r.Type {
 		case "t":
 			trades = append(trades, trade{Type: r.Type, Symbol: r.Symbol, Price: r.Price, Time: r.Time})
 		case "error", "success", "subscription":
-			if r.Msg != "" {
-				notes = append(notes, r.Type+":"+r.Msg)
-			} else {
-				notes = append(notes, r.Type)
-			}
+			controls = append(controls, control{Type: r.Type, Code: r.Code, Msg: r.Msg})
 		}
 	}
-	return trades, strings.Join(notes, ", ")
+	return trades, controls
 }

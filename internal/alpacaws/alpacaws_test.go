@@ -15,7 +15,7 @@ func TestParseTrades(t *testing.T) {
 		{"T":"q","S":"AAPL","bp":288.3,"ap":288.4},
 		{"T":"t","S":"TSLA","p":410.1,"t":"2026-06-10T13:45:02Z"}
 	]`)
-	trades, note := parseTrades(data)
+	trades, controls := parseMessages(data)
 	if len(trades) != 2 {
 		t.Fatalf("got %d trades, want 2 (%+v)", len(trades), trades)
 	}
@@ -28,19 +28,28 @@ func TestParseTrades(t *testing.T) {
 	if trades[1].Symbol != "TSLA" || trades[1].Price != 410.1 {
 		t.Errorf("trade[1] = %+v, want TSLA/410.1", trades[1])
 	}
-	// Control messages surface in the note for logging.
-	if note == "" {
-		t.Error("expected a note from control messages")
+	// Control messages surface for the handshake + logging (success + subscription here).
+	if len(controls) != 2 {
+		t.Errorf("got %d controls, want 2 (%+v)", len(controls), controls)
+	}
+	var sawAuth bool
+	for _, c := range controls {
+		if c.Type == "success" && strings.Contains(c.Msg, "authenticat") {
+			sawAuth = true
+		}
+	}
+	if !sawAuth {
+		t.Error("expected the authenticated success control")
 	}
 }
 
-func TestParseTradesError(t *testing.T) {
-	trades, note := parseTrades([]byte(`[{"T":"error","code":406,"msg":"connection limit exceeded"}]`))
+func TestParseMessagesError(t *testing.T) {
+	trades, controls := parseMessages([]byte(`[{"T":"error","code":400,"msg":"invalid syntax"}]`))
 	if len(trades) != 0 {
 		t.Fatalf("got %d trades, want 0", len(trades))
 	}
-	if note == "" {
-		t.Error("expected error note")
+	if len(controls) != 1 || controls[0].Code != 400 || controls[0].Type != "error" {
+		t.Errorf("want one error control with code 400, got %+v", controls)
 	}
 }
 
